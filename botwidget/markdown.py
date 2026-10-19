@@ -6,7 +6,8 @@ from urllib.parse import urlparse
 from botwidget.theme import BUBBLE_CODE_LINES, BUBBLE_FONT, MD_HEAD_SIZE
 
 MD_INLINE_RE = re.compile(
-    r"(\*\*.+?\*\*|__.+?__|`[^`]+?`|\*[^*\s][^*]*?\*|_[^_\s][^_]*?_|\[[^\]]+?\]\([^)\s]+?\)"
+    r"(\*\*.+?\*\*|__.+?__|`[^`]+?`|\*[^*\s][^*]*?\*|_[^_\s][^_]*?_"
+    r"|\[[^\]]+?\]\((?:[^()\s]|\([^()\s]*\))*\)"
     r"|https?://[^\s<>\"'`]+)"
 )
 _URL_PAIRS = {")": "(", "]": "[", "}": "{"}

@@ -99,6 +99,12 @@ class Markdown(unittest.TestCase):
                          [("http://example.com", "link:http://example.com")])
         self.assertEqual(markdown.md_inline("a file:///etc/passwd b"), [("a file:///etc/passwd b", "")])
 
+    def test_a_markdown_link_keeps_the_parentheses_in_its_url(self):
+        url = "https://en.wikipedia.org/wiki/Foo_(bar)"
+        chunks = markdown.md_inline(f"[page]({url})")
+        self.assertEqual(chunks[0], ("page", "link:" + url), "the whole url is the href")
+        self.assertEqual(chunks[1], (" (en.wikipedia.org)", "dim"))
+
     def test_a_bare_url_keeps_its_own_parentheses(self):
         url = "https://en.wikipedia.org/wiki/Foo_(bar)"
         self.assertEqual(markdown.md_inline("see " + url),
@@ -792,6 +798,13 @@ class BubbleTextDocument(unittest.TestCase):
         label, hrefs = self._links(doc)
         self.assertEqual(set(hrefs), {"https://example.com/x"})
         self.assertEqual(label, "https://example.com/x", "the url is its own label")
+
+    def test_a_markdown_link_with_parentheses_is_one_anchor(self):
+        url = "https://en.wikipedia.org/wiki/Foo_(bar)"
+        doc, _panels = self.document([{"role": "bot", "text": f"see [page]({url})."}])
+        label, hrefs = self._links(doc)
+        self.assertEqual(set(hrefs), {url}, "the whole url is the href")
+        self.assertEqual("".join(label.split()), "page", "only the label is the link")
 
     def test_a_bare_url_with_parentheses_is_one_anchor(self):
         url = "https://en.wikipedia.org/wiki/Foo_(bar)"
