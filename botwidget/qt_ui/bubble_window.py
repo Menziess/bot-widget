@@ -6,14 +6,15 @@ and "hint"). A speech bubble can get an input field and a row of links.
 
 import time
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import QLabel, QLineEdit, QScrollArea, QWidget
+from PySide6.QtCore import Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QLabel, QLineEdit, QScrollArea, QTextBrowser, QWidget
 
 from botwidget.avatar import AVATAR_SIZE
 from botwidget.bubble import (
     bubble_body_svg,
+    bubble_deco_svg,
     bubble_shadow_svg,
-    bubble_text_svg,
     bubble_width,
     cloud_body_svg,
     cloud_shadow_svg,
@@ -24,10 +25,12 @@ from botwidget.markdown import block_text, md_blocks
 from botwidget.qt_ui import screens
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
+from botwidget.qt_ui.text_doc import fill_document
 from botwidget.theme import (
     BUBBLE_LINGER,
     DOTS_MS,
     PAD_BODY,
+    PAD_PANEL_Y,
     PAD_SVG,
     SAND_ACCENT,
     SAND_INK,
@@ -37,6 +40,7 @@ from botwidget.theme import (
 
 STYLE = f"""
 QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
+QTextBrowser, QTextBrowser > QWidget {{ background: transparent; border: none; padding: 0; }}
 QScrollBar:vertical {{ background: transparent; width: 6px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: transparent; border-radius: 3px; min-height: 24px; }}
 QScrollArea:hover QScrollBar::handle:vertical {{ background: rgba(28, 28, 28, 115); }}
@@ -65,6 +69,44 @@ class BubbleEntry(QLineEdit):
             self.dismissed.emit()
             return
         super().keyPressEvent(event)
+
+
+class BubbleText(QTextBrowser):
+    """The words in the bubble as real text: selectable, and links open in the browser."""
+
+    pressed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._on_link = False
+        self.setFrameShape(QTextBrowser.NoFrame)
+        # Not openLinks: that would navigate this read-only view. The window opens the link itself.
+        self.setOpenLinks(False)
+        self.setOpenExternalLinks(False)
+        self.anchorClicked.connect(self._open)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+        self.setFocusPolicy(Qt.ClickFocus)
+        self.viewport().setAutoFillBackground(False)
+
+    def _open(self, url: QUrl):
+        if url.scheme() in ("http", "https"):
+            QDesktopServices.openUrl(url)
+
+    def wheelEvent(self, event):
+        """The text is never taller than its frame: the bubble scrolls, not the text."""
+        event.ignore()
+
+    def mousePressEvent(self, event):
+        self._on_link = bool(self.anchorAt(event.position().toPoint()))
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        """A plain click still pins the bubble; a drag selects, a link click opens."""
+        super().mouseReleaseEvent(event)
+        if not self._on_link and not self.textCursor().hasSelection():
+            self.pressed.emit()
 
 
 class BubbleWindow(QWidget):
@@ -98,6 +140,8 @@ class BubbleWindow(QWidget):
         self._chrome = QLabel(self)
         self._text = QLabel()
         self._text.setAttribute(Qt.WA_TranslucentBackground)
+        self._doc = BubbleText(self._text)
+        self._doc.pressed.connect(self.clicked)
         self._scroll = QScrollArea(self)
         self._scroll.setWidget(self._text)
         self._scroll.setFrameShape(QScrollArea.NoFrame)
@@ -208,10 +252,18 @@ class BubbleWindow(QWidget):
         self._entry.setVisible(self._input)
 
     def _set_text(self):
-        panels, box_w, _inner = self._geom
-        pix = svg_pixmap(bubble_text_svg(panels, box_w))
+        """The shapes behind the text; the words themselves are the text document."""
+        panels, box_w, inner = self._geom
+        pix = svg_pixmap(bubble_deco_svg(panels, box_w))
         self._text.setPixmap(pix)
         self._text.resize(pix.deviceIndependentSize().toSize())
+        # One panel padding lower: the shapes keep the text of the first panel at that spot.
+        self._doc.setGeometry(0, PAD_PANEL_Y, box_w, max(1, inner - PAD_PANEL_Y))
+        self._doc.setVisible(self.kind != "")
+
+    def _set_doc(self):
+        panels, box_w, _inner = self._geom
+        fill_document(self._doc.document(), panels, box_w)
 
     def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None):
         """Put blocks in the bubble; newest at the bottom."""
@@ -228,6 +280,7 @@ class BubbleWindow(QWidget):
         pix = self._paint_chrome()
         self._layout_children(pix)
         self._set_text()
+        self._set_doc()
         self._scroll_to_bottom()
         if restyle or not self.isVisible():
             self.place(kind)

@@ -78,8 +78,15 @@ class Markdown(unittest.TestCase):
 
     def test_link_is_label_plus_host(self):
         chunks = markdown.md_inline("[docs](https://example.com/pad?x=1)")
-        self.assertEqual(chunks[0], ("docs", "link"))
+        self.assertEqual(chunks[0], ("docs", "link:https://example.com/pad?x=1"))
         self.assertEqual(chunks[1], (" (example.com)", "dim"))
+
+    def test_only_http_links_are_clickable(self):
+        self.assertEqual(markdown.anchor_url("link:https://example.com/x"), "https://example.com/x")
+        self.assertEqual(markdown.anchor_url("link:http://example.com"), "http://example.com")
+        self.assertEqual(markdown.anchor_url("link:file:///etc/passwd"), "")
+        self.assertEqual(markdown.anchor_url("link:mailto:a@b.c"), "")
+        self.assertEqual(markdown.anchor_url("b"), "")
 
     def test_blocks(self):
         blocks = markdown.md_blocks("# Heading\n\ntext\n\n- one\n- two")
@@ -695,6 +702,76 @@ class Channel(unittest.TestCase):
     def test_garbage_in_the_settings_file_is_not_a_command(self):
         config.save_widget_config(local_command="not a list")
         self.assertIsNone(channel.other_command())
+
+
+class BubbleTextDocument(unittest.TestCase):
+    """The bubble text is a real document: selectable words and clickable http links."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtGui import QGuiApplication
+        except ImportError:  # no toolkit at all: nothing to test here
+            raise unittest.SkipTest("PySide6 is not available")
+        try:
+            cls.app = QGuiApplication.instance() or QGuiApplication([])
+        except Exception as err:  # no screen and no offscreen platform
+            raise unittest.SkipTest(str(err))
+
+    @staticmethod
+    def measure(text, style, size):
+        return len(text) * 7.0
+
+    def document(self, messages):
+        from PySide6.QtGui import QTextDocument
+
+        from botwidget.qt_ui.text_doc import fill_document
+        blocks = markdown.conversation_blocks(messages, "Robo")
+        panels = bubble_layout.bubble_panels(self.measure, blocks)
+        box_w = bubble.bubble_width(panels) + 2 * theme.PAD_PANEL_X
+        doc = QTextDocument()
+        fill_document(doc, panels, box_w)
+        return doc, panels
+
+    def test_the_words_are_in_the_document(self):
+        doc, _panels = self.document([{"role": "user", "text": "hi"},
+                                      {"role": "bot", "text": "hello **there**"}])
+        self.assertIn("You", doc.toPlainText())
+        self.assertIn("hi", doc.toPlainText())
+        self.assertIn("Robo", doc.toPlainText())
+        self.assertIn("hello there", doc.toPlainText())
+
+    def test_an_http_link_becomes_a_clickable_anchor(self):
+        from PySide6.QtGui import QTextCursor
+        doc, _panels = self.document([{"role": "bot", "text": "see [docs](https://example.com/x)"}])
+        cursor = QTextCursor(doc)
+        label, hrefs = "", []
+        while not cursor.atEnd():
+            cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+            fmt = cursor.charFormat()
+            if fmt.isAnchor():
+                label += doc.characterAt(cursor.position() - 1)
+                hrefs.append(fmt.anchorHref())
+        self.assertEqual(set(hrefs), {"https://example.com/x"})
+        self.assertEqual(label, "docs", "only the label is the link, the host stays text")
+
+    def test_another_scheme_is_text_without_an_anchor(self):
+        from PySide6.QtGui import QTextCursor
+        doc, _panels = self.document([{"role": "bot", "text": "see [passwd](file:///etc/passwd)"}])
+        cursor = QTextCursor(doc)
+        while not cursor.atEnd():
+            cursor.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+            self.assertFalse(cursor.charFormat().isAnchor())
+
+    def test_the_text_sits_where_the_shapes_are(self):
+        doc, panels = self.document([{"role": "user", "text": "hi"},
+                                     {"role": "bot", "text": "hello"}])
+        layout = doc.documentLayout()
+        first_of_second = doc.findBlockByNumber(len(panels[0]["lines"]))
+        expected = sum(bubble.line_height(line) for line in panels[0]["lines"])
+        expected += theme.PAD_PANEL_Y + theme.GAP_PANEL + theme.PAD_PANEL_Y
+        self.assertAlmostEqual(layout.blockBoundingRect(first_of_second).y(), expected, delta=1)
 
 
 class Sending(unittest.TestCase):

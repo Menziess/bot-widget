@@ -1,10 +1,6 @@
 """The speech bubble as SVG: sizes and drawing based on broken lines."""
 
-from botwidget.avatar import xml_escape
 from botwidget.theme import (
-    BUBBLE_CODE_FONT,
-    CHIP_PAD_X,
-    CHIP_RX,
     DOTS_GAP,
     DOTS_R,
     GAP_PANEL,
@@ -12,22 +8,14 @@ from botwidget.theme import (
     PAD_PANEL_X,
     PAD_PANEL_Y,
     PAD_SVG,
-    SAND_ACCENT,
     SAND_BUBBLE,
-    SAND_CHIP,
-    SAND_CHIP_USER,
     SAND_HAIRLINE,
     SAND_INK,
-    SAND_INK_SOFT,
     SAND_LINE_USER,
-    SAND_MONO,
     SAND_ON_USER,
-    SAND_ON_USER_SOFT,
     SAND_PANEL_USER,
     SAND_RADIUS,
-    SAND_RADIUS_CODE,
     SAND_RADIUS_PANEL,
-    SAND_SANS,
     SHADOW_ALPHA,
     SHADOW_GROW,
     TAIL_ROOM,
@@ -68,19 +56,16 @@ def bubble_width(panels: list) -> int:
 
 
 def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
-    """The panels and their text, with the top left corner of the panel at (ox, oy).
+    """The shapes behind the text: the dark user panel, rules and the thinking dots.
 
-    Only the user panel gets a fill; bot text sits on the white bubble.
+    The words themselves are not drawn here: a real text surface draws them, so they
+    can be selected and their links clicked.
     """
     out, y = [], oy
     for panel in panels:
         user = panel["role"] == "user"
         ink = SAND_ON_USER if user else SAND_INK
-        soft = SAND_ON_USER_SOFT if user else SAND_INK_SOFT
         hair = SAND_LINE_USER if user else SAND_HAIRLINE
-        # On the dark user panel the accent blue is unreadable; it stays white there.
-        link_ink = SAND_ON_USER if user else SAND_ACCENT
-        chip = SAND_CHIP_USER if user else SAND_CHIP
         lines = panel["lines"]
         heights = [line_height(line) for line in lines]
         panel_h = 2 * PAD_PANEL_Y + sum(heights)
@@ -91,67 +76,12 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
         for h in heights:
             tops.append(acc)
             acc += h
-        n = 0
-        while n < len(lines):  # a code block in a panel of its own
-            if not lines[n].get("code"):
-                n += 1
-                continue
-            last = n
-            while last + 1 < len(lines) and lines[last + 1].get("code"):
-                last += 1
-            top = tops[n] - 2
-            out.append(f'<rect x="{ox + PAD_PANEL_X}" y="{top}"'
-                       f' width="{box_w - 2 * PAD_PANEL_X}"'
-                       f' height="{tops[last] + heights[last] - tops[n] + 4}"'
-                       f' rx="{SAND_RADIUS_CODE}" fill="{chip}"/>')
-            n = last + 1
         for n, line in enumerate(lines):
-            if line["kind"] == "gap":
-                continue
             if line["kind"] == "dots":
-                out.append(dots_svg(ox + PAD_PANEL_X, tops[n] + 16, line.get("phase", 0.0),
-                                    ink if not user else SAND_ON_USER))
-                continue
-            if line["kind"] == "rule":
+                out.append(dots_svg(ox + PAD_PANEL_X, tops[n] + 16, line.get("phase", 0.0), ink))
+            elif line["kind"] == "rule":
                 out.append(f'<rect x="{ox + PAD_PANEL_X}" y="{tops[n] + 6}"'
                            f' width="{box_w - 2 * PAD_PANEL_X}" height="1" fill="{hair}"/>')
-                continue
-            inner = tops[n] + line["size"] + 6
-            xs = line.get("xs") or []
-            ws = line.get("ws") or []
-            body = xml_escape(line["prefix"]) if line["prefix"] else ""
-            for i, (word, style, lead) in enumerate(line["words"]):
-                if i and lead:
-                    body += " "
-                esc = xml_escape(word)
-                if style == "b":
-                    body += f'<tspan font-weight="bold">{esc}</tspan>'
-                elif style == "i":
-                    body += f'<tspan font-style="italic">{esc}</tspan>'
-                elif style == "code":
-                    if i < len(xs):
-                        x = ox + PAD_PANEL_X + line["indent"] + xs[i] - CHIP_PAD_X
-                        out.append(f'<rect x="{x:.2f}" y="{inner - line["size"] + 2}"'
-                                   f' width="{ws[i] + 2 * CHIP_PAD_X:.2f}"'
-                                   f' height="{line["size"] + 2}" rx="{CHIP_RX}"'
-                                   f' fill="{chip}"/>')
-                    body += (f'<tspan font-family="{SAND_MONO}"'
-                             f' font-size="{BUBBLE_CODE_FONT}" fill="{ink}">{esc}</tspan>')
-                elif style == "mono":
-                    body += f'<tspan font-family="{SAND_MONO}">{esc}</tspan>'
-                elif style == "link":
-                    body += f'<tspan fill="{link_ink}">{esc}</tspan>'
-                elif style == "dim":
-                    body += f'<tspan fill="{soft}">{esc}</tspan>'
-                else:
-                    body += f"<tspan>{esc}</tspan>"
-            fill = soft if line["grey"] else ink
-            weight = ' font-weight="600"' if line.get("head") else ""
-            out.append(
-                f'<text x="{ox + PAD_PANEL_X + line["indent"]}" y="{inner}"'
-                f' xml:space="preserve" font-family="{SAND_SANS}"'
-                f' font-size="{line["size"]}" fill="{fill}"{weight}>{body}</text>'
-            )
         y += panel_h + GAP_PANEL
     return "".join(out)
 
@@ -168,8 +98,8 @@ def dots_svg(x: float, y: float, phase: float, ink: str) -> str:
     return "".join(out)
 
 
-def bubble_text_svg(panels: list, box_w: int) -> str:
-    """What scrolls: the panels and their text on a transparent background."""
+def bubble_deco_svg(panels: list, box_w: int) -> str:
+    """What scrolls: the panel shapes, rules and dots on a transparent background."""
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{box_w}"'
         f' height="{content_height(panels)}">' + panel_svg(panels, box_w) + "</svg>"

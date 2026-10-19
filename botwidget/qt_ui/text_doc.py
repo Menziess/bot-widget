@@ -1,0 +1,104 @@
+"""The bubble text as a real text document: selectable, with clickable http(s) links.
+
+The panel lines come from bubble_layout, so the text breaks exactly where the measured
+layout says and the shapes drawn behind it stay in place.
+"""
+
+from PySide6.QtGui import QColor, QFont, QTextBlockFormat, QTextCharFormat, QTextCursor
+
+from botwidget.bubble import line_height
+from botwidget.markdown import anchor_url
+from botwidget.theme import (
+    BUBBLE_CODE_FONT,
+    GAP_PANEL,
+    PAD_PANEL_X,
+    PAD_PANEL_Y,
+    SAND_ACCENT,
+    SAND_CHIP,
+    SAND_CHIP_USER,
+    SAND_INK,
+    SAND_INK_SOFT,
+    SAND_MONO,
+    SAND_ON_USER,
+    SAND_ON_USER_SOFT,
+    SAND_SANS,
+)
+
+
+def color(name: str) -> QColor:
+    """A theme token as a colour. The tokens are CSS hex, #rrggbbaa, not Qt's #aarrggbb."""
+    if len(name) == 9 and name.startswith("#"):
+        r, g, b, a = (int(name[i:i + 2], 16) for i in (1, 3, 5, 7))
+        return QColor(r, g, b, a)
+    return QColor(name)
+
+
+def char_format(style: str, user: bool, size: int, grey: bool, head: bool) -> QTextCharFormat:
+    """Font and colour of one piece of a line; the style names come from markdown."""
+    fmt = QTextCharFormat()
+    mono = style in ("code", "mono")
+    font = QFont(SAND_MONO if mono else SAND_SANS)
+    font.setPixelSize(BUBBLE_CODE_FONT if style == "code" else size)
+    font.setBold(style == "b" or head)
+    font.setItalic(style == "i")
+    fmt.setFont(font)
+    ink = SAND_ON_USER if user else SAND_INK
+    if style == "code":
+        fmt.setBackground(color(SAND_CHIP_USER if user else SAND_CHIP))
+        fmt.setForeground(color(ink))
+    elif style.startswith("link:"):
+        # Accent blue is unreadable on the dark user panel; it stays white there.
+        fmt.setForeground(color(SAND_ON_USER if user else SAND_ACCENT))
+    elif style == "dim":
+        fmt.setForeground(color(SAND_ON_USER_SOFT if user else SAND_INK_SOFT))
+    else:
+        fmt.setForeground(color(SAND_ON_USER_SOFT if user and grey else ink))
+    return fmt
+
+
+def line_pieces(line: dict) -> list:
+    """The pieces of one laid line as (text, style), spaces included."""
+    pieces = []
+    if line["prefix"]:
+        pieces.append((line["prefix"], ""))
+    for i, (word, style, lead) in enumerate(line.get("words") or []):
+        if i and lead:
+            pieces.append((" ", ""))
+        pieces.append((word, style))
+    return pieces
+
+
+def fill_document(doc, panels: list, box_w: int):
+    """Rewrite the document from the panels: the same lines, with anchors on links.
+
+    Only a top margin on the first line of each next panel: Qt drops a first block's top
+    margin and collapses touching margins, so the spacing it really uses stays predictable.
+    The first line of the whole document gets none; the text widget itself sits one panel
+    padding lower, which is where the bubble draws it.
+    """
+    doc.setDocumentMargin(0)
+    doc.setTextWidth(box_w)
+    cursor = QTextCursor(doc)
+    first = True
+    for pi, panel in enumerate(panels):
+        user = panel["role"] == "user"
+        lines = panel["lines"]
+        for li, line in enumerate(lines):
+            block = QTextBlockFormat()
+            block.setTopMargin(PAD_PANEL_Y + GAP_PANEL + PAD_PANEL_Y if li == 0 and pi > 0 else 0)
+            block.setLeftMargin(PAD_PANEL_X + line["indent"])
+            block.setLineHeight(float(line_height(line)),
+                                QTextBlockFormat.LineHeightTypes.FixedHeight.value)
+            if first:
+                cursor.setBlockFormat(block)
+                first = False
+            else:
+                cursor.insertBlock(block)
+            for text, style in line_pieces(line):
+                fmt = char_format(style, user, line["size"], line["grey"], line.get("head", False))
+                url = anchor_url(style)
+                if url:
+                    fmt.setAnchor(True)
+                    fmt.setAnchorHref(url)
+                cursor.insertText(text, fmt)
+    return doc

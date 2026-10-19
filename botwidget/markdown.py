@@ -16,7 +16,7 @@ MD_RULE_RE = re.compile(r"^([-*_]\s*){3,}$")
 
 
 def url_host(url: str) -> str:
-    """Only the host of a link. Links are text, not clickable."""
+    """Only the host of a link, shown dim after the label."""
     try:
         host = urlparse(url).netloc or url
     except ValueError:
@@ -24,8 +24,16 @@ def url_host(url: str) -> str:
     return host.split("@")[-1].split(":")[0] or url
 
 
+def anchor_url(style: str) -> str:
+    """The href of a link piece; empty for anything that is not an http(s) link."""
+    if not style.startswith("link:"):
+        return ""
+    url = style[len("link:"):]
+    return url if url.startswith(("http://", "https://")) else ""
+
+
 def md_inline(text: str) -> list:
-    """Inline markdown to (piece, style); style is '', 'b', 'i', 'code', 'link' or 'dim'."""
+    """Inline markdown to (piece, style); style is '', 'b', 'i', 'code', 'dim' or 'link:<url>'."""
     out, pos = [], 0
     for m in MD_INLINE_RE.finditer(text):
         if m.start() > pos:
@@ -37,7 +45,7 @@ def md_inline(text: str) -> list:
             out.append((tok[1:-1], "code"))
         elif tok[0] == "[":
             label, url = tok[1:-1].split("](", 1)
-            out.append((label, "link"))
+            out.append((label, "link:" + url))
             out.append((f" ({url_host(url)})", "dim"))
         else:
             out.append((tok[1:-1], "i"))
