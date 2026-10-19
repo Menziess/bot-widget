@@ -52,7 +52,8 @@ WORK_POLL_INTERVAL = 1  # seconde, zolang de beurt loopt
 CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
-SETTING_KEYS = ("sound", "always_on_top", "check_updates", "auto_update", "login_default_applied")
+SETTING_KEYS = ("sound", "always_on_top", "check_updates", "auto_update", "login_default_applied",
+                "local_command")
 
 
 def always_on_top() -> bool:

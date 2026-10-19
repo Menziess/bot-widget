@@ -10,7 +10,12 @@ from botwidget.config import read_file
 from botwidget.system.current import process_cmdline
 
 PIDFILE = os.path.join(tempfile.gettempdir(), "bot_widget.pid")
-LAUNCHERS = (b"bot_widget.py", b"botwidget")
+# De gebundelde app heet "Bot Widget"; de andere namen zijn de losse start via Python.
+LAUNCHERS = (b"bot_widget.py", b"botwidget", b"Bot Widget")
+
+
+def looks_like_widget(cmdline: bytes, markers: tuple = LAUNCHERS) -> bool:
+    return any(name in cmdline for name in markers)
 
 
 def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
@@ -19,7 +24,7 @@ def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
         old = int(read_file(pidfile))
     except ValueError:
         old = None
-    if old and old != os.getpid() and any(name in process_cmdline(old) for name in markers):
+    if old and old != os.getpid() and looks_like_widget(process_cmdline(old), markers):
         os.kill(old, signal.SIGTERM)
         for _ in range(20):
             time.sleep(0.1)

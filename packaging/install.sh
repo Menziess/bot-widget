@@ -7,7 +7,8 @@ mkdir -p "$target" "$HOME/.local/bin" "$HOME/.local/share/applications"
 rm -rf "$target/app"
 cp -R "$here/app" "$target/app"
 cp "$here/icon.png" "$target/icon.png"
-ln -sf "$target/app/Bot Widget" "$HOME/.local/bin/botwidget"
+# Niet "botwidget": zo heet ook het commando van een uv- of pip-installatie.
+ln -sf "$target/app/Bot Widget" "$HOME/.local/bin/bot-widget"
 cat > "$HOME/.local/share/applications/botwidget.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
@@ -18,4 +19,4 @@ Icon=$target/icon.png
 Categories=Utility;
 Terminal=false
 DESKTOP
-echo "Installed. Search for 'Bot Widget' in your app menu, or run: botwidget"
+echo "Installed. Search for 'Bot Widget' in your app menu, or run: bot-widget"

@@ -44,6 +44,10 @@ Automatic installing needs the packaged app. Installs through uv or pip, and che
 
 The first start turns on starting at login and says so in a bubble. Settings, Start at login, turns it off, and the choice then stays off.
 
+- On macOS the app registers itself, so Login Items shows Bot Widget with its icon
+- From a checkout the item is named Bot Widget (dev) instead of python
+- On macOS the switch in System Settings and the one in the widget stay in step
+
 ## Develop
 
 Run it from a checkout and keep the latest code on screen.
@@ -59,6 +63,17 @@ botwidget --dev
 - Starting at login from a checkout starts it in this mode too, so each login shows the latest iteration
 
 Without a virtual environment, `uv venv && uv pip install -e .` and `.venv/bin/botwidget --dev` do the same.
+
+### Switching between stable and local
+
+Keep the installed app next to your checkout and hop between them from the right-click menu.
+
+- Settings, Switch to local version starts the checkout, and Switch to stable version starts the installed app
+- The stable app learns how to start your checkout the first time you run it with `botwidget --dev`
+- Start at login follows whichever version you switch to, so only one of them starts at login
+- The installed app is found in Applications on macOS, in the local share folder on Linux and in the Start menu folder on Windows
+
+On Linux the installer names its command `bot-widget` so it does not clash with the `botwidget` command from `uv tool install`.
 
 - Unit tests need no display and no Qt, run them with `python3 -m unittest discover -s tests -t .`
 - Everything that differs per operating system lives in `botwidget/system/`, one module per OS with the same function names

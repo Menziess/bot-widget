@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 
+from botwidget.channel import HANDOVER_EXIT
 from botwidget.instance import ensure_single_instance
 
 PACKAGE = os.path.dirname(os.path.abspath(__file__))
@@ -26,8 +27,8 @@ def snapshot(folder: str = PACKAGE) -> dict:
     return seen
 
 
-def start() -> subprocess.Popen:
-    return subprocess.Popen([sys.executable, "-m", "botwidget"])
+def start(extra: list = ()) -> subprocess.Popen:
+    return subprocess.Popen([sys.executable, "-m", "botwidget", *extra])
 
 
 def stop(child: subprocess.Popen | None, wait: float = 3.0):
@@ -43,7 +44,8 @@ def stop(child: subprocess.Popen | None, wait: float = 3.0):
 def run(folder: str = PACKAGE, poll: float = POLL_S):
     """Houdt de widget draaiend met de nieuwste code. Een crash wacht op de volgende wijziging."""
     ensure_single_instance(DEV_PIDFILE, (b"--dev",))
-    child = start()
+    extra = ["--keep-login"] if "--keep-login" in sys.argv else []
+    child = start(extra)
     seen = snapshot(folder)
     waiting = False
 
@@ -61,7 +63,10 @@ def run(folder: str = PACKAGE, poll: float = POLL_S):
                 seen, waiting = current, False
                 print("code changed, restarting", flush=True)
                 stop(child)
-                child = start()
+                child = start(extra)
+            elif child.poll() == HANDOVER_EXIT:
+                print("handed over to the stable version", flush=True)
+                return
             elif child.poll() is not None and not waiting:
                 waiting = True
                 print(f"widget exited with {child.returncode}; waiting for a change", flush=True)

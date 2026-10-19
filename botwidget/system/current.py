@@ -23,4 +23,5 @@ play_notification = _os.play_notification
 prepare_gui_environment = _os.prepare_gui_environment
 process_cmdline = _os.process_cmdline
 send_behind_windows = _os.send_behind_windows
+stable_app_command = _os.stable_app_command
 set_launch_at_login = _os.set_launch_at_login

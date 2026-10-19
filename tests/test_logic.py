@@ -18,6 +18,7 @@ from botwidget import (
     avatar,
     bubble,
     bubble_layout,
+    channel,
     config,
     dev,
     instance,
@@ -413,16 +414,21 @@ class LaunchAtLogin(unittest.TestCase):
     def test_macos_writes_and_removes_a_launch_agent(self):
         with tempfile.TemporaryDirectory() as home:
             path = os.path.join(home, "LaunchAgents", "agent.plist")
-            old = macos._launch_agent
-            self.addCleanup(setattr, macos, "_launch_agent", old)
-            macos._launch_agent = lambda: path
+            for name, value in (("_launch_agent", lambda: path),
+                                ("_dev_launcher", lambda: os.path.join(home, macos.DEV_LAUNCHER_NAME))):
+                old = getattr(macos, name)
+                self.addCleanup(setattr, macos, name, old)
+                setattr(macos, name, value)
             macos.set_launch_at_login(self.COMMAND, True)
             self.assertTrue(macos.launch_at_login())
             with open(path, "rb") as fh:
                 agent = plistlib.load(fh)
-            self.assertEqual(agent["ProgramArguments"], self.COMMAND)
             self.assertTrue(agent["RunAtLoad"])
-            self.assertEqual(agent["AssociatedBundleIdentifiers"], [macos.BUNDLE_ID])
+            launcher = agent["ProgramArguments"][0]
+            self.assertEqual(os.path.basename(launcher), macos.DEV_LAUNCHER_NAME, "not shown as 'python'")
+            with open(launcher) as fh:
+                self.assertIn(self.COMMAND[0], fh.read())
+            self.assertTrue(os.access(launcher, os.X_OK))
             macos.set_launch_at_login(self.COMMAND, False)
             self.assertFalse(macos.launch_at_login())
 
@@ -521,6 +527,10 @@ class MacBundleSwap(unittest.TestCase):
                 if open(marker).read() == "new":
                     break
             self.assertEqual(open(marker).read(), "new")
+            for _ in range(30):  # het opruimen volgt net na de wissel
+                if os.listdir(os.path.join(home, "Apps")) == ["Bot Widget.app"]:
+                    break
+                time.sleep(0.1)
             self.assertEqual(sorted(os.listdir(os.path.join(home, "Apps"))), ["Bot Widget.app"])
 
 
@@ -577,6 +587,90 @@ class FirstRun(unittest.TestCase):
         self.enabled = False
         self.assertFalse(startup.apply_default())
         self.assertFalse(self.enabled)
+
+
+class SingleInstance(unittest.TestCase):
+    """Elke manier om de widget te starten moet herkend worden, ook de gebundelde app."""
+
+    def test_every_launch_style_is_recognised(self):
+        for cmdline in (b"/usr/bin/python3 /home/me/bot_widget.py",
+                        b"/home/me/.local/share/uv/tools/botwidget/bin/python -m botwidget --dev",
+                        b"/Applications/Bot Widget.app/Contents/MacOS/Bot Widget",
+                        b"/home/me/.local/share/botwidget/app/Bot Widget"):
+            self.assertTrue(instance.looks_like_widget(cmdline), cmdline)
+
+    def test_other_programs_are_left_alone(self):
+        for cmdline in (b"vim notes.txt", b"/usr/bin/python3 other_script.py", b""):
+            self.assertFalse(instance.looks_like_widget(cmdline), cmdline)
+
+
+class Channel(unittest.TestCase):
+    """Wisselen tussen stabiel en lokaal: wie draait, wat de ander is, en het inlogonderdeel."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.patch(config, "CONFIG_PATH", os.path.join(self.folder.name, "widget.json"))
+        self.login = True
+        self.launched = []
+        self.patch(startup, "from_checkout", lambda: False)
+        self.patch(startup, "is_enabled", lambda: self.login)
+        self.patch(startup, "set_enabled", self.set_login)
+        self.patch(channel, "stable_app_command", lambda: ["open", "/Applications/Bot Widget.app", "--args"])
+
+    def patch(self, owner, name, value):
+        old = getattr(owner, name)
+        self.addCleanup(setattr, owner, name, old)
+        setattr(owner, name, value)
+
+    def set_login(self, on):
+        self.login = on
+
+    def popen(self, command, **kwargs):
+        self.launched.append(command)
+
+    def test_a_local_widget_remembers_how_it_starts(self):
+        self.patch(startup, "from_checkout", lambda: True)
+        channel.remember_local()
+        self.assertEqual(config.widget_config()["local_command"], startup.launch_command())
+
+    def test_the_stable_widget_only_offers_local_once_one_is_known(self):
+        self.assertIsNone(channel.switch_label())
+        config.save_widget_config(local_command=["/x/python", "-m", "botwidget", "--dev"])
+        self.assertEqual(channel.switch_label(), "Switch to local version")
+
+    def test_a_local_widget_offers_the_installed_stable_one(self):
+        self.patch(startup, "from_checkout", lambda: True)
+        self.assertEqual(channel.switch_label(), "Switch to stable version")
+        self.patch(channel, "stable_app_command", lambda: None)
+        self.assertIsNone(channel.switch_label())
+
+    def test_switching_starts_the_other_one_and_hands_the_login_item_over(self):
+        config.save_widget_config(local_command=["/x/python", "-m", "botwidget", "--dev"])
+        self.patch(channel.subprocess, "Popen", self.popen)
+        self.assertTrue(channel.switch())
+        self.assertEqual(self.launched, [["/x/python", "-m", "botwidget", "--dev", "--keep-login"]])
+        self.assertFalse(self.login, "this version gives up the login item; the other one takes it")
+
+    def test_switching_without_a_login_item_does_not_ask_for_one(self):
+        self.login = False
+        config.save_widget_config(local_command=["/x/python", "-m", "botwidget", "--dev"])
+        self.patch(channel.subprocess, "Popen", self.popen)
+        channel.switch()
+        self.assertEqual(self.launched, [["/x/python", "-m", "botwidget", "--dev"]])
+
+    def test_a_failed_start_keeps_the_login_item_and_this_widget(self):
+        config.save_widget_config(local_command=["/missing"])
+
+        def broken(command, **kwargs):
+            raise OSError("no such file")
+        self.patch(channel.subprocess, "Popen", broken)
+        self.assertFalse(channel.switch())
+        self.assertTrue(self.login)
+
+    def test_garbage_in_the_settings_file_is_not_a_command(self):
+        config.save_widget_config(local_command="not a list")
+        self.assertIsNone(channel.other_command())
 
 
 if __name__ == "__main__":

@@ -68,3 +68,9 @@ def install_update(installer: str) -> bool:
     subprocess.Popen([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
                       "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"], creationflags=detached)
     return True
+
+
+def stable_app_command() -> list | None:
+    import os
+    path = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Bot Widget", "Bot Widget.exe")
+    return [path] if os.path.exists(path) else None

@@ -61,7 +61,11 @@ def set_launch_at_login(command: list, on: bool) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     quoted = " ".join('"' + part.replace('"', '\\"') + '"' if " " in part else part for part in command)
     with open(path, "w") as fh:
-        fh.write(f"[Desktop Entry]\nType=Application\nName=Bot Widget\nExec={quoted}\nTerminal=false\n")
+        icon = os.path.expanduser("~/.local/share/botwidget/icon.png")
+        icon_line = f"Icon={icon}\n" if os.path.exists(icon) else ""
+        fh.write("[Desktop Entry]\nType=Application\nName=Bot Widget\n"
+                 "Comment=Animated bot face for OpenBot and Grok Bot\n"
+                 f"{icon_line}Exec={quoted}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n")
 
 
 UPDATE_ASSET = "BotWidget-Linux.tar.gz"
@@ -74,15 +78,20 @@ tar xzf "$archive" -C "$work" || { rm -rf "$work"; exit 1; }
 while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
 sh "$work/botwidget/install.sh" >/dev/null 2>&1
 rm -rf "$work"
-nohup "$HOME/.local/bin/botwidget" >/dev/null 2>&1 &
+nohup "$HOME/.local/share/botwidget/app/Bot Widget" >/dev/null 2>&1 &
 """
 
 
 def can_install_update() -> bool:
     """Alleen de gebundelde app die via install.sh is neergezet."""
-    return getattr(sys, "frozen", False) and os.path.exists(os.path.expanduser("~/.local/bin/botwidget"))
+    return getattr(sys, "frozen", False) and stable_app_command() is not None
 
 
 def install_update(archive: str) -> bool:
     posix.spawn_script(_UPDATE_SCRIPT, archive, str(os.getpid()))
     return True
+
+
+def stable_app_command() -> list | None:
+    path = os.path.expanduser("~/.local/share/botwidget/app/Bot Widget")
+    return [path] if os.path.exists(path) else None

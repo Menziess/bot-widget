@@ -8,7 +8,7 @@ from PySide6.QtCore import QObject, QUrl
 from PySide6.QtGui import QAction, QCursor, QDesktopServices
 from PySide6.QtWidgets import QApplication, QMenu
 
-from botwidget import startup, updates
+from botwidget import __version__, channel, startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -82,6 +82,10 @@ class Faces(QObject):
         if auto_update() and can_install_update():
             self.staged = updates.stage(release)
 
+    def switch_channel(self):
+        if channel.switch():
+            QApplication.exit(channel.HANDOVER_EXIT if channel.running() == "local" else 0)
+
     def install_update(self):
         if updates.install_staged():
             QApplication.quit()
@@ -134,6 +138,11 @@ class Faces(QObject):
 
     def _settings_entries(self, menu: QMenu):
         settings = menu.addMenu("Settings")
+        settings.addAction(f"Running the {channel.running()} version, v{__version__}").setEnabled(False)
+        label = channel.switch_label()
+        if label:
+            settings.addAction(label).triggered.connect(self.switch_channel)
+        settings.addSeparator()
         sound = QAction("Sound on a new answer", settings, checkable=True)
         sound.setChecked(widget_config().get("sound") is True)
         sound.toggled.connect(lambda on: save_widget_config(sound=on))
