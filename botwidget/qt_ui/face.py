@@ -2,21 +2,22 @@
 
 import datetime
 import hashlib
+import math
 import time
 
 from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QPainter
 from PySide6.QtWidgets import QWidget
 
+from botwidget.animation import FaceAnimator
 from botwidget.avatar import (
     AVATAR_SIZE,
     CIRCLE_R,
     FACE,
-    FACE_STEP_MS,
     GAZE_NEAR,
+    LIFT,
     POSES,
     avatar_profile,
-    avatar_svg,
     eye_aim,
     face_svg,
 )
@@ -38,6 +39,13 @@ from botwidget.system.current import send_behind_windows
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
+# Rustig 30 beelden per seconde; 60 zodra je het gezicht vastpakt, dan zie je het verschil.
+IDLE_MS = 33
+BUSY_MS = 16
+# Ademhaling: de kop zwelt traag een paar procent; dat hoeft niet 60 keer per seconde getekend.
+BREATH = 0.012
+BREATH_PERIOD = 3.8
+BREATH_STEP = 0.003
 
 
 def ticker(parent, ms: int, step) -> QTimer:
@@ -73,6 +81,7 @@ class FaceWindow(QWidget):
         self.pinned = False
         self._local = []
         self._hint_shown = False
+        self._shown_text = ""
         self._press_pos = None
         self._drag_origin = None
         self._drag_sample = None
@@ -82,16 +91,13 @@ class FaceWindow(QWidget):
         self._working = False
         self._mood = "idle"
         self._face_i = 0
-        self._face_left = 0
+        self._cycle_left = 0.0
         self._pose = "rest"
         self._last_bot = None
-        self._gaze = None
-        self._gaze_on = False
         self._happy_on = False
-        self._happy_at = 0.0
-        self._happy_cache = {}
-        self._eye = [0.0, 0.0, 0.0, 1.0]
-        self._gaze_cache = {}
+        self.anim = FaceAnimator()
+        self._last_tick = time.monotonic()
+        self._breath = 1.0
 
         self._apply_flags()
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -100,8 +106,8 @@ class FaceWindow(QWidget):
         self.setWindowTitle(name)
         self.setToolTip(name)
 
-        self._faces = {pose: svg_pixmap(avatar_svg(pose, self._seed, hue)) for pose in POSES}
-        self._pixmap = self._faces["rest"]
+        self._pixmap = None
+        self._render()
 
         self.bubble = BubbleWindow(self)
         self.bubble.clicked.connect(self.pin)
@@ -112,10 +118,10 @@ class FaceWindow(QWidget):
             self._position_bottom_right(slot)
 
         self._coast_timer = ticker(self, 16, self._tick_coast)
-        self._eyes_timer = ticker(self, 32, self._tick_eyes)
-        self._face_timer = ticker(self, FACE_STEP_MS, self._step_face)
-        self._eyes_timer.start()
-        self._face_timer.start()
+        self._anim_timer = QTimer(self)
+        self._anim_timer.setInterval(IDLE_MS)
+        self._anim_timer.timeout.connect(self._animate)
+        self._anim_timer.start()
         self._poll_timer = QTimer(self)
         self._poll_timer.setSingleShot(True)
         self._poll_timer.timeout.connect(self._poll_pending)
@@ -201,8 +207,7 @@ class FaceWindow(QWidget):
         self._wall_kick = (0.0, 0.0)
         # Blij gezicht: de ogen worden ^^ zodra de muis op de kop staat.
         self._happy_on = True
-        self._happy_at = time.monotonic()
-        self._show_happy(1.0)
+        self.anim.kick("sy", -0.8)
 
     def mouseMoveEvent(self, event):
         """Schuif het icoon mee, maar niet voorbij de rand van een scherm."""
@@ -228,7 +233,6 @@ class FaceWindow(QWidget):
             self._dvx = (x - sx) / (now - t)
             self._dvy = (y - sy) / (now - t)
             self._drag_sample = (now, x, y)
-        self._happy_morph()
 
     def mouseReleaseEvent(self, event):
         """Klik (bijna geen beweging) toggelt de chat."""
@@ -254,6 +258,7 @@ class FaceWindow(QWidget):
             self._coasting = True
             self._coast_timer.start()
         else:
+            self._landed()
             self._remember_spot()
 
     def _tick_coast(self):
@@ -270,6 +275,8 @@ class FaceWindow(QWidget):
         self._move_icon(nx, ny)
         if abs(self._dvx) < 80 and abs(self._dvy) < 80:
             self._coasting = False
+            self._dvx = self._dvy = 0.0
+            self._landed()
             self._remember_spot()
             return False
         return True
@@ -292,103 +299,89 @@ class FaceWindow(QWidget):
             return True
         return bubble.isVisible() and bubble.frameGeometry().contains(QPoint(px, py))
 
-    def _gaze_rest(self):
-        """Blik uit: de ogen naar rust en de gewone cyclus pakt meteen weer op."""
-        if self._gaze_on:
-            self._gaze_on = False
-            self._eye = [0.0, 0.0, 0.0, 1.0]
-            self._gaze = None
-            self._pose = ""
-            self._face_left = 0
-
-    def _tick_eyes(self):
-        """Kijk naar een muis dichtbij. De blik loopt er naartoe, hij springt niet."""
+    def _animate(self):
+        """Eén beeld: doelen bepalen, de veren een stap, tekenen als er iets veranderd is."""
         if not self._alive:
-            return False
-        if self._drag_origin is not None:
-            return True
-        if self._happy_on or self._working or self.has_pending:
-            # De blije ogen hebben voorrang; de cyclus wacht zijn beurt af.
-            self._gaze_rest()
-            return True
-        px, py = self._pointer()
-        target = eye_aim(px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2))
-        if target == (0.0, 0.0, 0.0, 1.0):
-            # Muis weg of ver: de blik gaat terug naar rust en de idle-cyclus pakt
-            # meteen weer op in plaats van te wachten tot de afronding nul is.
-            self._gaze_rest()
-            return True
-        for i, goal in enumerate(target):
-            self._eye[i] += (goal - self._eye[i]) * 0.22
-        dx, dy, conv, scale = self._eye
-        shown = (round(dx), round(dy), round(conv), round(scale * 20) / 20)
-        self._gaze_on = True
-        if shown == self._gaze:
-            return True
-        self._gaze = shown
-        pix = self._gaze_cache.get(shown)
-        if pix is None:
-            pix = svg_pixmap(face_svg(shown[0], shown[1], shown[3], shown[2],
-                                      self._seed, self._hue))
-            self._gaze_cache[shown] = pix
-        self._pose = "gaze"
-        self._set_pixmap(pix)
-        return True
-
-    def _happy_morph(self):
-        """Tijdens het slepen: half blij en kijkend in de sleeprichting."""
-        if not self._happy_on:
+            self._anim_timer.stop()
             return
         now = time.monotonic()
-        if now - self._happy_at < 0.05:
-            return
-        self._happy_at = now
-        speed = (self._dvx ** 2 + self._dvy ** 2) ** 0.5
-        dx = dy = 0.0
-        if speed > 20:
-            dx = max(-8.0, min(8.0, self._dvx / speed * 8))
-            dy = max(-8.0, min(8.0, self._dvy / speed * 8))
-        self._show_happy(0.5, dx, dy)
+        dt, self._last_tick = now - self._last_tick, now
+        busy = self._drag_origin is not None or self._coasting or self._happy_on
+        if self._anim_timer.interval() != (BUSY_MS if busy else IDLE_MS):
+            self._anim_timer.setInterval(BUSY_MS if busy else IDLE_MS)
+        self._aim(dt * 1000)
+        moving = self.anim.step(dt)
+        # Ademhaling in stapjes van een tiende pixel: sneller tekenen ziet niemand.
+        breath = round((1 + BREATH * math.sin(now * math.tau / BREATH_PERIOD)) / BREATH_STEP) * BREATH_STEP
+        if moving or breath != self._breath:
+            self._breath = breath
+            self._render(breath)
 
-    def _show_happy(self, happy: float, dx: float = 0.0, dy: float = 0.0):
-        """Blij gezicht tekenen; happy 1 is ^^, een halve stand is de overgang."""
-        key = (round(happy, 2), round(dx), round(dy))
-        pix = self._happy_cache.get(key)
-        if pix is None:
-            pix = svg_pixmap(face_svg(dx, dy, 1.0, 0.0, self._seed, self._hue, happy=happy))
-            self._happy_cache[key] = pix
-        self._pose = "happy"
-        self._set_pixmap(pix)
+    def _render(self, breath: float = 1.0):
+        v = self.anim.value
+        svg = face_svg(v["dx"], v["dy"], max(v["scale"], 0.05), v["converge"], self._seed, self._hue,
+                       v["lift"], min(max(v["happy"], 0.0), 1.0), lean=v["lean"],
+                       squash=(v["sx"] * breath, v["sy"] * breath))
+        self._set_pixmap(svg_pixmap(svg))
+
+    def _aim(self, dt_ms: float):
+        """Waar wil het gezicht heen: slepen, blij, naar de muis kijken, of de gewone cyclus."""
+        a = self.anim
+        dragging = self._drag_origin is not None
+        speed = math.hypot(self._dvx, self._dvy) if (dragging or self._coasting) else 0.0
+        if speed:
+            # Rekken langs de beweging en leunen in de richting ervan.
+            stretch = min(speed / 1200, 0.10) * (abs(self._dvx) - abs(self._dvy)) / (speed + 1e-6)
+            a.aim(sx=1 + stretch, sy=1 - stretch, lean=max(-12.0, min(12.0, self._dvx / 70)))
+        else:
+            a.aim(sx=1.0, sy=1.0, lean=0.0)
+        if dragging or self._happy_on:
+            # Blij gezicht: ^^ zodra de muis op de kop staat, half blij tijdens het slepen.
+            moving = dragging and speed > 20
+            look_x = max(-8.0, min(8.0, self._dvx / speed * 8)) if moving else 0.0
+            look_y = max(-8.0, min(8.0, self._dvy / speed * 8)) if moving else 0.0
+            a.aim(happy=0.5 if moving else 1.0, dx=look_x, dy=look_y, converge=0.0, scale=1.0, lift=0.0)
+            return
+        a.aim(happy=0.0)
+        if not (self._working or self.has_pending):
+            px, py = self._pointer()
+            target = eye_aim(px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2))
+            if target != (0.0, 0.0, 0.0, 1.0):
+                dx, dy, converge, scale = target
+                a.aim(dx=dx, dy=dy, converge=converge, scale=scale, lift=0.0)
+                self._cycle_left = 0.0
+                return
+        self._cycle(dt_ms)
+
+    def _cycle(self, dt_ms: float):
+        """Volgende houding. Idle kijkt af en toe op, werk leest, een vraag kijkt aan."""
+        mood = "ask" if self.has_pending else ("work" if self._working else "idle")
+        if mood != self._mood:
+            self._mood = mood
+            self._face_i = 0
+            self._cycle_left = 0.0
+        self._cycle_left -= dt_ms
+        if self._cycle_left <= 0:
+            pose, self._cycle_left = FACE[mood][self._face_i % len(FACE[mood])]
+            self._face_i += 1
+            self._set_pose(pose)
+
+    def _set_pose(self, pose: str):
+        dx, dy, scale = POSES[pose]
+        self.anim.aim(dx=dx, dy=dy, scale=scale, converge=0.0, lift=LIFT.get(pose, 0.0))
+        if pose == "hop":
+            self.anim.kick("sy", 0.8)
+        elif self._pose == "hop":
+            self.anim.kick("sy", -1.2)
+        self._pose = pose
+
+    def _landed(self):
+        """Na het slepen: een kleine landing."""
+        self.anim.kick("sy", -1.2)
 
     def _happy_off(self):
         """Terug naar de gewone ogen en de gewone cyclus."""
         self._happy_on = False
-        self._pose = ""
-        self._show_pose("rest")
-
-    def _show_pose(self, pose: str):
-        if pose == self._pose or self._drag_origin is not None:
-            return
-        self._pose = pose
-        self._set_pixmap(self._faces[pose])
-
-    def _step_face(self):
-        """Volgende houding. Idle kijkt af en toe op, werk leest, een vraag kijkt aan."""
-        if not self._alive:
-            return False
-        gazing = self._gaze_on and self._drag_origin is None
-        if self._drag_origin is None and not gazing and not self._happy_on:
-            mood = "ask" if self.has_pending else ("work" if self._working else "idle")
-            if mood != self._mood:
-                self._mood = mood
-                self._face_i = 0
-                self._face_left = 0
-            if self._face_left <= 0:
-                pose, self._face_left = FACE[mood][self._face_i % len(FACE[mood])]
-                self._face_i += 1
-                self._show_pose(pose)
-            self._face_left -= FACE_STEP_MS
-        return True
 
     # ── Bubbel vastzetten ──────────────────────────────────────────
 
@@ -480,7 +473,8 @@ class FaceWindow(QWidget):
                                              self.bot_name)
             if self._working:
                 blocks += [role_panel("bot"), plain_block("dots")]
-            if not self.bubble.shows("say", block_text(blocks), True):
+            self._shown_text = block_text(blocks)
+            if not self.bubble.shows("say", self._shown_text, True):
                 self.bubble.show_blocks(blocks, "say", input=True)
             return
         if self._working:
@@ -491,10 +485,12 @@ class FaceWindow(QWidget):
                 self.bubble.show_blocks(blocks, "think")
             return
         blocks = conversation_blocks(messages, self.bot_name)
-        if blocks:
-            if not self.bubble.shows("say", block_text(blocks), False):
-                self.bubble.show_blocks(blocks, "say")
-        elif self.bubble.kind:
+        text = block_text(blocks)
+        if blocks and text != self._shown_text:
+            # Alleen nieuwe tekst haalt de bubbel terug; na het wegglijden blijft hij weg.
+            self._shown_text = text
+            self.bubble.show_blocks(blocks, "say")
+        elif not blocks and self.bubble.kind:
             self.bubble.place("")
 
     def _update_notification(self):

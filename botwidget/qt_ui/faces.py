@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, QUrl
 from PySide6.QtGui import QAction, QCursor, QDesktopServices
 from PySide6.QtWidgets import QApplication, QMenu
 
+from botwidget import startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -16,6 +17,7 @@ from botwidget.config import (
     UNLINKED_ID,
     UNLINKED_NAME,
     always_on_top,
+    check_updates,
     save_widget_config,
     widget_config,
 )
@@ -31,7 +33,10 @@ class Faces(QObject):
         self.faces = {}
         self._menu = None
         self.grok = {"connected": False, "bots": [], "note": "not tried yet"}
+        self.update_version = None
         threading.Thread(target=self._probe_grok, daemon=True).start()
+        if check_updates():
+            threading.Thread(target=self._probe_update, daemon=True).start()
         bots = {bot["id"]: bot for bot in list_bots()}
         ids = [agent_id for agent_id in enabled if agent_id in bots] or list(bots)[:1] or [UNLINKED_ID]
         for slot, agent_id in enumerate(ids):
@@ -64,6 +69,9 @@ class Faces(QObject):
     def _probe_grok(self):
         """Eén keer gbot vragen; geen lus, gbot waarschuwt daar zelf voor."""
         self.grok = grok_bot_status()
+
+    def _probe_update(self):
+        self.update_version = updates.newer_release()
 
     def grok_line(self) -> str:
         if self.grok.get("connected"):
@@ -116,6 +124,14 @@ class Faces(QObject):
         top.setChecked(always_on_top())
         top.toggled.connect(self._set_always_on_top)
         settings.addAction(top)
+        login = QAction("Start at login", settings, checkable=True)
+        login.setChecked(startup.is_enabled())
+        login.toggled.connect(startup.set_enabled)
+        settings.addAction(login)
+        check = QAction("Check for updates", settings, checkable=True)
+        check.setChecked(check_updates())
+        check.toggled.connect(lambda on: save_widget_config(check_updates=on))
+        settings.addAction(check)
         settings.addSeparator()
         settings.addAction("Quit Bot Widget").triggered.connect(QApplication.quit)
 
@@ -127,6 +143,9 @@ class Faces(QObject):
     def show_menu(self, face=None):
         """Het rechtsklikmenu op de muis. Een gewoon menu, dus het reageert direct."""
         menu = QMenu()
+        if self.update_version:
+            self._link(menu, f"Update available: v{self.update_version}", updates.DOWNLOAD_URL)
+            menu.addSeparator()
         self._platform_entries(menu)
         bots = list_bots()
         if bots:

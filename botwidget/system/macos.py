@@ -6,6 +6,7 @@ Het gezicht blijft onder gewone vensters, via het vensterniveau van het systeem.
 import ctypes
 import ctypes.util
 import os
+import plistlib
 
 from botwidget.system import posix
 
@@ -56,3 +57,23 @@ def send_behind_windows(win_id: int) -> None:
     send(None, ctypes.c_long)(window, objc.sel_registerName(b"setLevel:"), level)
     behavior = CAN_JOIN_ALL_SPACES | STATIONARY
     send(None, ctypes.c_ulong)(window, objc.sel_registerName(b"setCollectionBehavior:"), behavior)
+
+
+def _launch_agent() -> str:
+    return os.path.expanduser("~/Library/LaunchAgents/com.bot-widget.app.plist")
+
+
+def launch_at_login() -> bool:
+    return os.path.exists(_launch_agent())
+
+
+def set_launch_at_login(command: list, on: bool) -> None:
+    """Een LaunchAgent van de gebruiker; launchd leest hem bij de volgende aanmelding."""
+    path = _launch_agent()
+    if not on:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        plistlib.dump({"Label": "com.bot-widget.app", "ProgramArguments": command, "RunAtLoad": True}, fh)

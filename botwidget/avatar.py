@@ -89,9 +89,10 @@ EXPRESSIONS = {
 HUE_COLORS = {0: "rouge", 30: "orange", 55: "ambre", 100: "vert", 150: "vert",
               185: "turquoise", 215: "bleu", 245: "violet", 280: "violet", 320: "rose"}
 AUTO_COLORS = ("rouge", "orange", "ambre", "vert", "turquoise", "bleu", "violet", "rose")
-AVATAR_HEX = {"encre": "#0a0a0c", "brun": "#8b5e3c", "rouge": "#e8483f", "orange": "#f08a24",
-              "ambre": "#f0b429", "vert": "#3ecf8e", "turquoise": "#2fbfa0", "bleu": "#3b93f0",
-              "violet": "#8b5cf6", "rose": "#e152b0", "gris": "#a3a3a3", "creme": "#f1efe9"}
+# De kleuren van Grok Bot zelf: helder en verzadigd, zoals op x.ai/bot/marketplace.
+AVATAR_HEX = {"encre": "#0a0a0c", "brun": "#8b5e3c", "rouge": "#ff3e51", "orange": "#ff781c",
+              "ambre": "#ffaf38", "vert": "#00c972", "turquoise": "#1cc3b0", "bleu": "#2a92fe",
+              "violet": "#a97efe", "rose": "#ff5eb1", "gris": "#959595", "creme": "#f1efe9"}
 EYE_FILL = "#f9f9f9"
 
 
@@ -117,7 +118,8 @@ def avatar_profile(seed: str, hue: float | None) -> dict:
     else:
         colour = HUE_COLORS.get(int(hue), "gris")
     radii = SILHOUETTES[shape]
-    return {"shape": shape, "expression": expression, "hex": AVATAR_HEX[colour],
+    tilt = (stable_index(f"{seed}:tilt", 25) - 12) * 0.8
+    return {"shape": shape, "expression": expression, "hex": AVATAR_HEX[colour], "tilt": tilt,
             "top": radii[48], "bottom": radii[16]}
 
 
@@ -139,12 +141,26 @@ def silhouette_path(radii, radius: float, cx: float, cy: float) -> str:
     return "".join(out) + "Z"
 
 
+# Licht komt linksboven: een zachte glans daar en een zachte schaduw rechtsonder.
+DEPTH_DEFS = (
+    '<defs><radialGradient id="hl" cx="0.30" cy="0.22" r="0.80">'
+    '<stop offset="0" stop-color="#fff" stop-opacity="0.24"/>'
+    '<stop offset="0.6" stop-color="#fff" stop-opacity="0"/></radialGradient>'
+    '<radialGradient id="sh" cx="0.62" cy="0.68" r="0.75">'
+    '<stop offset="0.45" stop-color="#000" stop-opacity="0"/>'
+    '<stop offset="1" stop-color="#000" stop-opacity="0.14"/></radialGradient></defs>'
+)
+# De kop volgt de ogen maar voor een deel: dat verschil geeft diepte.
+PARALLAX = 0.35
+
+
 def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float = 0,
              seed: str = "", hue: float | None = None, lift: float = 0.0,
-             happy: float = 0.0) -> str:
+             happy: float = 0.0, lean: float = 0.0, squash: tuple = (1.0, 1.0)) -> str:
     """Het eigen silhouet en de eigen kleur van deze bot, met zijn twee ogen.
 
-    lift tilt het hele gezicht even op (de hop); dx/dy verzetten alleen de ogen.
+    dx/dy verzetten de ogen volledig en de kop voor een deel; lift tilt het hele
+    gezicht even op (de hop). lean kantelt de kop extra, squash rekt of drukt hem.
     happy 0 is de gewone oogvorm, 1 de blije (^^): de ogen faden over elkaar,
     zodat een halve stand een echte overgang is.
     """
@@ -159,10 +175,17 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
         ey = centre + dy
         ew = max(2.0, w * CIRCLE_R)
         eh = max(2.0, h * CIRCLE_R * scale * open_)
-        turn = f' transform="rotate({tilt + (converge * 0):.1f} {ex:.2f} {ey:.2f})"' if tilt else ""
-        fade = f' opacity="{1 - happy:.2f}"' if happy else ""
-        eyes.append(f'<rect x="{ex - ew / 2:.2f}" y="{ey - eh / 2:.2f}" width="{ew:.2f}"'
-                    f' height="{eh:.2f}" rx="{min(ew, eh) / 2:.2f}" fill="{EYE_FILL}"{turn}{fade}/>')
+        turn = f' transform="rotate({tilt:.1f} {ex:.2f} {ey:.2f})"' if tilt else ""
+        fade = 1 - happy
+
+        def pill(offset: float, fill: str, opacity: float) -> str:
+            return (f'<rect x="{ex - ew / 2:.2f}" y="{ey - eh / 2 + offset:.2f}" width="{ew:.2f}"'
+                    f' height="{eh:.2f}" rx="{min(ew, eh) / 2:.2f}" fill="{fill}"'
+                    f' opacity="{opacity:.2f}"{turn}/>')
+
+        if fade > 0.01:
+            eyes.append(pill(1.3, "#000", 0.14 * fade))
+            eyes.append(pill(0, EYE_FILL, fade))
         if happy:
             # Blij oog: een ^ van oor tot oor, in dezelfde kleur als de ogen.
             stroke = max(2.2, ew * 0.26)
@@ -172,16 +195,17 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
                         f' stroke="{EYE_FILL}" stroke-width="{stroke:.2f}"'
                         f' stroke-linecap="round" opacity="{happy:.2f}"/>')
     body = silhouette_path(SILHOUETTES[profile["shape"]], CIRCLE_R, centre, centre)
-    inner = (
-        # Lichte ring: het donkere vlak valt anders weg op een donker bureaublad.
-        f'<path d="{body}" fill="{profile["hex"]}" stroke="#f2f2f2" stroke-width="2.5"/>'
-        + "".join(eyes)
-    )
-    if lift:
-        inner = f'<g transform="translate(0 -{lift:.2f})">{inner}</g>'
+    head = (f'<path d="{body}" fill="{profile["hex"]}"/>'
+            f'<path d="{body}" fill="url(#sh)"/><path d="{body}" fill="url(#hl)"/>')
+    sx, sy = squash
+    pose = (f'translate({dx * PARALLAX:.2f} {dy * PARALLAX - lift:.2f})'
+            f' rotate({profile["tilt"] + lean:.2f} {centre} {centre})'
+            f' translate({centre} {centre}) scale({sx:.4f} {sy:.4f}) translate({-centre} {-centre})')
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{AVATAR_SIZE}" height="{AVATAR_SIZE}">'
-        + inner
+        + DEPTH_DEFS
+        + f'<g transform="{pose}">{head}'
+        + f'<g transform="translate({-dx * PARALLAX:.2f} {-dy * PARALLAX:.2f})">{"".join(eyes)}</g></g>'
         + "</svg>"
     )
 

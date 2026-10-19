@@ -24,3 +24,30 @@ def data_home() -> str:
 def send_behind_windows(win_id: int) -> None:
     # Qt zet het venster zelf onderaan (HWND_BOTTOM).
     pass
+
+
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def launch_at_login() -> bool:
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+            winreg.QueryValueEx(key, "BotWidget")
+    except OSError:
+        return False
+    return True
+
+
+def set_launch_at_login(command: list, on: bool) -> None:
+    """Een waarde onder Run in het register van de gebruiker."""
+    import subprocess
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        if on:
+            winreg.SetValueEx(key, "BotWidget", 0, winreg.REG_SZ, subprocess.list2cmdline(command))
+        else:
+            try:
+                winreg.DeleteValue(key, "BotWidget")
+            except OSError:
+                pass

@@ -24,9 +24,16 @@ botwidget
 - While the bot works the bubble turns into a thought cloud
 - Drag the face to move it, it bounces off screen edges
 - Right-click the face to see which bot apps were found, switch bots on and off, and reach Settings
-- Settings holds the sound and window options, and Quit
+- Settings holds sound, window stacking, start at login and update checks, and Quit
 
 The widget needs OpenBot or Grok Bot. Without either, the face says so and links to both.
+
+## Updates
+
+On each start the widget asks GitHub whether a newer release exists, and the right-click menu then shows a link to the download page.
+
+- The request is anonymous and sends no data about you beyond what any web request carries
+- Turn it off under Settings, Check for updates
 
 ## Develop
 
@@ -41,3 +48,16 @@ uv venv && uv pip install -e .
 - Everything that differs per operating system lives in `botwidget/system/`, one module per OS with the same function names
 - Everything that touches Qt lives in `botwidget/qt_ui/`
 - `BOT_WIDGET_OPENBOT_DIR` points the widget at another OpenBot data folder, handy for testing
+
+## Signing the downloads
+
+Unsigned apps make macOS and Windows warn on first launch. The release workflow signs them as soon as certificates exist as repository secrets.
+
+```sh
+gh secret set MACOS_CERTIFICATE < certificate.p12.base64
+```
+
+- macOS needs MACOS_CERTIFICATE (a base64 Developer ID .p12), MACOS_CERTIFICATE_PASSWORD and MACOS_SIGN_IDENTITY
+- Notarization also needs APPLE_ID, APPLE_TEAM_ID and APPLE_APP_PASSWORD
+- Windows needs WINDOWS_CERTIFICATE (a base64 .pfx) and WINDOWS_CERT_PASSWORD
+- Without these secrets the workflow still builds, just unsigned

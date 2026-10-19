@@ -40,3 +40,24 @@ def data_home() -> str:
 def send_behind_windows(win_id: int) -> None:
     # De vensterbeheerder honoreert Qt's StaysOnBottomHint.
     pass
+
+
+def _autostart_file() -> str:
+    return os.path.join(data_home(), "autostart", "botwidget.desktop")
+
+
+def launch_at_login() -> bool:
+    return os.path.exists(_autostart_file())
+
+
+def set_launch_at_login(command: list, on: bool) -> None:
+    """Een .desktop-bestand in de autostart-map van de gebruiker."""
+    path = _autostart_file()
+    if not on:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    quoted = " ".join('"' + part.replace('"', '\\"') + '"' if " " in part else part for part in command)
+    with open(path, "w") as fh:
+        fh.write(f"[Desktop Entry]\nType=Application\nName=Bot Widget\nExec={quoted}\nTerminal=false\n")

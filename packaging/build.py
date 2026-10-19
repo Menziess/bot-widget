@@ -5,16 +5,21 @@ Resultaat in dist/:
   macOS    BotWidget-macOS.zip          (Bot Widget.app, vindbaar via Spotlight)
   Windows  BotWidget-Windows-Setup.exe  (Startmenu-item; zip als Inno Setup ontbreekt)
   Linux    BotWidget-Linux.tar.gz       (met install.sh voor een menu-item)
+
+Ondertekenen gebeurt alleen als de geheimen in de omgeving staan:
+  macOS    MACOS_SIGN_IDENTITY, plus APPLE_ID, APPLE_TEAM_ID en APPLE_APP_PASSWORD voor notarisatie
+  Windows  WINDOWS_CERT_FILE en WINDOWS_CERT_PASSWORD
+Zonder die geheimen blijft het een niet-ondertekende build.
 """
 
+import glob
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import sys
 import tarfile
-
-import tomllib
 
 NAME = "Bot Widget"
 BUNDLE_ID = "com.bot-widget.app"
@@ -27,8 +32,8 @@ UNUSED_QT = ("QtWebEngineCore", "QtWebEngineWidgets", "QtWebChannel", "QtQml", "
 
 
 def version() -> str:
-    with open(os.path.join(ROOT, "pyproject.toml"), "rb") as fh:
-        return tomllib.load(fh)["project"]["version"]
+    with open(os.path.join(ROOT, "botwidget", "__init__.py")) as fh:
+        return re.search(r'__version__ = "([^"]+)"', fh.read()).group(1)
 
 
 def run(*cmd, **kwargs):
@@ -62,11 +67,37 @@ def mac():
     plist.update({"LSUIElement": True, "CFBundleShortVersionString": version(), "CFBundleVersion": version()})
     with open(plist_path, "wb") as fh:
         plistlib.dump(plist, fh)
-    # Zonder (minstens een ad-hoc) handtekening start de app niet op Apple Silicon.
-    run("codesign", "--force", "--deep", "--sign", "-", app)
     out = os.path.join(DIST, "BotWidget-macOS.zip")
+    identity = os.environ.get("MACOS_SIGN_IDENTITY")
+    if not identity:
+        # Zonder (minstens een ad-hoc) handtekening start de app niet op Apple Silicon.
+        run("codesign", "--force", "--deep", "--sign", "-", app)
+        run("ditto", "-c", "-k", "--keepParent", app, out)
+        return out
+    run("codesign", "--force", "--deep", "--options", "runtime", "--timestamp",
+        "--entitlements", os.path.join(ROOT, "packaging", "entitlements.plist"), "--sign", identity, app)
     run("ditto", "-c", "-k", "--keepParent", app, out)
+    apple = {key: os.environ.get(key) for key in ("APPLE_ID", "APPLE_TEAM_ID", "APPLE_APP_PASSWORD")}
+    if all(apple.values()):
+        run("xcrun", "notarytool", "submit", out, "--apple-id", apple["APPLE_ID"],
+            "--team-id", apple["APPLE_TEAM_ID"], "--password", apple["APPLE_APP_PASSWORD"], "--wait")
+        run("xcrun", "stapler", "staple", app)
+        os.remove(out)
+        run("ditto", "-c", "-k", "--keepParent", app, out)
     return out
+
+
+def sign_windows(path: str):
+    """Ondertekent met signtool als het certificaat in de omgeving staat."""
+    cert, password = os.environ.get("WINDOWS_CERT_FILE"), os.environ.get("WINDOWS_CERT_PASSWORD")
+    if not (cert and password):
+        return
+    found = sorted(glob.glob(r"C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe"))
+    signtool = shutil.which("signtool") or (found[-1] if found else None)
+    if not signtool:
+        raise SystemExit("signtool not found")
+    run(signtool, "sign", "/f", cert, "/p", password, "/fd", "sha256",
+        "/tr", "http://timestamp.digicert.com", "/td", "sha256", path)
 
 
 def windows():
@@ -75,7 +106,9 @@ def windows():
     if iscc:
         run(iscc, f"/DVersion={version()}", f"/DSourceDir={folder}", f"/DOutputDir={DIST}",
             os.path.join(ROOT, "packaging", "windows.iss"))
-        return os.path.join(DIST, "BotWidget-Windows-Setup.exe")
+        installer = os.path.join(DIST, "BotWidget-Windows-Setup.exe")
+        sign_windows(installer)
+        return installer
     return shutil.make_archive(os.path.join(DIST, "BotWidget-Windows"), "zip", DIST, NAME)
 
 

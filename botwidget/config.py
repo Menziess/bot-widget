@@ -52,12 +52,17 @@ WORK_POLL_INTERVAL = 1  # seconde, zolang de beurt loopt
 CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
-SETTING_KEYS = ("sound", "always_on_top")
+SETTING_KEYS = ("sound", "always_on_top", "check_updates")
 
 
 def always_on_top() -> bool:
     """Standaard boven andere vensters, zodat het gezicht altijd te zien is."""
     return widget_config().get("always_on_top") is not False
+
+
+def check_updates() -> bool:
+    """Standaard één keer per start vragen of er een nieuwere versie is."""
+    return widget_config().get("check_updates") is not False
 
 
 def widget_config() -> dict:

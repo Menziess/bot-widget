@@ -4,14 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "botwidget"
-version = "0.1.0"
-description = "Animated desktop bot face with a speech bubble and chat window for OpenBot."
+dynamic = ["version"]
+description = "Animated desktop bot face with a speech bubble for OpenBot and Grok Bot."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["PySide6-Essentials>=6.6"]
 
 [project.scripts]
 botwidget = "botwidget.qt_ui.app:main"
+
+[tool.hatch.version]
+path = "botwidget/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["botwidget"]
