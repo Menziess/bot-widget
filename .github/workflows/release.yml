@@ -20,7 +20,9 @@ jobs:
             artifact: BotWidget-macOS.zip
           - os: windows-latest
             artifact: BotWidget-Windows-Setup.exe
-          - os: ubuntu-latest
+          # De oudste ondersteunde Ubuntu: een Linux-build draait op elke distro met minstens
+          # dezelfde glibc, dus bouwen op een oude geeft het meeste bereik.
+          - os: ubuntu-22.04
             artifact: BotWidget-Linux.tar.gz
     runs-on: ${{ matrix.os }}
     # Ondertekenen gebeurt alleen als deze geheimen bestaan; zonder blijft het een gewone build.

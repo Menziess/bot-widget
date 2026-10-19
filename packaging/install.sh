@@ -20,3 +20,16 @@ Categories=Utility;
 Terminal=false
 DESKTOP
 echo "Installed. Search for 'Bot Widget' in your app menu, or run: bot-widget"
+
+# Ontbrekende systeembibliotheken nu melden, niet als een crash bij de eerste start.
+if command -v ldd >/dev/null 2>&1; then
+  plugin="$target/app/_internal/PySide6/Qt/plugins/platforms/libqxcb.so"
+  missing="$(LD_LIBRARY_PATH="$target/app/_internal:$target/app/_internal/PySide6/Qt/lib" ldd "$plugin" 2>&1 | grep 'not found')"
+  if [ -n "$missing" ]; then
+    echo
+    echo "Warning: this system is missing something Bot Widget needs:"
+    echo "$missing"
+    echo "On Debian or Ubuntu try: sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-xkb1 libegl1 libgl1"
+    echo "If the lines mention GLIBC, this system is too old for this build."
+  fi
+fi
