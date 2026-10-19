@@ -863,6 +863,21 @@ class Sending(unittest.TestCase):
             self.assertIsNone(box.current())
             self.assertEqual(server.seen[0]["clientMessageId"], server.seen[1]["clientMessageId"])
 
+    def test_a_200_body_that_is_not_an_object_is_a_refusal(self):
+        for body in (b"null", b"[]", b"3", b'"hoi"'):
+            with self.subTest(body=body):
+                with _FlakyApi([200], bodies=[body]):
+                    result = openbot.api_post("/v1/agents/me/messages",
+                                              {"text": "hi", "clientMessageId": "abc"})
+                    self.assertFalse(result.ok)
+                    self.assertEqual(result.status, 200)
+                    self.assertEqual(result.error, "unexpected answer")
+                    self.assertFalse(result.retryable, "a body we cannot use will not get better")
+                    box = delivery.Outbox()
+                    box.add("hi", "abc")
+                    self.assertIsNone(box.failed("abc", result.retryable), "the message is dropped")
+                    self.assertIsNone(box.current())
+
     def test_a_refusal_from_the_api_is_not_retried(self):
         with _FlakyApi([401]) as server:
             result = openbot.api_post("/v1/agents/me/messages",

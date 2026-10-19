@@ -13,10 +13,14 @@ from botwidget.config import API_URL, DB_FILE, HEADERS_FILE, OPENBOT_DIR, read_f
 
 
 class ApiResult(NamedTuple):
-    """Outcome of a POST: data on success, otherwise the HTTP status (None = no answer)."""
+    """Outcome of a POST: data on success, otherwise the HTTP status (None = no answer).
+
+    retry says whether the same message may be tried again; None means the status decides.
+    """
     data: dict | None
     status: int | None
     error: str
+    retry: bool | None = None
 
     @property
     def ok(self) -> bool:
@@ -26,9 +30,8 @@ class ApiResult(NamedTuple):
     def retryable(self) -> bool:
         """A dropped link, a timeout, a server error or an unreadable answer can heal;
         a refusal will not."""
-        if self.status == 200:
-            # Only asked after a failure, so this is a body that was not JSON: a blip.
-            return True
+        if self.retry is not None:
+            return self.retry
         return self.status is None or self.status >= 500 or self.status in (408, 429)
 
 
@@ -63,14 +66,21 @@ def api_post(path: str, body: dict) -> ApiResult:
     req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            return ApiResult(json.loads(resp.read().decode()), resp.status, "")
+            body, status = resp.read(), resp.status
     except urllib.error.HTTPError as err:
         err.close()
         return ApiResult(None, err.code, f"HTTP {err.code}")
     except (urllib.error.URLError, OSError) as err:
         return ApiResult(None, None, str(err))
-    except json.JSONDecodeError:
-        return ApiResult(None, 200, "unreadable answer")
+    try:
+        answer = json.loads(body.decode())
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        # Not JSON at all: the connection worked, so this is a blip, not a refusal.
+        return ApiResult(None, status, "unreadable answer", retry=True)
+    if not isinstance(answer, dict):
+        # A body that parses but is not the object we asked for will not get better.
+        return ApiResult(None, status, "unexpected answer", retry=False)
+    return ApiResult(answer, status, "")
 
 
 GBOT = shutil.which("gbot") or os.path.expanduser("~/.local/bin/gbot")
