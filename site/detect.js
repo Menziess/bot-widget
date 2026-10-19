@@ -1,4 +1,4 @@
-// Welk besturingssysteem is dit? Geeft "mac", "windows", "linux" of "other" (telefoon, tablet).
+// Which operating system is this? Returns "mac", "windows", "linux" or "other" (phone, tablet).
 function detectOS(userAgent, platform) {
   var text = (platform + " " + userAgent).toLowerCase();
   if (/iphone|ipad|ipod|android/.test(text)) return "other";

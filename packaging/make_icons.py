@@ -1,7 +1,7 @@
-"""Het gezicht als app-icoon, in alle formaten die de besturingssystemen vragen.
+"""The face as app icon, in all formats the operating systems ask for.
 
-Gebruik: python packaging/make_icons.py <uitvoermap>
-Schrijft icon.png, icon.ico en (alleen op macOS) icon.icns.
+Usage: python packaging/make_icons.py <output folder>
+Writes icon.png, icon.ico and (macOS only) icon.icns.
 """
 
 import os

@@ -1,4 +1,4 @@
-"""De spraakwolk als SVG: maten en tekenen op basis van gebroken regels."""
+"""The speech bubble as SVG: sizes and drawing based on broken lines."""
 
 from botwidget.avatar import xml_escape
 from botwidget.theme import (
@@ -35,7 +35,7 @@ from botwidget.theme import (
 
 
 def line_height(block: dict) -> int:
-    """Regelhoogte in de wolk: tekst, witregel, streep, puntjes of coderegel."""
+    """Line height in the bubble: text, blank line, rule, dots or code line."""
     if block["kind"] == "gap":
         return 10
     if block["kind"] == "rule":
@@ -48,7 +48,7 @@ def line_height(block: dict) -> int:
 
 
 def bubble_height(panels: list) -> int:
-    """Hoogte van het hele wolkvenster, inclusief rand voor schaduw en staart."""
+    """Height of the whole bubble window, including the margin for shadow and tail."""
     total = 2 * PAD_BODY + PAD_SVG + TAIL_ROOM + GAP_PANEL * max(0, len(panels) - 1)
     for panel in panels:
         total += 2 * PAD_PANEL_Y
@@ -58,19 +58,19 @@ def bubble_height(panels: list) -> int:
 
 
 def content_height(panels: list) -> int:
-    """Hoogte van de vlakken samen, zonder de rand en het staartje."""
+    """Height of the panels together, without the margin and the tail."""
     return bubble_height(panels) - PAD_SVG - TAIL_ROOM - 2 * PAD_BODY
 
 
 def bubble_width(panels: list) -> int:
-    """Breedte van het tekstvlak."""
+    """Width of the text area."""
     return max((panel["text_w"] for panel in panels), default=16) + 2 * PAD_PANEL_X
 
 
 def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
-    """De vlakken en hun tekst, met de linkerbovenhoek van het vlak op (ox, oy).
+    """The panels and their text, with the top left corner of the panel at (ox, oy).
 
-    Alleen het uservlak krijgt een vulling; bottekst staat op de witte wolk.
+    Only the user panel gets a fill; bot text sits on the white bubble.
     """
     out, y = [], oy
     for panel in panels:
@@ -78,7 +78,7 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
         ink = SAND_ON_USER if user else SAND_INK
         soft = SAND_ON_USER_SOFT if user else SAND_INK_SOFT
         hair = SAND_LINE_USER if user else SAND_HAIRLINE
-        # Op het donkere uservlak is het accentblauw onleesbaar; daar blijft wit.
+        # On the dark user panel the accent blue is unreadable; it stays white there.
         link_ink = SAND_ON_USER if user else SAND_ACCENT
         chip = SAND_CHIP_USER if user else SAND_CHIP
         lines = panel["lines"]
@@ -92,7 +92,7 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
             tops.append(acc)
             acc += h
         n = 0
-        while n < len(lines):  # een codeblok in een eigen vlak
+        while n < len(lines):  # a code block in a panel of its own
             if not lines[n].get("code"):
                 n += 1
                 continue
@@ -157,7 +157,7 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
 
 
 def dots_svg(x: float, y: float, phase: float, ink: str) -> str:
-    """Drie denkpuntjes; phase laat de golf door de bollen lopen."""
+    """Three thinking dots; phase runs the wave through the dots."""
     out = []
     for i in range(3):
         wave = (phase - i * 0.18) % 1.0
@@ -169,7 +169,7 @@ def dots_svg(x: float, y: float, phase: float, ink: str) -> str:
 
 
 def bubble_text_svg(panels: list, box_w: int) -> str:
-    """Wat er scrollt: de vlakken en hun tekst op een doorzichtige achtergrond."""
+    """What scrolls: the panels and their text on a transparent background."""
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{box_w}"'
         f' height="{content_height(panels)}">' + panel_svg(panels, box_w) + "</svg>"
@@ -182,7 +182,7 @@ def _bubble_canvas(body_w: int, body_h: int, inner: str) -> str:
 
 
 def _bubble_tail(tip: float, edge: float, up: bool, grow: float) -> str:
-    """Het staartje als pad; edge is de rand waar het uit komt, grow de uitstulping."""
+    """The tail as a path; edge is the edge it comes out of, grow the bulge."""
     s = -1 if up else 1
     return (f'M {tip - 6} {edge + s * (grow - 1)} C {tip - 4} {edge + s * (grow - 1)}'
             f' {tip - 1.5} {edge + s * (grow + 6)} {tip} {edge + s * (grow + 7)}'
@@ -196,8 +196,9 @@ def _bubble_tip(body_w: int, tip_x: float | None) -> float:
 
 def bubble_shadow_svg(body_w: int, body_h: int, tip_x: float | None = None,
                       tip_up: bool = False) -> str:
-    """De schaduw, scherp getekend; de toolkit vervaagt hem zelf (SVG-filters
-    worden niet overal ondersteund)."""
+    """The shadow, drawn sharp; the toolkit blurs it itself (SVG filters
+    are not supported everywhere).
+    """
     x0, y0 = PAD_SVG, PAD_SVG
     edge = y0 if tip_up else y0 + body_h
     tail = _bubble_tail(_bubble_tip(body_w, tip_x), edge, tip_up, 3)
@@ -210,10 +211,10 @@ def bubble_shadow_svg(body_w: int, body_h: int, tip_x: float | None = None,
 
 def bubble_body_svg(body_w: int, body_h: int, tip_x: float | None = None,
                     tip_up: bool = False) -> str:
-    """Het witte vlak met hairline en het staartje naar de kop.
+    """The white area with hairline and the tail toward the head.
 
-    tip_x is de kop in beeldcoordinaten; het staartje komt uit de onderrand op
-    die x (bovenrand als tip_up), dus het volgt het hoofd waar het heen gaat.
+    tip_x is the head in image coordinates; the tail comes out of the bottom edge at
+    that x (top edge with tip_up), so it follows the head wherever it goes.
     """
     x0, y0 = PAD_SVG, PAD_SVG
     edge = y0 if tip_up else y0 + body_h
@@ -225,18 +226,18 @@ def bubble_body_svg(body_w: int, body_h: int, tip_x: float | None = None,
         f'<path d="{tail}" fill="{SAND_BUBBLE}"/>'))
 
 
-# ── Denkwolk ───────────────────────────────────────────────────────
-# Een wolk van bolletjes rond het vlak, met drie kleiner wordende bolletjes naar
-# de kop toe. Dezelfde canvasmaat als de praatwolk, dus het venster rekent gelijk.
+# ── Thinking cloud ──────────────────────────────────────────────────
+# A cloud of circles around the area, with three shrinking circles toward the head. The same canvas
+# size as the speech bubble, so the window sizes the same.
 CLOUD_R = 13.0
 CLOUD_INSET = 6.0
 CLOUD_STEP = 24.0
-# (straal, afstand van het middelpunt tot de rand van het vlak)
+# (radius, distance from the centre to the edge of the area)
 CLOUD_TRAIL = ((5.0, 10.0), (3.2, 17.0), (2.0, 20.0))
 
 
 def _cloud_shapes(body_w: int, body_h: int, tip_x: float | None, tip_up: bool, grow: float = 0.0):
-    """Cirkels (cx, cy, r) en het binnenvlak (x, y, w, h) van de wolk."""
+    """Circles (cx, cy, r) and the inner area (x, y, w, h) of the cloud."""
     x0, y0 = PAD_SVG + CLOUD_INSET, PAD_SVG + CLOUD_INSET
     w, h = body_w - 2 * CLOUD_INSET, body_h - 2 * CLOUD_INSET
     nx, ny = max(2, round(w / CLOUD_STEP)), max(2, round(h / CLOUD_STEP))
@@ -261,7 +262,7 @@ def _circles_svg(circles: list, extra: str) -> str:
 
 def cloud_shadow_svg(body_w: int, body_h: int, tip_x: float | None = None,
                      tip_up: bool = False) -> str:
-    """De schaduw van de denkwolk, scherp getekend; de toolkit vervaagt hem."""
+    """The shadow of the thinking cloud, drawn sharp; the toolkit blurs it."""
     circles, (x, y, w, h) = _cloud_shapes(body_w, body_h, tip_x, tip_up, grow=SHADOW_GROW)
     fill = f'fill="#000" opacity="{SHADOW_ALPHA}"'
     return _bubble_canvas(body_w, body_h, (
@@ -272,8 +273,9 @@ def cloud_shadow_svg(body_w: int, body_h: int, tip_x: float | None = None,
 
 def cloud_body_svg(body_w: int, body_h: int, tip_x: float | None = None,
                    tip_up: bool = False) -> str:
-    """De witte denkwolk met hairline. Eerst alles met rand, dan alles zonder
-    rand eroverheen, zodat alleen de buitenlijn overblijft."""
+    """The white thinking cloud with hairline. First everything with an outline, then
+    everything without one over it, so only the outer line remains.
+    """
     circles, (x, y, w, h) = _cloud_shapes(body_w, body_h, tip_x, tip_up)
     rect = f'<rect x="{x}" y="{y}" width="{w}" height="{h}"'
     outline = f'fill="{SAND_BUBBLE}" stroke="{SAND_HAIRLINE}" stroke-width="2"'

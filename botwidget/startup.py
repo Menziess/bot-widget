@@ -1,4 +1,4 @@
-"""Mee starten bij het aanmelden; de OS-laag weet hoe, hier staat wat er gestart wordt."""
+"""Starting at login; the OS layer knows how, here is what gets started."""
 
 import os
 import sys
@@ -10,16 +10,16 @@ PACKAGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def from_checkout() -> bool:
-    """Draait dit uit een git-checkout (ontwikkeling) in plaats van uit een installatie?"""
+    """Is this running from a git checkout (development) rather than an installation?"""
     return os.path.isdir(os.path.join(PACKAGE_ROOT, ".git"))
 
 
 def launch_command() -> list:
-    """De gebundelde app start zichzelf; anders start Python het pakket."""
+    """The packaged app starts itself; otherwise Python starts the package."""
     if getattr(sys, "frozen", False):
         return [sys.executable]
     command = [sys.executable, "-m", "botwidget"]
-    # Uit een checkout start de ontwikkelmodus: die herstart zodra de code verandert.
+    # From a checkout the dev mode starts: it restarts as soon as the code changes.
     return command + ["--dev"] if from_checkout() else command
 
 
@@ -32,9 +32,9 @@ def set_enabled(on: bool) -> None:
 
 
 def apply_default() -> bool:
-    """De eerste keer meestarten bij het aanmelden aanzetten; True als dit de eerste keer was.
+    """Turn on starting at login the first time; True if this was the first time.
 
-    Daarna blijft de keuze van de gebruiker staan, ook als die hem uitzet.
+    After that the user's choice stays, even if they turn it off.
     """
     if widget_config().get("login_default_applied") is True:
         return False

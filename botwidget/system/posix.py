@@ -1,4 +1,4 @@
-"""Gedeeld door Linux en macOS: processen en losse geluidsopdrachten."""
+"""Shared by Linux and macOS: processes and plain sound commands."""
 
 import os
 import subprocess
@@ -6,7 +6,7 @@ import tempfile
 
 
 def process_cmdline(pid: int) -> bytes:
-    """Commandoregel van pid, of leeg als het proces niet bestaat of onleesbaar is."""
+    """Command line of pid, or empty if the process does not exist or is unreadable."""
     try:
         return subprocess.run(["ps", "-p", str(pid), "-o", "command="],
                               capture_output=True, timeout=2).stdout
@@ -15,7 +15,7 @@ def process_cmdline(pid: int) -> bytes:
 
 
 def spawn_first(candidates) -> None:
-    """Start de eerste opdracht die bestaat; stil als geen enkele lukt."""
+    """Start the first command that exists; silent if none succeeds."""
     for cmd in candidates:
         try:
             subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -25,7 +25,7 @@ def spawn_first(candidates) -> None:
 
 
 def spawn_script(script: str, *args: str) -> None:
-    """Een shellscript dat blijft draaien nadat de widget is afgesloten."""
+    """A shell script that keeps running after the widget has quit."""
     handle, path = tempfile.mkstemp(suffix=".sh", prefix="botwidget-")
     with os.fdopen(handle, "w") as fh:
         fh.write(script)

@@ -1,4 +1,4 @@
-"""Markdown naar blokken en panelen; puur tekst, geen toolkit."""
+"""Markdown to blocks and panels; pure text, no toolkit."""
 
 import re
 from urllib.parse import urlparse
@@ -16,7 +16,7 @@ MD_RULE_RE = re.compile(r"^([-*_]\s*){3,}$")
 
 
 def url_host(url: str) -> str:
-    """Alleen de host van een link. Links zijn tekst, niet klikbaar."""
+    """Only the host of a link. Links are text, not clickable."""
     try:
         host = urlparse(url).netloc or url
     except ValueError:
@@ -25,7 +25,7 @@ def url_host(url: str) -> str:
 
 
 def md_inline(text: str) -> list:
-    """Markdown-inline naar (stuk, stijl); stijl is '', 'b', 'i', 'code', 'link' of 'dim'."""
+    """Inline markdown to (piece, style); style is '', 'b', 'i', 'code', 'link' or 'dim'."""
     out, pos = [], 0
     for m in MD_INLINE_RE.finditer(text):
         if m.start() > pos:
@@ -48,7 +48,7 @@ def md_inline(text: str) -> list:
 
 
 def md_blocks(text: str) -> list:
-    """Markdown naar blokken van een logische regel."""
+    """Markdown to blocks of one logical line."""
     out, code, code_lines = [], False, []
     for raw in text.split("\n"):
         line = raw.rstrip()
@@ -111,12 +111,12 @@ def plain_block(kind: str) -> dict:
 
 
 def code_block(lines: list) -> dict:
-    """Een heel codeblok in een keer: monospace, in een eigen vlak."""
+    """A whole code block at once: monospace, in a panel of its own."""
     return {"kind": "code", "lines": lines}
 
 
 def block_text(blocks: list) -> str:
-    """De platte tekst van blokken, om te zien of er iets nieuws staat."""
+    """The plain text of blocks, to see whether anything new is in there."""
     out = []
     for block in blocks:
         if block.get("kind") == "code":
@@ -130,14 +130,14 @@ def block_text(blocks: list) -> str:
 
 
 def role_panel(role: str) -> dict:
-    """Begin van een nieuw vlak: user is donker, bot staat op de witte wolk."""
+    """Start of a new panel: user is dark, bot sits on the white bubble."""
     return {"kind": "panel", "role": role, "size": 0, "indent": 0,
             "prefix": "", "grey": False, "chunks": []}
 
 
 def conversation_blocks(messages: list, bot_name: str, limit: int = 6,
                         max_chars: int = 800) -> list:
-    """De laatste beurten als panelen: per beurt een rolletje en de markdown."""
+    """The last turns as panels: per turn a small role label and the markdown."""
     turns, total = [], 0
     for msg in reversed(messages or []):
         text = (msg.get("text") or "").strip()
@@ -158,7 +158,7 @@ def conversation_blocks(messages: list, bot_name: str, limit: int = 6,
 
 
 def split_panels(blocks: list) -> list:
-    """Blokken in panelen. Zonder paneelmarkering wordt het een bot-paneel."""
+    """Blocks into panels. Without a panel marker it becomes a bot panel."""
     panels = []
     for block in blocks:
         if block.get("kind") == "panel":

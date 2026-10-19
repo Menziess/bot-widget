@@ -1,6 +1,6 @@
-"""Linux: X11 via XWayland, /proc, canberra of pipewire voor geluid.
+"""Linux: X11 via XWayland, /proc, canberra or pipewire for sound.
 
-Het gezicht blijft onder gewone vensters, zoals een bureaubladwidget.
+The face stays below normal windows, like a desktop widget.
 """
 
 import os
@@ -12,10 +12,9 @@ SOUND_FILE = "/usr/share/sounds/freedesktop/stereo/complete.oga"
 
 
 def prepare_gui_environment() -> None:
-    # X11 (XWayland) en niet Wayland: op Wayland mag een gewoon venster zijn
-    # positie en stapelorde niet zelf bepalen, dus dan zakt de widget achter
-    # andere vensters en kan hij niet slepen. Via XWayland werken move en
-    # slepen wel.
+    # X11 (XWayland) rather than Wayland: on Wayland a normal window may not decide its own position
+    # and stacking order, so the widget would sink behind other windows and could not be dragged.
+    # Via XWayland moving and dragging do work.
     if os.environ.get("DISPLAY"):
         os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
 
@@ -34,12 +33,12 @@ def play_notification() -> None:
 
 
 def data_home() -> str:
-    """Waar apps hun eigen map neerzetten; OpenBot en deze widget delen hem."""
+    """Where apps put their own folder; OpenBot and this widget share it."""
     return os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
 
 
 def send_behind_windows(win_id: int) -> None:
-    # De vensterbeheerder honoreert Qt's StaysOnBottomHint.
+    # The window manager honours Qt's StaysOnBottomHint.
     pass
 
 
@@ -52,7 +51,7 @@ def launch_at_login() -> bool:
 
 
 def set_launch_at_login(command: list, on: bool) -> None:
-    """Een .desktop-bestand in de autostart-map van de gebruiker."""
+    """A .desktop file in the user's autostart folder."""
     path = _autostart_file()
     if not on:
         if os.path.exists(path):
@@ -70,7 +69,7 @@ def set_launch_at_login(command: list, on: bool) -> None:
 
 UPDATE_ASSET = "BotWidget-Linux.tar.gz"
 
-# Wacht tot de widget weg is, draai het install.sh uit het archief en start opnieuw.
+# Wait until the widget is gone, run install.sh from the archive and start again.
 _UPDATE_SCRIPT = """#!/bin/sh
 archive="$1"; pid="$2"
 work="$(mktemp -d)"
@@ -83,7 +82,7 @@ nohup "$HOME/.local/share/botwidget/app/Bot Widget" >/dev/null 2>&1 &
 
 
 def can_install_update() -> bool:
-    """Alleen de gebundelde app die via install.sh is neergezet."""
+    """Only the packaged app that was put in place by install.sh."""
     return getattr(sys, "frozen", False) and stable_app_command() is not None
 
 

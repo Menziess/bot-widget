@@ -1,7 +1,7 @@
 name: release
 
-# Een tag als v0.1.0 bouwt de apps en zet ze op GitHub Releases; handmatig starten bouwt alleen. De website linkt
-# naar releases/latest/download/<vaste naam>, dus de namen mogen niet veranderen.
+# A tag like v0.1.0 builds the apps and puts them on GitHub Releases; starting it by hand only builds.
+# The website links to releases/latest/download/<fixed name>, so the names must not change.
 on:
   push:
     tags: ["v*"]
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  bouwen:
+  build:
     strategy:
       fail-fast: false
       matrix:
@@ -20,12 +20,12 @@ jobs:
             artifact: BotWidget-macOS.zip
           - os: windows-latest
             artifact: BotWidget-Windows-Setup.exe
-          # De oudste ondersteunde Ubuntu: een Linux-build draait op elke distro met minstens
-          # dezelfde glibc, dus bouwen op een oude geeft het meeste bereik.
+          # The oldest supported Ubuntu: a Linux build runs on any distro with at least the
+          # same glibc, so building on an old one gives the widest reach.
           - os: ubuntu-22.04
             artifact: BotWidget-Linux.tar.gz
     runs-on: ${{ matrix.os }}
-    # Ondertekenen gebeurt alleen als deze geheimen bestaan; zonder blijft het een gewone build.
+    # Signing only happens when these secrets exist; without them it stays a plain build.
     env:
       MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Apple-certificaat in een tijdelijke sleutelhanger
+      - name: Apple certificate in a temporary keychain
         if: runner.os == 'macOS' && env.MACOS_CERTIFICATE != ''
         run: |
           keychain="$RUNNER_TEMP/signing.keychain-db"
@@ -57,20 +57,20 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$password" "$keychain"
           security list-keychains -d user -s "$keychain" login.keychain
 
-      - name: Windows-certificaat uitpakken
+      - name: Unpack the Windows certificate
         if: runner.os == 'Windows' && env.WINDOWS_CERTIFICATE != ''
         run: |
           $path = Join-Path $env:RUNNER_TEMP "certificate.pfx"
           [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
           "WINDOWS_CERT_FILE=$path" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Systeembibliotheken voor Qt
+      - name: System libraries for Qt
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 libdbus-1-3 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 libxcb-shape0
 
-      - name: Inno Setup voor het Windows-installatieprogramma
+      - name: Inno Setup for the Windows installer
         if: runner.os == 'Windows'
         run: |
           choco install innosetup -y --no-progress
@@ -100,8 +100,8 @@ jobs:
           path: dist/${{ matrix.artifact }}
           if-no-files-found: error
 
-  publiceren:
-    needs: bouwen
+  publish:
+    needs: build
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -109,8 +109,8 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
-      # De widget controleert elk gedownload bestand hiertegen voordat hij het installeert.
-      - name: Controlesommen
+      # The widget checks every downloaded file against this before installing it.
+      - name: Checksums
         run: cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:

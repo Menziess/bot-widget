@@ -1,4 +1,4 @@
-"""SVG en vervaging naar QPixmap; scherp op elk scherm (devicePixelRatio)."""
+"""SVG and blur to QPixmap; sharp on every screen (devicePixelRatio)."""
 
 import re
 
@@ -12,7 +12,7 @@ def _ratio() -> float:
     return max((screen.devicePixelRatio() for screen in QGuiApplication.screens()), default=1.0)
 
 
-# QtSvg kent #rrggbbaa niet; de SVG's gebruiken dat voor doorzichtige inkt.
+# QtSvg does not know #rrggbbaa; the SVGs use that for transparent ink.
 ALPHA_HEX = re.compile(r'(fill|stroke)="#([0-9a-fA-F]{6})([0-9a-fA-F]{2})"')
 
 
@@ -38,7 +38,7 @@ def svg_pixmap(svg: str) -> QPixmap:
 
 
 def blurred(pixmap: QPixmap, radius: float) -> QPixmap:
-    """Gaussische vervaging op een kopie; radius in logische px."""
+    """Gaussian blur on a copy; radius in logical px."""
     ratio = pixmap.devicePixelRatio()
     flat = QPixmap(pixmap)
     flat.setDevicePixelRatio(1.0)
@@ -60,7 +60,7 @@ def blurred(pixmap: QPixmap, radius: float) -> QPixmap:
 
 
 def stacked(*pixmaps: QPixmap) -> QPixmap:
-    """Pixmaps van gelijke maat over elkaar, de eerste onderaan."""
+    """Pixmaps of equal size on top of each other, the first at the bottom."""
     base = QPixmap(pixmaps[0])
     painter = QPainter(base)
     for pixmap in pixmaps[1:]:

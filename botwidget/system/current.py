@@ -1,8 +1,8 @@
-"""Kiest de module van het huidige besturingssysteem.
+"""Picks the module of the current operating system.
 
-Elke OS-module (linux, macos, windows) levert dezelfde functies; de rest van de
-app importeert ze alleen hier en kent geen sys.platform. De imports zijn statisch,
-zodat PyInstaller alle drie de modules ziet.
+Every OS module (linux, macos, windows) provides the same functions; the rest of
+the app imports them only here and knows no sys.platform. The imports are static,
+so PyInstaller sees all three modules.
 """
 
 import sys

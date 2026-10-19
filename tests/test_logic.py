@@ -1,7 +1,7 @@
-"""Logica zonder scherm: eye_aim, markdown en het gezicht uit de botdefinitie.
+"""Logic without a screen: eye_aim, markdown and the face from the bot definition.
 
-Geen Gtk-venster: alleen rekenen en parsen, zodat dit ook op een CI-machine
-zonder beeldscherm draait.
+No window or toolkit: only calculating and parsing, so this also runs on a CI
+machine without a display.
 """
 
 import io
@@ -33,7 +33,7 @@ from botwidget.system.current import process_cmdline
 
 
 class EyeAim(unittest.TestCase):
-    """De blik: ver weg is rust, dichtbij volgen, op de neus samenknijpen."""
+    """Should aim the gaze: far away is rest, nearby follows, right on the nose squints."""
 
     def test_far_away_is_rest(self):
         self.assertEqual(avatar.eye_aim(400, 0), (0.0, 0.0, 0.0, 1.0))
@@ -66,12 +66,12 @@ class EyeAim(unittest.TestCase):
 
 
 class Markdown(unittest.TestCase):
-    """Markdown naar blokken: koppen, lijsten, code, links."""
+    """Should turn markdown into blocks: headings, lists, code, links."""
 
     def test_inline_styles(self):
-        self.assertEqual(markdown.md_inline("gewoon"), [("gewoon", "")])
-        self.assertEqual(markdown.md_inline("**vet**"), [("vet", "b")])
-        self.assertEqual(markdown.md_inline("*schuin*"), [("schuin", "i")])
+        self.assertEqual(markdown.md_inline("plain"), [("plain", "")])
+        self.assertEqual(markdown.md_inline("**bold**"), [("bold", "b")])
+        self.assertEqual(markdown.md_inline("*italic*"), [("italic", "i")])
         self.assertEqual(markdown.md_inline("`code`"), [("code", "code")])
 
     def test_link_is_label_plus_host(self):
@@ -80,7 +80,7 @@ class Markdown(unittest.TestCase):
         self.assertEqual(chunks[1], (" (example.com)", "dim"))
 
     def test_blocks(self):
-        blocks = markdown.md_blocks("# Kop\n\ntekst\n\n- een\n- twee")
+        blocks = markdown.md_blocks("# Heading\n\ntext\n\n- one\n- two")
         kinds = [b["kind"] for b in blocks]
         self.assertEqual(kinds[0], "text")
         self.assertTrue(blocks[0]["head"])
@@ -89,9 +89,9 @@ class Markdown(unittest.TestCase):
         self.assertEqual(len(bullets), 2)
 
     def test_code_block_keeps_lines(self):
-        blocks = markdown.md_blocks("```\nregel een\nregel twee\n```")
+        blocks = markdown.md_blocks("```\nline one\nline two\n```")
         self.assertEqual([b["kind"] for b in blocks], ["code"])
-        self.assertEqual(blocks[0]["lines"], ["regel een", "regel twee"])
+        self.assertEqual(blocks[0]["lines"], ["line one", "line two"])
 
     def test_code_block_is_cut_off(self):
         body = "\n".join(f"r{i}" for i in range(theme.BUBBLE_CODE_LINES + 3))
@@ -100,13 +100,13 @@ class Markdown(unittest.TestCase):
         self.assertEqual(lines[-1], "\u2026")
 
     def test_block_text_is_plain(self):
-        self.assertEqual(markdown.block_text(markdown.md_blocks("**vet** en *schuin*")), "vet en schuin")
-        self.assertEqual(markdown.block_text(markdown.md_blocks("# Kop")), "Kop")
-        self.assertEqual(markdown.block_text(markdown.md_blocks("- een\n- twee")), "\u2022 een\n\u2022 twee")
+        self.assertEqual(markdown.block_text(markdown.md_blocks("**bold** and *italic*")), "bold and italic")
+        self.assertEqual(markdown.block_text(markdown.md_blocks("# Heading")), "Heading")
+        self.assertEqual(markdown.block_text(markdown.md_blocks("- one\n- two")), "\u2022 one\n\u2022 two")
 
     def test_conversation_labels(self):
         blocks = markdown.conversation_blocks(
-            [{"role": "user", "text": "hoi"}, {"role": "bot", "text": "hallo"}], "Robo")
+            [{"role": "user", "text": "hi"}, {"role": "bot", "text": "hello"}], "Robo")
         labels = [b["chunks"][0][0] for b in blocks
                   if b.get("chunks") and b["chunks"][0][1] == "b"]
         self.assertEqual(labels, ["You", "Robo"])
@@ -116,7 +116,7 @@ class Markdown(unittest.TestCase):
 
 
 class AvatarProfile(unittest.TestCase):
-    """Silhouet, uitdrukking en kleur uit de seed, net als OpenBot."""
+    """Should derive silhouette, expression and colour from the seed, like OpenBot."""
 
     def test_is_deterministic(self):
         first = avatar.avatar_profile("agent-1", None)
@@ -142,14 +142,14 @@ class AvatarProfile(unittest.TestCase):
         self.assertGreater(profile["bottom"], 0)
 
     def test_stable_index_matches_fnv1a(self):
-        # FNV-1a over "a" is 0xe40c292c; op lengte 7 is dat 4.
+        # FNV-1a of "a" is 0xe40c292c; at length 7 that is 4.
         self.assertEqual(avatar.stable_index("a", 7), 0xE40C292C % 7)
 
 
 class ProcessCmdline(unittest.TestCase):
-    """De single-instance check moet ook zonder /proc werken."""
+    """Should make the single-instance check work without /proc."""
 
-    @unittest.skipIf(sys.platform == "win32", "Windows kan de commandoregel nog niet lezen")
+    @unittest.skipIf(sys.platform == "win32", "Windows cannot read the command line yet")
     def test_own_process_is_a_python_commandline(self):
         self.assertIn(b"python", process_cmdline(os.getpid()).lower())
 
@@ -161,19 +161,19 @@ class ProcessCmdline(unittest.TestCase):
 
 
 class BubbleLayout(unittest.TestCase):
-    """De wolk breekt regels met de meting van de toolkit; hier een vaste letterbreedte."""
+    """Should break lines with the toolkit's measurement; here a fixed letter width."""
 
     @staticmethod
     def measure(text, style, size):
         return len(text) * 7.0
 
     def test_long_text_breaks_within_the_width(self):
-        lines, widest = bubble_layout.md_layout(self.measure, "woord " * 40, 200)
+        lines, widest = bubble_layout.md_layout(self.measure, "word " * 40, 200)
         self.assertGreater(len(lines), 1)
         self.assertLessEqual(widest, 200)
 
     def test_short_text_stays_on_one_line(self):
-        lines, _ = bubble_layout.md_layout(self.measure, "hallo wereld", 300)
+        lines, _ = bubble_layout.md_layout(self.measure, "hello world", 300)
         self.assertEqual(len(lines), 1)
         self.assertEqual(lines[0]["xs"], [0, 42])
 
@@ -183,7 +183,7 @@ class BubbleLayout(unittest.TestCase):
 
 
 class Settings(unittest.TestCase):
-    """widget.json: zonder bestand staat het gezicht boven, en alleen bekende sleutels worden bewaard."""
+    """Should put the face on top without a widget.json, and keep only known keys."""
 
     def setUp(self):
         self._dir = tempfile.TemporaryDirectory()
@@ -205,7 +205,7 @@ class Settings(unittest.TestCase):
 
 
 class Detection(unittest.TestCase):
-    """OpenBot en Grok Bot worden herkend aan hun map en hun gbot-opdracht."""
+    """Should recognise OpenBot and Grok Bot by their folder and their gbot command."""
 
     def test_openbot_is_found_by_its_folder(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -226,7 +226,7 @@ class Detection(unittest.TestCase):
 
 
 class Clouds(unittest.TestCase):
-    """De denkwolk heeft bolletjes rond het vlak en een staart van kleiner wordende bolletjes."""
+    """Should give the thinking cloud circles around the area and a tail of shrinking circles."""
 
     def test_trail_points_down_or_up(self):
         down = bubble.cloud_body_svg(200, 100, tip_x=100, tip_up=False)
@@ -249,7 +249,7 @@ class Clouds(unittest.TestCase):
 
 
 class Animator(unittest.TestCase):
-    """De veren: soepel naar het doel, doorveren waar dat hoort, en daarna echt stil."""
+    """Should move the springs smoothly to the target, overshoot where it should, and then really stand still."""
 
     @staticmethod
     def settle(animator, seconds=3.0, fps=30):
@@ -294,7 +294,7 @@ class Animator(unittest.TestCase):
 
 
 class FaceEyes(unittest.TestCase):
-    """De ogen zijn altijd massief: ook halverwege een overgang is geen oog doorzichtig."""
+    """Should keep the eyes solid: no eye is transparent halfway through a transition."""
 
     def test_every_eye_is_fully_opaque_at_any_happy_value(self):
         for happy in (0.0, 0.25, 0.5, 0.75, 1.0):
@@ -310,7 +310,7 @@ class FaceEyes(unittest.TestCase):
 
 
 class IdleLook(unittest.TestCase):
-    """Rust is bijna stilstaan: schuin omhoog kijken en af en toe knipperen, zoals Grok Bot."""
+    """Should make idle almost standing still: a glance up and to the right and an occasional blink, like Grok Bot."""
 
     def test_idle_cycle_is_dominated_by_the_still_glance(self):
         total = sum(ms for _pose, ms in avatar.FACE["idle"])
@@ -323,7 +323,7 @@ class IdleLook(unittest.TestCase):
 
 
 class FaceLook(unittest.TestCase):
-    """Grok Bot-palet, geen lichte ring, diepte en een eigen kanteling per bot."""
+    """Should use the Grok Bot palette, no light ring, depth and a tilt of its own per bot."""
 
     GROK_PALETTE = {"rouge": "#ff3e51", "orange": "#ff781c", "ambre": "#ffaf38", "vert": "#00c972",
                     "turquoise": "#1cc3b0", "bleu": "#2a92fe", "violet": "#a97efe", "rose": "#ff5eb1",
@@ -351,10 +351,10 @@ class FaceLook(unittest.TestCase):
 
 
 class TestUpdates(unittest.TestCase):
-    """Alleen een echt hoger versienummer is een update; een mislukte vraag is stil."""
+    """Should treat only a really higher version number as an update; a failed request is silent."""
 
     def serve(self, routes):
-        """Laat urlopen antwoorden uit routes: sleutel is een stuk van de url, waarde de bytes."""
+        """Make urlopen answer from routes: the key is a part of the URL, the value the bytes."""
         class Reply(io.BytesIO):
             def __exit__(self, *args):
                 return False
@@ -403,7 +403,7 @@ class TestUpdates(unittest.TestCase):
 
 
 class LaunchAtLogin(unittest.TestCase):
-    """Elk besturingssysteem zet zijn eigen bestand of sleutel; hier de bestanden."""
+    """Should let every operating system put its own file or key; here the files."""
 
     COMMAND = ["/Applications/Bot Widget.app/Contents/MacOS/Bot Widget"]
 
@@ -448,7 +448,7 @@ class LaunchAtLogin(unittest.TestCase):
 
 
 class AutoUpdate(unittest.TestCase):
-    """Downloaden, controleren, klaarzetten en bij de volgende start installeren."""
+    """Should download, verify, stage and install at the next start."""
 
     PAYLOAD = b"pretend this is an app"
 
@@ -509,9 +509,9 @@ class AutoUpdate(unittest.TestCase):
 
 
 class MacBundleSwap(unittest.TestCase):
-    """De echte wissel van een .app op macOS, met een nepapp in een tijdelijke map."""
+    """Should do the real swap of an .app on macOS, with a fake app in a temporary folder."""
 
-    @unittest.skipUnless(sys.platform == "darwin", "alleen macOS heeft ditto en .app")
+    @unittest.skipUnless(sys.platform == "darwin", "only macOS has ditto and .app")
     def test_the_old_app_is_replaced_by_the_new_one(self):
         import subprocess
         import time
@@ -531,11 +531,11 @@ class MacBundleSwap(unittest.TestCase):
             marker = os.path.join(old_app, "version.txt")
             for _ in range(60):
                 time.sleep(0.1)
-                running.poll()  # een afgesloten kindproces blijft anders een zombie die nog "leeft"
+                running.poll()  # a closed child process otherwise stays a zombie that still "lives"
                 if open(marker).read() == "new":
                     break
             self.assertEqual(open(marker).read(), "new")
-            for _ in range(30):  # het opruimen volgt net na de wissel
+            for _ in range(30):  # the cleanup follows right after the swap
                 if os.listdir(os.path.join(home, "Apps")) == ["Bot Widget.app"]:
                     break
                 time.sleep(0.1)
@@ -543,7 +543,7 @@ class MacBundleSwap(unittest.TestCase):
 
 
 class DevRunner(unittest.TestCase):
-    """De ontwikkelmodus ziet nieuwe en gewijzigde bestanden, en negeert de rest."""
+    """Should see new and changed files in dev mode, and ignore the rest."""
 
     def test_snapshot_changes_when_a_python_file_changes_or_appears(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -569,7 +569,7 @@ class DevRunner(unittest.TestCase):
 
 
 class FirstRun(unittest.TestCase):
-    """Meestarten staat de eerste keer aan; daarna beslist de gebruiker."""
+    """Should turn on starting at login the first time; after that the user decides."""
 
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
@@ -598,7 +598,7 @@ class FirstRun(unittest.TestCase):
 
 
 class SingleInstance(unittest.TestCase):
-    """Elke manier om de widget te starten moet herkend worden, ook de gebundelde app."""
+    """Should recognise every way to start the widget, also the packaged app."""
 
     def test_every_launch_style_is_recognised(self):
         for cmdline in (b"/usr/bin/python3 /home/me/bot_widget.py",
@@ -613,7 +613,7 @@ class SingleInstance(unittest.TestCase):
 
 
 class Channel(unittest.TestCase):
-    """Wisselen tussen stabiel en lokaal: wie draait, wat de ander is, en het inlogonderdeel."""
+    """Should switch between stable and local: who is running, what the other is, and the login item."""
 
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()

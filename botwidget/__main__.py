@@ -1,4 +1,4 @@
-"""python -m botwidget start de widget."""
+"""python -m botwidget starts the widget."""
 
 from botwidget.qt_ui.app import main
 

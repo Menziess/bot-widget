@@ -1,4 +1,4 @@
-"""Terugvallers voor de lettertypen van het ontwerp, zodat Qt niet hoeft te zoeken."""
+"""Fallbacks for the design's fonts, so Qt does not have to search."""
 
 from PySide6.QtGui import QFont, QFontDatabase
 
@@ -6,7 +6,7 @@ from botwidget.theme import SAND_MONO, SAND_SANS
 
 
 def install_font_fallbacks():
-    """Een ontbrekend ontwerplettertype wordt het systeemlettertype."""
+    """A missing design font becomes the system font."""
     installed = set(QFontDatabase.families())
     if SAND_SANS not in installed:
         QFont.insertSubstitution(SAND_SANS, QFontDatabase.systemFont(QFontDatabase.GeneralFont).family())

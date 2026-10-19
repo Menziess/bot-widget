@@ -1,12 +1,12 @@
-"""Maten en kleuren van de spraakwolk (de 'sand'-set van Grok Bot)."""
+"""Sizes and colours of the speech bubble (Grok Bot's 'sand' set)."""
 
 
 
-# ── Grok Bot-vormgeving ────────────────────────────────────────────
-# Tokens uit de "sand"-set van Grok Bot zelf (/opt/Grok Bot/resources/app.asar,
-# dist/renderer/assets/index-DkV65EBE.css): licht, inkt #1c1c1c, accent #1680f3,
-# bellen radius 18. Grok's eigen fonts (X-VF, XMono-VF) zitten in de app en zijn
-# niet systeembreed geinstalleerd; we pakken de systeemfonts die Grok dan pakt.
+# ── Grok Bot design ─────────────────────────────────────────────────
+# Tokens from Grok Bot's own "sand" set (/opt/Grok Bot/resources/app.asar,
+# dist/renderer/assets/index-DkV65EBE.css): light, ink #1c1c1c, accent #1680f3, bubble radius 18.
+# Grok's own fonts (X-VF, XMono-VF) are inside the app and not installed system-wide; we take the
+# system fonts Grok falls back to.
 SAND_SANS = "Noto Sans"
 SAND_MONO = "DejaVu Sans Mono"
 SAND_INK = "#1c1c1c"
@@ -27,8 +27,8 @@ BUBBLE_FONT = 15
 BUBBLE_CODE_FONT = 13
 BUBBLE_CODE_LINES = 6
 BUBBLE_MAX_W = 300
-# Librsvg zet tekst enkele procenten breder dan Pango meet; deze marge houdt de
-# regel binnen het tekstvlak.
+# Librsvg draws text a few percent wider than Pango measures; this margin keeps the line inside the
+# text area.
 MEET_SLACK = 1.06
 MD_HEAD_SIZE = {1: 18, 2: 16, 3: 15}
 CHIP_PAD_X = 4
@@ -39,15 +39,15 @@ PAD_BODY = 12
 PAD_PANEL_X = 12
 PAD_PANEL_Y = 11
 GAP_PANEL = 10
-# Denkpuntjes in de wolk: drie bollen met een golf erdoorheen.
+# Thinking dots in the bubble: three circles with a wave running through them.
 DOTS_W = 62
 DOTS_R = 4.5
 DOTS_GAP = 12.0
 DOTS_MS = 180
-# Zolang er niets verandert en de muis niet in de buurt is, blijft de wolk staan
-# tot deze seconden na de laatste wijziging.
+# As long as nothing changes and the mouse is not nearby, the bubble stays until this many seconds
+# after the last change.
 BUBBLE_LINGER = 8.0
-# Ruimte onder (of boven) het witte vlak voor het staartje of de wolkbolletjes.
+# Room below (or above) the white area for the tail or the cloud circles.
 TAIL_ROOM = 22
 SHADOW_GROW = 3
 SHADOW_BLUR = 4.0

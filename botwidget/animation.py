@@ -1,12 +1,12 @@
-"""Veren voor het gezicht: elke eigenschap loopt zacht naar haar doel toe.
+"""Springs for the face: every property eases softly toward its target.
 
-Geen toolkit. Het gezicht stelt doelen (waar kijk ik heen, hoe blij ben ik) en
-zet elke tik een stap; wat er uitkomt gaat naar face_svg.
+No toolkit. The face sets targets (where am I looking, how happy am I) and takes a
+step every tick; the result goes to face_svg.
 """
 
 import math
 
-# stijfheid, demping. Onder 1 veert een eigenschap even door: dat geeft het wiebelen.
+# stiffness, damping. Below 1 a property overshoots a little: that gives the wobble.
 SPRINGS = {
     "dx": (320, 0.80),
     "dy": (320, 0.80),
@@ -22,7 +22,7 @@ REST = {"dx": 0.0, "dy": 0.0, "scale": 1.0, "converge": 0.0, "happy": 0.0, "lift
         "lean": 0.0, "sx": 1.0, "sy": 1.0}
 MAX_STEP = 1 / 30
 SUBSTEP = 0.008
-# Onder deze afwijking ziet niemand het verschil meer: px en graden, of een factor.
+# Below this deviation nobody can see the difference any more: px and degrees, or a factor.
 SETTLED = {"dx": 0.04, "dy": 0.04, "converge": 0.04, "lift": 0.04, "lean": 0.04,
            "scale": 0.004, "happy": 0.004, "sx": 0.004, "sy": 0.004}
 
@@ -34,28 +34,28 @@ class FaceAnimator:
         self.target = dict(REST)
 
     def jump(self, **values):
-        """Meteen op deze stand, zonder veren: de beginstand."""
+        """Jump straight to this state, without springing: the initial state."""
         for name, goal in values.items():
             self.aim(**{name: goal})
             self.value[name] = goal
             self.velocity[name] = 0.0
 
     def aim(self, **targets):
-        """Nieuwe doelen; een onbekende naam is een fout, geen stille misser."""
+        """New targets; an unknown name is an error, not a silent miss."""
         for name, goal in targets.items():
             if name not in self.target:
                 raise KeyError(name)
             self.target[name] = goal
 
     def kick(self, name: str, speed: float):
-        """Een duw tegen de veer, bijvoorbeeld een landing."""
+        """A push against the spring, for example a landing."""
         self.velocity[name] += speed
 
     def step(self, dt: float) -> bool:
-        """Eén beeld van dt seconden; True zolang er nog iets beweegt.
+        """One frame of dt seconds; True while anything is still moving.
 
-        De stijve veren rekenen in stukjes van SUBSTEP: een grote stap laat ze
-        numeriek veel te lang naijlen.
+        The stiff springs integrate in pieces of SUBSTEP: one big step makes them
+        ring numerically for far too long.
         """
         dt = min(dt, MAX_STEP)
         pieces = max(1, math.ceil(dt / SUBSTEP))

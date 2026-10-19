@@ -1,5 +1,5 @@
 #!/bin/sh
-# Zet Bot Widget in je gebruikersmap en maakt een menu-item; geen root nodig.
+# Puts Bot Widget in your user folder and creates a menu entry; no root needed.
 set -e
 here="$(cd "$(dirname "$0")" && pwd)"
 target="$HOME/.local/share/botwidget"
@@ -7,7 +7,7 @@ mkdir -p "$target" "$HOME/.local/bin" "$HOME/.local/share/applications"
 rm -rf "$target/app"
 cp -R "$here/app" "$target/app"
 cp "$here/icon.png" "$target/icon.png"
-# Niet "botwidget": zo heet ook het commando van een uv- of pip-installatie.
+# Not "botwidget": that is also the command name of a uv or pip install.
 ln -sf "$target/app/Bot Widget" "$HOME/.local/bin/bot-widget"
 cat > "$HOME/.local/share/applications/botwidget.desktop" <<DESKTOP
 [Desktop Entry]
@@ -21,7 +21,7 @@ Terminal=false
 DESKTOP
 echo "Installed. Search for 'Bot Widget' in your app menu, or run: bot-widget"
 
-# Ontbrekende systeembibliotheken nu melden, niet als een crash bij de eerste start.
+# Report missing system libraries now, instead of as a crash on first start.
 if command -v ldd >/dev/null 2>&1; then
   plugin="$target/app/_internal/PySide6/Qt/plugins/platforms/libqxcb.so"
   missing="$(LD_LIBRARY_PATH="$target/app/_internal:$target/app/_internal/PySide6/Qt/lib" ldd "$plugin" 2>&1 | grep 'not found')"

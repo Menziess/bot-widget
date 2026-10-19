@@ -1,4 +1,4 @@
-"""Tekstmeting met Qt, in dezelfde lettertypen als de SVG's."""
+"""Text measurement with Qt, in the same fonts as the SVGs."""
 
 from functools import lru_cache
 
@@ -23,5 +23,5 @@ def _metrics(style: str, size: int) -> QFontMetricsF:
 
 
 def measure(text: str, style: str, size: int) -> float:
-    """Breedte van text in px voor de stijl uit bubble_layout.md_layout."""
+    """Width of text in px for the style from bubble_layout.md_layout."""
     return _metrics(style, size).horizontalAdvance(text)

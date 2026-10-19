@@ -1,4 +1,4 @@
-"""Het gezicht als zwevend venster: avatar, slepen, blik, meldingsstip en bubbel."""
+"""The face as a floating window: avatar, dragging, gaze, notification dot and bubble."""
 
 import datetime
 import hashlib
@@ -39,14 +39,14 @@ from botwidget.system.current import send_behind_windows
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
-# Rustig 30 beelden per seconde; 60 zodra je het gezicht vastpakt, dan zie je het verschil.
+# A calm 30 frames per second; 60 once you grab the face, then you see the difference.
 IDLE_MS = 33
 BUSY_MS = 16
 WELCOME_S = 9.0
 
 
 def ticker(parent, ms: int, step) -> QTimer:
-    """Herhalende timer die stopt zodra step() False geeft."""
+    """Repeating timer that stops as soon as step() returns False."""
     timer = QTimer(parent)
     timer.setInterval(ms)
 
@@ -125,15 +125,15 @@ class FaceWindow(QWidget):
         self._poll_timer.timeout.connect(self._poll_pending)
         self._poll_timer.start(300)
 
-    # ── Tekenen ────────────────────────────────────────────────────
+    # ── Drawing ─────────────────────────────────────────────────
 
     def _apply_flags(self):
-        """Los van de taakbalk; boven of onder gewone vensters volgens widget.json."""
+        """Separate from the taskbar; above or below normal windows according to widget.json."""
         layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | layer)
 
     def restack(self):
-        """Na een wijziging van de instelling: nieuwe vlaggen vragen het venster opnieuw te tonen."""
+        """After a change of the setting: new flags ask the window to be shown again."""
         self._apply_flags()
         self.show()
 
@@ -162,10 +162,10 @@ class FaceWindow(QWidget):
         x, y, w, h = screens.rects()[0]
         self.move(x + w - AVATAR_SIZE - 20, y + h - AVATAR_SIZE - 60 - slot * (AVATAR_SIZE + 16))
 
-    # ── Slepen ─────────────────────────────────────────────────────
+    # ── Dragging ────────────────────────────────────────────────
 
     def _stay_on_screen(self, x, y, vx, vy):
-        """Houd het icoon volledig op een scherm. Raakt het een rand, dan keert de snelheid om."""
+        """Keep the icon fully on a screen. If it hits an edge, the speed reverses."""
         geos = screens.rects()
         if not geos or any(x >= gx and y >= gy and x + AVATAR_SIZE <= gx + gw
                            and y + AVATAR_SIZE <= gy + gh for gx, gy, gw, gh in geos):
@@ -203,12 +203,12 @@ class FaceWindow(QWidget):
         self._drag_sample = (time.monotonic(), *self.spot())
         self._dvx = self._dvy = 0.0
         self._wall_kick = (0.0, 0.0)
-        # Blij gezicht: de ogen worden ^^ zodra de muis op de kop staat.
+        # Happy face: the eyes become ^^ as soon as the mouse is on the head.
         self._happy_on = True
         self.anim.kick("sy", -0.8)
 
     def mouseMoveEvent(self, event):
-        """Schuif het icoon mee, maar niet voorbij de rand van een scherm."""
+        """Move the icon along, but not beyond the edge of a screen."""
         if self._drag_origin is None or not (event.buttons() & Qt.LeftButton):
             return
         point = event.globalPosition()
@@ -216,7 +216,7 @@ class FaceWindow(QWidget):
         raw_x = ox + point.x() - self._press_pos[0]
         raw_y = oy + point.y() - self._press_pos[1]
         x, y, _, _ = self._stay_on_screen(raw_x, raw_y, 0, 0)
-        # Een stukje terug van de rand zolang de muis erbuiten trekt.
+        # A little back from the edge while the mouse pulls beyond it.
         inset_x = max(-18, min(18, (raw_x - x) * 0.3))
         inset_y = max(-18, min(18, (raw_y - y) * 0.3))
         x, y, _, _ = self._stay_on_screen(x - inset_x, y - inset_y, 0, 0)
@@ -233,7 +233,7 @@ class FaceWindow(QWidget):
             self._drag_sample = (now, x, y)
 
     def mouseReleaseEvent(self, event):
-        """Klik (bijna geen beweging) toggelt de chat."""
+        """A click (hardly any movement) toggles the chat."""
         if event.button() != Qt.LeftButton:
             return
         click = False
@@ -246,7 +246,7 @@ class FaceWindow(QWidget):
         self._press_pos = None
         self._drag_origin = None
         if click:
-            # De blije ogen blijven even staan; daarna pakt de cyclus weer op.
+            # The happy eyes stay a moment; then the cycle picks up again.
             QTimer.singleShot(600, self._happy_off)
         else:
             self._happy_off()
@@ -260,7 +260,7 @@ class FaceWindow(QWidget):
             self._remember_spot()
 
     def _tick_coast(self):
-        """Na loslaten nog even door, en terugkaatsen op de rand."""
+        """Keep going a bit after release, and bounce off the edge."""
         if not self._alive:
             return False
         if self._drag_origin is not None or not self._coasting:
@@ -283,14 +283,14 @@ class FaceWindow(QWidget):
         if self.faces is not None:
             self.faces.remember(self.agent_id, self.x(), self.y())
 
-    # ── Gezicht ────────────────────────────────────────────────────
+    # ── Face ────────────────────────────────────────────────────
 
     def _pointer(self) -> tuple:
         pos = QCursor.pos()
         return pos.x(), pos.y()
 
     def pointer_near(self, bubble) -> bool:
-        """Muis binnen GAZE_NEAR van de kop, of boven de wolk?"""
+        """Mouse within GAZE_NEAR of the head, or over the bubble?"""
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         if (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2:
@@ -298,7 +298,7 @@ class FaceWindow(QWidget):
         return bubble.isVisible() and bubble.frameGeometry().contains(QPoint(px, py))
 
     def _animate(self):
-        """Eén beeld: doelen bepalen, de veren een stap, tekenen als er iets veranderd is."""
+        """One frame: determine targets, step the springs, draw if something changed."""
         if not self._alive:
             self._anim_timer.stop()
             return
@@ -319,18 +319,18 @@ class FaceWindow(QWidget):
         self._set_pixmap(svg_pixmap(svg))
 
     def _aim(self, dt_ms: float):
-        """Waar wil het gezicht heen: slepen, blij, naar de muis kijken, of de gewone cyclus."""
+        """Where the face wants to go: dragging, happy, looking at the mouse, or the normal cycle."""
         a = self.anim
         dragging = self._drag_origin is not None
         speed = math.hypot(self._dvx, self._dvy) if (dragging or self._coasting) else 0.0
         if speed:
-            # Rekken langs de beweging en leunen in de richting ervan.
+            # Stretch along the movement and lean in its direction.
             stretch = min(speed / 1200, 0.10) * (abs(self._dvx) - abs(self._dvy)) / (speed + 1e-6)
             a.aim(sx=1 + stretch, sy=1 - stretch, lean=max(-12.0, min(12.0, self._dvx / 70)))
         else:
             a.aim(sx=1.0, sy=1.0, lean=0.0)
         if dragging or self._happy_on:
-            # Blij gezicht: ^^ zodra de muis op de kop staat, half blij tijdens het slepen.
+            # Happy face: ^^ as soon as the mouse is on the head, half happy while dragging.
             moving = dragging and speed > 20
             look_x = max(-8.0, min(8.0, self._dvx / speed * 8)) if moving else 0.0
             look_y = max(-8.0, min(8.0, self._dvy / speed * 8)) if moving else 0.0
@@ -348,7 +348,7 @@ class FaceWindow(QWidget):
         self._cycle(dt_ms)
 
     def _cycle(self, dt_ms: float):
-        """Volgende houding. Idle kijkt af en toe op, werk leest, een vraag kijkt aan."""
+        """Next pose. Idle looks up now and then, work reads, a question looks at you."""
         mood = "ask" if self.has_pending else ("work" if self._working else "idle")
         if mood != self._mood:
             self._mood = mood
@@ -370,14 +370,14 @@ class FaceWindow(QWidget):
         self._pose = pose
 
     def _landed(self):
-        """Na het slepen: een kleine landing."""
+        """After dragging: a small landing."""
         self.anim.kick("sy", -1.2)
 
     def _happy_off(self):
-        """Terug naar de gewone ogen en de gewone cyclus."""
+        """Back to the normal eyes and the normal cycle."""
         self._happy_on = False
 
-    # ── Bubbel vastzetten ──────────────────────────────────────────
+    # ── Pinning the bubble ──────────────────────────────────────
 
     def toggle_pin(self):
         if self.pinned:
@@ -386,7 +386,7 @@ class FaceWindow(QWidget):
             self.pin()
 
     def pin(self):
-        """Klik op het gezicht: de praatwolk blijft staan, met een invoerveld."""
+        """Click on the face: the speech bubble stays, with an input field."""
         self.pinned = True
         self.has_pending = False
         self.update()
@@ -401,19 +401,19 @@ class FaceWindow(QWidget):
             self.bubble.place("")
 
     def close_face(self):
-        """Verberg dit gezicht en stop zijn timers."""
+        """Hide this face and stop its timers."""
         self._alive = False
         self._poll_timer.stop()
         self.bubble.close()
         self.close()
 
-    # ── Peilen ─────────────────────────────────────────────────────
+    # ── Polling ─────────────────────────────────────────────────
 
     def _poll_pending(self):
-        """Peil of er een vraag of goedkeuring wacht en ververs de bubbel.
+        """Check whether a question or approval is waiting and refresh the bubble.
 
-        De timer herplant zichzelf: elke seconde zolang de beurt loopt, anders
-        elke POLL_INTERVAL seconden. Eén timer, geen tweede lus ernaast.
+        The timer reschedules itself: every second while the turn runs, otherwise every
+        POLL_INTERVAL seconds. One timer, no second loop next to it.
         """
         if not self._alive:
             return
@@ -428,7 +428,7 @@ class FaceWindow(QWidget):
         self._poll_timer.start((WORK_POLL_INTERVAL if self._working else POLL_INTERVAL) * 1000)
 
     def _with_local(self, messages: list) -> list:
-        """Het gesprek uit de store plus wat hier net is verstuurd of misgegaan is."""
+        """The conversation from the store plus whatever was just sent here or went wrong."""
         now = time.monotonic()
         stored = {m["text"] for m in messages if m.get("role") == "user"}
         self._local = [m for m in self._local
@@ -436,7 +436,7 @@ class FaceWindow(QWidget):
         return messages + [{"role": m["role"], "text": m["text"]} for m in self._local]
 
     def welcome(self):
-        """Een korte uitleg bij de eerste start: meestarten kan uit in Settings."""
+        """A short explanation on first start: starting at login can be turned off in Settings."""
         text = (f"Hi, I'm {self.bot_name}. I'll start whenever you log in. "
                 "You can switch that off in Settings: right-click me.")
         self._welcome_until = time.monotonic() + WELCOME_S
@@ -449,13 +449,13 @@ class FaceWindow(QWidget):
         return conversation_blocks([{"role": "bot", "text": text}], self.bot_name)
 
     def _sync_bubble(self, chat: dict):
-        """Wolk tijdens een lopende beurt, het gesprek zolang de bubbel vastzit of vers is."""
+        """Cloud during a running turn, the conversation as long as the bubble is pinned or fresh."""
         self._working = bool(chat.get("activity"))
         stored = chat.get("messages") or []
         bots = [msg["text"] for msg in stored if msg.get("role") == "bot" and msg.get("text")]
         last = bots[-1] if bots else ""
         if self._last_bot is None:
-            self._last_bot = last  # gesprek dat er al stond: geen piep
+            self._last_bot = last  # conversation that was already there: no beep
         elif last and last != self._last_bot:
             self._last_bot = last
             play_sound()
@@ -480,7 +480,7 @@ class FaceWindow(QWidget):
                 self.bubble.show_blocks(blocks, "say", input=True)
             return
         if self._working:
-            # Wat je net vroeg, met drie pulserende puntjes eronder.
+            # What you just asked, with three pulsing dots below it.
             asked = [m for m in messages if m.get("role") == "user"][-1:]
             blocks = conversation_blocks(asked, self.bot_name) + [role_panel("bot"), plain_block("dots")]
             if not self.bubble.shows("think", block_text(blocks), False):
@@ -489,7 +489,7 @@ class FaceWindow(QWidget):
         blocks = conversation_blocks(messages, self.bot_name)
         text = block_text(blocks)
         if blocks and text != self._shown_text:
-            # Alleen nieuwe tekst haalt de bubbel terug; na het wegglijden blijft hij weg.
+            # Only new text brings the bubble back; after it slid away it stays away.
             self._shown_text = text
             self.bubble.show_blocks(blocks, "say")
         elif not blocks and self.bubble.kind:
@@ -499,10 +499,10 @@ class FaceWindow(QWidget):
         self.setWindowTitle("Bot Widget 🔔" if self.has_pending else "Bot Widget")
         self.update()
 
-    # ── Berichten versturen ────────────────────────────────────────
+    # ── Sending messages ────────────────────────────────────────
 
     def on_user_message(self, text: str):
-        """Een bericht uit de bubbel versturen."""
+        """Send a message from the bubble."""
         if text.strip() == "/settings":
             if self.faces is not None:
                 self.faces.show_menu(self)

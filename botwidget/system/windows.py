@@ -1,4 +1,4 @@
-"""Windows: geen ps of /proc, geluid via winsound."""
+"""Windows: no ps or /proc, sound through winsound."""
 
 import os
 
@@ -8,7 +8,7 @@ def prepare_gui_environment() -> None:
 
 
 def process_cmdline(pid: int) -> bytes:
-    # Nog niet te lezen; de single-instance check slaat het stoppen dan over.
+    # Not readable yet; the single-instance check then skips stopping.
     return b""
 
 
@@ -22,7 +22,7 @@ def data_home() -> str:
 
 
 def send_behind_windows(win_id: int) -> None:
-    # Qt zet het venster zelf onderaan (HWND_BOTTOM).
+    # Qt puts the window at the bottom itself (HWND_BOTTOM).
     pass
 
 
@@ -40,7 +40,7 @@ def launch_at_login() -> bool:
 
 
 def set_launch_at_login(command: list, on: bool) -> None:
-    """Een waarde onder Run in het register van de gebruiker."""
+    """A value under Run in the user's registry."""
     import subprocess
     import winreg
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
@@ -62,7 +62,7 @@ def can_install_update() -> bool:
 
 
 def install_update(installer: str) -> bool:
-    """Het installatieprogramma sluit de draaiende widget zelf en start hem daarna opnieuw."""
+    """The installer closes the running widget itself and starts it again afterwards."""
     import subprocess
     detached = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     subprocess.Popen([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",

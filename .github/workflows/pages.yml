@@ -1,6 +1,6 @@
 name: pages
 
-# bot-widget.com komt uit de map site/. Zet in de repo-instellingen Pages op "GitHub Actions".
+# bot-widget.com is served from the site/ folder. In the repository settings, set Pages to "GitHub Actions".
 on:
   push:
     branches: [main]

@@ -1,15 +1,15 @@
-"""Bouwt de app voor dit besturingssysteem en pakt hem in voor download.
+"""Builds the app for this operating system and packages it for download.
 
-Gebruik: python packaging/build.py
-Resultaat in dist/:
-  macOS    BotWidget-macOS.zip          (Bot Widget.app, vindbaar via Spotlight)
-  Windows  BotWidget-Windows-Setup.exe  (Startmenu-item; zip als Inno Setup ontbreekt)
-  Linux    BotWidget-Linux.tar.gz       (met install.sh voor een menu-item)
+Usage: python packaging/build.py
+Result in dist/:
+  macOS    BotWidget-macOS.zip          (Bot Widget.app, findable via Spotlight)
+  Windows  BotWidget-Windows-Setup.exe  (Start menu entry; zip if Inno Setup is missing)
+  Linux    BotWidget-Linux.tar.gz       (with install.sh for a menu entry)
 
-Ondertekenen gebeurt alleen als de geheimen in de omgeving staan:
-  macOS    MACOS_SIGN_IDENTITY, plus APPLE_ID, APPLE_TEAM_ID en APPLE_APP_PASSWORD voor notarisatie
-  Windows  WINDOWS_CERT_FILE en WINDOWS_CERT_PASSWORD
-Zonder die geheimen blijft het een niet-ondertekende build.
+Signing only happens when the secrets are in the environment:
+  macOS    MACOS_SIGN_IDENTITY, plus APPLE_ID, APPLE_TEAM_ID and APPLE_APP_PASSWORD for notarization
+  Windows  WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD
+Without those secrets it stays an unsigned build.
 """
 
 import glob
@@ -29,7 +29,7 @@ from botwidget.system.macos import BUNDLE_ID  # noqa: E402
 
 BUILD = os.path.join(ROOT, "build")
 DIST = os.path.join(ROOT, "dist")
-# Alles wat de widget niet gebruikt; houdt de download klein.
+# Everything the widget does not use; keeps the download small.
 UNUSED_QT = ("QtWebEngineCore", "QtWebEngineWidgets", "QtWebChannel", "QtQml", "QtQuick", "QtPdf",
              "QtNetwork", "QtMultimedia", "Qt3DCore", "QtCharts", "QtSql", "QtTest")
 
@@ -74,7 +74,7 @@ def mac():
     out = os.path.join(DIST, "BotWidget-macOS.zip")
     identity = os.environ.get("MACOS_SIGN_IDENTITY")
     if not identity:
-        # Zonder (minstens een ad-hoc) handtekening start de app niet op Apple Silicon.
+        # Without (at least an ad-hoc) signature the app does not start on Apple Silicon.
         run("codesign", "--force", "--deep", "--sign", "-", app)
         run("ditto", "-c", "-k", "--keepParent", app, out)
         return out
@@ -92,7 +92,7 @@ def mac():
 
 
 def sign_windows(path: str):
-    """Ondertekent met signtool als het certificaat in de omgeving staat."""
+    """Signs with signtool if the certificate is in the environment."""
     cert, password = os.environ.get("WINDOWS_CERT_FILE"), os.environ.get("WINDOWS_CERT_PASSWORD")
     if not (cert and password):
         return

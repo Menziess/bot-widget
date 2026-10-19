@@ -1,15 +1,15 @@
-"""Het gezicht: kleuren, silhouetten, uitdrukkingen en de SVG's, zonder toolkit."""
+"""The face: colours, silhouettes, expressions and the SVGs, without a toolkit."""
 
 import colorsys
 import math
 
-# Zwarte cirkel, diameter 58. Twee lange verticale ogen in het midden.
+# The face fits a circle of diameter 58 in a 68 px window; two long vertical eyes sit in the middle.
 AVATAR_SIZE = 68
 CIRCLE_R = 29.0
-# dx, dy, lengte-factor. Alleen schuiven; de vorm blijft gelijk, behalve een knipper.
+# dx, dy, length factor. Only shifts; the shape stays the same, except for a blink.
 POSES = {
     "rest": (0, 0, 1.0),
-    # Grok Bot kijkt in rust schuin omhoog naar rechts; dat is bijna stilstaand.
+    # Grok Bot looks up and to the right at rest; that is almost standing still.
     "idle": (5, -5, 1.0),
     "look": (0, 2, 1.0),
     "blink": (0, 0, 0.22),
@@ -19,10 +19,10 @@ POSES = {
     "aside2": (6, 1, 1.0),
     "hop": (0, -3, 1.0),
 }
-# De hop tilt het hele gezicht even op; de ogen kijken daarbij omhoog.
+# The hop lifts the whole face for a moment; the eyes look up while it does.
 LIFT = {"hop": 4.0}
-# pose, duur in ms. Idle staat bijna stil: schuin omhoog kijken, af en toe knipperen.
-# De tik is kort genoeg om een dubbele knipoog echt dubbel te laten zijn.
+# pose, duration in ms. Idle stays almost still: a glance up and to the right, an occasional blink.
+# The tick is short enough to make a double blink really double.
 FACE_STEP_MS = 110
 FACE = {
     "idle": (("idle", 5200), ("blink", 130), ("idle", 4200), ("blink", 130), ("idle", 100),
@@ -33,12 +33,12 @@ FACE = {
 }
 
 
-# Halve lichaamsbreedte voorbij de rand. Dichterbij kijkt hij, op de neus knijpt hij.
+# Half a body width beyond the edge. Closer by it looks, right on the nose it squints.
 GAZE_NEAR = CIRCLE_R * 2
 
 
 def eye_aim(vx: float, vy: float) -> tuple[float, float, float, float]:
-    """dx, dy, hoe dicht de ogen bij elkaar staan, en de lengte. Ver weg is rust."""
+    """dx, dy, how close together the eyes are, and the length. Far away is rest."""
     dist = (vx * vx + vy * vy) ** 0.5
     if dist >= GAZE_NEAR or dist == 0:
         wide = (0.0, 0.0, 0.0, 1.0)
@@ -53,11 +53,11 @@ def eye_aim(vx: float, vy: float) -> tuple[float, float, float, float]:
     return (dx, dy, close * 6, 1 - close * 0.4)
 
 
-# ── Gezicht uit de botdefinitie ────────────────────────────────────
-# OpenBot tekent een gezicht uit avatarSeed + avatarHue (bundel
-# out/renderer/assets/logo-color-*.js): stableIndex kiest het silhouet, de
-# uitdrukking en de kleur. De 64 straalwaarden per silhouet komen uit die
-# generator, als data. Hoek 0 is 3 uur, 16 is 6 uur en 48 is 12 uur.
+# ── Face from the bot definition ────────────────────────────────────
+# OpenBot draws a face from avatarSeed + avatarHue (bundle out/renderer/assets/logo-color-*.js):
+# stableIndex picks the silhouette, the expression and the colour. The 64 radius values per
+# silhouette come from that generator, as data. Angle 0 is 3 o'clock, 16 is 6 o'clock and 48 is 12
+# o'clock.
 SILHOUETTES = {
     "cercle": (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1),
     "galet": (0.9765, 0.9614, 0.9462, 0.9319, 0.919, 0.9083, 0.8998, 0.8937, 0.8899, 0.8881, 0.8879, 0.8889, 0.8906, 0.8927, 0.8948, 0.8967, 0.8985, 0.9002, 0.9021, 0.9044, 0.9076, 0.9118, 0.9175, 0.9248, 0.9336, 0.9439, 0.9553, 0.9672, 0.979, 0.99, 0.9992, 1.0059, 1.0095, 1.0092, 1.0048, 0.9963, 0.9837, 0.9675, 0.9486, 0.9278, 0.9064, 0.8856, 0.8666, 0.8506, 0.8386, 0.8315, 0.8297, 0.8333, 0.8422, 0.8559, 0.8736, 0.8942, 0.9164, 0.9391, 0.9608, 0.9804, 0.9967, 1.0091, 1.0169, 1.02, 1.0184, 1.0126, 1.0031, 0.9908),
@@ -69,7 +69,7 @@ SILHOUETTES = {
     "goutte": (0.6151, 0.6442, 0.6737, 0.7041, 0.7351, 0.7658, 0.7954, 0.8249, 0.8515, 0.8773, 0.8995, 0.9201, 0.9363, 0.9499, 0.9596, 0.9653, 0.9679, 0.9653, 0.9596, 0.9499, 0.9363, 0.9201, 0.8995, 0.8773, 0.8515, 0.8249, 0.7954, 0.7658, 0.7351, 0.7041, 0.6737, 0.6442, 0.6151, 0.5879, 0.5661, 0.551, 0.5418, 0.5379, 0.5393, 0.5459, 0.5582, 0.5766, 0.6024, 0.637, 0.6827, 0.7433, 0.8244, 0.9354, 1.04, 0.9354, 0.8244, 0.7433, 0.6827, 0.637, 0.6024, 0.5766, 0.5582, 0.5459, 0.5393, 0.5379, 0.5418, 0.551, 0.5661, 0.5879),
 }
 SUPPORTED_SHAPES = ("cercle", "galet", "squircle", "capsule", "triangle", "hexagone", "nuage")
-# split in graden; per oog (breedte, hoogte, kanteling, opening)
+# split in degrees; per eye (width, height, tilt, opening)
 EXPRESSIONS = {
     "neutre": (15.46, (0.186, 0.412, 0, 1), (0.186, 0.412, 0, 1)),
     "attentif": (16, (0.21, 0.44, 0, 1), (0.21, 0.44, -0, 1)),
@@ -91,7 +91,7 @@ EXPRESSIONS = {
 HUE_COLORS = {0: "rouge", 30: "orange", 55: "ambre", 100: "vert", 150: "vert",
               185: "turquoise", 215: "bleu", 245: "violet", 280: "violet", 320: "rose"}
 AUTO_COLORS = ("rouge", "orange", "ambre", "vert", "turquoise", "bleu", "violet", "rose")
-# De kleuren van Grok Bot zelf: helder en verzadigd, zoals op x.ai/bot/marketplace.
+# Grok Bot's own colours: bright and saturated, as on x.ai/bot/marketplace.
 AVATAR_HEX = {"encre": "#0a0a0c", "brun": "#8b5e3c", "rouge": "#ff3e51", "orange": "#ff781c",
               "ambre": "#ffaf38", "vert": "#00c972", "turquoise": "#1cc3b0", "bleu": "#2a92fe",
               "violet": "#a97efe", "rose": "#ff5eb1", "gris": "#959595", "creme": "#f1efe9"}
@@ -99,7 +99,7 @@ EYE_FILL = "#f9f9f9"
 
 
 def stable_index(value: str, length: int) -> int:
-    """FNV-1a over de seed, net als OpenBot; kiest silhouet, gezicht en kleur."""
+    """FNV-1a over the seed, just like OpenBot; picks silhouette, face and colour."""
     h = 2166136261
     for ch in value:
         h = ((h ^ ord(ch)) * 16777619) & 0xFFFFFFFF
@@ -107,7 +107,7 @@ def stable_index(value: str, length: int) -> int:
 
 
 def avatar_profile(seed: str, hue: float | None) -> dict:
-    """Silhouet, uitdrukking en kleur die OpenBot uit deze seed haalt."""
+    """Silhouette, expression and colour that OpenBot derives from this seed."""
     seed = seed or "agent"
     shapes = list(SILHOUETTES)
     shape = shapes[stable_index(f"{seed}:shape", len(shapes))]
@@ -126,7 +126,7 @@ def avatar_profile(seed: str, hue: float | None) -> dict:
 
 
 def silhouette_path(radii, radius: float, cx: float, cy: float) -> str:
-    """De gladde gesloten vorm door de 64 straalpunten, net als OpenBot."""
+    """The smooth closed shape through the 64 radius points, just like OpenBot."""
     pts = []
     for i, r in enumerate(radii):
         ang = i / 64 * math.tau
@@ -143,8 +143,8 @@ def silhouette_path(radii, radius: float, cx: float, cy: float) -> str:
     return "".join(out) + "Z"
 
 
-# Licht komt linksboven: een zachte glans daar en een schaduw rechtsonder in een
-# donkerdere tint van de eigen kleur. Zwart maakt gele en oranje vlakken vies bruin.
+# Light comes from the top left: a soft highlight there and a shadow at the bottom right in a darker
+# tint of the bot's own colour. Black turns yellow and orange surfaces a dirty brown.
 HIGHLIGHT = 0.18
 SHADE = 0.50
 SHADE_DARKNESS = 0.66
@@ -169,7 +169,7 @@ def depth_defs(colour: str) -> str:
     )
 
 
-# De kop volgt de ogen maar voor een deel: dat verschil geeft diepte.
+# The head follows the eyes only partly: that difference gives depth.
 PARALLAX = 0.35
 
 
@@ -179,8 +179,9 @@ def _lerp(a: float, b: float, t: float) -> float:
 
 def _eye(ex: float, ey: float, ew: float, eh: float, tilt: float, happy: float,
          fill: str, opacity: float) -> str:
-    """Eén oog als dikke lijn met ronde uiteinden: een staande of liggende pil, die met
-    happy 1 uitgroeit tot een ^. Alles blijft massief; er wordt geen vervaagd."""
+    """One eye as a thick line with round ends: a standing or lying pill that grows into
+    a ^ at happy 1. Everything stays solid; nothing is faded.
+    """
     half = max(0.01, abs(eh - ew) / 2)
     if eh >= ew:
         pill, thick = ((ex, ey - half), (ex, ey), (ex, ey + half)), ew
@@ -198,12 +199,12 @@ def _eye(ex: float, ey: float, ew: float, eh: float, tilt: float, happy: float,
 def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float = 0,
              seed: str = "", hue: float | None = None, lift: float = 0.0,
              happy: float = 0.0, lean: float = 0.0, squash: tuple = (1.0, 1.0)) -> str:
-    """Het eigen silhouet en de eigen kleur van deze bot, met zijn twee ogen.
+    """This bot's own silhouette and colour, with its two eyes.
 
-    dx/dy verzetten de ogen volledig en de kop voor een deel; lift tilt het hele
-    gezicht even op (de hop). lean kantelt de kop extra, squash rekt of drukt hem.
-    happy 0 is de gewone oogvorm, 1 de blije (^^): de ogen faden over elkaar,
-    zodat een halve stand een echte overgang is.
+    dx/dy move the eyes fully and the head partly; lift raises the whole face for a
+    moment (the hop). lean tilts the head extra, squash stretches or flattens it.
+    happy 0 is the normal eye shape, 1 the happy one (^^): the eyes morph into each
+    other, so a half value is a real transition.
     """
     profile = avatar_profile(seed, hue)
     spec = EXPRESSIONS[profile["expression"]]

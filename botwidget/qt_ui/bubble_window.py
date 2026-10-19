@@ -1,7 +1,7 @@
-"""De bubbel: een los venster boven het gezicht.
+"""The bubble: a separate window above the face.
 
-Twee vormen: de denkwolk (kind "think") en de praatwolk (kind "say" en "hint").
-Een praatwolk kan een invoerveld en een rij links krijgen.
+Two shapes: the thinking cloud (kind "think") and the speech bubble (kind "say"
+and "hint"). A speech bubble can get an input field and a row of links.
 """
 
 import time
@@ -59,7 +59,7 @@ class BubbleEntry(QLineEdit):
     dismissed = Signal()
 
     def keyPressEvent(self, event):
-        """Escape sluit de bubbel zonder iets te versturen."""
+        """Escape closes the bubble without sending anything."""
         if event.key() == Qt.Key_Escape:
             self.clear()
             self.dismissed.emit()
@@ -76,7 +76,8 @@ class BubbleWindow(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
-        # Tool-vensters verbergen zich op macOS zodra de app niet actief is; de bubbel moet blijven.
+        # Tool windows hide themselves on macOS as soon as the app is not active; the bubble must
+        # stay.
         self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
         self.setStyleSheet(STYLE)
 
@@ -118,7 +119,7 @@ class BubbleWindow(QWidget):
         self._dots.setInterval(DOTS_MS)
         self._dots.timeout.connect(self._tick_dots)
 
-    # ── Invoer ─────────────────────────────────────────────────────
+    # ── Input ───────────────────────────────────────────────────
 
     def _send(self):
         text = self._entry.text().strip()
@@ -132,24 +133,24 @@ class BubbleWindow(QWidget):
             self._entry.setFocus()
 
     def shows(self, kind: str, text: str, input: bool) -> bool:
-        """Staat precies dit al in de bubbel? Dan hoeft er niets opnieuw getekend te worden."""
+        """Is exactly this already showing in the bubble? Then nothing needs to be redrawn."""
         return self.kind == kind and self.full_text == text and self._input == input and self.isVisible()
 
     def typing(self) -> bool:
         return self._input and self._entry.hasFocus()
 
     def enterEvent(self, event):
-        """Muis boven de bubbel: hij blijft staan."""
+        """Mouse over the bubble: it stays."""
         self.changed = time.monotonic()
 
     def mousePressEvent(self, event):
-        """Klik op de bubbel: vastzetten en typen."""
+        """Click on the bubble: pin it and type."""
         self.clicked.emit()
 
-    # ── Inhoud ─────────────────────────────────────────────────────
+    # ── Content ─────────────────────────────────────────────────
 
     def _parts(self):
-        """Panelen, breedte van het tekstvlak en hoogte van de inhoud."""
+        """Panels, width of the text area and height of the content."""
         blocks = self.blocks or md_blocks("…")
         panels = bubble_panels(measure, blocks) or bubble_panels(measure, md_blocks("…"))
         self._dots_lines = [line for panel in panels for line in panel["lines"]
@@ -160,17 +161,17 @@ class BubbleWindow(QWidget):
         return panels, box_w, content_height(panels)
 
     def _extras(self) -> int:
-        """Hoogte onder de tekst voor de linkrij en het invoerveld."""
+        """Height below the text for the link row and the input field."""
         return (LINKS_H if self._links else 0) + (ENTRY_H + ENTRY_GAP if self._input else 0)
 
     def _body_h(self, inner: int) -> int:
-        """Hoogte van het witte vlak; nooit hoger dan het plafond."""
+        """Height of the white area; never taller than the ceiling."""
         natural = inner + 2 * PAD_BODY + self._extras()
         cap = self._ceiling() - PAD_SVG - TAIL_ROOM
         return max(2 * PAD_BODY + 12 + self._extras(), min(natural, cap))
 
     def _ceiling(self) -> int:
-        """Ongeveer 40% van het scherm; de bubbel blijft tegen de kop."""
+        """About 40% of the screen; the bubble stays against the head."""
         fx, fy = self.face.spot()
         _x, _y, _w, h = screens.rect_at(fx + AVATAR_SIZE // 2, fy + AVATAR_SIZE // 2)
         return max(200, int(h * 0.4))
@@ -189,7 +190,7 @@ class BubbleWindow(QWidget):
         return pix
 
     def _layout_children(self, pix):
-        """Chrome, tekstvlak, linkrij en invoerveld op hun plek."""
+        """Chrome, text area, link row and input field in their places."""
         _panels, box_w, inner = self._geom
         size = pix.deviceIndependentSize().toSize()
         self._chrome.setGeometry(0, 0, size.width(), size.height())
@@ -213,7 +214,7 @@ class BubbleWindow(QWidget):
         self._text.resize(pix.deviceIndependentSize().toSize())
 
     def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None):
-        """Zet blokken in de bubbel; nieuwste onderaan."""
+        """Put blocks in the bubble; newest at the bottom."""
         self._links = links or []
         self._input = input
         self._link_row.setText(" &nbsp;·&nbsp; ".join(
@@ -236,7 +237,7 @@ class BubbleWindow(QWidget):
         bar.setValue(bar.maximum())
 
     def _tick_dots(self):
-        """De denkpuntjes laten pulseren zolang de bot denkt."""
+        """Make the thinking dots pulse for as long as the bot is thinking."""
         if not self._dots_lines:
             self._dots_on = False
             self._dots.stop()
@@ -249,10 +250,10 @@ class BubbleWindow(QWidget):
             self._scroll_to_bottom()
         self.changed = time.monotonic()
 
-    # ── Plaats en beweging ─────────────────────────────────────────
+    # ── Position and movement ───────────────────────────────────
 
     def _goal(self):
-        """De bubbel hangt boven het hoofd; het staartje volgt de kop."""
+        """The bubble hangs above the head; the tail follows the head."""
         fx, fy = self.face.spot()
         bw = self.width() or 80
         bh = self.height() or 48
@@ -260,7 +261,7 @@ class BubbleWindow(QWidget):
         tx = fx + (AVATAR_SIZE - bw) / 2
         ty = fy - bh + 6 + self.face.head_top
         up = False
-        if ty < gy + 4:  # geen ruimte boven de kop: bubbel eronder, staart omhoog
+        if ty < gy + 4:  # no room above the head: bubble below, tail pointing up
             ty = fy + self.face.head_bottom - 8
             up = True
         tx = max(gx + 4, min(tx, gx + gw - bw - 4))
@@ -268,7 +269,7 @@ class BubbleWindow(QWidget):
         return tx, ty, (round(fx + AVATAR_SIZE / 2 - tx), up)
 
     def _tick(self):
-        """Veer: de bubbel loopt achter het icoon aan."""
+        """Spring: the bubble trails behind the icon."""
         if not self.kind:
             self._physics_on = False
             self._physics.stop()
@@ -276,7 +277,7 @@ class BubbleWindow(QWidget):
         if (self.changed and time.monotonic() - self.changed > BUBBLE_LINGER
                 and not self.face.pinned and not self.typing()
                 and not self.face.pointer_near(self)):
-            # Niets nieuws en de muis is niet in de buurt: de bubbel gaat weg.
+            # Nothing new and the mouse is not nearby: the bubble goes away.
             self.place("")
             return
         tx, ty, tip = self._goal()
@@ -293,7 +294,7 @@ class BubbleWindow(QWidget):
         self.move(int(nx), int(ny))
 
     def place(self, kind: str):
-        """Toon of verberg de bubbel. Het gezicht blijft staan."""
+        """Show or hide the bubble. The face stays."""
         self.kind = kind
         if kind == "":
             self._physics.stop()

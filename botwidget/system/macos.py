@@ -1,6 +1,6 @@
-"""macOS: ps voor processen, afplay voor geluid.
+"""macOS: ps for processes, afplay for sound.
 
-Het gezicht blijft onder gewone vensters, via het vensterniveau van het systeem.
+The face stays below normal windows, through the system's window level.
 """
 
 import ctypes
@@ -44,10 +44,10 @@ def _objc():
 
 
 def send_behind_windows(win_id: int) -> None:
-    """Net boven de bureaubladiconen en onder alle gewone vensters, op elk bureaublad.
+    """Just above the desktop icons and below all normal windows, on every desktop.
 
-    Qt's StaysOnBottomHint wordt hier genegeerd: tool-vensters krijgen het niveau
-    van zwevende vensters. Via de Objective-C runtime, dus zonder extra pakket.
+    Qt's StaysOnBottomHint is ignored here: tool windows get the level of floating
+    windows. Via the Objective-C runtime, so no extra package is needed.
     """
     objc = _objc()
     cg = ctypes.cdll.LoadLibrary(ctypes.util.find_library("CoreGraphics"))
@@ -70,15 +70,15 @@ def _dev_launcher() -> str:
 
 
 def _send(objc, restype, *argtypes):
-    """objc_msgSend met de juiste types voor één aanroep."""
+    """objc_msgSend with the right types for one call."""
     proto = ctypes.CFUNCTYPE(restype, ctypes.c_void_p, ctypes.c_void_p, *argtypes)
     return proto(("objc_msgSend", objc))
 
 
 def _login_service():
-    """De SMAppService van deze app (macOS 13+), of None.
+    """This app's SMAppService (macOS 13+), or None.
 
-    Buiten een .app bestaat hij niet: dan is "deze app" de Python die ons draait.
+    Outside an .app it does not exist: then "this app" is the Python that runs us.
     """
     if not _bundle_path():
         return None
@@ -101,23 +101,23 @@ def _remove_launch_agent():
 def launch_at_login() -> bool:
     service = _login_service()
     if service:
-        # Ook een uitgezette schakelaar in Systeeminstellingen klopt hier: dan is de status anders.
+        # A switch turned off in System Settings is also right here: the status is different then.
         return _send(_objc(), ctypes.c_long)(service, _objc().sel_registerName(b"status")) == SM_ENABLED
     return os.path.exists(_launch_agent())
 
 
 def set_launch_at_login(command: list, on: bool) -> None:
-    """De app als inlogonderdeel, met zijn eigen naam en icoon in Systeeminstellingen.
+    """The app as a login item, with its own name and icon in System Settings.
 
-    Als losse Python (ontwikkeling) is dat een LaunchAgent van de gebruiker, via een
-    scriptje met een eigen naam zodat het niet als "python" in de lijst komt.
+    As plain Python (development) that is a user LaunchAgent, through a small script
+    with its own name so it does not show up as "python" in the list.
     """
     service = _login_service()
     if service:
         objc = _objc()
         selector = b"registerAndReturnError:" if on else b"unregisterAndReturnError:"
         _send(objc, ctypes.c_bool, ctypes.c_void_p)(service, objc.sel_registerName(selector), None)
-        _remove_launch_agent()  # een oude LaunchAgent is niet meer nodig
+        _remove_launch_agent()  # an old LaunchAgent is no longer needed
         return
     if not on:
         _remove_launch_agent()
@@ -134,8 +134,8 @@ def set_launch_at_login(command: list, on: bool) -> None:
 
 UPDATE_ASSET = "BotWidget-macOS.zip"
 
-# Wacht tot de widget weg is, wissel de app om en start hem opnieuw. Eerst uitpakken,
-# dan pas wisselen: dat duurt een ogenblik en bij een fout blijft de oude app staan.
+# Wait until the widget is gone, swap the app and start it again. Unpack first, only then swap: that
+# takes a moment, and on an error the old app stays in place.
 _SWAP_SCRIPT = """#!/bin/sh
 zip="$1"; bundle="$2"; pid="$3"
 work="$(mktemp -d "$(dirname "$bundle")/.botwidget-update.XXXXXX")" || exit 1
@@ -154,13 +154,13 @@ rm -rf "$work"
 
 
 def _bundle_path() -> str | None:
-    """De .app waar deze widget uit draait, of None als dat geen app is."""
+    """The .app this widget runs from, or None if that is not an app."""
     bundle = os.path.dirname(os.path.dirname(os.path.dirname(sys.executable)))
     return bundle if getattr(sys, "frozen", False) and bundle.endswith(".app") else None
 
 
 def can_install_update() -> bool:
-    """Alleen de gebundelde app op Apple Silicon, op een plek waar we mogen schrijven."""
+    """Only the packaged app on Apple Silicon, in a place where we may write."""
     bundle = _bundle_path()
     return bool(bundle) and platform.machine() == "arm64" and os.access(os.path.dirname(bundle), os.W_OK)
 
@@ -170,7 +170,7 @@ def apply_bundle_update(archive: str, bundle: str, pid: int) -> None:
 
 
 def install_update(archive: str) -> bool:
-    """Start de wissel; True als de widget nu moet afsluiten."""
+    """Start the swap; True if the widget should quit now."""
     bundle = _bundle_path()
     if not bundle:
         return False
@@ -179,7 +179,7 @@ def install_update(archive: str) -> bool:
 
 
 def stable_app_command() -> list | None:
-    """Zo start je de geïnstalleerde app; argumenten voor de app komen erachter."""
+    """This is how you start the installed app; arguments for the app come after it."""
     for base in ("/Applications", os.path.expanduser("~/Applications")):
         bundle = os.path.join(base, "Bot Widget.app")
         if os.path.isdir(bundle):

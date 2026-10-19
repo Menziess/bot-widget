@@ -1,4 +1,4 @@
-"""Regels breken voor de spraakwolk; de toolkit levert alleen de tekstmeting."""
+"""Line breaking for the speech bubble; the toolkit only supplies the text measurement."""
 
 import re
 
@@ -15,18 +15,19 @@ from botwidget.theme import (
 
 
 def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
-    """Markdown naar gebroken regels.
+    """Markdown to broken lines.
 
-    measure(tekst, stijl, px) geeft de breedte in px; stijl is "", "b", "i",
-    "code" of "mono".
+    measure(text, style, px) returns the width in px; style is "", "b", "i",
+    "code" or "mono".
     """
     def width(pieces: list, size: int) -> int:
         return round(sum(measure(text, style, size) for text, style in pieces))
 
     def fit(pieces: list, size: int) -> int:
-        """Breedte voor het breken. Librsvg tekent tekst breder dan de meting,
-        dus reken die marge mee; anders loopt de regel tegen de rand van het
-        tekstvlak. De x per woord blijft de kale meting, voor de codechips."""
+        """Width used for breaking. Librsvg draws text wider than the measurement,
+        so include that margin; otherwise the line runs into the edge of the
+        text area. The x per word stays the bare measurement, for the code chips.
+        """
         return int(width(pieces, size) * MEET_SLACK) + 1
 
     def pieces_of(words: list, prefix: str) -> list:
@@ -40,7 +41,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
     laid, widest = [], 16
 
     def lay_block(block: dict):
-        """Een tekstblok naar regels; vult laid en widest, met x per woord."""
+        """A text block to lines; fills laid and widest, with x per word."""
         nonlocal widest
         tokens, space = [], True
         for chunk, style in block["chunks"]:
@@ -102,7 +103,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
             laid.append({**block, "words": [], "width": 0})
             continue
         if kind == "dots":
-            # Denkpuntjes: drie bollen die de widget zelf laat pulseren.
+            # Thinking dots: three circles that the widget itself makes pulse.
             laid.append({"kind": "dots", "size": 15, "indent": 0, "prefix": "",
                          "grey": False, "head": False, "words": [], "xs": [], "ws": [],
                          "width": DOTS_W, "phase": 0.0})
@@ -121,7 +122,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
 
 
 def bubble_panels(measure, blocks: list, max_w: int = BUBBLE_MAX_W) -> list:
-    """Panelen met gebroken regels; de breedste tekst hoort erbij."""
+    """Panels with broken lines; the widest text comes with them."""
     content_w = max(80, max_w - 2 * PAD_BODY - 2 * PAD_PANEL_X)
     panels = []
     for panel in split_panels(blocks):

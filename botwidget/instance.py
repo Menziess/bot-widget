@@ -1,4 +1,4 @@
-"""Eén widget tegelijk: een eerder gestarte widget wordt eerst gestopt."""
+"""One widget at a time: a previously started widget is stopped first."""
 
 import atexit
 import os
@@ -10,7 +10,7 @@ from botwidget.config import read_file
 from botwidget.system.current import process_cmdline
 
 PIDFILE = os.path.join(tempfile.gettempdir(), "bot_widget.pid")
-# De gebundelde app heet "Bot Widget"; de andere namen zijn de losse start via Python.
+# The packaged app is called "Bot Widget"; the other names are the plain start through Python.
 LAUNCHERS = (b"bot_widget.py", b"botwidget", b"Bot Widget")
 
 
@@ -19,7 +19,7 @@ def looks_like_widget(cmdline: bytes, markers: tuple = LAUNCHERS) -> bool:
 
 
 def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
-    """Stop een eerder gestarte widget, zodat er één venster overblijft."""
+    """Stop a previously started widget, so one window remains."""
     try:
         old = int(read_file(pidfile))
     except ValueError:

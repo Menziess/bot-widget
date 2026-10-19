@@ -1,15 +1,15 @@
-"""Vaste instellingen: paden, de bot-id, venstermaten en widget.json."""
+"""Fixed settings: paths, the bot id, window sizes and widget.json."""
 
 import json
 import os
 
 from botwidget.system.current import data_home
 
-# Eigen toestand van de widget (positie, instellingen); los van OpenBot.
+# The widget's own state (position, settings); separate from OpenBot.
 APP_DIR = os.path.join(data_home(), "botwidget")
 
-# De botlijst komt uit de lokale OpenBot-store: het agent-token van de
-# automatisering geeft alleen toegang tot de eigen agent, niet tot de andere.
+# The bot list comes from the local OpenBot store: the agent token of the automation only gives
+# access to its own agent, not to the others.
 OPENBOT_DIR = os.environ.get("BOT_WIDGET_OPENBOT_DIR") or os.path.join(data_home(), "OpenBot")
 URL_FILE = os.path.join(OPENBOT_DIR, "automation", "url")
 HEADERS_FILE = os.path.join(OPENBOT_DIR, "automation", "headers")
@@ -20,7 +20,7 @@ STATE_PATH = os.path.join(APP_DIR, "faces.json")
 OPENBOT_URL = "https://openbot.run/"
 GROKBOT_URL = "https://x.ai/bot"
 
-# Het gezicht dat er staat zolang er geen bot van de gebruiker is gevonden.
+# The face shown as long as none of the user's bots is found.
 UNLINKED_ID = "unlinked"
 UNLINKED_NAME = "Bot"
 
@@ -44,11 +44,11 @@ def _resolve_url() -> str:
 API_URL: str = _resolve_url()
 
 DOT_COLOR = "#FF4757"
-POLL_INTERVAL = 3  # seconds, als de bot stil is
-WORK_POLL_INTERVAL = 1  # seconde, zolang de beurt loopt
+POLL_INTERVAL = 3  # seconds, when the bot is quiet
+WORK_POLL_INTERVAL = 1  # second, while the turn is running
 
 
-# Instellingen staan los van faces.json; hier komen geen secrets in.
+# Settings are separate from faces.json; no secrets go in here.
 CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
@@ -57,22 +57,22 @@ SETTING_KEYS = ("sound", "always_on_top", "check_updates", "auto_update", "login
 
 
 def always_on_top() -> bool:
-    """Standaard boven andere vensters, zodat het gezicht altijd te zien is."""
+    """Above other windows by default, so the face is always visible."""
     return widget_config().get("always_on_top") is not False
 
 
 def check_updates() -> bool:
-    """Standaard één keer per start vragen of er een nieuwere versie is."""
+    """By default ask once per start whether there is a newer version."""
     return widget_config().get("check_updates") is not False
 
 
 def auto_update() -> bool:
-    """Standaard updates zelf klaarzetten en bij de volgende start installeren."""
+    """By default stage updates ourselves and install them at the next start."""
     return widget_config().get("auto_update") is not False
 
 
 def widget_config() -> dict:
-    """widget.json, of leeg als het bestand ontbreekt of stuk is."""
+    """widget.json, or empty if the file is missing or broken."""
     try:
         with open(CONFIG_PATH) as fh:
             data = json.load(fh)
@@ -82,7 +82,7 @@ def widget_config() -> dict:
 
 
 def save_widget_config(**values) -> dict:
-    """widget.json bijwerken; alleen de sleutels die de widget kent."""
+    """Update widget.json; only the keys the widget knows."""
     data = widget_config()
     data.update({k: v for k, v in values.items() if k in SETTING_KEYS})
     try:

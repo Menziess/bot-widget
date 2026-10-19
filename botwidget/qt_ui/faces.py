@@ -1,4 +1,4 @@
-"""Eén gezicht per aangezette bot, plus het rechtsklikmenu om ze te beheren."""
+"""One face per enabled bot, plus the right-click menu to manage them."""
 
 import json
 import os
@@ -70,11 +70,11 @@ class Faces(QObject):
             json.dump({"enabled": list(self.faces), "pos": self.pos}, fh)
 
     def _probe_grok(self):
-        """Eén keer gbot vragen; geen lus, gbot waarschuwt daar zelf voor."""
+        """Ask gbot once; no loop, gbot warns about that itself."""
         self.grok = grok_bot_status()
 
     def _probe_update(self):
-        """Is er een nieuwere versie? Zo ja, en mag dat, dan alvast klaarzetten."""
+        """Is there a newer version? If so, and allowed, stage it already."""
         release = updates.newer_release()
         if release is None:
             return
@@ -91,7 +91,7 @@ class Faces(QObject):
             QApplication.quit()
 
     def welcome(self, first_run: bool):
-        """De eerste keer: het eerste gezicht zegt dat de widget voortaan meestart."""
+        """The first time: the first face says the widget will now start at login."""
         if first_run and self.faces:
             next(iter(self.faces.values())).welcome()
 
@@ -126,7 +126,7 @@ class Faces(QObject):
         action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
 
     def _platform_entries(self, menu: QMenu):
-        """Welke bot-apps zijn er gevonden; ontbrekende krijgen een link."""
+        """Which bot apps were found; missing ones get a link."""
         if openbot_installed():
             menu.addAction("OpenBot · detected").setEnabled(False)
         else:
@@ -173,7 +173,7 @@ class Faces(QObject):
             face.restack()
 
     def show_menu(self, face=None):
-        """Het rechtsklikmenu op de muis. Een gewoon menu, dus het reageert direct."""
+        """The right-click menu at the mouse. A normal menu, so it responds immediately."""
         menu = QMenu()
         if self.staged:
             menu.addAction(f"Restart to update to v{self.update.version}").triggered.connect(self.install_update)

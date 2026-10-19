@@ -1,4 +1,4 @@
-; Inno Setup-script; de build geeft Version, SourceDir en OutputDir mee.
+; Inno Setup script; the build passes Version, SourceDir and OutputDir.
 [Setup]
 AppName=Bot Widget
 AppVersion={#Version}

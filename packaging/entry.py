@@ -1,4 +1,4 @@
-"""Startpunt voor de gebundelde app; PyInstaller bundelt dit bestand."""
+"""Entry point for the packaged app; PyInstaller bundles this file."""
 
 from botwidget.qt_ui.app import main
 

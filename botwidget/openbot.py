@@ -1,4 +1,4 @@
-"""De lokale OpenBot: HTTP-API, store (sqlite) en gbot."""
+"""The local OpenBot: HTTP API, store (sqlite) and gbot."""
 
 import json
 import os
@@ -51,7 +51,7 @@ GBOT = shutil.which("gbot") or os.path.expanduser("~/.local/bin/gbot")
 
 
 def openbot_installed() -> bool:
-    """OpenBot laat zijn map achter zodra het één keer gestart is."""
+    """OpenBot leaves its folder behind once it has been started once."""
     return os.path.isdir(OPENBOT_DIR)
 
 
@@ -60,10 +60,10 @@ def gbot_installed() -> bool:
 
 
 def grok_bot_status(timeout: float = 10.0) -> dict:
-    """Vraag gbot naar de bots van Grok Bot.
+    """Ask gbot about the bots of Grok Bot.
 
-    Zonder aanmelding geeft gbot exit 75 en een reden op stderr; die komt als
-    note terug, zodat het menu kan zeggen waarom er geen route is.
+    Without a login gbot exits 75 with a reason on stderr; that comes back as a
+    note, so the menu can say why there is no route.
     """
     if not os.path.exists(GBOT):
         return {"connected": False, "bots": [], "note": "gbot not found"}
@@ -90,7 +90,7 @@ def grok_bot_status(timeout: float = 10.0) -> dict:
 
 
 def list_bots() -> list[dict]:
-    """Alle bots met naam en status uit de lokale OpenBot-store."""
+    """All bots with name and status from the local OpenBot store."""
     query = """
         SELECT a.agent_json, t.status
         FROM projection_agents a
@@ -143,11 +143,11 @@ def _chat_text(raw: str) -> str:
 
 
 def latest_chat(thread_id: str, limit: int = 8) -> dict:
-    """Laatste chatregels plus één bezig-regel.
+    """Latest chat lines plus one busy line.
 
-    Het eindantwoord staat pas in de store als de beurt klaar is. Tussendoor
-    komen losse commentary-regels binnen; de nieuwste daarvan is het teken
-    dat de beurt nog loopt.
+    The final answer is only in the store when the turn is done. In between, loose
+    commentary lines come in; the newest of those is the sign that the turn is
+    still running.
     """
     empty = {"messages": [], "activity": ""}
     try:

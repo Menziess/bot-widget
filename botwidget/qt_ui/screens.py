@@ -1,4 +1,4 @@
-"""Schermen als (x, y, breedte, hoogte) in logische px, zonder menubalk of dock."""
+"""Screens as (x, y, width, height) in logical px, without menu bar or dock."""
 
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QGuiApplication
@@ -14,6 +14,6 @@ def rects() -> list:
 
 
 def rect_at(x: float, y: float) -> tuple:
-    """Het scherm onder (x, y), anders het hoofdscherm."""
+    """The screen under (x, y), otherwise the primary screen."""
     screen = QGuiApplication.screenAt(QPoint(int(x), int(y))) or QGuiApplication.primaryScreen()
     return _rect(screen)

@@ -1,4 +1,4 @@
-"""Ontwikkelmodus: start de widget en start hem opnieuw zodra een .py-bestand verandert."""
+"""Dev mode: start the widget and restart it as soon as a .py file changes."""
 
 import os
 import signal
@@ -16,7 +16,7 @@ POLL_S = 0.5
 
 
 def snapshot(folder: str = PACKAGE) -> dict:
-    """Pad en wijzigingstijd van elk .py-bestand onder folder."""
+    """Path and modification time of every .py file under folder."""
     seen = {}
     for root, dirs, files in os.walk(folder):
         dirs[:] = [d for d in dirs if d != "__pycache__"]
@@ -42,7 +42,7 @@ def stop(child: subprocess.Popen | None, wait: float = 3.0):
 
 
 def run(folder: str = PACKAGE, poll: float = POLL_S):
-    """Houdt de widget draaiend met de nieuwste code. Een crash wacht op de volgende wijziging."""
+    """Keeps the widget running with the newest code. A crash waits for the next change."""
     ensure_single_instance(DEV_PIDFILE, (b"--dev",))
     extra = ["--keep-login"] if "--keep-login" in sys.argv else []
     child = start(extra)

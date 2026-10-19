@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Desktop widget: geanimeerd botgezicht plus chatvenster.
+"""Desktop widget: an animated bot face with a speech bubble.
 
-Toont een zwevend gezicht met een meldingsstip als de bot op een antwoord of
-goedkeuring wacht. Een klik opent het chatvenster; berichten gaan via de
-lokale HTTP-API van OpenBot. De code staat in het pakket botwidget/; dit
-bestand blijft de naam waarmee de widget wordt gestart.
+Shows a floating face with a notification dot when the bot waits for an answer or
+approval. A click opens the chat bubble; messages go through OpenBot's local HTTP
+API. The code lives in the botwidget/ package; this file stays the name the widget
+is started with.
 
-Vereist: PySide6 (pip install PySide6)
+Requires: PySide6 (pip install PySide6)
 """
 
 from botwidget.qt_ui.app import main

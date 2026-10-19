@@ -1,9 +1,9 @@
-"""Updates: vragen of er een nieuwere versie is, hem klaarzetten en installeren.
+"""Updates: ask whether there is a newer version, stage it and install it.
 
-Eén anonieme vraag aan GitHub. Het bestand voor dit besturingssysteem wordt
-gedownload en gecontroleerd tegen SHA256SUMS.txt van dezelfde release; de
-installatie zelf doet de OS-laag. Een mislukte stap is stil: dan blijft de
-huidige versie gewoon draaien.
+One anonymous request to GitHub. The file for this operating system is downloaded
+and checked against SHA256SUMS.txt of the same release; the OS layer does the
+installation itself. A failed step is silent: the current version just keeps
+running.
 """
 
 import hashlib
@@ -29,7 +29,7 @@ VERIFIED = ".verified"
 @dataclass
 class Release:
     version: str
-    assets: dict  # bestandsnaam -> downloadlink
+    assets: dict  # file name -> download link
 
 
 def parse_version(tag: str) -> tuple:
@@ -51,7 +51,7 @@ def _open(url: str, timeout: float, accept: str = "*/*"):
 
 
 def newer_release(current: str = __version__, timeout: float = 5.0) -> Release | None:
-    """De nieuwere release, of None."""
+    """The newer release, or None."""
     try:
         with _open(LATEST_URL, timeout, "application/vnd.github+json") as response:
             data = json.loads(response.read().decode())
@@ -66,7 +66,7 @@ def newer_release(current: str = __version__, timeout: float = 5.0) -> Release |
 
 
 def parse_sums(text: str) -> dict:
-    """De uitvoer van sha256sum: 'hash  naam' of 'hash *naam'."""
+    """The output of sha256sum: 'hash  name' or 'hash *name'."""
     sums = {}
     for line in text.splitlines():
         match = re.match(r"^([0-9a-fA-F]{64})\s+\*?(.+?)\s*$", line)
@@ -89,7 +89,7 @@ def _download(url: str, path: str, timeout: float):
 
 
 def stage(release: Release, timeout: float = 60.0) -> str | None:
-    """Download en controleer het bestand voor dit systeem; het pad, of None."""
+    """Download and verify the file for this system; the path, or None."""
     url, sums_url = release.assets.get(UPDATE_ASSET), release.assets.get(SUMS_ASSET)
     if not (url and sums_url):
         return None
@@ -114,7 +114,7 @@ def stage(release: Release, timeout: float = 60.0) -> str | None:
 
 
 def staged_update(current: str = __version__) -> tuple | None:
-    """(versie, pad) van de nieuwste klaargezette update die nieuwer is dan current."""
+    """(version, path) of the newest staged update that is newer than current."""
     found = []
     for name in os.listdir(STAGING) if os.path.isdir(STAGING) else []:
         path = os.path.join(STAGING, name, UPDATE_ASSET)
@@ -124,17 +124,17 @@ def staged_update(current: str = __version__) -> tuple | None:
 
 
 def clean_staging(current: str = __version__):
-    """Ruim klaargezette updates op die niet nieuwer zijn dan wat er nu draait."""
+    """Clean up staged updates that are not newer than what is running now."""
     for name in os.listdir(STAGING) if os.path.isdir(STAGING) else []:
         if not is_newer(name, current):
             shutil.rmtree(os.path.join(STAGING, name), ignore_errors=True)
 
 
 def install_staged(current: str = __version__) -> bool:
-    """Installeer een klaargezette update; True als de widget nu moet afsluiten.
+    """Install a staged update; True if the widget should quit now.
 
-    De controlemarkering gaat eerst weg: een installatie die mislukt wordt zo
-    niet bij elke start opnieuw geprobeerd.
+    The verification marker goes first: an installation that fails is then not
+    retried at every start.
     """
     found = staged_update(current)
     if not (found and can_install_update()):
