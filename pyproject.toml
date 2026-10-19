@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -13,8 +13,13 @@ dependencies = ["PySide6-Essentials>=6.6"]
 [project.scripts]
 botwidget = "botwidget.qt_ui.app:main"
 
+# The version comes from the git tag (v0.1.1 becomes 0.1.1) and is baked into the package.
 [tool.hatch.version]
-path = "botwidget/__init__.py"
+source = "vcs"
+raw-options = { fallback_version = "0.0.0+unknown" }
+
+[tool.hatch.build.hooks.vcs]
+version-file = "botwidget/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["botwidget"]

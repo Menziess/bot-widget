@@ -6,7 +6,7 @@ import sys
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
-from botwidget import channel, startup, updates
+from botwidget import __version__, channel, startup, updates
 from botwidget.config import auto_update
 from botwidget.instance import ensure_single_instance
 from botwidget.qt_ui.faces import Faces
@@ -23,6 +23,9 @@ def _login_item(args: list):
 
 
 def main():
+    if "--version" in sys.argv[1:]:
+        print(__version__)
+        return
     if "--login-item" in sys.argv[1:]:
         _login_item(sys.argv[sys.argv.index("--login-item") + 1:])
         return

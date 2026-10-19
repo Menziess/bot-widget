@@ -33,8 +33,12 @@ class Release:
 
 
 def parse_version(tag: str) -> tuple:
-    """'v0.2.1' wordt (0, 2, 1); zonder cijfers is het (0,)."""
-    return tuple(int(part) for part in re.findall(r"\d+", tag)[:3]) or (0,)
+    """'v0.2.1' becomes (0, 2, 1, 1); a development version like 0.2.1.dev3 becomes (0, 2, 1, 0).
+
+    The last slot makes a development version sort below the release that follows it.
+    """
+    numbers = [int(part) for part in re.findall(r"\d+", tag.split("+")[0].split(".dev")[0])[:3]]
+    return tuple(numbers + [0] * (3 - len(numbers))) + (0 if ".dev" in tag else 1,)
 
 
 def is_newer(latest: str, current: str = __version__) -> bool:

@@ -375,6 +375,14 @@ class TestUpdates(unittest.TestCase):
         self.assertFalse(updates.is_newer("v0.1.0", "0.1.0"))
         self.assertFalse(updates.is_newer("0.0.9", "0.1.0"))
 
+    def test_a_dev_build_sorts_below_the_release_it_precedes(self):
+        self.assertTrue(updates.is_newer("v0.1.1", "0.1.1.dev3+gabc1234.d20261019"))
+        self.assertFalse(updates.is_newer("v0.1.0", "0.1.1.dev3+gabc1234"), "a dev build is past 0.1.0")
+        self.assertFalse(updates.is_newer("v0.1.1", "0.1.1"))
+
+    def test_the_unknown_fallback_version_is_older_than_any_release(self):
+        self.assertTrue(updates.is_newer("v0.1.0", "0.0.0+unknown"))
+
     def test_garbage_tags_are_never_newer(self):
         self.assertFalse(updates.is_newer("nightly", "0.1.0"))
 

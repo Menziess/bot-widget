@@ -35,8 +35,9 @@ UNUSED_QT = ("QtWebEngineCore", "QtWebEngineWidgets", "QtWebChannel", "QtQml", "
 
 
 def version() -> str:
-    with open(os.path.join(ROOT, "botwidget", "__init__.py")) as fh:
-        return re.search(r'__version__ = "([^"]+)"', fh.read()).group(1)
+    """The number for installers: 0.1.1.dev3+gabc becomes 0.1.1, they only want digits."""
+    from botwidget import __version__
+    return re.match(r"\d+(\.\d+){0,2}", __version__).group(0)
 
 
 def run(*cmd, **kwargs):

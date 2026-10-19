@@ -80,6 +80,20 @@ On Linux the installer names its command `bot-widget` so it does not clash with 
 - Everything that touches Qt lives in `botwidget/qt_ui/`
 - `BOT_WIDGET_OPENBOT_DIR` points the widget at another OpenBot data folder, handy for testing
 
+## Releasing
+
+The git tag is the version. Push a tag and the release workflow builds and publishes everything.
+
+```sh
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+- The version is read from the tag at build time, so there is no number to edit in the code
+- A build from a tag reports exactly that number, a build between tags reports a dev number such as 0.1.2.dev3
+- The workflow stops if the number baked into the app is not the tag
+- `botwidget --version` prints it
+
 ## Signing the downloads
 
 Unsigned apps make macOS and Windows warn on first launch. The release workflow signs them as soon as certificates exist as repository secrets.
