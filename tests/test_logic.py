@@ -774,6 +774,17 @@ class BubbleTextDocument(unittest.TestCase):
         self.assertIn("Robo", doc.toPlainText())
         self.assertIn("hello there", doc.toPlainText())
 
+    def test_refilling_replaces_the_old_text_instead_of_stacking_under_it(self):
+        from botwidget.qt_ui.text_doc import fill_document
+        doc, _panels = self.document([{"role": "user", "text": "first question"}])
+        messages = [{"role": "user", "text": "first question"}, {"role": "bot", "text": "the answer"}]
+        panels = bubble_layout.bubble_panels(self.measure, markdown.conversation_blocks(messages, "Robo"))
+        fill_document(doc, panels, 300)
+        text = doc.toPlainText()
+        self.assertEqual(text.count("first question"), 1, "the old copy must not stay behind")
+        self.assertEqual(text.count("You"), 1)
+        self.assertIn("the answer", text)
+
     def _links(self, doc):
         """The anchor labels and hrefs in the document, in reading order."""
         from PySide6.QtGui import QTextCursor

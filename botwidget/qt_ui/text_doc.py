@@ -76,6 +76,9 @@ def fill_document(doc, panels: list, box_w: int):
     The first line of the whole document gets none; the text widget itself sits one panel
     padding lower, which is where the bubble draws it.
     """
+    # Without this the new text is inserted above the old text, which then sits below the new
+    # panels: white words (made for the dark user panel) on the white bubble.
+    doc.clear()
     doc.setDocumentMargin(0)
     doc.setTextWidth(box_w)
     cursor = QTextCursor(doc)
