@@ -1,6 +1,6 @@
 name: release
 
-# Een tag als v0.1.0 bouwt de apps en zet ze op GitHub Releases. De website linkt
+# Een tag als v0.1.0 bouwt de apps en zet ze op GitHub Releases; handmatig starten bouwt alleen. De website linkt
 # naar releases/latest/download/<vaste naam>, dus de namen mogen niet veranderen.
 on:
   push:
