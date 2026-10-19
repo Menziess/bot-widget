@@ -24,7 +24,11 @@ class ApiResult(NamedTuple):
 
     @property
     def retryable(self) -> bool:
-        """A dropped link, a timeout or a server error can heal; a refusal will not."""
+        """A dropped link, a timeout, a server error or an unreadable answer can heal;
+        a refusal will not."""
+        if self.status == 200:
+            # Only asked after a failure, so this is a body that was not JSON: a blip.
+            return True
         return self.status is None or self.status >= 500 or self.status in (408, 429)
 
 

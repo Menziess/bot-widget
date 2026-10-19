@@ -815,6 +815,24 @@ class Sending(unittest.TestCase):
             self.assertEqual(server.seen[0]["clientMessageId"], server.seen[1]["clientMessageId"])
             self.assertEqual(server.seen[0]["text"], "hi")
 
+    def test_a_200_with_a_body_that_is_not_json_is_retried_with_the_same_id(self):
+        with _FlakyApi([200, 200], bodies=[b"<html>not json</html>"]) as server:
+            cid = "deadbeef"
+            path = "/v1/agents/me/messages"
+            first = openbot.api_post(path, {"text": "hi", "clientMessageId": cid})
+            self.assertFalse(first.ok)
+            self.assertEqual(first.status, 200, "the answer arrived, we just could not read it")
+            self.assertTrue(first.retryable, "an unreadable answer is a blip, not a refusal")
+            box = delivery.Outbox()
+            box.add("hi", cid)
+            self.assertEqual(box.failed(cid, first.retryable), 1)
+            self.assertEqual(box.current()["cid"], cid, "the message is kept, not dropped")
+            second = openbot.api_post(path, {"text": "hi", "clientMessageId": cid})
+            self.assertTrue(second.ok, "the retry goes through")
+            box.sent(cid)
+            self.assertIsNone(box.current())
+            self.assertEqual(server.seen[0]["clientMessageId"], server.seen[1]["clientMessageId"])
+
     def test_a_refusal_from_the_api_is_not_retried(self):
         with _FlakyApi([401]) as server:
             result = openbot.api_post("/v1/agents/me/messages",
@@ -853,11 +871,12 @@ def _closed_address() -> str:
 class _FlakyApi:
     """A local API that answers with the given status codes in order, as a context manager."""
 
-    def __init__(self, replies: list):
+    def __init__(self, replies: list, bodies: list | None = None):
         import http.server
         import threading
 
         self.replies = replies
+        self.bodies = bodies or []
         self.seen = []
         self._tmp = tempfile.TemporaryDirectory()
         self._headers = os.path.join(self._tmp.name, "headers")
@@ -873,7 +892,7 @@ class _FlakyApi:
                 self.send_response(parent.replies.pop(0) if parent.replies else 200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
-                self.wfile.write(b'{"ok": true}')
+                self.wfile.write(parent.bodies.pop(0) if parent.bodies else b'{"ok": true}')
 
             def log_message(self, *args):
                 pass
