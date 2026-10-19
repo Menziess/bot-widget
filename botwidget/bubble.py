@@ -1,5 +1,8 @@
 """The speech bubble as SVG: sizes and drawing based on broken lines."""
 
+import math
+
+from botwidget.avatar import SILHOUETTES
 from botwidget.theme import (
     DOTS_GAP,
     DOTS_R,
@@ -87,11 +90,11 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
 
 
 def dots_svg(x: float, y: float, phase: float, ink: str) -> str:
-    """Three thinking dots; phase runs the wave through the dots."""
+    """Three thinking dots; phase runs a smooth wave through the dots."""
     out = []
     for i in range(3):
         wave = (phase - i * 0.18) % 1.0
-        lift = 1 - abs(wave * 2 - 1)
+        lift = (1 - math.cos(math.tau * wave)) / 2
         r = DOTS_R * (0.6 + 0.4 * lift)
         out.append(f'<circle cx="{x + i * DOTS_GAP:.2f}" cy="{y - 2.5 * lift:.2f}"'
                    f' r="{r:.2f}" fill="{ink}" opacity="{0.35 + 0.6 * lift:.2f}"/>')
@@ -157,33 +160,58 @@ def bubble_body_svg(body_w: int, body_h: int, tip_x: float | None = None,
 
 
 # ── Thinking cloud ──────────────────────────────────────────────────
-# A cloud of circles around the area, with three shrinking circles toward the head. The same canvas
-# size as the speech bubble, so the window sizes the same.
-CLOUD_R = 13.0
+# The lobed profile of the avatars' "nuage" face, stretched over the body area, with three
+# shrinking circles toward the head. The same canvas size as the speech bubble.
 CLOUD_INSET = 6.0
-CLOUD_STEP = 24.0
+# How far the notches between the lobes cut in, and how far the lobes stick out (at most:
+# the canvas margin is PAD_SVG).
+CLOUD_DIP = 6.0
+CLOUD_LOBE = 0.16
+CLOUD_LOBE_MAX = 14.0
+# The base under the lobes is a squircle, so the text in the corners stays inside the cloud.
+CLOUD_SQUIRCLE = 0.7
 # (radius, distance from the centre to the edge of the area)
 CLOUD_TRAIL = ((5.0, 10.0), (3.2, 17.0), (2.0, 20.0))
 
 
-def _cloud_shapes(body_w: int, body_h: int, tip_x: float | None, tip_up: bool, grow: float = 0.0):
-    """Circles (cx, cy, r) and the inner area (x, y, w, h) of the cloud."""
+def _smooth_closed(pts: list) -> str:
+    """A closed Catmull-Rom path through the points, the same tension as the faces."""
+    tension = 1 / 6
+    n = len(pts)
+    out = [f"M{pts[0][0]:.2f} {pts[0][1]:.2f}"]
+    for i in range(n):
+        a, o, s, c = pts[(i - 1) % n], pts[i], pts[(i + 1) % n], pts[(i + 2) % n]
+        ctl1 = (o[0] + (s[0] - a[0]) * tension, o[1] + (s[1] - a[1]) * tension)
+        ctl2 = (s[0] - (c[0] - o[0]) * tension, s[1] - (c[1] - o[1]) * tension)
+        out.append(f"C{ctl1[0]:.2f} {ctl1[1]:.2f} {ctl2[0]:.2f} {ctl2[1]:.2f} "
+                   f"{s[0]:.2f} {s[1]:.2f}")
+    return "".join(out) + "Z"
+
+
+def _cloud_parts(body_w: int, body_h: int, tip_x: float | None, tip_up: bool,
+                 grow: float = 0.0):
+    """The cloud outline and the circles of the trail toward the head."""
     x0, y0 = PAD_SVG + CLOUD_INSET, PAD_SVG + CLOUD_INSET
     w, h = body_w - 2 * CLOUD_INSET, body_h - 2 * CLOUD_INSET
-    nx, ny = max(2, round(w / CLOUD_STEP)), max(2, round(h / CLOUD_STEP))
-    circles = []
-    for i in range(nx + 1):
-        for y in (y0, y0 + h):
-            circles.append((x0 + w * i / nx, y, CLOUD_R + grow))
-    for j in range(1, ny):
-        for x in (x0, x0 + w):
-            circles.append((x, y0 + h * j / ny, CLOUD_R + grow))
+    cx, cy = x0 + w / 2, y0 + h / 2
+    lobes = SILHOUETTES["nuage"]
+    low, high = min(lobes), max(lobes)
+    depth = min(CLOUD_LOBE_MAX, h * CLOUD_LOBE)
+    pts = []
+    for i, r in enumerate(lobes):
+        angle = i / len(lobes) * math.tau
+        # Stretch the profile: the puffs become puffs, the notches stay notches.
+        spread = min(1.0, max(0.0, ((r - low) / (high - low) - 0.35) / 0.45))
+        radius_x = w / 2 - CLOUD_DIP + grow + spread * depth
+        radius_y = h / 2 - CLOUD_DIP + grow + spread * depth
+        cos_a, sin_a = math.cos(angle), math.sin(angle)
+        pts.append((cx + math.copysign(abs(cos_a) ** CLOUD_SQUIRCLE, cos_a) * radius_x,
+                    cy + math.copysign(abs(sin_a) ** CLOUD_SQUIRCLE, sin_a) * radius_y))
     tip = _bubble_tip(body_w, tip_x)
     edge = PAD_SVG if tip_up else PAD_SVG + body_h
     sign = -1 if tip_up else 1
-    for radius, dist in CLOUD_TRAIL:
-        circles.append((tip, edge + sign * dist, radius + grow))
-    return circles, (x0, y0, w, h)
+    trail = [(tip, edge + sign * dist, radius + grow) for radius, dist in CLOUD_TRAIL]
+    return _smooth_closed(pts), trail
 
 
 def _circles_svg(circles: list, extra: str) -> str:
@@ -193,22 +221,19 @@ def _circles_svg(circles: list, extra: str) -> str:
 def cloud_shadow_svg(body_w: int, body_h: int, tip_x: float | None = None,
                      tip_up: bool = False) -> str:
     """The shadow of the thinking cloud, drawn sharp; the toolkit blurs it."""
-    circles, (x, y, w, h) = _cloud_shapes(body_w, body_h, tip_x, tip_up, grow=SHADOW_GROW)
+    path, trail = _cloud_parts(body_w, body_h, tip_x, tip_up, grow=SHADOW_GROW)
     fill = f'fill="#000" opacity="{SHADOW_ALPHA}"'
     return _bubble_canvas(body_w, body_h, (
-        f'<g transform="translate(0 2)"><rect x="{x - SHADOW_GROW}" y="{y - SHADOW_GROW}"'
-        f' width="{w + 2 * SHADOW_GROW}" height="{h + 2 * SHADOW_GROW}" {fill}/>'
-        + _circles_svg(circles, fill) + "</g>"))
+        f'<g transform="translate(0 2)"><path d="{path}" {fill}/>'
+        + _circles_svg(trail, fill) + "</g>"))
 
 
 def cloud_body_svg(body_w: int, body_h: int, tip_x: float | None = None,
                    tip_up: bool = False) -> str:
-    """The white thinking cloud with hairline. First everything with an outline, then
-    everything without one over it, so only the outer line remains.
-    """
-    circles, (x, y, w, h) = _cloud_shapes(body_w, body_h, tip_x, tip_up)
-    rect = f'<rect x="{x}" y="{y}" width="{w}" height="{h}"'
-    outline = f'fill="{SAND_BUBBLE}" stroke="{SAND_HAIRLINE}" stroke-width="2"'
+    """The white thinking cloud with hairline, shaped like the nuage face."""
+    path, trail = _cloud_parts(body_w, body_h, tip_x, tip_up)
+    paint = f'fill="{SAND_BUBBLE}" stroke="{SAND_HAIRLINE}" stroke-width="2"'
     return _bubble_canvas(body_w, body_h, (
-        rect + f" {outline}/>" + _circles_svg(circles, outline)
-        + rect + f' fill="{SAND_BUBBLE}"/>' + _circles_svg(circles, f'fill="{SAND_BUBBLE}"')))
+        f'<path d="{path}" {paint} stroke-linejoin="round"/>'
+        + _circles_svg(trail, paint)))
+

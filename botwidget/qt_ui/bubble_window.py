@@ -28,6 +28,8 @@ from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document
 from botwidget.theme import (
     BUBBLE_LINGER,
+    DOTS_CYCLE_S,
+    DOTS_GAP,
     DOTS_MS,
     PAD_BODY,
     PAD_PANEL_Y,
@@ -295,7 +297,7 @@ class BubbleWindow(QWidget):
             self._dots_on = False
             self._dots.stop()
             return
-        self._dots_phase = (self._dots_phase + 0.22) % 1.0
+        self._dots_phase = (self._dots_phase + DOTS_MS / 1000 / DOTS_CYCLE_S) % 1.0
         for line in self._dots_lines:
             line["phase"] = self._dots_phase
         if self._geom:

@@ -266,8 +266,33 @@ class Detection(unittest.TestCase):
         self.assertFalse(openbot.gbot_installed())
 
 
+class Thinking(unittest.TestCase):
+    """Should move the dots in short smooth steps and keep the activity to one short line."""
+
+    def test_the_dots_tick_short_enough_to_look_fluid(self):
+        self.assertLessEqual(theme.DOTS_MS, 40, "a short timer, not a slideshow")
+        step = theme.DOTS_MS / 1000 / theme.DOTS_CYCLE_S
+        self.assertGreaterEqual(1 / step, 20, "at least 20 frames per wave")
+
+    def test_the_dot_wave_slows_at_its_crest(self):
+        def radius(phase):
+            svg = bubble.dots_svg(0, 0, phase, "#000")
+            return float(svg.split('r="')[1].split('"')[0])
+
+        climb = abs(radius(0.25) - radius(0.20))
+        crest = abs(radius(0.30) - radius(0.25))
+        self.assertLess(crest, climb, "a smooth crest, not a corner")
+
+    def test_the_activity_line_is_one_short_line(self):
+        self.assertEqual(markdown.activity_line("  reading   the file\nand more "), "reading the file")
+        self.assertEqual(markdown.activity_line(""), "")
+        long = markdown.activity_line("working on it " * 20)
+        self.assertLessEqual(len(long), markdown.ACTIVITY_CHARS)
+        self.assertTrue(long.endswith("…"))
+
+
 class Clouds(unittest.TestCase):
-    """Should give the thinking cloud circles around the area and a tail of shrinking circles."""
+    """Should give the thinking cloud one lobed silhouette and a tail of shrinking circles."""
 
     def test_trail_points_down_or_up(self):
         down = bubble.cloud_body_svg(200, 100, tip_x=100, tip_up=False)
@@ -284,9 +309,23 @@ class Clouds(unittest.TestCase):
 
         self.assertEqual(canvas(cloud), canvas(chat))
 
-    def test_shadow_matches_body_circles(self):
-        self.assertEqual(bubble.cloud_shadow_svg(200, 100).count("<circle"),
-                         bubble.cloud_body_svg(200, 100).count("<circle") // 2)
+    def test_the_cloud_is_one_smooth_shape_not_a_box_with_circles(self):
+        svg = bubble.cloud_body_svg(200, 100)
+        self.assertEqual(svg.count("<path"), 1, "one silhouette")
+        self.assertNotIn("<rect", svg, "no box behind the cloud")
+        self.assertEqual(svg.count("<circle"), len(bubble.CLOUD_TRAIL),
+                         "only the trail toward the head is circles")
+
+    def test_the_cloud_follows_the_nuage_profile(self):
+        svg = bubble.cloud_body_svg(200, 100)
+        self.assertEqual(svg, bubble.cloud_body_svg(200, 100), "the shape does not wobble")
+        self.assertGreater(svg.count("C"), 40, "a smooth curve through the 64 lobes")
+
+    def test_shadow_matches_the_body_shape(self):
+        shadow = bubble.cloud_shadow_svg(200, 100)
+        body = bubble.cloud_body_svg(200, 100)
+        self.assertEqual(shadow.count("<path"), body.count("<path"))
+        self.assertEqual(shadow.count("<circle"), body.count("<circle"))
 
 
 class Animator(unittest.TestCase):

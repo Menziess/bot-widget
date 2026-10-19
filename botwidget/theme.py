@@ -43,7 +43,9 @@ GAP_PANEL = 10
 DOTS_W = 62
 DOTS_R = 4.5
 DOTS_GAP = 12.0
-DOTS_MS = 180
+# A short tick so the wave moves smoothly instead of in steps; one wave takes this many seconds.
+DOTS_MS = 32
+DOTS_CYCLE_S = 1.2
 # As long as nothing changes and the mouse is not nearby, the bubble stays until this many seconds
 # after the last change.
 BUBBLE_LINGER = 8.0

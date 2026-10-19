@@ -152,6 +152,15 @@ def status_block(text: str) -> dict:
     return text_block(BUBBLE_FONT, 0, "", True, [(text, "i")])
 
 
+ACTIVITY_CHARS = 42
+
+
+def activity_line(text: str) -> str:
+    """One short line of what the bot is doing; never more than that."""
+    line = " ".join((text or "").split("\n", 1)[0].split())
+    return line if len(line) <= ACTIVITY_CHARS else line[:ACTIVITY_CHARS - 1].rstrip() + "…"
+
+
 def code_block(lines: list) -> dict:
     """A whole code block at once: monospace, in a panel of its own."""
     return {"kind": "code", "lines": lines}

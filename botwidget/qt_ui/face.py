@@ -33,6 +33,7 @@ from botwidget.config import (
 )
 from botwidget.delivery import Outbox
 from botwidget.markdown import (
+    activity_line,
     block_text,
     conversation_blocks,
     plain_block,
@@ -519,9 +520,12 @@ class FaceWindow(QWidget):
                 self.bubble.show_blocks(blocks, "say", input=True)
             return
         if self._working:
-            # What you just asked, with three pulsing dots below it.
+            # What you just asked, three pulsing dots and one line about what the bot is doing.
             asked = [m for m in messages if m.get("role") == "user"][-1:]
             blocks = conversation_blocks(asked, self.bot_name) + [role_panel("bot"), plain_block("dots")]
+            activity = activity_line(chat.get("activity") or "")
+            if activity:
+                blocks.append(status_block(activity))
             if self._send_status:
                 blocks.append(status_block(self._send_status))
             if not self.bubble.shows("think", block_text(blocks), False):
