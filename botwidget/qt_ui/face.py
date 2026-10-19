@@ -192,7 +192,7 @@ class FaceWindow(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton:
             if self.faces is not None:
-                self.faces.show_list(self)
+                self.faces.show_menu(self)
             return
         if event.button() != Qt.LeftButton:
             return
@@ -241,11 +241,11 @@ class FaceWindow(QWidget):
             point = event.globalPosition()
             moved = abs(point.x() - self._press_pos[0]) + abs(point.y() - self._press_pos[1])
             click = moved < CLICK_SLOP
-            if click:
-                self.toggle_pin()
+        # Clear the drag state first: _sync_bubble skips the bubble while a drag is running.
         self._press_pos = None
         self._drag_origin = None
         if click:
+            self.toggle_pin()
             # The happy eyes stay a moment; then the cycle picks up again.
             QTimer.singleShot(600, self._happy_off)
         else:
