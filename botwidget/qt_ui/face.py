@@ -29,6 +29,7 @@ from botwidget.config import (
     POLL_INTERVAL,
     WORK_POLL_INTERVAL,
     always_on_top,
+    automation_ready,
 )
 from botwidget.delivery import Outbox
 from botwidget.markdown import (
@@ -38,7 +39,15 @@ from botwidget.markdown import (
     role_panel,
     status_block,
 )
-from botwidget.openbot import api_get, api_post, gbot_installed, latest_chat, openbot_installed
+from botwidget.openbot import (
+    AUTOMATION_OFF,
+    ApiResult,
+    api_get,
+    api_post,
+    gbot_installed,
+    latest_chat,
+    openbot_installed,
+)
 from botwidget.qt_ui import screens
 from botwidget.qt_ui.bubble_window import BubbleWindow
 from botwidget.qt_ui.render import svg_pixmap
@@ -49,6 +58,9 @@ DOT_SIZE = 14
 CLICK_SLOP = 5
 RETRY_NOTE = "No connection to OpenBot — retrying…"
 REFUSED_NOTE = "I couldn't send that. OpenBot answered: {why}."
+# OpenBot only opens its local API once this switch is on, per bot.
+AUTOMATION_NOTE = ("OpenBot's local API is off for {name}. In OpenBot open {name}'s settings and turn on "
+                   '"Local scripts"; messages wait here until then.')
 # A calm 30 frames per second; 60 once you grab the face, then you see the difference.
 IDLE_MS = 33
 BUSY_MS = 16
@@ -444,6 +456,12 @@ class FaceWindow(QWidget):
         self._sync_bubble(latest_chat(thread_id=self.thread_id))
         self._poll_timer.start((WORK_POLL_INTERVAL if self._working else POLL_INTERVAL) * 1000)
 
+    def _waiting_note(self, error: str = "") -> str:
+        """Why a message is waiting: the switch in OpenBot is off, or the link dropped."""
+        if error == AUTOMATION_OFF or not automation_ready():
+            return AUTOMATION_NOTE.format(name=self.bot_name)
+        return RETRY_NOTE
+
     def _with_local(self, messages: list) -> list:
         """The conversation from the store plus whatever was just sent here or went wrong."""
         now = time.monotonic()
@@ -492,8 +510,10 @@ class FaceWindow(QWidget):
                                              self.bot_name)
             if self._working:
                 blocks += [role_panel("bot"), plain_block("dots")]
-            if self._send_status:
-                blocks.append(status_block(self._send_status))
+            # Open the chat and learn at once that sending is not possible yet.
+            status = self._send_status or ("" if automation_ready() else self._waiting_note())
+            if status:
+                blocks.append(status_block(status))
             self._shown_text = block_text(blocks)
             if not self.bubble.shows("say", self._shown_text, True):
                 self.bubble.show_blocks(blocks, "say", input=True)
@@ -552,8 +572,12 @@ class FaceWindow(QWidget):
                          args=(item["text"], item["cid"])).start()
 
     def _post_message(self, text: str, cid: str):
-        result = api_post(f"/v1/agents/{self.agent_id}/messages",
-                          {"text": text, "clientMessageId": cid})
+        if automation_ready():
+            result = api_post(f"/v1/agents/{self.agent_id}/messages",
+                              {"text": text, "clientMessageId": cid})
+        else:
+            # Nothing listens yet, so trying would only time out; keep the message and wait.
+            result = ApiResult(None, None, AUTOMATION_OFF)
         if self._alive:
             self.message_done.emit(cid, result.ok, result.retryable, result.error)
 
@@ -577,7 +601,7 @@ class FaceWindow(QWidget):
                                     "text": REFUSED_NOTE.format(why=error)})
             else:
                 next_ready = False
-                self._send_status = RETRY_NOTE
+                self._send_status = self._waiting_note(error)
                 QTimer.singleShot(int(wait * 1000), self._pump_outbox)
         self._sync_bubble(latest_chat(thread_id=self.thread_id))
         if next_ready:

@@ -945,15 +945,16 @@ class Sending(unittest.TestCase):
         self.assertEqual(result.status, 401)
 
     def test_no_answer_at_all_is_retryable(self):
-        old_url, old_headers = openbot.API_URL, openbot.HEADERS_FILE
-        self.addCleanup(setattr, openbot, "API_URL", old_url)
+        old_url, old_headers = openbot.api_url, openbot.HEADERS_FILE
+        self.addCleanup(setattr, openbot, "api_url", old_url)
         self.addCleanup(setattr, openbot, "HEADERS_FILE", old_headers)
         with tempfile.TemporaryDirectory() as folder:
             headers = os.path.join(folder, "headers")
             with open(headers, "w") as f:
                 f.write("Authorization: Bearer test\n")
             openbot.HEADERS_FILE = headers
-            openbot.API_URL = _closed_address()
+            closed = _closed_address()
+            openbot.api_url = lambda: closed
             result = openbot.api_post("/v1/agents/me/messages", {"text": "hi"})
         self.assertFalse(result.ok)
         self.assertTrue(result.retryable, "a dropped link looks like a stopped OpenBot, but retries")
@@ -1003,17 +1004,56 @@ class _FlakyApi:
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
 
     def __enter__(self):
-        self._old = (openbot.HEADERS_FILE, openbot.API_URL)
+        self._old = (openbot.HEADERS_FILE, openbot.api_url)
         openbot.HEADERS_FILE = self._headers
-        openbot.API_URL = f"http://127.0.0.1:{self.server.server_port}"
+        address = f"http://127.0.0.1:{self.server.server_port}"
+        openbot.api_url = lambda: address
         return self
 
     def __exit__(self, *exc):
-        openbot.HEADERS_FILE, openbot.API_URL = self._old
+        openbot.HEADERS_FILE, openbot.api_url = self._old
         self.server.shutdown()
         self.server.server_close()
         self._tmp.cleanup()
         return False
+
+
+class OpenBotAutomation(unittest.TestCase):
+    """Should find OpenBot's local API when it appears, even after the widget started."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        for name, file in (("URL_FILE", "url"), ("HEADERS_FILE", "headers")):
+            old = getattr(config, name)
+            self.addCleanup(setattr, config, name, old)
+            setattr(config, name, os.path.join(self.folder.name, file))
+
+    def write(self, name, text):
+        with open(os.path.join(self.folder.name, name), "w") as fh:
+            fh.write(text)
+
+    def test_the_default_address_is_used_until_openbot_writes_one(self):
+        self.assertEqual(config.api_url(), "http://127.0.0.1:41673")
+
+    def test_the_address_is_read_again_on_every_call(self):
+        self.assertEqual(config.api_url(), "http://127.0.0.1:41673")
+        self.write("url", "http://127.0.0.1:50123\n")
+        self.assertEqual(config.api_url(), "http://127.0.0.1:50123")
+        self.write("url", "http://127.0.0.1:50999")
+        self.assertEqual(config.api_url(), "http://127.0.0.1:50999", "a restarted OpenBot picks a new port")
+
+    def test_automation_is_ready_only_with_both_the_address_and_the_token(self):
+        self.assertFalse(config.automation_ready(), "the switch is off: no files yet")
+        self.write("url", "http://127.0.0.1:50123")
+        self.assertFalse(config.automation_ready())
+        self.write("headers", "Authorization: Bearer secret")
+        self.assertTrue(config.automation_ready())
+
+    def test_empty_files_do_not_count(self):
+        self.write("url", "")
+        self.write("headers", "\n")
+        self.assertFalse(config.automation_ready())
 
 
 if __name__ == "__main__":

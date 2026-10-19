@@ -9,7 +9,10 @@ import urllib.error
 import urllib.request
 from typing import NamedTuple
 
-from botwidget.config import API_URL, DB_FILE, HEADERS_FILE, OPENBOT_DIR, read_file
+from botwidget.config import DB_FILE, HEADERS_FILE, OPENBOT_DIR, api_url, read_file
+
+# Why a message could not even be tried: OpenBot has not switched its local API on.
+AUTOMATION_OFF = "automation off"
 
 
 class ApiResult(NamedTuple):
@@ -47,7 +50,7 @@ def read_auth_token() -> str:
 def api_get(path: str) -> dict | list | None:
     """GET a JSON response from the local API."""
     token = read_auth_token()
-    url = f"{API_URL}{path}"
+    url = f"{api_url()}{path}"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
@@ -59,7 +62,7 @@ def api_get(path: str) -> dict | list | None:
 def api_post(path: str, body: dict) -> ApiResult:
     """POST JSON to the local API and say why it failed, not only that it did."""
     token = read_auth_token()
-    url = f"{API_URL}{path}"
+    url = f"{api_url()}{path}"
     data = json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, method="POST")
     req.add_header("Authorization", f"Bearer {token}")

@@ -40,8 +40,19 @@ def _resolve_url() -> str:
     return url or "http://127.0.0.1:41673"
 
 
-# Runtime-resolved values (read once at import)
-API_URL: str = _resolve_url()
+def api_url() -> str:
+    """OpenBot's local API address. Read on every call: OpenBot writes the file when its
+    automation server starts, which can be after this widget did."""
+    return _resolve_url()
+
+
+def automation_ready() -> bool:
+    """Has OpenBot's automation server written its address and token yet?
+
+    In OpenBot that is the per-agent switch "Local scripts"; until it is on, the files are
+    missing and the local API is not listening at all.
+    """
+    return bool(read_file(URL_FILE)) and bool(read_file(HEADERS_FILE))
 
 DOT_COLOR = "#FF4757"
 POLL_INTERVAL = 3  # seconds, when the bot is quiet
