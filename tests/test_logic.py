@@ -99,6 +99,17 @@ class Markdown(unittest.TestCase):
                          [("http://example.com", "link:http://example.com")])
         self.assertEqual(markdown.md_inline("a file:///etc/passwd b"), [("a file:///etc/passwd b", "")])
 
+    def test_a_bare_url_keeps_its_own_parentheses(self):
+        url = "https://en.wikipedia.org/wiki/Foo_(bar)"
+        self.assertEqual(markdown.md_inline("see " + url),
+                         [("see ", ""), (url, "link:" + url)])
+        self.assertEqual(markdown.md_inline("see " + url + "."),
+                         [("see ", ""), (url, "link:" + url), (".", "")],
+                         "the sentence period stays text")
+        self.assertEqual(markdown.md_inline("(see " + url + ")."),
+                         [("(see ", ""), (url, "link:" + url), (").", "")],
+                         "the closing bracket that only ends the sentence stays text")
+
     def test_a_url_in_a_code_span_stays_code(self):
         self.assertEqual(markdown.md_inline("`https://example.com/x`"),
                          [("https://example.com/x", "code")])
@@ -781,6 +792,13 @@ class BubbleTextDocument(unittest.TestCase):
         label, hrefs = self._links(doc)
         self.assertEqual(set(hrefs), {"https://example.com/x"})
         self.assertEqual(label, "https://example.com/x", "the url is its own label")
+
+    def test_a_bare_url_with_parentheses_is_one_anchor(self):
+        url = "https://en.wikipedia.org/wiki/Foo_(bar)"
+        doc, _panels = self.document([{"role": "bot", "text": "see " + url + "."}])
+        label, hrefs = self._links(doc)
+        self.assertEqual(set(hrefs), {url}, "the whole url is the anchor, the period is not in it")
+        self.assertEqual("".join(label.split()), url, "the brackets belong to the url")
 
     def test_a_bare_url_with_another_scheme_stays_text(self):
         doc, _panels = self.document([{"role": "bot", "text": "try file:///etc/passwd or mailto:a@b.c"}])

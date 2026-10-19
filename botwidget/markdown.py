@@ -7,8 +7,10 @@ from botwidget.theme import BUBBLE_CODE_LINES, BUBBLE_FONT, MD_HEAD_SIZE
 
 MD_INLINE_RE = re.compile(
     r"(\*\*.+?\*\*|__.+?__|`[^`]+?`|\*[^*\s][^*]*?\*|_[^_\s][^_]*?_|\[[^\]]+?\]\([^)\s]+?\)"
-    r"|https?://[^\s<>\"'`]*[^\s<>\"'`.,;:!?)\]}]+)"
+    r"|https?://[^\s<>\"'`]+)"
 )
+_URL_PAIRS = {")": "(", "]": "[", "}": "{"}
+_URL_TAIL = ".,;:!?"
 MD_HEAD_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 MD_BULLET_RE = re.compile(r"^[-*+]\s+(.*)$")
 MD_NUM_RE = re.compile(r"^(\d+)[.)]\s+(.*)$")
@@ -33,6 +35,22 @@ def anchor_url(style: str) -> str:
     return url if url.startswith(("http://", "https://")) else ""
 
 
+def trim_url(url: str) -> str:
+    """Drop the punctuation that ends the sentence, keep brackets the url balances itself."""
+    while url:
+        last = url[-1]
+        if last in _URL_TAIL:
+            url = url[:-1]
+        elif last in _URL_PAIRS:
+            if url.count(last) > url.count(_URL_PAIRS[last]):
+                url = url[:-1]
+            else:
+                break
+        else:
+            break
+    return url
+
+
 def md_inline(text: str) -> list:
     """Inline markdown to (piece, style); style is '', 'b', 'i', 'code', 'dim' or 'link:<url>'."""
     out, pos = [], 0
@@ -42,7 +60,13 @@ def md_inline(text: str) -> list:
         tok = m.group(0)
         if tok.startswith(("http://", "https://")):
             # A bare URL is a link like a markdown one; the url is its own label.
-            out.append((tok, "link:" + tok))
+            url = trim_url(tok)
+            if url:
+                out.append((url, "link:" + url))
+                if tok[len(url):]:
+                    out.append((tok[len(url):], ""))
+            else:
+                out.append((tok, ""))
         elif tok[:2] in ("**", "__"):
             out.append((tok[2:-2], "b"))
         elif tok[0] == "`":
