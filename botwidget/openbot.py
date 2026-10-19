@@ -72,6 +72,9 @@ def api_post(path: str, body: dict) -> ApiResult:
         return ApiResult(None, err.code, f"HTTP {err.code}")
     except (urllib.error.URLError, OSError) as err:
         return ApiResult(None, None, str(err))
+    if not body.strip():
+        # An empty body will not turn into JSON, so trying again only repeats it.
+        return ApiResult(None, status, "empty answer", retry=False)
     try:
         answer = json.loads(body.decode())
     except (UnicodeDecodeError, json.JSONDecodeError):
