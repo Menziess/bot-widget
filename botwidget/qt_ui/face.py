@@ -42,10 +42,7 @@ CLICK_SLOP = 5
 # Rustig 30 beelden per seconde; 60 zodra je het gezicht vastpakt, dan zie je het verschil.
 IDLE_MS = 33
 BUSY_MS = 16
-# Ademhaling: de kop zwelt traag een paar procent; dat hoeft niet 60 keer per seconde getekend.
-BREATH = 0.012
-BREATH_PERIOD = 3.8
-BREATH_STEP = 0.003
+WELCOME_S = 9.0
 
 
 def ticker(parent, ms: int, step) -> QTimer:
@@ -82,6 +79,7 @@ class FaceWindow(QWidget):
         self._local = []
         self._hint_shown = False
         self._shown_text = ""
+        self._welcome_until = 0.0
         self._press_pos = None
         self._drag_origin = None
         self._drag_sample = None
@@ -92,12 +90,12 @@ class FaceWindow(QWidget):
         self._mood = "idle"
         self._face_i = 0
         self._cycle_left = 0.0
-        self._pose = "rest"
+        self._pose = "idle"
         self._last_bot = None
         self._happy_on = False
         self.anim = FaceAnimator()
+        self.anim.jump(dx=POSES["idle"][0], dy=POSES["idle"][1])
         self._last_tick = time.monotonic()
-        self._breath = 1.0
 
         self._apply_flags()
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -310,18 +308,14 @@ class FaceWindow(QWidget):
         if self._anim_timer.interval() != (BUSY_MS if busy else IDLE_MS):
             self._anim_timer.setInterval(BUSY_MS if busy else IDLE_MS)
         self._aim(dt * 1000)
-        moving = self.anim.step(dt)
-        # Ademhaling in stapjes van een tiende pixel: sneller tekenen ziet niemand.
-        breath = round((1 + BREATH * math.sin(now * math.tau / BREATH_PERIOD)) / BREATH_STEP) * BREATH_STEP
-        if moving or breath != self._breath:
-            self._breath = breath
-            self._render(breath)
+        if self.anim.step(dt):
+            self._render()
 
-    def _render(self, breath: float = 1.0):
+    def _render(self):
         v = self.anim.value
         svg = face_svg(v["dx"], v["dy"], max(v["scale"], 0.05), v["converge"], self._seed, self._hue,
                        v["lift"], min(max(v["happy"], 0.0), 1.0), lean=v["lean"],
-                       squash=(v["sx"] * breath, v["sy"] * breath))
+                       squash=(v["sx"], v["sy"]))
         self._set_pixmap(svg_pixmap(svg))
 
     def _aim(self, dt_ms: float):
@@ -441,6 +435,14 @@ class FaceWindow(QWidget):
                        if m["until"] > now and not (m["role"] == "user" and m["text"] in stored)]
         return messages + [{"role": m["role"], "text": m["text"]} for m in self._local]
 
+    def welcome(self):
+        """Een korte uitleg bij de eerste start: meestarten kan uit in Settings."""
+        text = (f"Hi, I'm {self.bot_name}. I'll start whenever you log in. "
+                "You can switch that off in Settings: right-click me.")
+        self._welcome_until = time.monotonic() + WELCOME_S
+        self._shown_text = text
+        self.bubble.show_blocks(conversation_blocks([{"role": "bot", "text": text}], self.bot_name), "say")
+
     def _hint_blocks(self) -> list:
         text = ("Hey! I live inside **OpenBot** or **Grok Bot**, and I can't find either on this computer. "
                 "Install one and I'll come alive.")
@@ -457,7 +459,7 @@ class FaceWindow(QWidget):
         elif last and last != self._last_bot:
             self._last_bot = last
             play_sound()
-        if self._drag_origin is not None:
+        if self._drag_origin is not None or time.monotonic() < self._welcome_until:
             return
         if not (openbot_installed() or gbot_installed()):
             if self.pinned or not self._hint_shown:

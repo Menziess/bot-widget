@@ -33,6 +33,13 @@ class FaceAnimator:
         self.velocity = {name: 0.0 for name in REST}
         self.target = dict(REST)
 
+    def jump(self, **values):
+        """Meteen op deze stand, zonder veren: de beginstand."""
+        for name, goal in values.items():
+            self.aim(**{name: goal})
+            self.value[name] = goal
+            self.velocity[name] = 0.0
+
     def aim(self, **targets):
         """Nieuwe doelen; een onbekende naam is een fout, geen stille misser."""
         for name, goal in targets.items():

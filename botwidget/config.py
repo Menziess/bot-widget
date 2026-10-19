@@ -52,7 +52,7 @@ WORK_POLL_INTERVAL = 1  # seconde, zolang de beurt loopt
 CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
-SETTING_KEYS = ("sound", "always_on_top", "check_updates")
+SETTING_KEYS = ("sound", "always_on_top", "check_updates", "auto_update", "login_default_applied")
 
 
 def always_on_top() -> bool:
@@ -63,6 +63,11 @@ def always_on_top() -> bool:
 def check_updates() -> bool:
     """Standaard één keer per start vragen of er een nieuwere versie is."""
     return widget_config().get("check_updates") is not False
+
+
+def auto_update() -> bool:
+    """Standaard updates zelf klaarzetten en bij de volgende start installeren."""
+    return widget_config().get("auto_update") is not False
 
 
 def widget_config() -> dict:

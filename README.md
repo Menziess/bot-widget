@@ -30,19 +30,35 @@ The widget needs OpenBot or Grok Bot. Without either, the face says so and links
 
 ## Updates
 
-On each start the widget asks GitHub whether a newer release exists, and the right-click menu then shows a link to the download page.
+The widget updates itself, and you can switch that off. On each start it asks GitHub whether a newer release exists.
 
+- It downloads the new version in the background and checks it against the SHA256SUMS.txt published with the release
+- The new version installs the next time the widget starts, or straight away through Restart to update in the right-click menu
+- Settings has two switches, Check for updates and Install updates automatically
+- With checking off nothing is requested, with automatic installing off the menu only links to the download page
 - The request is anonymous and sends no data about you beyond what any web request carries
-- Turn it off under Settings, Check for updates
+
+Automatic installing needs the packaged app. Installs through uv or pip, and checkouts, only show the link.
+
+## Start at login
+
+The first start turns on starting at login and says so in a bubble. Settings, Start at login, turns it off, and the choice then stays off.
 
 ## Develop
 
-Run it from a checkout with a virtual environment.
+Run it from a checkout and keep the latest code on screen.
 
 ```sh
-uv venv && uv pip install -e .
-.venv/bin/botwidget
+uv tool install --editable .
+botwidget --dev
 ```
+
+- The editable install makes the botwidget command run the code in this folder
+- With --dev the widget restarts a moment after any .py file changes
+- A crash waits for the next change instead of looping
+- Starting at login from a checkout starts it in this mode too, so each login shows the latest iteration
+
+Without a virtual environment, `uv venv && uv pip install -e .` and `.venv/bin/botwidget --dev` do the same.
 
 - Unit tests need no display and no Qt, run them with `python3 -m unittest discover -s tests -t .`
 - Everything that differs per operating system lives in `botwidget/system/`, one module per OS with the same function names

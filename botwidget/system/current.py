@@ -14,7 +14,10 @@ elif sys.platform == "darwin":
 else:
     from botwidget.system import linux as _os
 
+UPDATE_ASSET = _os.UPDATE_ASSET
+can_install_update = _os.can_install_update
 data_home = _os.data_home
+install_update = _os.install_update
 launch_at_login = _os.launch_at_login
 play_notification = _os.play_notification
 prepare_gui_environment = _os.prepare_gui_environment

@@ -22,8 +22,11 @@ import sys
 import tarfile
 
 NAME = "Bot Widget"
-BUNDLE_ID = "com.bot-widget.app"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
+
+from botwidget.system.macos import BUNDLE_ID  # noqa: E402
+
 BUILD = os.path.join(ROOT, "build")
 DIST = os.path.join(ROOT, "dist")
 # Alles wat de widget niet gebruikt; houdt de download klein.

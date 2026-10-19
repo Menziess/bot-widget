@@ -4,6 +4,7 @@ Het gezicht blijft onder gewone vensters, zoals een bureaubladwidget.
 """
 
 import os
+import sys
 
 from botwidget.system import posix
 
@@ -61,3 +62,27 @@ def set_launch_at_login(command: list, on: bool) -> None:
     quoted = " ".join('"' + part.replace('"', '\\"') + '"' if " " in part else part for part in command)
     with open(path, "w") as fh:
         fh.write(f"[Desktop Entry]\nType=Application\nName=Bot Widget\nExec={quoted}\nTerminal=false\n")
+
+
+UPDATE_ASSET = "BotWidget-Linux.tar.gz"
+
+# Wacht tot de widget weg is, draai het install.sh uit het archief en start opnieuw.
+_UPDATE_SCRIPT = """#!/bin/sh
+archive="$1"; pid="$2"
+work="$(mktemp -d)"
+tar xzf "$archive" -C "$work" || { rm -rf "$work"; exit 1; }
+while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
+sh "$work/botwidget/install.sh" >/dev/null 2>&1
+rm -rf "$work"
+nohup "$HOME/.local/bin/botwidget" >/dev/null 2>&1 &
+"""
+
+
+def can_install_update() -> bool:
+    """Alleen de gebundelde app die via install.sh is neergezet."""
+    return getattr(sys, "frozen", False) and os.path.exists(os.path.expanduser("~/.local/bin/botwidget"))
+
+
+def install_update(archive: str) -> bool:
+    posix.spawn_script(_UPDATE_SCRIPT, archive, str(os.getpid()))
+    return True

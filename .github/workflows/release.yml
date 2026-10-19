@@ -92,6 +92,9 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      # De widget controleert elk gedownload bestand hiertegen voordat hij het installeert.
+      - name: Controlesommen
+        run: cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*

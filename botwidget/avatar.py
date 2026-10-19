@@ -1,5 +1,6 @@
 """Het gezicht: kleuren, silhouetten, uitdrukkingen en de SVG's, zonder toolkit."""
 
+import colorsys
 import math
 
 # Zwarte cirkel, diameter 58. Twee lange verticale ogen in het midden.
@@ -8,6 +9,8 @@ CIRCLE_R = 29.0
 # dx, dy, lengte-factor. Alleen schuiven; de vorm blijft gelijk, behalve een knipper.
 POSES = {
     "rest": (0, 0, 1.0),
+    # Grok Bot kijkt in rust schuin omhoog naar rechts; dat is bijna stilstaand.
+    "idle": (5, -5, 1.0),
     "look": (0, 2, 1.0),
     "blink": (0, 0, 0.22),
     "read0": (-2, 1, 1.0),
@@ -18,13 +21,12 @@ POSES = {
 }
 # De hop tilt het hele gezicht even op; de ogen kijken daarbij omhoog.
 LIFT = {"hop": 4.0}
-# pose, duur in ms. Idle kijkt af en toe op, knipoogt dubbel, kijkt opzij en hupt.
+# pose, duur in ms. Idle staat bijna stil: schuin omhoog kijken, af en toe knipperen.
 # De tik is kort genoeg om een dubbele knipoog echt dubbel te laten zijn.
 FACE_STEP_MS = 110
 FACE = {
-    "idle": (("rest", 4000), ("look", 900), ("blink", 130), ("rest", 90),
-             ("blink", 130), ("aside", 620), ("aside2", 620), ("blink", 130),
-             ("rest", 300), ("hop", 100), ("rest", 80), ("hop", 100), ("rest", 400)),
+    "idle": (("idle", 5200), ("blink", 130), ("idle", 4200), ("blink", 130), ("idle", 100),
+             ("blink", 130), ("idle", 6500)),
     "work": (("read0", 280), ("read1", 280), ("read0", 280), ("blink", 120)),
     "ask": (("look", 800), ("blink", 130), ("rest", 90), ("blink", 130),
             ("look", 700), ("rest", 200)),
@@ -141,17 +143,56 @@ def silhouette_path(radii, radius: float, cx: float, cy: float) -> str:
     return "".join(out) + "Z"
 
 
-# Licht komt linksboven: een zachte glans daar en een zachte schaduw rechtsonder.
-DEPTH_DEFS = (
-    '<defs><radialGradient id="hl" cx="0.30" cy="0.22" r="0.80">'
-    '<stop offset="0" stop-color="#fff" stop-opacity="0.24"/>'
-    '<stop offset="0.6" stop-color="#fff" stop-opacity="0"/></radialGradient>'
-    '<radialGradient id="sh" cx="0.62" cy="0.68" r="0.75">'
-    '<stop offset="0.45" stop-color="#000" stop-opacity="0"/>'
-    '<stop offset="1" stop-color="#000" stop-opacity="0.14"/></radialGradient></defs>'
-)
+# Licht komt linksboven: een zachte glans daar en een schaduw rechtsonder in een
+# donkerdere tint van de eigen kleur. Zwart maakt gele en oranje vlakken vies bruin.
+HIGHLIGHT = 0.18
+SHADE = 0.50
+SHADE_DARKNESS = 0.66
+
+
+def _darker(colour: str, factor: float) -> str:
+    red, green, blue = (int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    hue, light, sat = colorsys.rgb_to_hls(red, green, blue)
+    red, green, blue = colorsys.hls_to_rgb(hue, light * factor, min(1.0, sat * 1.05))
+    return "#{:02x}{:02x}{:02x}".format(round(red * 255), round(green * 255), round(blue * 255))
+
+
+def depth_defs(colour: str) -> str:
+    return (
+        '<defs><radialGradient id="hl" cx="0.30" cy="0.22" r="0.80">'
+        f'<stop offset="0" stop-color="#fff" stop-opacity="{HIGHLIGHT}"/>'
+        '<stop offset="0.6" stop-color="#fff" stop-opacity="0"/></radialGradient>'
+        '<radialGradient id="sh" cx="0.62" cy="0.68" r="0.75">'
+        f'<stop offset="0.45" stop-color="{_darker(colour, SHADE_DARKNESS)}" stop-opacity="0"/>'
+        f'<stop offset="1" stop-color="{_darker(colour, SHADE_DARKNESS)}" stop-opacity="{SHADE}"/>'
+        '</radialGradient></defs>'
+    )
+
+
 # De kop volgt de ogen maar voor een deel: dat verschil geeft diepte.
 PARALLAX = 0.35
+
+
+def _lerp(a: float, b: float, t: float) -> float:
+    return a + (b - a) * t
+
+
+def _eye(ex: float, ey: float, ew: float, eh: float, tilt: float, happy: float,
+         fill: str, opacity: float) -> str:
+    """Eén oog als dikke lijn met ronde uiteinden: een staande of liggende pil, die met
+    happy 1 uitgroeit tot een ^. Alles blijft massief; er wordt geen vervaagd."""
+    half = max(0.01, abs(eh - ew) / 2)
+    if eh >= ew:
+        pill, thick = ((ex, ey - half), (ex, ey), (ex, ey + half)), ew
+    else:
+        pill, thick = ((ex - half, ey), (ex, ey), (ex + half, ey)), eh
+    caret = ((ex - ew / 2, ey + eh * 0.10), (ex, ey - eh * 1.05), (ex + ew / 2, ey + eh * 0.10))
+    p0, ctrl, p1 = (tuple(_lerp(a, b, happy) for a, b in zip(u, v)) for u, v in zip(pill, caret))
+    width = _lerp(thick, max(2.2, ew * 0.26), happy)
+    turn = f' transform="rotate({tilt * (1 - happy):.1f} {ex:.2f} {ey:.2f})"' if tilt else ""
+    return (f'<path d="M{p0[0]:.2f} {p0[1]:.2f} Q{ctrl[0]:.2f} {ctrl[1]:.2f} {p1[0]:.2f} {p1[1]:.2f}"'
+            f' fill="none" stroke="{fill}" stroke-width="{width:.2f}" stroke-linecap="round"'
+            f' opacity="{opacity}"{turn}/>')
 
 
 def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float = 0,
@@ -175,25 +216,8 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
         ey = centre + dy
         ew = max(2.0, w * CIRCLE_R)
         eh = max(2.0, h * CIRCLE_R * scale * open_)
-        turn = f' transform="rotate({tilt:.1f} {ex:.2f} {ey:.2f})"' if tilt else ""
-        fade = 1 - happy
-
-        def pill(offset: float, fill: str, opacity: float) -> str:
-            return (f'<rect x="{ex - ew / 2:.2f}" y="{ey - eh / 2 + offset:.2f}" width="{ew:.2f}"'
-                    f' height="{eh:.2f}" rx="{min(ew, eh) / 2:.2f}" fill="{fill}"'
-                    f' opacity="{opacity:.2f}"{turn}/>')
-
-        if fade > 0.01:
-            eyes.append(pill(1.3, "#000", 0.14 * fade))
-            eyes.append(pill(0, EYE_FILL, fade))
-        if happy:
-            # Blij oog: een ^ van oor tot oor, in dezelfde kleur als de ogen.
-            stroke = max(2.2, ew * 0.26)
-            eyes.append(f'<path d="M{ex - ew / 2:.2f} {ey + eh * 0.10:.2f}'
-                        f' Q{ex:.2f} {ey - eh * 1.05:.2f}'
-                        f' {ex + ew / 2:.2f} {ey + eh * 0.10:.2f}" fill="none"'
-                        f' stroke="{EYE_FILL}" stroke-width="{stroke:.2f}"'
-                        f' stroke-linecap="round" opacity="{happy:.2f}"/>')
+        eyes.append(_eye(ex, ey + 1.3, ew, eh, tilt, happy, "#000", 0.14))
+        eyes.append(_eye(ex, ey, ew, eh, tilt, happy, EYE_FILL, 1.0))
     body = silhouette_path(SILHOUETTES[profile["shape"]], CIRCLE_R, centre, centre)
     head = (f'<path d="{body}" fill="{profile["hex"]}"/>'
             f'<path d="{body}" fill="url(#sh)"/><path d="{body}" fill="url(#hl)"/>')
@@ -203,7 +227,7 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
             f' translate({centre} {centre}) scale({sx:.4f} {sy:.4f}) translate({-centre} {-centre})')
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{AVATAR_SIZE}" height="{AVATAR_SIZE}">'
-        + DEPTH_DEFS
+        + depth_defs(profile["hex"])
         + f'<g transform="{pose}">{head}'
         + f'<g transform="translate({-dx * PARALLAX:.2f} {-dy * PARALLAX:.2f})">{"".join(eyes)}</g></g>'
         + "</svg>"

@@ -10,6 +10,8 @@ OutputBaseFilename=BotWidget-Windows-Setup
 Compression=lzma2
 SolidCompression=yes
 DisableProgramGroupPage=yes
+CloseApplications=yes
+RestartApplications=yes
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs

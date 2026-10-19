@@ -76,6 +76,8 @@ class BubbleWindow(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
+        # Tool-vensters verbergen zich op macOS zodra de app niet actief is; de bubbel moet blijven.
+        self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
         self.setStyleSheet(STYLE)
 
         self.kind = ""
@@ -182,7 +184,7 @@ class BubbleWindow(QWidget):
         cloud = self.kind == "think"
         shadow_svg = cloud_shadow_svg(*args) if cloud else bubble_shadow_svg(*args)
         body_svg = cloud_body_svg(*args) if cloud else bubble_body_svg(*args)
-        pix = stacked(blurred(svg_pixmap(shadow_svg), SHADOW_BLUR * 2), svg_pixmap(body_svg))
+        pix = stacked(blurred(svg_pixmap(shadow_svg), SHADOW_BLUR * 3), svg_pixmap(body_svg))
         self._chrome.setPixmap(pix)
         return pix
 

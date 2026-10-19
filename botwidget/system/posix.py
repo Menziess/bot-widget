@@ -1,6 +1,8 @@
 """Gedeeld door Linux en macOS: processen en losse geluidsopdrachten."""
 
+import os
 import subprocess
+import tempfile
 
 
 def process_cmdline(pid: int) -> bytes:
@@ -20,3 +22,12 @@ def spawn_first(candidates) -> None:
             return
         except OSError:
             continue
+
+
+def spawn_script(script: str, *args: str) -> None:
+    """Een shellscript dat blijft draaien nadat de widget is afgesloten."""
+    handle, path = tempfile.mkstemp(suffix=".sh", prefix="botwidget-")
+    with os.fdopen(handle, "w") as fh:
+        fh.write(script)
+    subprocess.Popen(["/bin/sh", path, *args], start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

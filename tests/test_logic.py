@@ -4,6 +4,7 @@ Geen Gtk-venster: alleen rekenen en parsen, zodat dit ook op een CI-machine
 zonder beeldscherm draait.
 """
 
+import io
 import os
 import plistlib
 import sys
@@ -18,6 +19,7 @@ from botwidget import (
     bubble,
     bubble_layout,
     config,
+    dev,
     instance,
     markdown,
     openbot,
@@ -290,6 +292,35 @@ class Animator(unittest.TestCase):
             animation.FaceAnimator().aim(wobble=1)
 
 
+class FaceEyes(unittest.TestCase):
+    """De ogen zijn altijd massief: ook halverwege een overgang is geen oog doorzichtig."""
+
+    def test_every_eye_is_fully_opaque_at_any_happy_value(self):
+        for happy in (0.0, 0.25, 0.5, 0.75, 1.0):
+            svg = avatar.face_svg(seed="robo", happy=happy)
+            white = [chunk for chunk in svg.split("<path") if 'stroke="#f9f9f9"' in chunk]
+            self.assertEqual(len(white), 2)
+            self.assertTrue(all('opacity="1.0"' in chunk for chunk in white), f"happy={happy}")
+
+    def test_happy_morphs_the_same_shape_instead_of_fading_in_a_second_one(self):
+        count = lambda happy: avatar.face_svg(seed="robo", happy=happy).count('stroke="#f9f9f9"')
+        self.assertEqual(count(0.0), count(0.5))
+        self.assertEqual(count(0.5), count(1.0))
+
+
+class IdleLook(unittest.TestCase):
+    """Rust is bijna stilstaan: schuin omhoog kijken en af en toe knipperen, zoals Grok Bot."""
+
+    def test_idle_cycle_is_dominated_by_the_still_glance(self):
+        total = sum(ms for _pose, ms in avatar.FACE["idle"])
+        still = sum(ms for pose, ms in avatar.FACE["idle"] if pose == "idle")
+        self.assertGreater(still / total, 0.9)
+
+    def test_the_glance_is_up_and_to_the_right(self):
+        dx, dy, _scale = avatar.POSES["idle"]
+        self.assertTrue(dx > 0 and dy < 0)
+
+
 class FaceLook(unittest.TestCase):
     """Grok Bot-palet, geen lichte ring, diepte en een eigen kanteling per bot."""
 
@@ -303,9 +334,9 @@ class FaceLook(unittest.TestCase):
 
     def test_face_has_no_outline_and_has_depth(self):
         svg = avatar.face_svg(seed="robo")
-        self.assertNotIn("stroke=", svg.replace('fill="none"', ""))
-        self.assertIn("url(#hl)", svg)
-        self.assertIn("url(#sh)", svg)
+        head = svg.split("<path", 2)[1].split(">", 1)[0]
+        self.assertFalse("stroke" in head, "the head must not have an outline")
+        self.assertTrue("url(#hl)" in svg and "url(#sh)" in svg)
 
     def test_tilt_is_stable_per_bot_and_small(self):
         tilts = {seed: avatar.avatar_profile(seed, None)["tilt"] for seed in ("a", "b", "c", "d", "e", "f")}
@@ -318,8 +349,25 @@ class FaceLook(unittest.TestCase):
         self.assertIn(f"translate({8.0 * avatar.PARALLAX:.2f} 0.00)", svg)
 
 
-class Updates(unittest.TestCase):
+class TestUpdates(unittest.TestCase):
     """Alleen een echt hoger versienummer is een update; een mislukte vraag is stil."""
+
+    def serve(self, routes):
+        """Laat urlopen antwoorden uit routes: sleutel is een stuk van de url, waarde de bytes."""
+        class Reply(io.BytesIO):
+            def __exit__(self, *args):
+                return False
+
+        def fake(request, timeout=None):
+            url = request.full_url if hasattr(request, "full_url") else request
+            for part, data in routes.items():
+                if part in url:
+                    return Reply(data)
+            raise updates.urllib.error.URLError("not served: " + url)
+
+        old = updates.urllib.request.urlopen
+        self.addCleanup(setattr, updates.urllib.request, "urlopen", old)
+        updates.urllib.request.urlopen = fake
 
     def test_versions_compare_by_number_not_by_text(self):
         self.assertTrue(updates.is_newer("v0.10.0", "0.9.0"))
@@ -330,14 +378,10 @@ class Updates(unittest.TestCase):
         self.assertFalse(updates.is_newer("nightly", "0.1.0"))
 
     def test_newer_release_returns_the_version_without_v(self):
-        class Reply:
-            def __enter__(self): return self
-            def __exit__(self, *args): return False
-            def read(self): return b'{"tag_name": "v0.3.0"}'
-        old = updates.urllib.request.urlopen
-        self.addCleanup(setattr, updates.urllib.request, "urlopen", old)
-        updates.urllib.request.urlopen = lambda *a, **k: Reply()
-        self.assertEqual(updates.newer_release("0.1.0"), "0.3.0")
+        body = b'{"tag_name": "v0.3.0", "assets": [{"name": "a.zip", "browser_download_url": "https://x/a.zip"}]}'
+        self.serve({"api.github.com": body})
+        release = updates.newer_release("0.1.0")
+        self.assertEqual((release.version, release.assets), ("0.3.0", {"a.zip": "https://x/a.zip"}))
         self.assertIsNone(updates.newer_release("0.3.0"))
 
     def test_network_failure_is_silent(self):
@@ -378,14 +422,161 @@ class LaunchAtLogin(unittest.TestCase):
                 agent = plistlib.load(fh)
             self.assertEqual(agent["ProgramArguments"], self.COMMAND)
             self.assertTrue(agent["RunAtLoad"])
+            self.assertEqual(agent["AssociatedBundleIdentifiers"], [macos.BUNDLE_ID])
             macos.set_launch_at_login(self.COMMAND, False)
             self.assertFalse(macos.launch_at_login())
 
     def test_command_is_the_app_itself_when_bundled_and_the_package_otherwise(self):
-        self.assertEqual(startup.launch_command()[-2:], ["-m", "botwidget"])
+        self.assertEqual(startup.launch_command()[:3], [sys.executable, "-m", "botwidget"])
         sys.frozen = True
         self.addCleanup(delattr, sys, "frozen")
         self.assertEqual(startup.launch_command(), [sys.executable])
+
+
+class AutoUpdate(unittest.TestCase):
+    """Downloaden, controleren, klaarzetten en bij de volgende start installeren."""
+
+    PAYLOAD = b"pretend this is an app"
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        for name, value in (("STAGING", os.path.join(self.folder.name, "updates")),
+                            ("UPDATE_ASSET", "app.zip")):
+            old = getattr(updates, name)
+            self.addCleanup(setattr, updates, name, old)
+            setattr(updates, name, value)
+        self.release = updates.Release("0.2.0", {"app.zip": "https://x/app.zip",
+                                                  "SHA256SUMS.txt": "https://x/SHA256SUMS.txt"})
+
+    def serve(self, payload, digest):
+        TestUpdates.serve(self, {"SHA256SUMS.txt": f"{digest}  app.zip\n".encode(), "app.zip": payload})
+
+    def test_sums_parse_both_sha256sum_layouts(self):
+        sums = updates.parse_sums(f"{'a' * 64}  one.zip\n{'B' * 64} *two.exe\nnot a line\n")
+        self.assertEqual(sums, {"one.zip": "a" * 64, "two.exe": "b" * 64})
+
+    def test_a_verified_download_is_staged(self):
+        import hashlib
+        self.serve(self.PAYLOAD, hashlib.sha256(self.PAYLOAD).hexdigest())
+        path = updates.stage(self.release)
+        self.assertEqual(open(path, "rb").read(), self.PAYLOAD)
+        self.assertEqual(updates.staged_update("0.1.0"), ("0.2.0", path))
+
+    def test_a_download_with_the_wrong_checksum_is_thrown_away(self):
+        self.serve(self.PAYLOAD, "0" * 64)
+        self.assertIsNone(updates.stage(self.release))
+        self.assertFalse(os.path.exists(os.path.join(updates.STAGING, "0.2.0")))
+        self.assertIsNone(updates.staged_update("0.1.0"))
+
+    def test_a_release_without_a_file_for_this_system_is_not_staged(self):
+        self.assertIsNone(updates.stage(updates.Release("0.2.0", {"SHA256SUMS.txt": "https://x/s"})))
+
+    def test_staged_update_installs_once_and_only_when_newer(self):
+        import hashlib
+        self.serve(self.PAYLOAD, hashlib.sha256(self.PAYLOAD).hexdigest())
+        path = updates.stage(self.release)
+        calls = []
+        for name, value in (("can_install_update", lambda: True),
+                            ("install_update", lambda p: calls.append(p) or True)):
+            old = getattr(updates, name)
+            self.addCleanup(setattr, updates, name, old)
+            setattr(updates, name, value)
+        self.assertFalse(updates.install_staged("0.2.0"))
+        self.assertTrue(updates.install_staged("0.1.0"))
+        self.assertEqual(calls, [path])
+        self.assertFalse(updates.install_staged("0.1.0"), "a failed install must not retry on every start")
+
+    def test_old_staged_updates_are_cleaned_up(self):
+        for version in ("0.1.0", "0.2.0", "0.3.0"):
+            os.makedirs(os.path.join(updates.STAGING, version))
+        updates.clean_staging("0.2.0")
+        self.assertEqual(sorted(os.listdir(updates.STAGING)), ["0.3.0"])
+
+
+class MacBundleSwap(unittest.TestCase):
+    """De echte wissel van een .app op macOS, met een nepapp in een tijdelijke map."""
+
+    @unittest.skipUnless(sys.platform == "darwin", "alleen macOS heeft ditto en .app")
+    def test_the_old_app_is_replaced_by_the_new_one(self):
+        import subprocess
+        import time
+        with tempfile.TemporaryDirectory() as home:
+            old_app = os.path.join(home, "Apps", "Bot Widget.app")
+            os.makedirs(old_app)
+            open(os.path.join(old_app, "version.txt"), "w").write("old")
+            build = os.path.join(home, "build", "Bot Widget.app")
+            os.makedirs(build)
+            open(os.path.join(build, "version.txt"), "w").write("new")
+            archive = os.path.join(home, "BotWidget-macOS.zip")
+            subprocess.run(["ditto", "-c", "-k", "--keepParent", build, archive], check=True)
+            os.environ["BOTWIDGET_NO_RELAUNCH"] = "1"
+            self.addCleanup(os.environ.pop, "BOTWIDGET_NO_RELAUNCH", None)
+            running = subprocess.Popen(["sleep", "0.4"])
+            macos.apply_bundle_update(archive, old_app, running.pid)
+            marker = os.path.join(old_app, "version.txt")
+            for _ in range(60):
+                time.sleep(0.1)
+                running.poll()  # een afgesloten kindproces blijft anders een zombie die nog "leeft"
+                if open(marker).read() == "new":
+                    break
+            self.assertEqual(open(marker).read(), "new")
+            self.assertEqual(sorted(os.listdir(os.path.join(home, "Apps"))), ["Bot Widget.app"])
+
+
+class DevRunner(unittest.TestCase):
+    """De ontwikkelmodus ziet nieuwe en gewijzigde bestanden, en negeert de rest."""
+
+    def test_snapshot_changes_when_a_python_file_changes_or_appears(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "a.py")
+            open(path, "w").write("x = 1")
+            before = dev.snapshot(folder)
+            os.utime(path, ns=(1, 1))
+            self.assertNotEqual(dev.snapshot(folder), before)
+            before = dev.snapshot(folder)
+            open(os.path.join(folder, "b.py"), "w").write("y = 2")
+            self.assertNotEqual(dev.snapshot(folder), before)
+
+    def test_snapshot_ignores_other_files_and_bytecode(self):
+        with tempfile.TemporaryDirectory() as folder:
+            before = dev.snapshot(folder)
+            open(os.path.join(folder, "notes.txt"), "w").write("hi")
+            os.makedirs(os.path.join(folder, "__pycache__"))
+            open(os.path.join(folder, "__pycache__", "a.py"), "w").write("")
+            self.assertEqual(dev.snapshot(folder), before)
+
+    def test_stopping_nothing_is_fine(self):
+        dev.stop(None)
+
+
+class FirstRun(unittest.TestCase):
+    """Meestarten staat de eerste keer aan; daarna beslist de gebruiker."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        old = config.CONFIG_PATH
+        self.addCleanup(setattr, config, "CONFIG_PATH", old)
+        config.CONFIG_PATH = os.path.join(self.folder.name, "widget.json")
+        self.enabled = False
+        for name, value in (("is_enabled", lambda: self.enabled), ("set_enabled", self.set)):
+            old = getattr(startup, name)
+            self.addCleanup(setattr, startup, name, old)
+            setattr(startup, name, value)
+
+    def set(self, on):
+        self.enabled = on
+
+    def test_the_first_start_turns_launch_at_login_on(self):
+        self.assertTrue(startup.apply_default())
+        self.assertTrue(self.enabled)
+
+    def test_a_user_who_turned_it_off_is_not_overruled(self):
+        startup.apply_default()
+        self.enabled = False
+        self.assertFalse(startup.apply_default())
+        self.assertFalse(self.enabled)
 
 
 if __name__ == "__main__":

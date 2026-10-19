@@ -51,3 +51,20 @@ def set_launch_at_login(command: list, on: bool) -> None:
                 winreg.DeleteValue(key, "BotWidget")
             except OSError:
                 pass
+
+
+UPDATE_ASSET = "BotWidget-Windows-Setup.exe"
+
+
+def can_install_update() -> bool:
+    import sys
+    return getattr(sys, "frozen", False)
+
+
+def install_update(installer: str) -> bool:
+    """Het installatieprogramma sluit de draaiende widget zelf en start hem daarna opnieuw."""
+    import subprocess
+    detached = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    subprocess.Popen([installer, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+                      "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"], creationflags=detached)
+    return True
