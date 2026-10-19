@@ -13,6 +13,8 @@ from botwidget.config import DB_FILE, HEADERS_FILE, OPENBOT_DIR, api_url, read_f
 
 # Why a message could not even be tried: OpenBot has not switched its local API on.
 AUTOMATION_OFF = "automation off"
+# A UTF-8 byte-order mark is not content; a body of only that is empty.
+BOM = b"\xef\xbb\xbf"
 
 
 class ApiResult(NamedTuple):
@@ -75,7 +77,7 @@ def api_post(path: str, body: dict) -> ApiResult:
         return ApiResult(None, err.code, f"HTTP {err.code}")
     except (urllib.error.URLError, OSError) as err:
         return ApiResult(None, None, str(err))
-    if not body.strip():
+    if not body.strip().removeprefix(BOM).strip():
         # An empty body will not turn into JSON, so trying again only repeats it.
         return ApiResult(None, status, "empty answer", retry=False)
     try:
