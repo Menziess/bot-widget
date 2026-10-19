@@ -402,6 +402,20 @@ class TestUpdates(unittest.TestCase):
         self.assertIsNone(updates.newer_release("0.1.0"))
 
 
+class X11Libraries(unittest.TestCase):
+    """The X11 libraries Qt's plugin misses, taken from ldd."""
+
+    def test_not_found_lines_name_the_library(self):
+        ldd = ("\tlibxcb-cursor.so.0 => not found\n"
+               "\tlibGL.so.1 => /usr/lib/x86_64-linux-gnu/libGL.so.1\n"
+               "\tlibxkbcommon-x11.so.0 => not found\n")
+        self.assertEqual(linux._libs_not_found(ldd),
+                         ["libxcb-cursor.so.0", "libxkbcommon-x11.so.0"])
+
+    def test_everything_present_gives_nothing(self):
+        self.assertEqual(linux._libs_not_found("\tlibGL.so.1 => /usr/lib/libGL.so.1\n"), [])
+
+
 class LaunchAtLogin(unittest.TestCase):
     """Should let every operating system put its own file or key; here the files."""
 

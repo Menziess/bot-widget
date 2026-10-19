@@ -13,6 +13,7 @@ uv tool install git+https://github.com/Menziess/bot-widget
 - Instead of uv, `pipx install git+https://github.com/Menziess/bot-widget` works the same way
 - Python 3.10 or newer is the only requirement
 - Linux, macOS and Windows use the same code
+- On Linux the widget fetches the X11 libraries Qt needs into its own folder on first start, without root; offline, install them with `sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xkb1`
 
 ## Run
 
