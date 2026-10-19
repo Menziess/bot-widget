@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bot Widget — a face for your bot</title>
+<meta name="description" content="An animated desktop face for OpenBot and Grok Bot. Click it to chat, watch it think.">
+<link rel="icon" href="face.svg">
+<style>
+  :root { --ink: #1c1c1c; --soft: #1c1c1c99; --line: #1c1c1c1f; --accent: #0b6dd3; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+         color: var(--ink); background: #fafafa; }
+  main { max-width: 680px; margin: 0 auto; padding: 72px 24px 96px; }
+  .face { width: 112px; height: 112px; display: block; margin: 0 auto 24px; }
+  h1 { font-size: 40px; line-height: 1.15; text-align: center; margin: 0 0 12px; letter-spacing: -0.02em; }
+  .lead { text-align: center; color: var(--soft); font-size: 19px; margin: 0 auto 40px; max-width: 520px; }
+  .download { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 28px; text-align: center; }
+  .button { display: inline-block; background: var(--ink); color: #fff; text-decoration: none; font-weight: 600;
+            padding: 14px 28px; border-radius: 12px; font-size: 18px; }
+  .button:hover { background: #000; }
+  .hint { color: var(--soft); font-size: 15px; margin: 16px 0 0; }
+  code { font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #1c1c1c0f;
+         padding: 2px 6px; border-radius: 6px; }
+  pre { text-align: left; background: #1c1c1c; color: #fff; border-radius: 12px; padding: 16px 18px; overflow-x: auto;
+        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 20px 0 0; }
+  .others { margin: 20px 0 0; font-size: 15px; color: var(--soft); text-align: center; }
+  .others a { color: var(--accent); margin: 0 6px; }
+  [data-os] { display: none; }
+  body[data-detected="mac"] [data-os="mac"], body[data-detected="windows"] [data-os="windows"],
+  body[data-detected="linux"] [data-os="linux"], body[data-detected="other"] [data-os="other"] { display: block; }
+  h2 { font-size: 22px; margin: 56px 0 12px; letter-spacing: -0.01em; }
+  ul { padding-left: 20px; } li { margin: 6px 0; }
+  a { color: var(--accent); }
+  footer { margin-top: 64px; color: var(--soft); font-size: 14px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <img class="face" src="face.svg" alt="The Bot Widget face">
+  <h1>A face for your bot</h1>
+  <p class="lead">Bot Widget puts your OpenBot or Grok Bot on the desktop as a small animated face. Click it to chat. Watch it think.</p>
+
+  <div class="download">
+    <div data-os="mac">
+      <a class="button" href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-macOS.zip">Download for macOS</a>
+      <p class="hint">Unzip, drag <strong>Bot Widget</strong> into Applications, then open it from Spotlight. The first time, right-click the app and choose <strong>Open</strong>.</p>
+    </div>
+    <div data-os="windows">
+      <a class="button" href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-Windows-Setup.exe">Download for Windows</a>
+      <p class="hint">Run the installer, then find <strong>Bot Widget</strong> in the Start menu. If Windows warns you, choose <strong>More info</strong> and then <strong>Run anyway</strong>.</p>
+    </div>
+    <div data-os="linux">
+      <a class="button" href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-Linux.tar.gz">Download for Linux</a>
+      <pre>tar xzf BotWidget-Linux.tar.gz
+./botwidget/install.sh</pre>
+      <p class="hint">Then search for <strong>Bot Widget</strong> in your app menu, or run <code>botwidget</code>.</p>
+    </div>
+    <div data-os="other">
+      <p>Bot Widget is a desktop app. Open this page on a Mac, Windows or Linux computer.</p>
+    </div>
+    <p class="others">All downloads:
+      <a href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-macOS.zip">macOS</a>
+      <a href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-Windows-Setup.exe">Windows</a>
+      <a href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-Linux.tar.gz">Linux</a>
+    </p>
+  </div>
+
+  <h2>Prefer the command line?</h2>
+  <p>With <a href="https://docs.astral.sh/uv/">uv</a> installed, one command does it on any system.</p>
+  <pre>uv tool install git+https://github.com/Menziess/bot-widget
+botwidget</pre>
+
+  <h2>How it works</h2>
+  <ul>
+    <li><strong>Click the face</strong> to open a chat bubble and type to your bot</li>
+    <li><strong>While it works</strong>, the bubble turns into a thought cloud</li>
+    <li><strong>Right-click the face</strong> to see which bot apps it found, switch bots on and off, and open Settings</li>
+    <li><strong>Settings</strong> is also where you quit the widget</li>
+  </ul>
+
+  <h2>What it needs</h2>
+  <p>Bot Widget is the face, not the brain. It talks to <a href="https://openbot.run/">OpenBot</a> or <a href="https://x.ai/bot">Grok Bot</a>. Without either, the face tells you so and points you to both.</p>
+
+  <footer><a href="https://github.com/Menziess/bot-widget">Source on GitHub</a></footer>
+</main>
+<script src="detect.js"></script>
+<script>
+  document.body.dataset.detected = detectOS(navigator.userAgent, navigator.platform || "");
+</script>
+</body>
+</html>

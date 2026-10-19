@@ -1,0 +1,142 @@
+"""Eén gezicht per aangezette bot, plus het rechtsklikmenu om ze te beheren."""
+
+import json
+import os
+import threading
+
+from PySide6.QtCore import QObject, QUrl
+from PySide6.QtGui import QAction, QCursor, QDesktopServices
+from PySide6.QtWidgets import QApplication, QMenu
+
+from botwidget.config import (
+    APP_DIR,
+    GROKBOT_URL,
+    OPENBOT_URL,
+    STATE_PATH,
+    UNLINKED_ID,
+    UNLINKED_NAME,
+    always_on_top,
+    save_widget_config,
+    widget_config,
+)
+from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
+from botwidget.qt_ui.face import FaceWindow
+
+
+class Faces(QObject):
+    def __init__(self):
+        super().__init__()
+        self.pos = {}
+        enabled = self._load()
+        self.faces = {}
+        self._menu = None
+        self.grok = {"connected": False, "bots": [], "note": "not tried yet"}
+        threading.Thread(target=self._probe_grok, daemon=True).start()
+        bots = {bot["id"]: bot for bot in list_bots()}
+        ids = [agent_id for agent_id in enabled if agent_id in bots] or list(bots)[:1] or [UNLINKED_ID]
+        for slot, agent_id in enumerate(ids):
+            bot = bots.get(agent_id) or {
+                "id": agent_id,
+                "name": UNLINKED_NAME,
+                "threadId": "openbot-thread-" + agent_id,
+                "hue": None,
+            }
+            self._open(bot, slot)
+
+    def _load(self) -> list:
+        try:
+            with open(STATE_PATH) as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            data = {}
+        enabled = data.get("enabled")
+        if not isinstance(enabled, list) or not all(isinstance(i, str) for i in enabled) or not enabled:
+            enabled = []
+        pos = data.get("pos")
+        self.pos = pos if isinstance(pos, dict) else {}
+        return enabled
+
+    def _save(self):
+        os.makedirs(APP_DIR, exist_ok=True)
+        with open(STATE_PATH, "w") as fh:
+            json.dump({"enabled": list(self.faces), "pos": self.pos}, fh)
+
+    def _probe_grok(self):
+        """Eén keer gbot vragen; geen lus, gbot waarschuwt daar zelf voor."""
+        self.grok = grok_bot_status()
+
+    def grok_line(self) -> str:
+        if self.grok.get("connected"):
+            return f"Grok Bot · connected ({len(self.grok.get('bots') or [])} bots)"
+        return "Grok Bot · no route"
+
+    def _open(self, bot: dict, slot: int):
+        spot = self.pos.get(bot["id"])
+        if not (isinstance(spot, (list, tuple)) and len(spot) == 2):
+            spot = None
+        face = FaceWindow(bot["id"], bot["name"], spot, slot, bot.get("threadId"), self,
+                          bot.get("hue"), bot.get("seed"))
+        self.faces[bot["id"]] = face
+        face.show()
+
+    def remember(self, agent_id: str, x: int, y: int):
+        self.pos[agent_id] = [int(x), int(y)]
+        self._save()
+
+    def toggle(self, agent_id: str, on: bool):
+        bots = {bot["id"]: bot for bot in list_bots()}
+        if on and agent_id not in self.faces and agent_id in bots:
+            self._open(bots[agent_id], len(self.faces))
+        if not on and agent_id in self.faces:
+            self.faces.pop(agent_id).close_face()
+        self._save()
+
+    def _link(self, menu: QMenu, label: str, url: str):
+        action = menu.addAction(f"{label} ↗")
+        action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+
+    def _platform_entries(self, menu: QMenu):
+        """Welke bot-apps zijn er gevonden; ontbrekende krijgen een link."""
+        if openbot_installed():
+            menu.addAction("OpenBot · detected").setEnabled(False)
+        else:
+            self._link(menu, "OpenBot not found · get it", OPENBOT_URL)
+        if gbot_installed():
+            menu.addAction(self.grok_line()).setEnabled(False)
+        else:
+            self._link(menu, "Grok Bot not found · get it", GROKBOT_URL)
+
+    def _settings_entries(self, menu: QMenu):
+        settings = menu.addMenu("Settings")
+        sound = QAction("Sound on a new answer", settings, checkable=True)
+        sound.setChecked(widget_config().get("sound") is True)
+        sound.toggled.connect(lambda on: save_widget_config(sound=on))
+        settings.addAction(sound)
+        top = QAction("Face stays above other windows", settings, checkable=True)
+        top.setChecked(always_on_top())
+        top.toggled.connect(self._set_always_on_top)
+        settings.addAction(top)
+        settings.addSeparator()
+        settings.addAction("Quit Bot Widget").triggered.connect(QApplication.quit)
+
+    def _set_always_on_top(self, on: bool):
+        save_widget_config(always_on_top=on)
+        for face in self.faces.values():
+            face.restack()
+
+    def show_menu(self, face=None):
+        """Het rechtsklikmenu op de muis. Een gewoon menu, dus het reageert direct."""
+        menu = QMenu()
+        self._platform_entries(menu)
+        bots = list_bots()
+        if bots:
+            menu.addSeparator()
+        for bot in bots:
+            action = QAction(bot["name"], menu, checkable=True)
+            action.setChecked(bot["id"] in self.faces)
+            action.toggled.connect(lambda on, agent_id=bot["id"]: self.toggle(agent_id, on))
+            menu.addAction(action)
+        menu.addSeparator()
+        self._settings_entries(menu)
+        self._menu = menu
+        menu.popup(QCursor.pos())

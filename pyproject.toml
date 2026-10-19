@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "botwidget"
+version = "0.1.0"
+description = "Animated desktop bot face with a speech bubble and chat window for OpenBot."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PySide6-Essentials>=6.6"]
+
+[project.scripts]
+botwidget = "botwidget.qt_ui.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["botwidget"]
+
+[tool.ruff]
+line-length = 110
