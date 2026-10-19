@@ -6,7 +6,8 @@ from urllib.parse import urlparse
 from botwidget.theme import BUBBLE_CODE_LINES, BUBBLE_FONT, MD_HEAD_SIZE
 
 MD_INLINE_RE = re.compile(
-    r"(\*\*.+?\*\*|__.+?__|`[^`]+?`|\*[^*\s][^*]*?\*|_[^_\s][^_]*?_|\[[^\]]+?\]\([^)\s]+?\))"
+    r"(\*\*.+?\*\*|__.+?__|`[^`]+?`|\*[^*\s][^*]*?\*|_[^_\s][^_]*?_|\[[^\]]+?\]\([^)\s]+?\)"
+    r"|https?://[^\s<>\"'`]*[^\s<>\"'`.,;:!?)\]}]+)"
 )
 MD_HEAD_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 MD_BULLET_RE = re.compile(r"^[-*+]\s+(.*)$")
@@ -39,7 +40,10 @@ def md_inline(text: str) -> list:
         if m.start() > pos:
             out.append((text[pos:m.start()], ""))
         tok = m.group(0)
-        if tok[:2] in ("**", "__"):
+        if tok.startswith(("http://", "https://")):
+            # A bare URL is a link like a markdown one; the url is its own label.
+            out.append((tok, "link:" + tok))
+        elif tok[:2] in ("**", "__"):
             out.append((tok[2:-2], "b"))
         elif tok[0] == "`":
             out.append((tok[1:-1], "code"))

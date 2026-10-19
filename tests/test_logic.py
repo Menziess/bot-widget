@@ -88,6 +88,21 @@ class Markdown(unittest.TestCase):
         self.assertEqual(markdown.anchor_url("link:mailto:a@b.c"), "")
         self.assertEqual(markdown.anchor_url("b"), "")
 
+    def test_a_bare_url_is_a_link_piece(self):
+        self.assertEqual(markdown.md_inline("read https://example.com/x now"),
+                         [("read ", ""), ("https://example.com/x", "link:https://example.com/x"),
+                          (" now", "")])
+        self.assertEqual(markdown.md_inline("go to https://example.com/x."),
+                         [("go to ", ""), ("https://example.com/x", "link:https://example.com/x"),
+                          (".", "")], "the sentence period stays text")
+        self.assertEqual(markdown.md_inline("http://example.com"),
+                         [("http://example.com", "link:http://example.com")])
+        self.assertEqual(markdown.md_inline("a file:///etc/passwd b"), [("a file:///etc/passwd b", "")])
+
+    def test_a_url_in_a_code_span_stays_code(self):
+        self.assertEqual(markdown.md_inline("`https://example.com/x`"),
+                         [("https://example.com/x", "code")])
+
     def test_blocks(self):
         blocks = markdown.md_blocks("# Heading\n\ntext\n\n- one\n- two")
         kinds = [b["kind"] for b in blocks]
@@ -742,9 +757,9 @@ class BubbleTextDocument(unittest.TestCase):
         self.assertIn("Robo", doc.toPlainText())
         self.assertIn("hello there", doc.toPlainText())
 
-    def test_an_http_link_becomes_a_clickable_anchor(self):
+    def _links(self, doc):
+        """The anchor labels and hrefs in the document, in reading order."""
         from PySide6.QtGui import QTextCursor
-        doc, _panels = self.document([{"role": "bot", "text": "see [docs](https://example.com/x)"}])
         cursor = QTextCursor(doc)
         label, hrefs = "", []
         while not cursor.atEnd():
@@ -753,8 +768,23 @@ class BubbleTextDocument(unittest.TestCase):
             if fmt.isAnchor():
                 label += doc.characterAt(cursor.position() - 1)
                 hrefs.append(fmt.anchorHref())
+        return label, hrefs
+
+    def test_an_http_link_becomes_a_clickable_anchor(self):
+        doc, _panels = self.document([{"role": "bot", "text": "see [docs](https://example.com/x)"}])
+        label, hrefs = self._links(doc)
         self.assertEqual(set(hrefs), {"https://example.com/x"})
         self.assertEqual(label, "docs", "only the label is the link, the host stays text")
+
+    def test_a_bare_https_url_becomes_an_anchor(self):
+        doc, _panels = self.document([{"role": "bot", "text": "read https://example.com/x now"}])
+        label, hrefs = self._links(doc)
+        self.assertEqual(set(hrefs), {"https://example.com/x"})
+        self.assertEqual(label, "https://example.com/x", "the url is its own label")
+
+    def test_a_bare_url_with_another_scheme_stays_text(self):
+        doc, _panels = self.document([{"role": "bot", "text": "try file:///etc/passwd or mailto:a@b.c"}])
+        self.assertEqual(self._links(doc), ("", []), "only http(s) opens on a click")
 
     def test_another_scheme_is_text_without_an_anchor(self):
         from PySide6.QtGui import QTextCursor
