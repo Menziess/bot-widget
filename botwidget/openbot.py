@@ -7,8 +7,25 @@ import sqlite3
 import subprocess
 import urllib.error
 import urllib.request
+from typing import NamedTuple
 
 from botwidget.config import API_URL, DB_FILE, HEADERS_FILE, OPENBOT_DIR, read_file
+
+
+class ApiResult(NamedTuple):
+    """Outcome of a POST: data on success, otherwise the HTTP status (None = no answer)."""
+    data: dict | None
+    status: int | None
+    error: str
+
+    @property
+    def ok(self) -> bool:
+        return self.data is not None
+
+    @property
+    def retryable(self) -> bool:
+        """A dropped link, a timeout or a server error can heal; a refusal will not."""
+        return self.status is None or self.status >= 500 or self.status in (408, 429)
 
 
 def read_auth_token() -> str:
@@ -32,8 +49,8 @@ def api_get(path: str) -> dict | list | None:
         return None
 
 
-def api_post(path: str, body: dict) -> dict | None:
-    """POST JSON to the local API."""
+def api_post(path: str, body: dict) -> ApiResult:
+    """POST JSON to the local API and say why it failed, not only that it did."""
     token = read_auth_token()
     url = f"{API_URL}{path}"
     data = json.dumps(body).encode()
@@ -42,9 +59,14 @@ def api_post(path: str, body: dict) -> dict | None:
     req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode())
-    except (urllib.error.URLError, json.JSONDecodeError, OSError):
-        return None
+            return ApiResult(json.loads(resp.read().decode()), resp.status, "")
+    except urllib.error.HTTPError as err:
+        err.close()
+        return ApiResult(None, err.code, f"HTTP {err.code}")
+    except (urllib.error.URLError, OSError) as err:
+        return ApiResult(None, None, str(err))
+    except json.JSONDecodeError:
+        return ApiResult(None, 200, "unreadable answer")
 
 
 GBOT = shutil.which("gbot") or os.path.expanduser("~/.local/bin/gbot")

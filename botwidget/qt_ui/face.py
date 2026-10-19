@@ -3,9 +3,10 @@
 import datetime
 import hashlib
 import math
+import threading
 import time
 
-from PySide6.QtCore import QPoint, Qt, QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QPainter
 from PySide6.QtWidgets import QWidget
 
@@ -29,7 +30,14 @@ from botwidget.config import (
     WORK_POLL_INTERVAL,
     always_on_top,
 )
-from botwidget.markdown import block_text, conversation_blocks, plain_block, role_panel
+from botwidget.delivery import Outbox
+from botwidget.markdown import (
+    block_text,
+    conversation_blocks,
+    plain_block,
+    role_panel,
+    status_block,
+)
 from botwidget.openbot import api_get, api_post, gbot_installed, latest_chat, openbot_installed
 from botwidget.qt_ui import screens
 from botwidget.qt_ui.bubble_window import BubbleWindow
@@ -39,6 +47,8 @@ from botwidget.system.current import send_behind_windows
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
+RETRY_NOTE = "No connection to OpenBot — retrying…"
+REFUSED_NOTE = "I couldn't send that. OpenBot answered: {why}."
 # A calm 30 frames per second; 60 once you grab the face, then you see the difference.
 IDLE_MS = 33
 BUSY_MS = 16
@@ -59,6 +69,9 @@ def ticker(parent, ms: int, step) -> QTimer:
 
 
 class FaceWindow(QWidget):
+    # Result of the POST from the sending thread back to the window.
+    message_done = Signal(str, bool, bool, str)
+
     def __init__(self, agent_id: str, name: str,
                  spot=None, slot: int = 0, thread_id: str | None = None, faces=None,
                  hue: float | None = None, seed: str = ""):
@@ -77,6 +90,10 @@ class FaceWindow(QWidget):
         self.has_pending = False
         self.pinned = False
         self._local = []
+        self._outbox = Outbox()
+        self._sending = False
+        self._send_status = ""
+        self.message_done.connect(self._on_message_done)
         self._hint_shown = False
         self._shown_text = ""
         self._welcome_until = 0.0
@@ -475,6 +492,8 @@ class FaceWindow(QWidget):
                                              self.bot_name)
             if self._working:
                 blocks += [role_panel("bot"), plain_block("dots")]
+            if self._send_status:
+                blocks.append(status_block(self._send_status))
             self._shown_text = block_text(blocks)
             if not self.bubble.shows("say", self._shown_text, True):
                 self.bubble.show_blocks(blocks, "say", input=True)
@@ -483,10 +502,14 @@ class FaceWindow(QWidget):
             # What you just asked, with three pulsing dots below it.
             asked = [m for m in messages if m.get("role") == "user"][-1:]
             blocks = conversation_blocks(asked, self.bot_name) + [role_panel("bot"), plain_block("dots")]
+            if self._send_status:
+                blocks.append(status_block(self._send_status))
             if not self.bubble.shows("think", block_text(blocks), False):
                 self.bubble.show_blocks(blocks, "think")
             return
         blocks = conversation_blocks(messages, self.bot_name)
+        if self._send_status:
+            blocks.append(status_block(self._send_status))
         text = block_text(blocks)
         if blocks and text != self._shown_text:
             # Only new text brings the bubble back; after it slid away it stays away.
@@ -502,19 +525,60 @@ class FaceWindow(QWidget):
     # ── Sending messages ────────────────────────────────────────
 
     def on_user_message(self, text: str):
-        """Send a message from the bubble."""
+        """Send a message from the bubble; it only counts as sent once the POST succeeded."""
         if text.strip() == "/settings":
             if self.faces is not None:
                 self.faces.show_menu(self)
             return
-        now = time.monotonic()
-        self._local.append({"role": "user", "text": text[:500], "until": now + 30})
+        text = text[:500]
         day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
         cid = hashlib.sha256(f"{self.agent_id}\n{text}\n{day}".encode()).hexdigest()[:32]
-        result = api_post(f"/v1/agents/{self.agent_id}/messages",
-                          {"text": text, "clientMessageId": cid})
-        if result is None:
-            self._local.append({"role": "bot", "until": now + 12,
-                                "text": "I couldn't send that. Is OpenBot running?"})
+        self._outbox.add(text, cid)
+        self._pump_outbox()
         self._sync_bubble(latest_chat(thread_id=self.thread_id))
         self._poll_timer.start(300)
+
+    # ── Sending ─────────────────────────────────────────────────
+
+    def _pump_outbox(self):
+        """POST the oldest message in a worker thread, so a timeout cannot freeze the face."""
+        if self._sending or not self._alive:
+            return
+        item = self._outbox.current()
+        if item is None:
+            return
+        self._sending = True
+        threading.Thread(target=self._post_message, daemon=True,
+                         args=(item["text"], item["cid"])).start()
+
+    def _post_message(self, text: str, cid: str):
+        result = api_post(f"/v1/agents/{self.agent_id}/messages",
+                          {"text": text, "clientMessageId": cid})
+        if self._alive:
+            self.message_done.emit(cid, result.ok, result.retryable, result.error)
+
+    def _on_message_done(self, cid: str, ok: bool, retryable: bool, error: str):
+        """A user line is local only after a successful POST; a blip is retried, not reported."""
+        self._sending = False
+        if not self._alive:
+            return
+        next_ready = True
+        if ok:
+            item = self._outbox.sent(cid)
+            self._send_status = ""
+            if item is not None:
+                self._local.append({"role": "user", "text": item["text"],
+                                    "until": time.monotonic() + 120})
+        else:
+            wait = self._outbox.failed(cid, retryable)
+            if wait is None:
+                self._send_status = ""
+                self._local.append({"role": "bot", "until": time.monotonic() + 60,
+                                    "text": REFUSED_NOTE.format(why=error)})
+            else:
+                next_ready = False
+                self._send_status = RETRY_NOTE
+                QTimer.singleShot(int(wait * 1000), self._pump_outbox)
+        self._sync_bubble(latest_chat(thread_id=self.thread_id))
+        if next_ready:
+            self._pump_outbox()

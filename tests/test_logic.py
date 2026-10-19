@@ -5,6 +5,7 @@ machine without a display.
 """
 
 import io
+import json
 import os
 import plistlib
 import sys
@@ -20,6 +21,7 @@ from botwidget import (
     bubble_layout,
     channel,
     config,
+    delivery,
     dev,
     instance,
     markdown,
@@ -693,6 +695,127 @@ class Channel(unittest.TestCase):
     def test_garbage_in_the_settings_file_is_not_a_command(self):
         config.save_widget_config(local_command="not a list")
         self.assertIsNone(channel.other_command())
+
+
+class Sending(unittest.TestCase):
+    """A POST that can fail: a blip is retried with the same clientMessageId, a refusal is said."""
+
+    def test_a_retry_keeps_the_message_and_its_id(self):
+        box = delivery.Outbox()
+        box.add("hello", "abc")
+        self.assertEqual(box.current()["cid"], "abc")
+        self.assertEqual(box.failed("abc", True), 1)
+        self.assertEqual(box.current()["cid"], "abc", "a retry uses the id it started with")
+        self.assertEqual(box.failed("abc", True), 2, "the wait grows")
+        self.assertEqual(len(box.items), 1, "the message is not lost")
+
+    def test_a_refusal_drops_the_message(self):
+        box = delivery.Outbox()
+        box.add("hello", "abc")
+        self.assertIsNone(box.failed("abc", False))
+        self.assertIsNone(box.current())
+
+    def test_a_sent_message_leaves_the_box(self):
+        box = delivery.Outbox()
+        box.add("hello", "abc")
+        self.assertEqual(box.sent("abc")["text"], "hello")
+        self.assertIsNone(box.current())
+
+    def test_a_live_post_that_fails_is_retryable_and_recovers_with_the_same_id(self):
+        with _FlakyApi([500, 200]) as server:
+            cid = "deadbeef"
+            path = "/v1/agents/me/messages"
+            first = openbot.api_post(path, {"text": "hi", "clientMessageId": cid})
+            self.assertFalse(first.ok)
+            self.assertTrue(first.retryable, "a server error may heal by itself")
+            box = delivery.Outbox()
+            box.add("hi", cid)
+            self.assertEqual(box.failed(cid, first.retryable), 1)
+            second = openbot.api_post(path, {"text": "hi", "clientMessageId": cid})
+            self.assertTrue(second.ok, "the retry goes through")
+            box.sent(cid)
+            self.assertIsNone(box.current())
+            self.assertEqual(server.seen[0]["clientMessageId"], server.seen[1]["clientMessageId"])
+            self.assertEqual(server.seen[0]["text"], "hi")
+
+    def test_a_refusal_from_the_api_is_not_retried(self):
+        with _FlakyApi([401]) as server:
+            result = openbot.api_post("/v1/agents/me/messages",
+                                      {"text": "hi", "clientMessageId": "x"})
+            self.assertEqual(len(server.seen), 1)
+        self.assertFalse(result.ok)
+        self.assertFalse(result.retryable)
+        self.assertEqual(result.status, 401)
+
+    def test_no_answer_at_all_is_retryable(self):
+        old_url, old_headers = openbot.API_URL, openbot.HEADERS_FILE
+        self.addCleanup(setattr, openbot, "API_URL", old_url)
+        self.addCleanup(setattr, openbot, "HEADERS_FILE", old_headers)
+        with tempfile.TemporaryDirectory() as folder:
+            headers = os.path.join(folder, "headers")
+            with open(headers, "w") as f:
+                f.write("Authorization: Bearer test\n")
+            openbot.HEADERS_FILE = headers
+            openbot.API_URL = _closed_address()
+            result = openbot.api_post("/v1/agents/me/messages", {"text": "hi"})
+        self.assertFalse(result.ok)
+        self.assertTrue(result.retryable, "a dropped link looks like a stopped OpenBot, but retries")
+        self.assertIsNone(result.status)
+
+
+def _closed_address() -> str:
+    """A local URL where nothing listens."""
+    import socket
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return f"http://127.0.0.1:{port}"
+
+
+class _FlakyApi:
+    """A local API that answers with the given status codes in order, as a context manager."""
+
+    def __init__(self, replies: list):
+        import http.server
+        import threading
+
+        self.replies = replies
+        self.seen = []
+        self._tmp = tempfile.TemporaryDirectory()
+        self._headers = os.path.join(self._tmp.name, "headers")
+        with open(self._headers, "w") as f:
+            f.write("Authorization: Bearer test\n")
+
+        parent = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+                parent.seen.append(json.loads(body or b"{}"))
+                self.send_response(parent.replies.pop(0) if parent.replies else 200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"ok": true}')
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def __enter__(self):
+        self._old = (openbot.HEADERS_FILE, openbot.API_URL)
+        openbot.HEADERS_FILE = self._headers
+        openbot.API_URL = f"http://127.0.0.1:{self.server.server_port}"
+        return self
+
+    def __exit__(self, *exc):
+        openbot.HEADERS_FILE, openbot.API_URL = self._old
+        self.server.shutdown()
+        self.server.server_close()
+        self._tmp.cleanup()
+        return False
 
 
 if __name__ == "__main__":

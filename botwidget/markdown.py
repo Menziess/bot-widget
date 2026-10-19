@@ -110,6 +110,11 @@ def plain_block(kind: str) -> dict:
     return {"kind": kind, "size": 0, "indent": 0, "prefix": "", "grey": False, "chunks": []}
 
 
+def status_block(text: str) -> dict:
+    """A grey line about the link, not an answer from the bot."""
+    return text_block(BUBBLE_FONT, 0, "", True, [(text, "i")])
+
+
 def code_block(lines: list) -> dict:
     """A whole code block at once: monospace, in a panel of its own."""
     return {"kind": "code", "lines": lines}
