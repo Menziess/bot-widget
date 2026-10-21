@@ -12,7 +12,42 @@
   body { margin: 0; font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
          color: var(--ink); background: #fafafa; }
   main { max-width: 680px; margin: 0 auto; padding: 72px 24px 96px; }
-  .face { width: 112px; height: 112px; display: block; margin: 0 auto 24px; }
+  #stage { width: 204px; aspect-ratio: 1; margin: 0 auto 8px; }
+  #stage img { width: 100%; height: 100%; display: block; }
+  body.live #stage img { visibility: hidden; }
+  .try { text-align: center; color: var(--soft); font-size: 15px; margin: 0 0 28px; }
+  #home { display: none; font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+  body.away #home { display: inline; }
+  #bot { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; display: none; will-change: transform; }
+  body.live #bot { display: block; }
+  #bot canvas { display: block; }
+  #bot-hit { position: absolute; border-radius: 50%; pointer-events: auto; cursor: grab; touch-action: none; }
+  #bot.grabbed #bot-hit { cursor: grabbing; }
+  #bubble { position: fixed; left: 0; top: 0; z-index: 11; width: min(320px, calc(100vw - 16px)); background: #fff;
+            border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 8px 28px #0000001f; padding: 12px 14px;
+            font-size: 15px; line-height: 1.45; opacity: 0; visibility: hidden; transition: opacity .18s, visibility .18s;
+            will-change: transform; --tail: 40px; }
+  #bubble[data-open="true"] { opacity: 1; visibility: visible; }
+  #bubble::after { content: ""; position: absolute; width: 14px; height: 14px; background: #fff;
+                   border: 1px solid var(--line); transform: rotate(45deg); }
+  #bubble[data-side="above"]::after { left: calc(var(--tail) - 7px); bottom: -8px; border-top: 0; border-left: 0; }
+  #bubble[data-side="below"]::after { left: calc(var(--tail) - 7px); top: -8px; border-bottom: 0; border-right: 0; }
+  #bubble[data-side="right"]::after { top: calc(var(--tail) - 7px); left: -8px; border-top: 0; border-right: 0; }
+  #bubble[data-side="left"]::after { top: calc(var(--tail) - 7px); right: -8px; border-bottom: 0; border-left: 0; }
+  #log { max-height: 220px; overflow-y: auto; }
+  #log p { margin: 0 0 8px; overflow-wrap: anywhere; }
+  #log .you { text-align: right; color: var(--soft); }
+  #log .dots i { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--ink);
+                 opacity: .25; animation: dot 1s infinite; }
+  #log .dots i:nth-child(2) { animation-delay: .15s; } #log .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes dot { 0%, 100% { opacity: .2; transform: translateY(0); } 40% { opacity: .9; transform: translateY(-3px); } }
+  #bubble.say #chat-only { display: none; }
+  #chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+  #chips button { font: inherit; font-size: 13px; background: #1c1c1c0f; border: 0; border-radius: 999px; padding: 4px 10px; cursor: pointer; color: var(--ink); }
+  #chips button:hover { background: #1c1c1c1f; }
+  #ask-text { width: 100%; font: inherit; font-size: 15px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #fafafa; }
+  #ask-text:focus { outline: 2px solid var(--accent); outline-offset: 1px; background: #fff; }
+  @media (prefers-reduced-motion: reduce) { #bubble { transition: none; } #log .dots i { animation: none; opacity: .6; } }
   h1 { font-size: 40px; line-height: 1.15; text-align: center; margin: 0 0 12px; letter-spacing: -0.02em; }
   .lead { text-align: center; color: var(--soft); font-size: 19px; margin: 0 auto 40px; max-width: 520px; }
   .download { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 28px; text-align: center; }
@@ -37,7 +72,8 @@
 </head>
 <body>
 <main>
-  <img class="face" src="face.svg" alt="The Bot Widget face">
+  <div id="stage"><img src="face.svg" alt="The Bot Widget face"></div>
+  <p class="try">Go on: grab me, throw me, or click me. <button id="home" type="button">Bring me back</button></p>
   <h1>A face for your bot</h1>
   <p class="lead">Bot Widget puts your OpenBot or Grok Bot on the desktop as a small animated face. Click it to chat. Watch it think.</p>
 
@@ -84,7 +120,20 @@ botwidget</pre>
 
   <footer><a href="https://github.com/Menziess/bot-widget">Source on GitHub</a></footer>
 </main>
+<div id="bot">
+  <canvas id="bot-canvas" aria-hidden="true"></canvas>
+  <div id="bot-hit" role="button" tabindex="0" aria-label="The Bot Widget face. Click to talk, drag to throw."></div>
+</div>
+<div id="bubble" data-open="false" aria-hidden="true">
+  <div id="log" aria-live="polite"></div>
+  <div id="chat-only">
+    <div id="chips"><button type="button">How do I install?</button><button type="button">Is it free?</button><button type="button">What can you do?</button></div>
+    <form id="ask"><input id="ask-text" type="text" autocomplete="off" maxlength="120" placeholder="Ask me about Bot Widget…" aria-label="Ask the bot a question"></form>
+  </div>
+</div>
 <script src="detect.js"></script>
+<script src="face.js"></script>
+<script src="bot.js"></script>
 <script>
   document.body.dataset.detected = detectOS(navigator.userAgent, navigator.platform || "");
 </script>
