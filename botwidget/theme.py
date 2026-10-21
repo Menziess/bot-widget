@@ -42,6 +42,11 @@ PAD_BODY = 12
 PAD_PANEL_X = 12
 PAD_PANEL_Y = 11
 GAP_PANEL = 10
+# The arrow that says there are earlier messages: a slim strip that sits close to the message below it.
+MORE_PAD = 2
+MORE_GAP = -8  # a white message under it can sit closer ...
+MORE_GAP_DARK = -1  # ... a dark panel starts right below the arrow
+MORE_H = 12
 # Thinking dots in the bubble: three circles with a wave running through them.
 DOTS_W = 62
 DOTS_R = 4.5

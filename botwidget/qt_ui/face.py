@@ -59,7 +59,6 @@ from botwidget.system.current import activate_app, send_behind_windows
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
-EARLIER_NOTE = "↑"
 RETRY_NOTE = "No connection to OpenBot — retrying…"
 REFUSED_NOTE = "I couldn't send that. OpenBot answered: {why}."
 # OpenBot only opens its local API once this switch is on, per bot.
@@ -647,7 +646,7 @@ class FaceWindow(QWidget):
         shown = messages[-self._depth:]
         blocks = conversation_blocks(shown, self.bot_name, limit=len(shown), max_chars=10 ** 9)
         if blocks and len(messages) > len(shown):
-            blocks.insert(0, status_block(EARLIER_NOTE))
+            blocks[:0] = [role_panel("more"), plain_block("more")]
         if not blocks and greet:
             blocks = conversation_blocks([{"role": "bot", "text": f"Hi, I'm {self.bot_name}. Ask me anything."}],
                                          self.bot_name)

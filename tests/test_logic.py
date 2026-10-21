@@ -220,6 +220,19 @@ class BubbleLayout(unittest.TestCase):
         self.assertEqual(huge, BUBBLE_LINGER_MAX)
         self.assertEqual(bubble.reading_seconds(""), BUBBLE_LINGER)
 
+    def test_the_arrow_for_earlier_messages_sits_close_and_never_under_a_dark_panel(self):
+        from botwidget.bubble import panel_rects
+        for role, text in (("bot", "Hoi"), ("user", "Hoi")):
+            blocks = [markdown.role_panel("more"), markdown.plain_block("more")] + \
+                markdown.conversation_blocks([{"role": role, "text": text}], "Bot")
+            panels = bubble_layout.bubble_panels(self.measure, blocks)
+            self.assertEqual([p["role"] for p in panels], ["more", role])
+            (arrow_top, arrow_h), (message_top, _h) = panel_rects(panels)
+            self.assertLess(message_top, arrow_top + arrow_h, "closer than a normal gap")
+            chevron_bottom = arrow_top + 2 + 6 + 3
+            if role == "user":
+                self.assertGreater(message_top, chevron_bottom, "the dark panel does not cover the arrow")
+
     def test_a_single_message_has_no_name_above_it(self):
         text = markdown.block_text(markdown.conversation_blocks([{"role": "bot", "text": "Hoi daar"}], "Fritsie"))
         self.assertEqual(text, "Hoi daar")
@@ -896,7 +909,7 @@ class BubbleHover(unittest.TestCase):
         text = self.window.bubble.full_text
         self.assertIn("Zal ik pushen?", text)
         self.assertNotIn("Klaar?", text)
-        self.assertIn("↑", text)
+        self.assertEqual(self.window.bubble._geom[0][0]["role"], "more", "an arrow on top says there is more")
 
     def test_scrolling_up_adds_the_message_before_and_the_hint_goes_when_there_is_no_more(self):
         self.hover()
@@ -904,7 +917,7 @@ class BubbleHover(unittest.TestCase):
         text = self.window.bubble.full_text
         self.assertIn("Klaar?", text)
         self.assertIn("Zal ik pushen?", text)
-        self.assertNotIn("↑", text)
+        self.assertNotEqual(self.window.bubble._geom[0][0]["role"], "more", "nothing more to scroll to")
         self.window.show_older()
         self.assertEqual(self.window._depth, 2, "nothing older to load")
 

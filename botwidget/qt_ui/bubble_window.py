@@ -19,6 +19,7 @@ from botwidget.bubble import (
     cloud_body_svg,
     cloud_shadow_svg,
     content_height,
+    panel_pad,
     panel_rects,
     reading_seconds,
 )
@@ -37,7 +38,6 @@ from botwidget.theme import (
     DOTS_GAP,
     DOTS_MS,
     PAD_BODY,
-    PAD_PANEL_Y,
     PAD_SVG,
     SAND_ACCENT,
     SAND_INK,
@@ -380,7 +380,8 @@ class BubbleWindow(QWidget):
         self._text.setPixmap(pix)
         self._text.resize(pix.deviceIndependentSize().toSize())
         # One panel padding lower: the shapes keep the text of the first panel at that spot.
-        self._doc.setGeometry(0, PAD_PANEL_Y, box_w, max(1, inner - PAD_PANEL_Y))
+        top = panel_pad(panels[0])
+        self._doc.setGeometry(0, top, box_w, max(1, inner - top))
         self._doc.setVisible(self.kind != "")
 
     def _set_doc(self):

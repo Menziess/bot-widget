@@ -10,6 +10,10 @@ from botwidget.theme import (
     DOTS_GAP,
     DOTS_R,
     GAP_PANEL,
+    MORE_GAP,
+    MORE_GAP_DARK,
+    MORE_H,
+    MORE_PAD,
     PAD_BODY,
     PAD_PANEL_X,
     PAD_PANEL_Y,
@@ -17,6 +21,7 @@ from botwidget.theme import (
     SAND_BUBBLE,
     SAND_HAIRLINE,
     SAND_INK,
+    SAND_INK_SOFT,
     SAND_LINE_USER,
     SAND_ON_USER,
     SAND_PANEL_USER,
@@ -33,8 +38,21 @@ def reading_seconds(text: str) -> float:
     return min(BUBBLE_LINGER_MAX, BUBBLE_LINGER + BUBBLE_PER_WORD * len(text.split()))
 
 
+def panel_pad(panel: dict) -> int:
+    return MORE_PAD if panel["role"] == "more" else PAD_PANEL_Y
+
+
+def panel_gap(panel: dict, following: dict | None = None) -> int:
+    """Space between this panel and the one under it."""
+    if panel["role"] != "more":
+        return GAP_PANEL
+    return MORE_GAP_DARK if following and following["role"] == "user" else MORE_GAP
+
+
 def line_height(block: dict) -> int:
     """Line height in the bubble: text, blank line, rule, dots or code line."""
+    if block["kind"] == "more":
+        return MORE_H
     if block["kind"] == "gap":
         return 10
     if block["kind"] == "rule":
@@ -48,9 +66,9 @@ def line_height(block: dict) -> int:
 
 def bubble_height(panels: list) -> int:
     """Height of the whole bubble window, including the margin for shadow and tail."""
-    total = 2 * PAD_BODY + PAD_SVG + TAIL_ROOM + GAP_PANEL * max(0, len(panels) - 1)
+    total = 2 * PAD_BODY + PAD_SVG + TAIL_ROOM + sum(panel_gap(panel, nxt) for panel, nxt in zip(panels, panels[1:]))
     for panel in panels:
-        total += 2 * PAD_PANEL_Y
+        total += 2 * panel_pad(panel)
         for line in panel["lines"]:
             total += line_height(line)
     return total
@@ -64,10 +82,10 @@ def content_height(panels: list) -> int:
 def panel_rects(panels: list) -> list:
     """(top, height) of every panel in the scrolling content, where panel_svg draws it."""
     rects, top = [], 0
-    for panel in panels:
-        height = 2 * PAD_PANEL_Y + sum(line_height(line) for line in panel["lines"])
+    for i, panel in enumerate(panels):
+        height = 2 * panel_pad(panel) + sum(line_height(line) for line in panel["lines"])
         rects.append((top, height))
-        top += height + GAP_PANEL
+        top += height + panel_gap(panel, panels[i + 1] if i + 1 < len(panels) else None)
     return rects
 
 
@@ -83,28 +101,38 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
     can be selected and their links clicked.
     """
     out, y = [], oy
-    for panel in panels:
+    for index, panel in enumerate(panels):
         user = panel["role"] == "user"
         ink = SAND_ON_USER if user else SAND_INK
         hair = SAND_LINE_USER if user else SAND_HAIRLINE
         lines = panel["lines"]
         heights = [line_height(line) for line in lines]
-        panel_h = 2 * PAD_PANEL_Y + sum(heights)
+        pad = panel_pad(panel)
+        panel_h = 2 * pad + sum(heights)
         if user:
             out.append(f'<rect x="{ox}" y="{y}" width="{box_w}" height="{panel_h}"'
                        f' rx="{SAND_RADIUS_PANEL}" fill="{SAND_PANEL_USER}"/>')
-        tops, acc = [], y + PAD_PANEL_Y
+        tops, acc = [], y + pad
         for h in heights:
             tops.append(acc)
             acc += h
         for n, line in enumerate(lines):
             if line["kind"] == "dots":
                 out.append(dots_svg(ox + PAD_PANEL_X, tops[n] + 16, line.get("phase", 0.0), ink))
+            elif line["kind"] == "more":
+                out.append(more_svg(ox + box_w / 2, tops[n] + MORE_H / 2))
             elif line["kind"] == "rule":
                 out.append(f'<rect x="{ox + PAD_PANEL_X}" y="{tops[n] + 6}"'
                            f' width="{box_w - 2 * PAD_PANEL_X}" height="1" fill="{hair}"/>')
-        y += panel_h + GAP_PANEL
+        y += panel_h + panel_gap(panel, panels[index + 1] if index + 1 < len(panels) else None)
     return "".join(out)
+
+
+def more_svg(x: float, y: float) -> str:
+    """A slim chevron pointing up: there is more above."""
+    return (f'<path d="M{x - 5:.1f} {y + 2.5:.1f} L{x:.1f} {y - 2.5:.1f} L{x + 5:.1f} {y + 2.5:.1f}"'
+            f' fill="none" stroke="{SAND_INK_SOFT}" stroke-width="1.8" stroke-linecap="round"'
+            f' stroke-linejoin="round"/>')
 
 
 def dots_svg(x: float, y: float, phase: float, ink: str) -> str:

@@ -109,6 +109,10 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
                          "width": DOTS_W, "phase": 0.0})
             widest = max(widest, DOTS_W)
             continue
+        if kind == "more":
+            laid.append({"kind": "more", "size": 15, "indent": 0, "prefix": "", "grey": False,
+                         "head": False, "words": [], "xs": [], "ws": [], "width": 12})
+            continue
         if kind == "code":
             for code_line in block["lines"]:
                 lay_block({"kind": "text", "size": BUBBLE_CODE_FONT, "indent": CODE_INDENT,

@@ -6,13 +6,11 @@ layout says and the shapes drawn behind it stay in place.
 
 from PySide6.QtGui import QColor, QFont, QTextBlockFormat, QTextCharFormat, QTextCursor
 
-from botwidget.bubble import line_height
+from botwidget.bubble import line_height, panel_gap, panel_pad
 from botwidget.markdown import anchor_url
 from botwidget.theme import (
     BUBBLE_CODE_FONT,
-    GAP_PANEL,
     PAD_PANEL_X,
-    PAD_PANEL_Y,
     SAND_ACCENT,
     SAND_CHIP,
     SAND_CHIP_USER,
@@ -88,7 +86,8 @@ def fill_document(doc, panels: list, box_w: int):
         lines = panel["lines"]
         for li, line in enumerate(lines):
             block = QTextBlockFormat()
-            block.setTopMargin(PAD_PANEL_Y + GAP_PANEL + PAD_PANEL_Y if li == 0 and pi > 0 else 0)
+            block.setTopMargin(panel_pad(panels[pi - 1]) + panel_gap(panels[pi - 1], panel) + panel_pad(panel)
+                               if li == 0 and pi > 0 else 0)
             block.setLeftMargin(PAD_PANEL_X + line["indent"])
             block.setLineHeight(float(line_height(line)),
                                 QTextBlockFormat.LineHeightTypes.FixedHeight.value)
