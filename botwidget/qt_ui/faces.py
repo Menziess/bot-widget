@@ -14,6 +14,8 @@ from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
     OPENBOT_URL,
+    QUIET_FROM,
+    QUIET_TO,
     STATE_PATH,
     UNLINKED_ID,
     UNLINKED_NAME,
@@ -170,6 +172,10 @@ class Faces(QObject):
         sound.setChecked(widget_config().get("sound") is True)
         sound.toggled.connect(lambda on: save_widget_config(sound=on))
         settings.addAction(sound)
+        quiet = QAction(f"No sound from {QUIET_FROM}:00 to {QUIET_TO:02d}:00", settings, checkable=True)
+        quiet.setChecked(widget_config().get("quiet_hours") is True)
+        quiet.toggled.connect(lambda on: save_widget_config(quiet_hours=on))
+        settings.addAction(quiet)
         top = QAction("Face stays above other windows", settings, checkable=True)
         top.setChecked(always_on_top())
         top.toggled.connect(self._set_always_on_top)

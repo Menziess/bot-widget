@@ -63,8 +63,16 @@ WORK_POLL_INTERVAL = 1  # second, while the turn is running
 CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
-SETTING_KEYS = ("sound", "always_on_top", "check_updates", "auto_update", "login_default_applied",
+SETTING_KEYS = ("sound", "quiet_hours", "always_on_top", "check_updates", "auto_update", "login_default_applied",
                 "local_command")
+
+
+# With quiet hours on, the sound stays off from this hour until the other, around midnight.
+QUIET_FROM, QUIET_TO = 22, 8
+
+
+def quiet_now(hour: int, enabled: bool) -> bool:
+    return enabled and (hour >= QUIET_FROM or hour < QUIET_TO)
 
 
 def always_on_top() -> bool:

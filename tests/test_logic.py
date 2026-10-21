@@ -644,6 +644,32 @@ class ScreenChanges(unittest.TestCase):
         self.assertEqual(self.window.spot(), (200, 100))
 
 
+class QuietHours(unittest.TestCase):
+    """Should keep the answer sound off during the night, only when asked for."""
+
+    def test_the_night_is_quiet_when_enabled(self):
+        for hour in (22, 23, 0, 3, 7):
+            self.assertTrue(config.quiet_now(hour, True), hour)
+        for hour in (8, 12, 21):
+            self.assertFalse(config.quiet_now(hour, True), hour)
+
+    def test_never_quiet_when_not_enabled(self):
+        self.assertFalse(any(config.quiet_now(hour, False) for hour in range(24)))
+
+    def test_the_sound_follows_the_setting_and_the_clock(self):
+        from unittest import mock
+        from botwidget import sound
+        cases = [({"sound": True}, 23, 1), ({"sound": True, "quiet_hours": True}, 23, 0),
+                 ({"sound": True, "quiet_hours": True}, 12, 1), ({"sound": False}, 12, 0)]
+        for settings, hour, plays in cases:
+            with mock.patch.object(sound, "widget_config", return_value=settings), \
+                    mock.patch.object(sound, "play_notification") as play, \
+                    mock.patch.object(sound.datetime, "datetime") as now:
+                now.now.return_value.hour = hour
+                sound.play_sound()
+                self.assertEqual(play.call_count, plays, (settings, hour))
+
+
 class Animator(unittest.TestCase):
     """Should move the springs smoothly to the target, overshoot where it should, and then really stand still."""
 
