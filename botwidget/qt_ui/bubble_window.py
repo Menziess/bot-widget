@@ -24,7 +24,7 @@ from botwidget.bubble import (
 )
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks
-from botwidget.qt_ui import screens
+from botwidget.qt_ui import desktops, screens
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document
@@ -592,6 +592,7 @@ class BubbleWindow(QWidget):
             self._vx = self._vy = 0.0
             self.move(int(tx), int(ty))
             self.show()
+            desktops.apply(self)
         if not self._physics_on:
             self._physics_on = True
             self._physics.start()

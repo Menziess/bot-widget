@@ -19,6 +19,7 @@ from botwidget.config import (
     STATE_PATH,
     UNLINKED_ID,
     UNLINKED_NAME,
+    all_desktops,
     always_on_top,
     auto_update,
     check_updates,
@@ -27,7 +28,7 @@ from botwidget.config import (
 )
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
 from botwidget.qt_ui.face import FaceWindow
-from botwidget.system.current import HOTKEY_LABEL, activate_app, can_install_update
+from botwidget.system.current import CAN_PICK_DESKTOPS, HOTKEY_LABEL, activate_app, can_install_update
 
 
 UPDATE_TICK_MS = 10 * 60 * 1000
@@ -194,6 +195,11 @@ class Faces(QObject):
         top.setChecked(always_on_top())
         top.toggled.connect(self._set_always_on_top)
         settings.addAction(top)
+        if CAN_PICK_DESKTOPS:
+            everywhere = QAction("Show on all desktops", settings, checkable=True)
+            everywhere.setChecked(all_desktops())
+            everywhere.toggled.connect(self._set_all_desktops)
+            settings.addAction(everywhere)
         login = QAction("Start at login", settings, checkable=True)
         login.setChecked(startup.is_enabled())
         login.toggled.connect(startup.set_enabled)
@@ -209,6 +215,11 @@ class Faces(QObject):
             settings.addAction(auto)
         settings.addSeparator()
         settings.addAction("Quit Bot Widget").triggered.connect(QApplication.quit)
+
+    def _set_all_desktops(self, on: bool):
+        save_widget_config(all_desktops=on)
+        for face in self.faces.values():
+            face.apply_desktops()
 
     def _set_always_on_top(self, on: bool):
         save_widget_config(always_on_top=on)

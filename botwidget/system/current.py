@@ -14,6 +14,7 @@ elif sys.platform == "darwin":
 else:
     from botwidget.system import linux as _os
 
+CAN_PICK_DESKTOPS = _os.CAN_PICK_DESKTOPS
 HOTKEY_LABEL = _os.HOTKEY_LABEL
 UPDATE_ASSET = _os.UPDATE_ASSET
 activate_app = _os.activate_app
@@ -28,4 +29,5 @@ process_cmdline = _os.process_cmdline
 register_hotkey = _os.register_hotkey
 send_behind_windows = _os.send_behind_windows
 stable_app_command = _os.stable_app_command
+set_desktops = _os.set_desktops
 set_launch_at_login = _os.set_launch_at_login

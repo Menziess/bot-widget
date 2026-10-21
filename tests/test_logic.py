@@ -1226,6 +1226,47 @@ class Hotkey(unittest.TestCase):
             self.assertFalse(module.register_hotkey(lambda: None))
 
 
+class Desktops(unittest.TestCase):
+    """Should keep the face and its bubble on every desktop, or on the one you leave them on."""
+
+    def test_on_every_desktop_is_the_default(self):
+        from unittest import mock
+        with mock.patch.object(config, "widget_config", return_value={}):
+            self.assertTrue(config.all_desktops())
+        with mock.patch.object(config, "widget_config", return_value={"all_desktops": False}):
+            self.assertFalse(config.all_desktops())
+
+    def test_the_mac_behaviour_differs_by_whether_you_can_move_it_in_mission_control(self):
+        everywhere, single = macos.desktop_behavior(True), macos.desktop_behavior(False)
+        self.assertTrue(everywhere & macos.CAN_JOIN_ALL_SPACES)
+        self.assertFalse(single & macos.CAN_JOIN_ALL_SPACES)
+        self.assertTrue(single & macos.MANAGED)
+        self.assertTrue(everywhere & single & macos.FULL_SCREEN_AUXILIARY, "over full-screen apps in both")
+
+    def test_only_real_windows_are_told_which_desktops(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from unittest import mock
+            from PySide6.QtWidgets import QApplication, QWidget
+            from botwidget.qt_ui import desktops
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        app = QApplication.instance() or QApplication([])
+        widget = QWidget()
+        with mock.patch.object(desktops, "set_desktops") as call:
+            desktops.apply(widget)
+            call.assert_not_called()
+            with mock.patch.object(desktops.QGuiApplication, "platformName", return_value="cocoa"):
+                desktops.apply(widget)
+            self.assertEqual(call.call_count, 1)
+        self.assertIsNotNone(app)
+
+    def test_other_systems_have_nothing_to_choose(self):
+        self.assertFalse(linux.CAN_PICK_DESKTOPS or windows.CAN_PICK_DESKTOPS)
+        linux.set_desktops(0, True)
+        windows.set_desktops(0, False)
+
+
 class Animator(unittest.TestCase):
     """Should move the springs smoothly to the target, overshoot where it should, and then really stand still."""
 

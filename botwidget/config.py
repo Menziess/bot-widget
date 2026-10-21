@@ -65,7 +65,7 @@ WORK_POLL_INTERVAL = 1  # second, while the turn is running
 CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
-SETTING_KEYS = ("sound", "quiet_hours", "always_on_top", "check_updates", "auto_update", "login_default_applied",
+SETTING_KEYS = ("sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied",
                 "local_command")
 
 
@@ -75,6 +75,11 @@ QUIET_FROM, QUIET_TO = 22, 8
 
 def quiet_now(hour: int, enabled: bool) -> bool:
     return enabled and (hour >= QUIET_FROM or hour < QUIET_TO)
+
+
+def all_desktops() -> bool:
+    """On every desktop by default, so the face is there wherever you switch to."""
+    return widget_config().get("all_desktops") is not False
 
 
 def always_on_top() -> bool:

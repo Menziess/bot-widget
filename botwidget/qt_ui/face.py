@@ -51,7 +51,7 @@ from botwidget.openbot import (
     latest_chat,
     openbot_installed,
 )
-from botwidget.qt_ui import screens
+from botwidget.qt_ui import desktops, screens
 from botwidget.qt_ui.bubble_window import BubbleWindow
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
@@ -187,6 +187,13 @@ class FaceWindow(QWidget):
         super().showEvent(event)
         if not always_on_top():
             send_behind_windows(int(self.winId()))
+        self.apply_desktops()
+
+    def apply_desktops(self):
+        """On every desktop, or only on this one; the bubble follows the face."""
+        desktops.apply(self)
+        if self.bubble.isVisible():
+            desktops.apply(self.bubble)
 
     def paintEvent(self, _event):
         painter = QPainter(self)

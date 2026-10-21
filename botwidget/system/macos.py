@@ -20,6 +20,9 @@ SM_ENABLED = 1  # SMAppServiceStatusEnabled
 DESKTOP_ICON_LEVEL_KEY = 18  # kCGDesktopIconWindowLevelKey
 CAN_JOIN_ALL_SPACES = 1 << 0
 STATIONARY = 1 << 4
+MANAGED = 1 << 2
+FULL_SCREEN_AUXILIARY = 1 << 8
+CAN_PICK_DESKTOPS = True
 ACCESSORY = 1  # NSApplicationActivationPolicyAccessory
 HOTKEY_LABEL = "⌃⌥Space"
 KEY_SPACE, CONTROL_KEY, OPTION_KEY = 49, 1 << 12, 1 << 11
@@ -104,6 +107,20 @@ def register_hotkey(callback) -> bool:
                                         target, 0, ctypes.byref(ref))
     _hotkey_refs.append((handler, ref))
     return status == 0
+
+
+def desktop_behavior(everywhere: bool) -> int:
+    """On every desktop at once, or on one that you can change in Mission Control; always over full-screen apps."""
+    return (CAN_JOIN_ALL_SPACES if everywhere else MANAGED) | FULL_SCREEN_AUXILIARY
+
+
+def set_desktops(win_id: int, everywhere: bool) -> None:
+    """Without this a window moves to the desktop you switch to only when it is next shown, and the
+    bubble stays behind on the one you left."""
+    objc = _objc()
+    window = _send(objc, ctypes.c_void_p)(win_id, objc.sel_registerName(b"window"))
+    _send(objc, None, ctypes.c_ulong)(window, objc.sel_registerName(b"setCollectionBehavior:"),
+                                      desktop_behavior(everywhere))
 
 
 def send_behind_windows(win_id: int) -> None:

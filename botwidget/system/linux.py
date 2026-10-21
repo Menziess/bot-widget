@@ -82,6 +82,11 @@ def ensure_x11_libraries() -> None:
 
 
 HOTKEY_LABEL = ""
+CAN_PICK_DESKTOPS = False
+
+
+def set_desktops(win_id: int, everywhere: bool) -> None:
+    pass
 
 
 def activate_app() -> None:
