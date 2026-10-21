@@ -924,6 +924,26 @@ class BubbleHover(unittest.TestCase):
         self.assertGreater(bubble.height(), start[1])
         self.assertEqual(bubble.windowOpacity(), 1.0)
 
+    def test_a_bubble_near_the_top_edge_picks_its_side_for_its_final_size(self):
+        self.window._move_icon(300, 60)
+        self.window._remember_spot()
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        old = self.face.screens.rect_at
+        self.addCleanup(setattr, self.face.screens, "rect_at", old)
+        self.face.screens.rect_at = lambda x, y: (0, 0, 1600, 900)
+        from botwidget.qt_ui import bubble_window
+        self.addCleanup(setattr, bubble_window.screens, "rect_at", bubble_window.screens.rect_at)
+        bubble_window.screens.rect_at = lambda x, y: (0, 0, 1600, 900)
+        self.MESSAGES = [{"role": "bot", "text": "Een lange regel met woorden. " * 25}]
+        self.window._animate()
+        bubble = self.window.bubble
+        sides = set()
+        for t in (0.0, 0.1, 0.3, 0.6, 0.9, 1.0):
+            bubble._growth_step(t)
+            sides.add(bubble._goal()[2][1])
+        self.assertEqual(len(sides), 1, "the same side from the first frame to the last")
+        self.finish_growth()
+
     def test_the_field_waits_until_the_bubble_has_grown_a_bit(self):
         self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
         self.window._animate()

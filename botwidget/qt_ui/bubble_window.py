@@ -500,12 +500,24 @@ class BubbleWindow(QWidget):
         tx = fx + (AVATAR_SIZE - bw) / 2
         ty = fy - bh + 6 + self.face.head_top
         up = False
-        if ty < gy + 4:  # no room above the head: bubble below, tail pointing up
+        # The side follows the size it will have: a bubble that still fits above while small must not
+        # swing below once it has grown.
+        if fy - self._final_height() + 6 + self.face.head_top < gy + 4:  # no room above the head: below, tail up
             ty = fy + self.face.head_bottom - 8
             up = True
         tx = max(gx + 4, min(tx, gx + gw - bw - 4))
         ty = max(gy + 4, min(ty, gy + gh - bh - 4))
         return tx, ty, (round(fx + AVATAR_SIZE / 2 - tx), up)
+
+    def _final_height(self) -> int:
+        """The window height once it has grown to its size."""
+        if self._growth is None or not self._geom:
+            return self.height() or 48
+        growth, self._growth = self._growth, None
+        try:
+            return self._body_h(self._geom[2]) + PAD_SVG + TAIL_ROOM
+        finally:
+            self._growth = growth
 
     def _tick(self):
         """Spring: the bubble trails behind the icon."""
