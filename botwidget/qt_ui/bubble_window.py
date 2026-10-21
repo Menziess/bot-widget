@@ -31,6 +31,7 @@ from botwidget.theme import (
     BUBBLE_LINGER,
     BUBBLE_MAX_SCREEN_SHARE,
     BUBBLE_MAX_W,
+    BUBBLE_WAIT_MAX,
     BUBBLE_WIDER,
     DOTS_CYCLE_S,
     DOTS_GAP,
@@ -157,6 +158,7 @@ class BubbleWindow(QWidget):
         self._chrome_key = self._chrome_pix = None
         self._was_near = False
         self._had_focus = False
+        self._wait_since = 0.0
         self._reveal = None  # [body height before, progress 0..1, height added] while an older message slides in
         self._older_until = 0.0
         self._tip = None
@@ -383,6 +385,7 @@ class BubbleWindow(QWidget):
         self._slide.stop()
         self._reveal = None
         self._built = key
+        self._was_near = False
         self._links = links or []
         self._input = input
         self._link_row.setText(" &nbsp;·&nbsp; ".join(
@@ -478,18 +481,20 @@ class BubbleWindow(QWidget):
             self._physics.stop()
             return
         now = time.monotonic()
+        self._wait_since = (self._wait_since or now) if self.face.awaiting() else 0.0
+        awaiting = bool(self._wait_since) and now - self._wait_since < BUBBLE_WAIT_MAX
         if self._input and self._entry.hasFocus():
             self._had_focus = True
-        elif (self._had_focus and self._input and not self._entry.text()
+        elif (self._had_focus and self._input and not self._entry.text() and not awaiting
               and QApplication.activeWindow() not in (self, self.face)):
             # Clicked into another window with nothing typed: the bubble goes, pinned or not.
             # Clicking on its own words or on the face is not leaving.
             self.face.unpin()
             self.place("")
             return
-        if self.face.pointer_near(self) or self.holding():
+        if self.face.pointer_near(self) or self.holding() or awaiting:
             self.changed = now
-            self._was_near = True
+            self._was_near = self._was_near or not awaiting
         elif self._was_near and not self.face.pinned:
             # The pointer was here and left: gone at once.
             self.place("")

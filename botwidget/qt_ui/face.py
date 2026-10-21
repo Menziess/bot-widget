@@ -507,6 +507,10 @@ class FaceWindow(QWidget):
         else:
             self.bubble.place("")
 
+    def awaiting(self) -> bool:
+        """A message of yours is on its way or being answered: the bubble stays until the answer is in."""
+        return self._working or self._sending or bool(self._outbox.items)
+
     def idle(self) -> bool:
         """Nobody is dragging, typing or waiting on this face: a restart would go unnoticed."""
         return not (self.pinned or self._sending or self._working or self._coasting

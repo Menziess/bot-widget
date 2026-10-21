@@ -747,6 +747,37 @@ class BubbleHover(unittest.TestCase):
         self.assertIn("Hallo daar", self.window.bubble.full_text)
         self.assertTrue(self.window.bubble._dots_lines, "the dots show as soon as the message is on its way")
 
+    def test_the_bubble_stays_open_until_the_answer_is_in(self):
+        self.hover()
+        bubble = self.window.bubble
+        bubble._tick()
+        self.window._outbox.add("Hallo", "w1")
+        self.window._pump_outbox = lambda: None
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertTrue(bubble.kind, "pointer gone, answer not in yet")
+        bubble.changed -= 100
+        bubble._tick()
+        self.assertTrue(bubble.kind, "waiting does not run out of patience quickly")
+        self.window._outbox.sent("w1")
+        self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Antwoord."}], "activity": ""})
+        bubble._tick()
+        self.assertTrue(bubble.kind, "the answer itself gets shown before the bubble goes")
+
+    def test_a_bot_that_never_answers_does_not_keep_the_bubble_forever(self):
+        import time
+        from botwidget.theme import BUBBLE_WAIT_MAX
+        self.hover()
+        bubble = self.window.bubble
+        bubble._tick()
+        self.window._outbox.add("Hallo", "w2")
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        bubble._wait_since = time.monotonic() - BUBBLE_WAIT_MAX - 1
+        bubble.changed = time.monotonic() - 100
+        bubble._tick()
+        self.assertEqual(bubble.kind, "")
+
     def test_the_dots_move_in_a_bubble_that_was_already_open(self):
         self.window.pin()
         bubble = self.window.bubble
