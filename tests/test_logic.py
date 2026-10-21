@@ -567,6 +567,24 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "")
 
+    def test_showing_the_same_bubble_again_does_not_build_it_again(self):
+        self.hover()
+        bubble = self.window.bubble
+        bubble._tick()
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertEqual(bubble.kind, "")
+        built, chrome = bubble._built, bubble._chrome_pix
+        calls = []
+        old = bubble._parts
+        bubble._parts = lambda: calls.append(1) or old()
+        self.window._hovered = False
+        self.hover()
+        self.assertTrue(bubble.isVisible())
+        self.assertEqual(calls, [], "no new layout")
+        self.assertIs(bubble._chrome_pix, chrome, "no new shadow")
+        self.assertEqual(bubble._built, built)
+
     def test_the_thinking_cloud_is_not_kept_open_by_its_dots(self):
         import time
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)

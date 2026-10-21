@@ -22,6 +22,7 @@ def _metrics(style: str, size: int) -> QFontMetricsF:
     return QFontMetricsF(font)
 
 
+@lru_cache(maxsize=50000)
 def measure(text: str, style: str, size: int) -> float:
     """Width of text in px for the style from bubble_layout.md_layout."""
     return _metrics(style, size).horizontalAdvance(text)

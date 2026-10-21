@@ -143,6 +143,8 @@ class BubbleWindow(QWidget):
         self._input = False
         self._links = []
         self._geom = None
+        self._built = None
+        self._chrome_key = self._chrome_pix = None
         self._was_near = False
         self._tip = None
         self._vx = self._vy = 0.0
@@ -268,11 +270,14 @@ class BubbleWindow(QWidget):
         _panels, box_w, inner = self._geom
         tip_x, tip_up = self._tip or (None, False)
         args = (box_w + 2 * PAD_BODY, self._body_h(inner), tip_x, tip_up)
+        if (self.kind, args) == self._chrome_key:
+            return self._chrome_pix
         cloud = self.kind == "think"
         shadow_svg = cloud_shadow_svg(*args) if cloud else bubble_shadow_svg(*args)
         body_svg = cloud_body_svg(*args) if cloud else bubble_body_svg(*args)
         pix = stacked(blurred(svg_pixmap(shadow_svg), SHADOW_BLUR * 3), svg_pixmap(body_svg))
         self._chrome.setPixmap(pix)
+        self._chrome_key, self._chrome_pix = (self.kind, args), pix
         return pix
 
     def _layout_children(self, pix):
@@ -314,6 +319,15 @@ class BubbleWindow(QWidget):
     def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
                     copy_text: str = ""):
         """Put blocks in the bubble; newest at the bottom."""
+        key = (kind, block_text(blocks), input, tuple(links or []), copy_text, self._ceiling())
+        if key == self._built and not self._dots_lines:
+            # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
+            self.changed = time.monotonic()
+            if not self.isVisible():
+                self.place(kind)
+                QTimer.singleShot(0, self._scroll_to_bottom)
+            return
+        self._built = key
         self._links = links or []
         self._input = input
         self.copy_text = copy_text
