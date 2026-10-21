@@ -586,6 +586,12 @@ class BubbleHover(unittest.TestCase):
     def hover(self):
         self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
         self.window._animate()
+        self.finish_growth()
+
+    def finish_growth(self):
+        bubble = self.window.bubble
+        bubble._slide.stop()
+        bubble._growth_done()
 
     def test_pointing_at_the_face_opens_the_bubble_with_the_latest_answer(self):
         self.window._animate()
@@ -632,7 +638,8 @@ class BubbleHover(unittest.TestCase):
         self.hover()
         self.assertTrue(bubble.isVisible())
         self.assertEqual(calls, [], "no new layout")
-        self.assertIs(bubble._chrome_pix, chrome, "no new shadow")
+        self.finish_growth()
+        self.assertEqual(bubble._chrome_pix.size(), chrome.size())
         self.assertEqual(bubble._built, built)
 
     def test_the_thinking_cloud_is_not_kept_open_by_its_dots(self):
@@ -693,7 +700,7 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(QApplication.clipboard().text(), "Ja.\n\nZal ik pushen?")
         self.window.show_older()
         bubble._slide.stop()
-        bubble._reveal_done()
+        bubble._growth_done()
         self.point_at_panel(0)
         bubble._tick()
         bubble._copy.click()
@@ -901,18 +908,68 @@ class BubbleHover(unittest.TestCase):
         self.window.show_older()
         self.assertEqual(self.window._depth, 2, "nothing older to load")
 
+    def test_a_bubble_grows_out_of_a_small_one_when_it_opens(self):
+        import time
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.window._animate()
+        bubble = self.window.bubble
+        self.assertIsNotNone(bubble._growth)
+        start = (bubble.width(), bubble.height())
+        self.assertLess(bubble.windowOpacity(), 1.0, "it fades in")
+        deadline = time.monotonic() + 3
+        while bubble._growth is not None and time.monotonic() < deadline:
+            self.app.processEvents()
+        self.assertIsNone(bubble._growth)
+        self.assertGreater(bubble.width(), start[0])
+        self.assertGreater(bubble.height(), start[1])
+        self.assertEqual(bubble.windowOpacity(), 1.0)
+
+    def test_the_field_waits_until_the_bubble_has_grown_a_bit(self):
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.window._animate()
+        bubble = self.window.bubble
+        bubble._growth_step(0.1)
+        self.assertFalse(bubble._entry.isVisibleTo(bubble))
+        bubble._growth_step(0.6)
+        self.assertTrue(bubble._entry.isVisibleTo(bubble))
+
+    def test_growing_stays_inside_the_tail_and_the_final_size_is_the_normal_one(self):
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.window._animate()
+        bubble = self.window.bubble
+        for t in (0.0, 0.3, 0.7):
+            bubble._growth_step(t)
+            self.assertLessEqual(bubble.width(), 2 * 18 + 2 * 12 + 600)
+        self.finish_growth()
+        full = (bubble.width(), bubble.height())
+        bubble.place("")
+        bubble._built = None
+        self.window._hovered = False
+        self.hover()
+        self.assertEqual((bubble.width(), bubble.height()), full)
+
+    def test_a_longer_answer_grows_the_open_bubble_instead_of_jumping(self):
+        self.hover()
+        bubble = self.window.bubble
+        before = (bubble.width(), bubble.height())
+        long_text = "Een lange regel met woorden. " * 30
+        self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": long_text}], "activity": ""})
+        self.assertIsNotNone(bubble._growth, "growing")
+        self.finish_growth()
+        self.assertGreater(bubble.height(), before[1])
+
     def test_the_older_message_slides_in_and_the_bubble_ends_up_complete(self):
         import time
         self.hover()
         bubble = self.window.bubble
         before = bubble.height()
         self.window.show_older()
-        self.assertIsNotNone(bubble._reveal, "sliding in")
+        self.assertIsNotNone(bubble._growth, "sliding in")
         self.assertLess(bubble.height(), before + 200)
         deadline = time.monotonic() + 3
-        while bubble._reveal is not None and time.monotonic() < deadline:
+        while bubble._growth is not None and time.monotonic() < deadline:
             self.app.processEvents()
-        self.assertIsNone(bubble._reveal)
+        self.assertIsNone(bubble._growth)
         self.assertGreater(bubble.height(), before, "grown to hold the older message")
         self.assertEqual(bubble._scroll.verticalScrollBar().value(), 0, "the new message is at the top")
 
