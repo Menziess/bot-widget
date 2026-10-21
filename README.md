@@ -21,11 +21,14 @@ uv tool install git+https://github.com/Menziess/bot-widget
 botwidget
 ```
 
-- Point at the face to see the latest answer, or what the bot is doing
-- The bubble closes as soon as the pointer leaves, and 4 seconds after a new answer if you never pointed at it
-- It stays while you type or have words selected
-- Click the face to open the chat, type, press Enter
-- Copy in the corner of the bubble copies the latest answer
+- Point at the face to open the bubble: the latest message, and a field to type in
+- The field is focused once the pointer stays on the face for a moment, press Enter to send
+- Scroll up in the bubble to load the earlier messages, one at a time
+- The bubble closes as soon as the pointer leaves, or when you click away with nothing typed
+- A new answer opens it by itself, and it closes again after 4 seconds if you never pointed at it
+- It stays while you have typed words or selected words, and click the face to keep it open
+- A copy icon appears on the message under the pointer and copies that message
+- The eyes follow the pointer when it is near, and look at you when it is over the face
 - While the bot works the bubble turns into a thought cloud
 - Drag the face to move it, it bounces off screen edges
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
