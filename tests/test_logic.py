@@ -561,6 +561,32 @@ class BubbleHover(unittest.TestCase):
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)
         self.assertFalse(self.window.bubble._copy.isVisibleTo(self.window.bubble))
 
+    def corner_is_warning(self):
+        from PySide6.QtGui import QColor
+        image = self.window.grab().toImage()
+        ratio = image.devicePixelRatio()
+        pixel = image.pixelColor(int(61 * ratio), int(61 * ratio))
+        warn = QColor(self.face.WARN_COLOR)
+        return abs(pixel.red() - warn.red()) < 12 and abs(pixel.green() - warn.green()) < 12
+
+    def test_a_waiting_message_puts_a_warning_dot_on_the_face(self):
+        self.assertFalse(self.window.unsent())
+        self.assertFalse(self.corner_is_warning())
+        self.window._outbox.add("hallo", "c1")
+        self.window._on_message_done("c1", False, True, "HTTP 503")
+        self.assertTrue(self.window.unsent())
+        self.assertTrue(self.corner_is_warning())
+        self.window._outbox.sent("c1")
+        self.window._on_message_done("c1", True, False, "")
+        self.assertFalse(self.window.unsent())
+
+    def test_a_refused_message_keeps_the_dot_until_you_look(self):
+        self.window._outbox.add("hallo", "c2")
+        self.window._on_message_done("c2", False, False, "HTTP 400")
+        self.assertTrue(self.window.unsent())
+        self.window.pin()
+        self.assertFalse(self.window.unsent())
+
     def test_there_is_no_tooltip(self):
         self.assertEqual(self.window.toolTip(), "")
 

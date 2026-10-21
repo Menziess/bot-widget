@@ -24,6 +24,7 @@ from botwidget.avatar import (
 )
 from botwidget.config import (
     DOT_COLOR,
+    WARN_COLOR,
     GROKBOT_URL,
     OPENBOT_URL,
     POLL_INTERVAL,
@@ -103,6 +104,7 @@ class FaceWindow(QWidget):
         self._outbox = Outbox()
         self._sending = False
         self._send_status = ""
+        self._refused = False
         self.message_done.connect(self._on_message_done)
         self._hint_shown = False
         self._shown_text = ""
@@ -185,6 +187,14 @@ class FaceWindow(QWidget):
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(DOT_COLOR))
             painter.drawEllipse(AVATAR_SIZE - DOT_SIZE - 2, 0, DOT_SIZE, DOT_SIZE)
+        if self.unsent():
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(WARN_COLOR))
+            painter.drawEllipse(AVATAR_SIZE - DOT_SIZE - 2, AVATAR_SIZE - DOT_SIZE - 2, DOT_SIZE, DOT_SIZE)
+
+    def unsent(self) -> bool:
+        """A message of yours is waiting for OpenBot, or was refused and you have not looked yet."""
+        return bool(self._send_status) or self._refused
 
     def _set_pixmap(self, pixmap):
         self._pixmap = pixmap
@@ -457,6 +467,7 @@ class FaceWindow(QWidget):
         """Click on the face: the speech bubble stays, with an input field."""
         self.pinned = True
         self.has_pending = False
+        self._refused = False
         self.update()
         self._sync_bubble(latest_chat(thread_id=self.thread_id))
         self.bubble.focus_entry()
@@ -640,6 +651,7 @@ class FaceWindow(QWidget):
         if ok:
             item = self._outbox.sent(cid)
             self._send_status = ""
+            self._refused = False
             if item is not None:
                 self._local.append({"role": "user", "text": item["text"],
                                     "until": time.monotonic() + 120})
@@ -647,12 +659,14 @@ class FaceWindow(QWidget):
             wait = self._outbox.failed(cid, retryable)
             if wait is None:
                 self._send_status = ""
+                self._refused = True
                 self._local.append({"role": "bot", "until": time.monotonic() + 60,
                                     "text": REFUSED_NOTE.format(why=error)})
             else:
                 next_ready = False
                 self._send_status = self._waiting_note(error)
                 QTimer.singleShot(int(wait * 1000), self._pump_outbox)
+        self.update()
         self._sync_bubble(latest_chat(thread_id=self.thread_id))
         if next_ready:
             self._pump_outbox()

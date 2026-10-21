@@ -55,6 +55,8 @@ def automation_ready() -> bool:
     return bool(read_file(URL_FILE)) and bool(read_file(HEADERS_FILE))
 
 DOT_COLOR = "#FF4757"
+# A message that did not go out: waiting for OpenBot, or refused.
+WARN_COLOR = "#FFA502"
 POLL_INTERVAL = 3  # seconds, when the bot is quiet
 WORK_POLL_INTERVAL = 1  # second, while the turn is running
 
