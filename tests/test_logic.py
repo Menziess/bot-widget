@@ -37,33 +37,35 @@ from botwidget.system.current import process_cmdline
 
 
 class EyeAim(unittest.TestCase):
-    """Should aim the gaze: far away is rest, nearby follows, right on the nose squints."""
+    """Should aim the gaze: far away nothing, nearby follows, on the face it looks at you."""
 
-    def test_far_away_is_rest(self):
-        self.assertEqual(avatar.eye_aim(400, 0), (0.0, 0.0, 0.0, 1.0))
-        self.assertEqual(avatar.eye_aim(0, 900), (0.0, 0.0, 0.0, 1.0))
-        self.assertEqual(avatar.eye_aim(avatar.GAZE_NEAR, 0), (0.0, 0.0, 0.0, 1.0))
+    def test_far_away_there_is_nothing_to_follow(self):
+        self.assertIsNone(avatar.eye_aim(400, 0))
+        self.assertIsNone(avatar.eye_aim(0, 900))
+        self.assertIsNone(avatar.eye_aim(avatar.GAZE_NEAR, 0))
 
-    def test_on_the_nose_squeezes(self):
-        self.assertEqual(avatar.eye_aim(0, 0), (0.0, 0.0, 6.0, 0.6))
+    def test_on_the_face_it_looks_straight_at_you(self):
+        self.assertEqual(avatar.eye_aim(0, 0), (0.0, 0.0, 0.0, 1.0))
+        self.assertEqual(avatar.eye_aim(avatar.ON_FACE, 0), (0.0, 0.0, 0.0, 1.0))
+        self.assertEqual(avatar.eye_aim(-10, 12), (0.0, 0.0, 0.0, 1.0))
 
-    def test_close_follows_the_pointer(self):
-        dx, dy, conv, scale = avatar.eye_aim(10, 0)
+    def test_close_by_but_off_the_face_follows_the_pointer(self):
+        dx, dy, conv, scale = avatar.eye_aim(45, 0)
         self.assertGreater(dx, 0)
         self.assertEqual(dy, 0)
-        self.assertGreater(conv, 0)
+        self.assertGreaterEqual(conv, 0)
         self.assertLess(conv, 6)
-        self.assertLess(scale, 1.0)
+        self.assertLessEqual(scale, 1.0)
 
     def test_direction_is_kept(self):
-        right = avatar.eye_aim(10, 0)
-        left = avatar.eye_aim(-10, 0)
+        right = avatar.eye_aim(45, 0)
+        left = avatar.eye_aim(-45, 0)
         self.assertEqual(round(right[0], 6), round(-left[0], 6))
-        up = avatar.eye_aim(0, -10)
+        up = avatar.eye_aim(0, -45)
         self.assertLess(up[1], 0)
 
     def test_shift_is_capped(self):
-        for vx, vy in ((1, 1), (5, 5), (40, 40), (-40, 3)):
+        for vx, vy in ((35, 35), (40, 30), (-40, 3), (0, 36)):
             dx, dy = avatar.eye_aim(vx, vy)[:2]
             self.assertLessEqual(abs(dx), 8.0)
             self.assertLessEqual(abs(dy), 8.0)
@@ -370,6 +372,24 @@ class Rendering(unittest.TestCase):
             raise unittest.SkipTest(f"no Qt: {error}")
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
+
+    def aimed(self, at):
+        window = self.face.FaceWindow("t", "Test", spot=(300, 400))
+        self.addCleanup(window.close_face)
+        window._poll_timer.stop()
+        window._pointer = lambda: (window.x() + at[0], window.y() + at[1])
+        window._aim(16)
+        return window.anim.target
+
+    def test_over_the_face_it_looks_at_you(self):
+        target = self.aimed((34, 34))
+        self.assertEqual((target["dx"], target["dy"], target["converge"], target["scale"]), (0, 0, 0, 1))
+
+    def test_near_the_face_it_follows_the_pointer(self):
+        self.assertGreater(self.aimed((34 + 45, 34))["dx"], 0)
+
+    def test_far_away_it_goes_back_to_its_own_cycle(self):
+        self.assertEqual(self.aimed((900, 900))["dx"], avatar.POSES["idle"][0])
 
     def test_a_frame_renders_in_a_few_milliseconds(self):
         from botwidget.qt_ui.render import svg_pixmap

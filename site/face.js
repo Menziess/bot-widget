@@ -1,7 +1,7 @@
 // The Bot Widget face on a canvas: the same shape, springs and poses as botwidget/avatar.py and animation.py.
 (function () {
   var SIZE = 68, R = 29, C = 34;
-  var PARALLAX = 0.35, GAZE_NEAR = R * 2;
+  var PARALLAX = 0.35, GAZE_NEAR = R * 2, ON_FACE = R * 1.1;
   var DEG = Math.PI / 180;
 
   // The squircle repeats every quarter turn; 64 radii around the circle, angle 0 at 3 o'clock.
@@ -67,10 +67,11 @@
   };
 
   // Where the eyes look when the pointer is at (vx, vy) from the face centre, in face units.
-  // Close by they squint, right on the nose they cross; far away they keep following.
+  // Over the face itself they look straight out at you; close by they follow and squint a little.
+  // Unlike the app, which only follows a pointer this near, the page keeps following from afar.
   function gaze(vx, vy) {
     var dist = Math.hypot(vx, vy);
-    if (dist === 0) return { dx: 0, dy: 0, converge: 6, scale: 0.6 };
+    if (dist <= ON_FACE) return { dx: 0, dy: 0, converge: 0, scale: 1 };
     var t = Math.max(0, 1 - dist / GAZE_NEAR), close = t * t * t, look = dist < GAZE_NEAR ? Math.sqrt(t) : 1;
     return {
       dx: Math.max(-8, Math.min(8, vx / dist * 8 * Math.max(look, 0.6))),

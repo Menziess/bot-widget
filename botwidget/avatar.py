@@ -33,18 +33,23 @@ FACE = {
 }
 
 
-# Half a body width beyond the edge. Closer by it looks, right on the nose it squints.
+# Half a body width beyond the edge: only a pointer this close is followed. Over the face itself the
+# bot looks at you instead.
 GAZE_NEAR = CIRCLE_R * 2
+ON_FACE = CIRCLE_R * 1.1
 
 
-def eye_aim(vx: float, vy: float) -> tuple[float, float, float, float]:
-    """dx, dy, how close together the eyes are, and the length. Far away is rest."""
+def eye_aim(vx: float, vy: float) -> tuple[float, float, float, float] | None:
+    """dx, dy, how close together the eyes are, and the length; None when the pointer is far away.
+
+    On the face itself the eyes look straight out at you; between the face and GAZE_NEAR they
+    follow the pointer, and a bit of squint comes in as it gets closer.
+    """
     dist = (vx * vx + vy * vy) ** 0.5
-    if dist >= GAZE_NEAR or dist == 0:
-        wide = (0.0, 0.0, 0.0, 1.0)
-        if dist == 0:
-            return (0.0, 0.0, 6.0, 0.6)
-        return wide
+    if dist >= GAZE_NEAR:
+        return None
+    if dist <= ON_FACE:
+        return (0.0, 0.0, 0.0, 1.0)
     t = 1 - dist / GAZE_NEAR
     close = t * t * t
     look = t ** 0.5

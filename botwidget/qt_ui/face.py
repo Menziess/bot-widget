@@ -16,6 +16,7 @@ from botwidget.avatar import (
     CIRCLE_R,
     FACE,
     GAZE_NEAR,
+    ON_FACE,
     LIFT,
     POSES,
     avatar_profile,
@@ -366,7 +367,7 @@ class FaceWindow(QWidget):
         """Pointing at the face brings the bubble back: the latest answer, or what the bot is doing."""
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
-        hovered = (px - cx) ** 2 + (py - cy) ** 2 <= (CIRCLE_R * 1.1) ** 2
+        hovered = (px - cx) ** 2 + (py - cy) ** 2 <= ON_FACE ** 2
         entered = hovered and not self._hovered
         self._hovered = hovered
         if entered and self._drag_origin is None and not self.pinned and not self.bubble.isVisible():
@@ -418,7 +419,7 @@ class FaceWindow(QWidget):
         if not (self._working or self.has_pending):
             px, py = self._pointer()
             target = eye_aim(px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2))
-            if target != (0.0, 0.0, 0.0, 1.0):
+            if target is not None:
                 dx, dy, converge, scale = target
                 a.aim(dx=dx, dy=dy, converge=converge, scale=scale, lift=0.0)
                 self._cycle_left = 0.0
