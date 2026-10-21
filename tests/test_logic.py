@@ -734,6 +734,36 @@ class BubbleHover(unittest.TestCase):
         self.window._animate()
         self.assertEqual(focus, [])
 
+    def test_an_empty_field_does_not_keep_the_bubble_when_the_pointer_leaves(self):
+        self.hover()
+        bubble = self.window.bubble
+        bubble._tick()
+        bubble._entry.hasFocus = lambda: True
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertEqual(bubble.kind, "")
+
+    def test_typed_words_keep_the_bubble_when_the_pointer_leaves(self):
+        self.hover()
+        bubble = self.window.bubble
+        bubble._tick()
+        bubble._entry.hasFocus = lambda: True
+        bubble._entry.setText("half een zin")
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertTrue(bubble.kind)
+
+    def test_clicking_away_from_an_empty_field_closes_even_a_pinned_bubble(self):
+        self.window.pin()
+        bubble = self.window.bubble
+        has = {"focus": True}
+        bubble._entry.hasFocus = lambda: has["focus"]
+        bubble._tick()
+        has["focus"] = False
+        bubble._tick()
+        self.assertEqual(bubble.kind, "")
+        self.assertFalse(self.window.pinned)
+
     def test_there_is_no_tooltip(self):
         self.assertEqual(self.window.toolTip(), "")
 

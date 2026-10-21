@@ -146,6 +146,7 @@ class BubbleWindow(QWidget):
         self._built = None
         self._chrome_key = self._chrome_pix = None
         self._was_near = False
+        self._had_focus = False
         self._tip = None
         self._vx = self._vy = 0.0
         self._physics_on = False
@@ -209,7 +210,8 @@ class BubbleWindow(QWidget):
         return self.kind == kind and self.full_text == text and self._input == input and self.isVisible()
 
     def typing(self) -> bool:
-        return self._input and self._entry.hasFocus()
+        """Words typed that are not sent yet; an empty field in focus is no reason to stay."""
+        return self._input and self._entry.hasFocus() and bool(self._entry.text())
 
     def holding(self) -> bool:
         """Typing, or words selected to copy: the bubble stays for as long as that lasts."""
@@ -390,6 +392,13 @@ class BubbleWindow(QWidget):
             self._physics.stop()
             return
         now = time.monotonic()
+        if self._input and self._entry.hasFocus():
+            self._had_focus = True
+        elif self._had_focus and self._input and not self._entry.text():
+            # Clicked away with nothing typed: the bubble goes, pinned or not.
+            self.face.unpin()
+            self.place("")
+            return
         if self.face.pointer_near(self) or self.holding():
             self.changed = now
             self._was_near = True
@@ -419,6 +428,7 @@ class BubbleWindow(QWidget):
         self.kind = kind
         if kind == "":
             self._was_near = False
+            self._had_focus = False
             self._physics.stop()
             self._physics_on = False
             self.hide()
