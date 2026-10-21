@@ -49,9 +49,11 @@ DOTS_GAP = 12.0
 # A short tick so the wave moves smoothly instead of in steps; one wave takes this many seconds.
 DOTS_MS = 32
 DOTS_CYCLE_S = 1.2
-# A bubble nobody points at goes away this many seconds after it appeared or changed. One that was
-# pointed at closes as soon as the pointer leaves.
+# A bubble nobody points at goes away after the time to read it: this many seconds plus a bit per
+# word, never longer than the maximum. One that was pointed at closes as soon as the pointer leaves.
 BUBBLE_LINGER = 4.0
+BUBBLE_PER_WORD = 0.3
+BUBBLE_LINGER_MAX = 40.0
 # While an answer is awaited the bubble stays; a bot that never answers does not keep it forever.
 BUBBLE_WAIT_MAX = 600.0
 # Room below (or above) the white area for the tail or the cloud circles.

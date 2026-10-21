@@ -212,6 +212,14 @@ class BubbleLayout(unittest.TestCase):
     def measure(text, style, size):
         return len(text) * 7.0
 
+    def test_a_longer_text_stays_longer_but_not_forever(self):
+        from botwidget.theme import BUBBLE_LINGER, BUBBLE_LINGER_MAX
+        short, long_, huge = (bubble.reading_seconds(" ".join(["woord"] * n)) for n in (3, 60, 5000))
+        self.assertGreater(short, BUBBLE_LINGER)
+        self.assertGreater(long_, short)
+        self.assertEqual(huge, BUBBLE_LINGER_MAX)
+        self.assertEqual(bubble.reading_seconds(""), BUBBLE_LINGER)
+
     def test_a_single_message_has_no_name_above_it(self):
         text = markdown.block_text(markdown.conversation_blocks([{"role": "bot", "text": "Hoi daar"}], "Fritsie"))
         self.assertEqual(text, "Hoi daar")
@@ -595,14 +603,17 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "")
 
-    def test_a_bubble_nobody_pointed_at_closes_after_the_linger_time(self):
+    def test_a_bubble_nobody_pointed_at_closes_after_the_time_to_read_it(self):
         import time
-        from botwidget.theme import BUBBLE_LINGER
+        from botwidget.bubble import reading_seconds
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
         bubble = self.window.bubble
         bubble._tick()
         self.assertTrue(bubble.kind)
-        bubble.changed = time.monotonic() - BUBBLE_LINGER - 1
+        bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) + 1
+        bubble._tick()
+        self.assertTrue(bubble.kind, "still being read")
+        bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) - 1
         bubble._tick()
         self.assertEqual(bubble.kind, "")
 

@@ -20,6 +20,7 @@ from botwidget.bubble import (
     cloud_shadow_svg,
     content_height,
     panel_rects,
+    reading_seconds,
 )
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks
@@ -28,7 +29,6 @@ from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document
 from botwidget.theme import (
-    BUBBLE_LINGER,
     BUBBLE_MAX_SCREEN_SHARE,
     BUBBLE_MAX_W,
     BUBBLE_WAIT_MAX,
@@ -499,7 +499,7 @@ class BubbleWindow(QWidget):
             # The pointer was here and left: gone at once.
             self.place("")
             return
-        elif self.changed and now - self.changed > BUBBLE_LINGER and not self.face.pinned:
+        elif self.changed and now - self.changed > reading_seconds(self.full_text) and not self.face.pinned:
             # Nobody pointed at it and nothing new came: it goes away after a while.
             self.place("")
             return

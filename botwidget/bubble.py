@@ -4,6 +4,9 @@ import math
 
 from botwidget.avatar import SILHOUETTES
 from botwidget.theme import (
+    BUBBLE_LINGER,
+    BUBBLE_LINGER_MAX,
+    BUBBLE_PER_WORD,
     DOTS_GAP,
     DOTS_R,
     GAP_PANEL,
@@ -23,6 +26,11 @@ from botwidget.theme import (
     SHADOW_GROW,
     TAIL_ROOM,
 )
+
+
+def reading_seconds(text: str) -> float:
+    """How long a bubble nobody points at stays: a few seconds, and more for a longer text."""
+    return min(BUBBLE_LINGER_MAX, BUBBLE_LINGER + BUBBLE_PER_WORD * len(text.split()))
 
 
 def line_height(block: dict) -> int:
