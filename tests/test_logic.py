@@ -984,6 +984,24 @@ class BubbleHover(unittest.TestCase):
         self.window.unpin()
         self.assertEqual(self.window._hover_blocked_until, 0.0)
 
+    def test_a_thrown_face_loses_its_bubble_and_does_not_get_it_back_while_flying(self):
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication
+        self.hover()
+        self.assertTrue(self.window.bubble.isVisible())
+        self.window._drag_origin = [self.window.spot()]
+        self.window._press_pos = (0.0, 0.0)
+        self.window._dvx, self.window._dvy = 2000.0, 0.0
+        point = QPointF(5, 5)
+        QApplication.sendEvent(self.window, QMouseEvent(QEvent.MouseButtonRelease, point, point, Qt.LeftButton,
+                                                        Qt.NoButton, Qt.NoModifier))
+        self.assertTrue(self.window._coasting)
+        self.assertFalse(self.window.bubble.isVisible(), "the bubble goes when the face is thrown")
+        self.window._hover_retry = 0.0
+        self.window._animate()
+        self.assertFalse(self.window.bubble.isVisible(), "and stays away while the face is flying")
+        self.window._coasting = False
 
     def test_the_input_field_is_there_from_the_start(self):
         self.hover()

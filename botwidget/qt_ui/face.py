@@ -322,6 +322,7 @@ class FaceWindow(QWidget):
             self._dvx, self._dvy = self._wall_kick
         if abs(self._dvx) > 500 or abs(self._dvy) > 500:
             self._coasting = True
+            self.bubble.place("")  # it cannot keep up with a throw
             self._coast_timer.start()
         else:
             self._landed()
@@ -395,7 +396,7 @@ class FaceWindow(QWidget):
         if not hovered:
             self._hover_since = 0.0
             return
-        if (not self.bubble.isVisible() and self._drag_origin is None and not self.pinned
+        if (not self.bubble.isVisible() and self._drag_origin is None and not self.pinned and not self._coasting
                 and now >= self._hover_blocked_until and now >= self._hover_retry):
             self._hover_retry = now + HOVER_RETRY_S
             self._depth = 1
