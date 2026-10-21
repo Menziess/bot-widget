@@ -697,6 +697,43 @@ class BubbleHover(unittest.TestCase):
         self.assertIn("Hallo daar", text)
         self.assertIn("I couldn't send that", text)
 
+    def test_the_input_field_is_there_from_the_start(self):
+        self.hover()
+        self.assertTrue(self.window.bubble._entry.isVisibleTo(self.window.bubble))
+
+    def test_a_conversation_that_has_not_started_greets_you_with_the_field(self):
+        self.MESSAGES = []
+        self.hover()
+        self.assertTrue(self.window.bubble.isVisible())
+        self.assertIn("Ask me anything", self.window.bubble.full_text)
+        self.assertTrue(self.window.bubble._entry.isVisibleTo(self.window.bubble))
+
+    def test_the_field_gets_focus_only_when_the_pointer_stays(self):
+        focus = []
+        old = self.face.activate_app
+        self.addCleanup(setattr, self.face, "activate_app", old)
+        self.face.activate_app = lambda: None
+        self.window.bubble.focus_entry = lambda: focus.append(1)
+        self.hover()
+        self.assertEqual(focus, [], "just arrived")
+        self.window._animate()
+        self.assertEqual(focus, [], "not long enough")
+        self.window._hover_since -= 1
+        self.window._animate()
+        self.assertEqual(focus, [1])
+        self.window._animate()
+        self.assertEqual(focus, [1], "once")
+
+    def test_flying_past_the_face_never_takes_the_keyboard(self):
+        focus = []
+        self.window.bubble.focus_entry = lambda: focus.append(1)
+        self.hover()
+        self.where["at"] = (5000, 5000)
+        self.window._animate()
+        self.window._hover_since -= 1
+        self.window._animate()
+        self.assertEqual(focus, [])
+
     def test_there_is_no_tooltip(self):
         self.assertEqual(self.window.toolTip(), "")
 

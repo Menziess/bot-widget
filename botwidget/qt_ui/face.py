@@ -55,7 +55,7 @@ from botwidget.qt_ui import screens
 from botwidget.qt_ui.bubble_window import BubbleWindow
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
-from botwidget.system.current import send_behind_windows
+from botwidget.system.current import activate_app, send_behind_windows
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
@@ -65,6 +65,7 @@ REFUSED_NOTE = "I couldn't send that. OpenBot answered: {why}."
 AUTOMATION_NOTE = ("OpenBot's local API is off for {name}. In OpenBot open {name}'s settings and turn on "
                    '"Local scripts"; messages wait here until then.')
 WELCOME_S = 9.0
+FOCUS_DWELL_S = 0.25
 
 
 def ticker(parent, ms: int, step) -> QTimer:
@@ -124,6 +125,7 @@ class FaceWindow(QWidget):
         self._last_bot = None
         self._happy_on = False
         self._hovered = False
+        self._hover_since = 0.0
         self._moving = False
         self.anim = FaceAnimator()
         self.anim.jump(dx=POSES["idle"][0], dy=POSES["idle"][1])
@@ -370,8 +372,18 @@ class FaceWindow(QWidget):
         hovered = (px - cx) ** 2 + (py - cy) ** 2 <= ON_FACE ** 2
         entered = hovered and not self._hovered
         self._hovered = hovered
-        if entered and self._drag_origin is None and not self.pinned and not self.bubble.isVisible():
-            self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+        now = time.monotonic()
+        if entered:
+            self._hover_since = now
+            if self._drag_origin is None and not self.pinned and not self.bubble.isVisible():
+                self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+        elif (hovered and self._hover_since and now - self._hover_since >= FOCUS_DWELL_S
+              and self._drag_origin is None):
+            # Typing starts at once, but only when the pointer stays: passing over the face is not asking.
+            self._hover_since = 0.0
+            if self.bubble.isVisible():
+                activate_app()
+                self.bubble.focus_entry()
 
     def _animate(self):
         """One frame: determine targets, step the springs, draw if something changed."""
@@ -561,22 +573,7 @@ class FaceWindow(QWidget):
                                         links=[("Get OpenBot", OPENBOT_URL), ("Get Grok Bot", GROKBOT_URL)])
             return
         messages = self._with_local(stored)
-        if self.pinned:
-            blocks = conversation_blocks(messages, self.bot_name)
-            if not blocks:
-                blocks = conversation_blocks([{"role": "bot", "text": f"Hi, I'm {self.bot_name}. Ask me anything."}],
-                                             self.bot_name)
-            if self._working or (self._outbox.items and not self._send_status):
-                blocks += [role_panel("bot"), plain_block("dots")]
-            # Open the chat and learn at once that sending is not possible yet.
-            status = self._send_status or ("" if automation_ready() else self._waiting_note())
-            if status:
-                blocks.append(status_block(status))
-            self._shown_text = block_text(blocks)
-            if not self.bubble.shows("say", self._shown_text, True):
-                self.bubble.show_blocks(blocks, "say", input=True, copy_text=last)
-            return
-        if self._working:
+        if self._working and not self.pinned:
             # What you just asked, three pulsing dots and one line about what the bot is doing.
             asked = [m for m in messages if m.get("role") == "user"][-1:]
             blocks = conversation_blocks(asked, self.bot_name) + [role_panel("bot"), plain_block("dots")]
@@ -591,16 +588,34 @@ class FaceWindow(QWidget):
                 self._shown_text = text
                 self.bubble.show_blocks(blocks, "think")
             return
-        blocks = conversation_blocks(messages, self.bot_name)
-        if self._send_status:
-            blocks.append(status_block(self._send_status))
+        blocks = self._chat_blocks(messages, greet=force or self.pinned)
         text = block_text(blocks)
-        if blocks and (force or text != self._shown_text):
+        if self.pinned:
+            self._shown_text = text
+            if not self.bubble.shows("say", text, True):
+                self.bubble.show_blocks(blocks, "say", input=True, copy_text=last)
+        elif blocks and (force or text != self._shown_text):
             # Only new text brings the bubble back by itself; after it slid away it stays away.
             self._shown_text = text
-            self.bubble.show_blocks(blocks, "say", copy_text=last)
+            self.bubble.show_blocks(blocks, "say", input=True, copy_text=last)
         elif not blocks and self.bubble.kind:
             self.bubble.place("")
+
+    def _chat_blocks(self, messages: list, greet: bool) -> list:
+        """The conversation, then the dots while a message is on its way, then why it is not going out."""
+        blocks = conversation_blocks(messages, self.bot_name)
+        if not blocks and greet:
+            blocks = conversation_blocks([{"role": "bot", "text": f"Hi, I'm {self.bot_name}. Ask me anything."}],
+                                         self.bot_name)
+        if not blocks:
+            return blocks
+        if self._working or (self._outbox.items and not self._send_status):
+            blocks += [role_panel("bot"), plain_block("dots")]
+        # Learn at once that sending is not possible yet.
+        status = self._send_status or ("" if automation_ready() else self._waiting_note())
+        if status:
+            blocks.append(status_block(status))
+        return blocks
 
     def _update_notification(self):
         self.setWindowTitle("Bot Widget 🔔" if self.has_pending else "Bot Widget")
