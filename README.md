@@ -29,8 +29,9 @@ botwidget
 - After you send a message the bubble stays, with moving dots, until the bot has answered
 - A new answer opens it by itself and it stays for as long as it takes to read, unless you point at it
 - It also stays while you have typed words or selected words
-- Words in the bubble can be selected, clicking in it never opens or closes it
-- A copy icon appears on the message under the pointer and copies that message
+- A hand shows over a message: click copies it as plain text, shift+click copies the markdown it was written in
+- Drag over the words to select them, the selection is copied when you let go, and a check shows it worked
+- Clicking in the bubble never opens or closes it
 - The eyes follow the pointer when it is near, and look at you when it is over the face
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
 - Drag the face to move it, it bounces off screen edges
@@ -39,6 +40,7 @@ botwidget
 - Settings holds sound, quiet hours, window stacking, start at login and update checks, and Quit
 - On macOS Control+Option+Space opens the chat from any app, and closes it again
 - The face goes back to where you put it when its screen comes back
+- On macOS the face and its bubble are on every desktop, Settings, Show on all desktops keeps them on one so you can drag the face to another desktop in Mission Control
 
 The widget needs OpenBot or Grok Bot. Without either, the face says so and links to both.
 
