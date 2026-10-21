@@ -120,6 +120,7 @@ class FaceWindow(QWidget):
         self._pose = "idle"
         self._last_bot = None
         self._happy_on = False
+        self._hovered = False
         self._moving = False
         self.anim = FaceAnimator()
         self.anim.jump(dx=POSES["idle"][0], dy=POSES["idle"][1])
@@ -330,6 +331,16 @@ class FaceWindow(QWidget):
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         return (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2
+    def _check_hover(self):
+        """Pointing at the face brings the bubble back: the latest answer, or what the bot is doing."""
+        px, py = self._pointer()
+        cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
+        hovered = (px - cx) ** 2 + (py - cy) ** 2 <= (CIRCLE_R * 1.1) ** 2
+        entered = hovered and not self._hovered
+        self._hovered = hovered
+        if entered and self._drag_origin is None and not self.pinned and not self.bubble.isVisible():
+            self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+
 
     def _animate(self):
         """One frame: determine targets, step the springs, draw if something changed."""
@@ -342,6 +353,7 @@ class FaceWindow(QWidget):
                             moving=self._moving, pointer_near=self._pointer_on_head())
         if self._anim_timer.interval() != interval:
             self._anim_timer.setInterval(interval)
+        self._check_hover()
         self._aim(dt * 1000)
         self._moving = self.anim.step(dt)
         if self._moving:
@@ -495,7 +507,7 @@ class FaceWindow(QWidget):
                 "Install one and I'll come alive.")
         return conversation_blocks([{"role": "bot", "text": text}], self.bot_name)
 
-    def _sync_bubble(self, chat: dict):
+    def _sync_bubble(self, chat: dict, force: bool = False):
         """Cloud during a running turn, the conversation as long as the bubble is pinned or fresh."""
         self._working = bool(chat.get("activity"))
         stored = chat.get("messages") or []
@@ -509,7 +521,7 @@ class FaceWindow(QWidget):
         if self._drag_origin is not None or time.monotonic() < self._welcome_until:
             return
         if not (openbot_installed() or gbot_installed()):
-            if self.pinned or not self._hint_shown:
+            if self.pinned or force or not self._hint_shown:
                 self._hint_shown = True
                 self.bubble.show_blocks(self._hint_blocks(), "hint",
                                         links=[("Get OpenBot", OPENBOT_URL), ("Get Grok Bot", GROKBOT_URL)])
@@ -539,15 +551,18 @@ class FaceWindow(QWidget):
                 blocks.append(status_block(activity))
             if self._send_status:
                 blocks.append(status_block(self._send_status))
-            if not self.bubble.shows("think", block_text(blocks), False):
+            # Like an answer: only new things to think about bring the bubble back by themselves.
+            text = block_text(blocks)
+            if force or text != self._shown_text:
+                self._shown_text = text
                 self.bubble.show_blocks(blocks, "think")
             return
         blocks = conversation_blocks(messages, self.bot_name)
         if self._send_status:
             blocks.append(status_block(self._send_status))
         text = block_text(blocks)
-        if blocks and text != self._shown_text:
-            # Only new text brings the bubble back; after it slid away it stays away.
+        if blocks and (force or text != self._shown_text):
+            # Only new text brings the bubble back by itself; after it slid away it stays away.
             self._shown_text = text
             self.bubble.show_blocks(blocks, "say")
         elif not blocks and self.bubble.kind:

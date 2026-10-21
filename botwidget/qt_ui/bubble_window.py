@@ -305,7 +305,6 @@ class BubbleWindow(QWidget):
         if self._geom:
             self._set_text()
             self._scroll_to_bottom()
-        self.changed = time.monotonic()
 
     # ── Position and movement ───────────────────────────────────
 
@@ -331,10 +330,12 @@ class BubbleWindow(QWidget):
             self._physics_on = False
             self._physics.stop()
             return
-        if (self.changed and time.monotonic() - self.changed > BUBBLE_LINGER
-                and not self.face.pinned and not self.typing()
-                and not self.face.pointer_near(self)):
-            # Nothing new and the mouse is not nearby: the bubble goes away.
+        now = time.monotonic()
+        if self.face.pointer_near(self):
+            self.changed = now
+        elif (self.changed and now - self.changed > BUBBLE_LINGER
+                and not self.face.pinned and not self.typing()):
+            # Nothing new and the mouse has been away for a while: the bubble goes away.
             self.place("")
             return
         tx, ty, tip = self._goal()
