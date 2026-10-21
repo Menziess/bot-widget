@@ -38,11 +38,14 @@ botwidget
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
 - Drag the face to move it, it bounces off screen edges
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
-- Right-click the face to see which bot apps were found, switch bots on and off, and reach Settings
-- Settings holds sound, quiet hours, window stacking, start at login and update checks, and Quit
+- Right-click the face and the bubble asks "Looking for settings?" with three slash commands, which you can also type in the field
+- /settings holds sound, quiet hours, window stacking, desktops, start at login, update checks, switching version, and Quit
+- /bots switches the face of each bot on or off
+- /connections says which bot apps were found and whether the local API of OpenBot is on
+- Each page opens in the bubble, ‹ Menu goes back
 - On macOS Control+Option+Space opens the chat from any app, and closes it again
 - The face goes back to where you put it when its screen comes back
-- On macOS the face and its bubble are on every desktop. With Settings, Show on all desktops off the face stays on one, and Control+Option+Space on another desktop brings it there, as Mission Control does not list floating windows
+- On macOS the face and its bubble are on every desktop. With Settings, Show on all desktops off the face stays on one, and Control+Option+Space on another desktop brings it there, and a window cannot be dragged into a full-screen app's desktop
 
 The widget needs OpenBot or Grok Bot. Without either, the face says so and links to both.
 
@@ -51,16 +54,16 @@ The widget needs OpenBot or Grok Bot. Without either, the face says so and links
 The widget updates itself, and you can switch that off. At each start, and every 6 hours after, it asks GitHub whether a newer release exists.
 
 - It downloads the new version in the background and checks it against the SHA256SUMS.txt published with the release
-- The widget restarts into the new version as soon as nobody is using a face, or straight away through Restart to update in the right-click menu
-- Settings has two switches, Check for updates and Install updates automatically
-- With checking off nothing is requested, with automatic installing off the menu only links to the download page
+- The widget restarts into the new version as soon as nobody is using a face, or straight away through Restart to update on the /settings page
+- /settings has two switches, Check for updates and Install updates automatically
+- With checking off nothing is requested, with automatic installing off the page only links to the download page
 - The request is anonymous and sends no data about you beyond what any web request carries
 
 Automatic installing needs the packaged app. Installs through uv or pip, and checkouts, only show the link.
 
 ## Start at login
 
-The first start turns on starting at login and says so in a bubble. Settings, Start at login, turns it off, and the choice then stays off.
+The first start turns on starting at login and says so in a bubble. /settings, Start at login, turns it off, and the choice then stays off.
 
 - On macOS the app registers itself, so Login Items shows Bot Widget with its icon
 - From a checkout the item is named Bot Widget (dev) instead of python
@@ -84,9 +87,9 @@ Without a virtual environment, `uv venv && uv pip install -e .` and `.venv/bin/b
 
 ### Switching between stable and local
 
-Keep the installed app next to your checkout and hop between them from the right-click menu.
+Keep the installed app next to your checkout and hop between them from the /settings page.
 
-- Settings, Switch to local version starts the checkout, and Switch to stable version starts the installed app
+- /settings, Switch to local version starts the checkout, and Switch to stable version starts the installed app
 - The stable app learns how to start your checkout the first time you run it with `botwidget --dev`
 - Start at login follows whichever version you switch to, so only one of them starts at login
 - The installed app is found in Applications on macOS, in the local share folder on Linux and in the Start menu folder on Windows

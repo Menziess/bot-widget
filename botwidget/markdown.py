@@ -36,6 +36,11 @@ def anchor_url(style: str) -> str:
     return url if url.startswith(("http://", "https://")) else ""
 
 
+def command_href(style: str) -> str:
+    """The href of a menu row, "bw:<command>"; only the menu pages use the cmd: style."""
+    return "bw:" + style[len("cmd:"):] if style.startswith("cmd:") else ""
+
+
 def trim_url(url: str) -> str:
     """Drop the punctuation that ends the sentence, keep brackets the url balances itself."""
     while url:

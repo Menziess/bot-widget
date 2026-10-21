@@ -162,6 +162,7 @@ class BubbleText(QTextBrowser):
     """The words in the bubble as real text: a click copies the message, a drag selects and copies."""
 
     clicked = Signal(float, bool)  # where in the text, and whether shift was held
+    command = Signal(str)  # a menu row was clicked
     selected = Signal(str, float)  # the selected words, and where the pointer was let go
     SLOP = 4
 
@@ -186,6 +187,8 @@ class BubbleText(QTextBrowser):
     def _open(self, url: QUrl):
         if url.scheme() in ("http", "https"):
             QDesktopServices.openUrl(url)
+        elif url.scheme() == "bw":
+            self.command.emit(url.path())
 
     def wheelEvent(self, event):
         """The text is never taller than its frame: the bubble scrolls, not the text."""
@@ -246,6 +249,7 @@ class BubbleText(QTextBrowser):
 
 class BubbleWindow(QWidget):
     older = Signal()
+    command = Signal(str)
 
     def __init__(self, face):
         super().__init__()
@@ -271,6 +275,7 @@ class BubbleWindow(QWidget):
         self._had_focus = False
         self._wait_since = 0.0
         self._growth = None
+        self._from_top = False
         self._older_until = 0.0
         self._tip = None
         self._vx = self._vy = 0.0
@@ -285,6 +290,7 @@ class BubbleWindow(QWidget):
         self._doc = BubbleText(self._text)
         self._doc.message_at = self._message_at
         self._doc.clicked.connect(self._on_click)
+        self._doc.command.connect(self.command)
         self._doc.selected.connect(self._on_selected)
         self._scroll = OlderScroll(self)
         self._scroll.older.connect(self._wheel_older)
@@ -482,9 +488,11 @@ class BubbleWindow(QWidget):
         fill_document(self._doc.document(), panels, box_w)
 
     def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
-                    older: bool = False):
-        """Put blocks in the bubble; newest at the bottom. With older, a message was added above."""
-        key = (kind, block_text(blocks), input, tuple(links or []), self._ceiling())
+                    older: bool = False, from_top: bool = False):
+        """Put blocks in the bubble; newest at the bottom, or read from the top (a menu page).
+        With older, a message was added above."""
+        key = (kind, block_text(blocks), input, tuple(links or []), self._ceiling(), from_top)
+        self._from_top = from_top
         visible = self.isVisible()
         if key == self._built and not self._dots_lines:
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
@@ -554,7 +562,7 @@ class BubbleWindow(QWidget):
         self.move(int(tx), int(ty))
         bar = self._scroll.verticalScrollBar()
         bar.setValue(min(bar.maximum(), round(growth.added * (1 - progress))) if getattr(growth, "older", False)
-                     else bar.maximum())
+                     else 0 if self._from_top else bar.maximum())
         if growth.opening:
             self.setWindowOpacity(min(1.0, progress * 3))
 
@@ -567,11 +575,11 @@ class BubbleWindow(QWidget):
         if self.kind:
             self._layout_children(self._paint_chrome())
             bar = self._scroll.verticalScrollBar()
-            bar.setValue(0 if older else bar.maximum())
+            bar.setValue(0 if older or self._from_top else bar.maximum())
 
     def _scroll_to_bottom(self):
         bar = self._scroll.verticalScrollBar()
-        bar.setValue(bar.maximum())
+        bar.setValue(0 if self._from_top else bar.maximum())
 
     def _tick_dots(self):
         """Make the thinking dots pulse for as long as the bot is thinking."""

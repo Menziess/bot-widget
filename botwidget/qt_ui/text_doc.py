@@ -7,7 +7,7 @@ layout says and the shapes drawn behind it stay in place.
 from PySide6.QtGui import QColor, QFont, QTextBlockFormat, QTextCharFormat, QTextCursor
 
 from botwidget.bubble import line_height, panel_gap, panel_pad
-from botwidget.markdown import anchor_url
+from botwidget.markdown import anchor_url, command_href
 from botwidget.theme import (
     BUBBLE_CODE_FONT,
     PAD_PANEL_X,
@@ -44,7 +44,7 @@ def char_format(style: str, user: bool, size: int, grey: bool, head: bool) -> QT
     if style == "code":
         fmt.setBackground(color(SAND_CHIP_USER if user else SAND_CHIP))
         fmt.setForeground(color(ink))
-    elif style.startswith("link:"):
+    elif style.startswith(("link:", "cmd:")):
         # Accent blue is unreadable on the dark user panel; it stays white there.
         fmt.setForeground(color(SAND_ON_USER if user else SAND_ACCENT))
     elif style == "dim":
@@ -100,7 +100,7 @@ def fill_document(doc, panels: list, box_w: int):
             cursor.block().setUserState(1 if line.get("cont") else 0)
             for text, style in line_pieces(line):
                 fmt = char_format(style, user, line["size"], line["grey"], line.get("head", False))
-                url = anchor_url(style)
+                url = anchor_url(style) or command_href(style)
                 if url:
                     fmt.setAnchor(True)
                     fmt.setAnchorHref(url)

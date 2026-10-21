@@ -1,4 +1,4 @@
-"""One face per enabled bot, plus the right-click menu to manage them."""
+"""One face per enabled bot, plus what the menu in the bubble shows and does."""
 
 import json
 import os
@@ -6,22 +6,21 @@ import threading
 import time
 
 from PySide6.QtCore import QObject, QTimer, QUrl
-from PySide6.QtGui import QAction, QCursor, QDesktopServices
-from PySide6.QtWidgets import QApplication, QMenu
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import QApplication
 
 from botwidget import __version__, channel, startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
     OPENBOT_URL,
-    QUIET_FROM,
-    QUIET_TO,
     STATE_PATH,
     UNLINKED_ID,
     UNLINKED_NAME,
     all_desktops,
     always_on_top,
     auto_update,
+    automation_ready,
     check_updates,
     save_widget_config,
     widget_config,
@@ -41,7 +40,6 @@ class Faces(QObject):
         self.pos = {}
         enabled = self._load()
         self.faces = {}
-        self._menu = None
         self.grok = {"connected": False, "bots": [], "note": "not tried yet"}
         self.update = None
         self.staged = None
@@ -161,62 +159,54 @@ class Faces(QObject):
             self.faces.pop(agent_id).close_face()
         self._save()
 
-    def _link(self, menu: QMenu, label: str, url: str):
-        action = menu.addAction(f"{label} ↗")
-        action.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(url)))
+    def menu_state(self) -> dict:
+        """What the menu pages show: the settings as they are now, the bots, and what was found."""
+        config = widget_config()
+        bots = list_bots()
+        return {
+            "version": __version__, "channel": channel.running(), "switch_label": channel.switch_label(),
+            "hotkey": HOTKEY_LABEL if self.hotkey_on else "",
+            "update": self.update.version if self.update else "",
+            "staged_update": self.update.version if self.staged and self.update else "",
+            "sound": config.get("sound") is True, "quiet_hours": config.get("quiet_hours") is True,
+            "always_on_top": always_on_top(), "can_pick_desktops": CAN_PICK_DESKTOPS,
+            "all_desktops": all_desktops(), "login": startup.is_enabled(), "check_updates": check_updates(),
+            "can_install_updates": can_install_update(), "auto_update": auto_update(),
+            "bots": [{"id": bot["id"], "name": bot["name"], "on": bot["id"] in self.faces} for bot in bots],
+            "openbot": openbot_installed(), "automation_ready": automation_ready(),
+            "gbot": gbot_installed(), "grok": self.grok_line(),
+        }
 
-    def _platform_entries(self, menu: QMenu):
-        """Which bot apps were found; missing ones get a link."""
-        if openbot_installed():
-            menu.addAction("OpenBot · detected").setEnabled(False)
-        else:
-            self._link(menu, "OpenBot not found · get it", OPENBOT_URL)
-        if gbot_installed():
-            menu.addAction(self.grok_line()).setEnabled(False)
-        else:
-            self._link(menu, "Grok Bot not found · get it", GROKBOT_URL)
+    TOGGLES = {
+        "sound": lambda faces, on: save_widget_config(sound=on),
+        "quiet_hours": lambda faces, on: save_widget_config(quiet_hours=on),
+        "always_on_top": lambda faces, on: faces._set_always_on_top(on),
+        "all_desktops": lambda faces, on: faces._set_all_desktops(on),
+        "login": lambda faces, on: startup.set_enabled(on),
+        "check_updates": lambda faces, on: save_widget_config(check_updates=on),
+        "auto_update": lambda faces, on: save_widget_config(auto_update=on),
+    }
+    LINKS = {"openbot": OPENBOT_URL, "grokbot": GROKBOT_URL, "download": updates.DOWNLOAD_URL}
 
-    def _settings_entries(self, menu: QMenu):
-        settings = menu.addMenu("Settings")
-        settings.addAction(f"Running the {channel.running()} version, v{__version__}").setEnabled(False)
-        if self.hotkey_on:
-            settings.addAction(f"Open the chat from any app with {HOTKEY_LABEL}").setEnabled(False)
-        label = channel.switch_label()
-        if label:
-            settings.addAction(label).triggered.connect(self.switch_channel)
-        settings.addSeparator()
-        sound = QAction("Sound on a new answer", settings, checkable=True)
-        sound.setChecked(widget_config().get("sound") is True)
-        sound.toggled.connect(lambda on: save_widget_config(sound=on))
-        settings.addAction(sound)
-        quiet = QAction(f"No sound from {QUIET_FROM}:00 to {QUIET_TO:02d}:00", settings, checkable=True)
-        quiet.setChecked(widget_config().get("quiet_hours") is True)
-        quiet.toggled.connect(lambda on: save_widget_config(quiet_hours=on))
-        settings.addAction(quiet)
-        top = QAction("Face stays above other windows", settings, checkable=True)
-        top.setChecked(always_on_top())
-        top.toggled.connect(self._set_always_on_top)
-        settings.addAction(top)
-        if CAN_PICK_DESKTOPS:
-            everywhere = QAction("Show on all desktops", settings, checkable=True)
-            everywhere.setChecked(all_desktops())
-            everywhere.toggled.connect(self._set_all_desktops)
-            settings.addAction(everywhere)
-        login = QAction("Start at login", settings, checkable=True)
-        login.setChecked(startup.is_enabled())
-        login.toggled.connect(startup.set_enabled)
-        settings.addAction(login)
-        check = QAction("Check for updates", settings, checkable=True)
-        check.setChecked(check_updates())
-        check.toggled.connect(lambda on: save_widget_config(check_updates=on))
-        settings.addAction(check)
-        if can_install_update():
-            auto = QAction("Install updates automatically", settings, checkable=True)
-            auto.setChecked(auto_update())
-            auto.toggled.connect(lambda on: save_widget_config(auto_update=on))
-            settings.addAction(auto)
-        settings.addSeparator()
-        settings.addAction("Quit Bot Widget").triggered.connect(QApplication.quit)
+    def menu_command(self, command: str, page: str) -> str | None:
+        """Do what a menu row asks; the page to show next, or None to leave the bubble as it is."""
+        kind, _, name = command.partition("/")
+        if kind == "page":
+            return name
+        if kind == "toggle" and name in self.TOGGLES:
+            state = self.menu_state()
+            self.TOGGLES[name](self, not state[name])
+        elif kind == "bot":
+            self.toggle(name, name not in self.faces)
+        elif kind == "open" and name in self.LINKS:
+            QDesktopServices.openUrl(QUrl(self.LINKS[name]))
+        elif kind == "action" and name == "update":
+            self.install_update()
+        elif kind == "action" and name == "switch":
+            self.switch_channel()
+        elif kind == "action" and name == "quit":
+            QApplication.quit()
+        return page
 
     def _set_all_desktops(self, on: bool):
         save_widget_config(all_desktops=on)
@@ -227,26 +217,3 @@ class Faces(QObject):
         save_widget_config(always_on_top=on)
         for face in self.faces.values():
             face.restack()
-
-    def show_menu(self, face=None):
-        """The right-click menu at the mouse. A normal menu, so it responds immediately."""
-        menu = QMenu()
-        if self.staged:
-            menu.addAction(f"Restart to update to v{self.update.version}").triggered.connect(self.install_update)
-            menu.addSeparator()
-        elif self.update:
-            self._link(menu, f"Update available: v{self.update.version}", updates.DOWNLOAD_URL)
-            menu.addSeparator()
-        self._platform_entries(menu)
-        bots = list_bots()
-        if bots:
-            menu.addSeparator()
-        for bot in bots:
-            action = QAction(bot["name"], menu, checkable=True)
-            action.setChecked(bot["id"] in self.faces)
-            action.toggled.connect(lambda on, agent_id=bot["id"]: self.toggle(agent_id, on))
-            menu.addAction(action)
-        menu.addSeparator()
-        self._settings_entries(menu)
-        self._menu = menu
-        menu.popup(QCursor.pos())

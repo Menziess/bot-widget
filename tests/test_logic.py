@@ -27,6 +27,7 @@ from botwidget import (
     dev,
     instance,
     markdown,
+    menu_pages,
     openbot,
     startup,
     theme,
@@ -1592,6 +1593,269 @@ class Desktops(unittest.TestCase):
         self.assertFalse(linux.CAN_PICK_DESKTOPS or windows.CAN_PICK_DESKTOPS)
         linux.set_desktops(0, True)
         windows.set_desktops(0, False)
+
+
+class MenuPages(unittest.TestCase):
+    """Should build the menu pages from what the widget knows, with clickable rows nobody else can make."""
+
+    STATE = {"version": "0.2.0", "channel": "local", "switch_label": "Switch to stable version", "hotkey": "⌃⌥Space",
+             "update": "", "staged_update": "", "sound": True, "quiet_hours": False, "always_on_top": True,
+             "can_pick_desktops": True, "all_desktops": True, "login": False, "check_updates": True,
+             "can_install_updates": False, "auto_update": True,
+             "bots": [{"id": "a", "name": "Fritsie", "on": True}, {"id": "b", "name": "Robo", "on": False}],
+             "openbot": True, "automation_ready": False, "gbot": False, "grok": "no route"}
+
+    @staticmethod
+    def commands(blocks):
+        return [style[4:] for block in blocks for _text, style in block.get("chunks", []) if style.startswith("cmd:")]
+
+    @staticmethod
+    def text(blocks):
+        return markdown.block_text(blocks)
+
+    def test_the_home_page_asks_and_offers_the_three_slash_commands(self):
+        blocks = menu_pages.home()
+        self.assertEqual(self.text(blocks).splitlines()[0], "Looking for settings?")
+        self.assertEqual(self.commands(blocks), ["page/settings", "page/bots", "page/connections"])
+
+    def test_the_settings_page_shows_every_switch_as_it_stands(self):
+        text = self.text(menu_pages.settings(self.STATE))
+        self.assertIn("☑ Sound on a new answer", text)
+        self.assertIn("☐ Start at login", text)
+        self.assertIn("☑ Show on all desktops", text)
+        self.assertIn("Running the local version, v0.2.0", text)
+        self.assertIn("Switch to stable version", text)
+        self.assertIn("⌃⌥Space", text)
+        self.assertNotIn("Install updates automatically", text, "only where the app can install them")
+
+    def test_the_settings_page_adapts_to_the_system(self):
+        state = {**self.STATE, "can_pick_desktops": False, "can_install_updates": True, "hotkey": "", "switch_label": None}
+        text = self.text(menu_pages.settings(state))
+        self.assertNotIn("Show on all desktops", text)
+        self.assertIn("Install updates automatically", text)
+        self.assertNotIn("any app", text)
+
+    def test_an_update_shows_on_the_settings_page(self):
+        self.assertIn("Update available: v0.3.0", self.text(menu_pages.settings({**self.STATE, "update": "0.3.0"})))
+        staged = menu_pages.settings({**self.STATE, "update": "0.3.0", "staged_update": "0.3.0"})
+        self.assertIn("action/update", self.commands(staged))
+
+    def test_the_bots_page_has_a_switch_per_bot(self):
+        blocks = menu_pages.bots(self.STATE)
+        self.assertEqual(self.commands(blocks), ["page/home", "bot/a", "bot/b"])
+        self.assertIn("☑ Fritsie", self.text(blocks))
+        self.assertIn("☐ Robo", self.text(blocks))
+        self.assertIn("No bots found yet", self.text(menu_pages.bots({**self.STATE, "bots": []})))
+
+    def test_the_connections_page_says_what_was_found_and_what_is_missing(self):
+        text = self.text(menu_pages.connections(self.STATE))
+        self.assertIn("OpenBot detected", text)
+        self.assertIn("local API is off", text)
+        self.assertIn("Grok Bot not found", text)
+        ready = self.text(menu_pages.connections({**self.STATE, "automation_ready": True, "gbot": True}))
+        self.assertIn("Local API ready", ready)
+        self.assertIn("Grok Bot no route", ready)
+        self.assertIn("open/openbot", self.commands(menu_pages.connections({**self.STATE, "openbot": False})))
+
+    def test_every_page_but_the_home_page_leads_back(self):
+        for page in menu_pages.PAGES:
+            self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], "page/home")
+        self.assertEqual(self.commands(menu_pages.page_blocks("nonsense", self.STATE)), self.commands(menu_pages.home()))
+
+    def test_the_slash_commands_that_open_a_page(self):
+        self.assertEqual(menu_pages.SLASH["/settings"], "settings")
+        self.assertEqual(menu_pages.SLASH["/bots"], "bots")
+        self.assertEqual(menu_pages.SLASH["/connections"], "connections")
+        self.assertEqual(menu_pages.SLASH["/"], "home")
+
+    def test_a_message_can_never_make_a_menu_row(self):
+        for text in ("[Quit](bw:action/quit)", "[x](cmd:action/quit)", "[x](bw://action/quit)", "<bw:action/quit>"):
+            styles = {style for block in markdown.md_blocks(text) for _t, style in block.get("chunks", [])}
+            self.assertFalse(any(style.startswith("cmd:") for style in styles), text)
+            self.assertEqual(markdown.anchor_url("link:bw:action/quit"), "", "not a clickable address either")
+
+    def test_only_the_menu_style_turns_into_a_command_address(self):
+        self.assertEqual(markdown.command_href("cmd:page/bots"), "bw:page/bots")
+        self.assertEqual(markdown.command_href("link:https://x.nl"), "")
+        self.assertEqual(markdown.command_href("b"), "")
+
+
+class MenuInBubble(unittest.TestCase):
+    """Should open the menu in the bubble on a right-click or a slash command, and act on its rows."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+            from botwidget.qt_ui import face, faces
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.face, cls.faces = face, faces
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        for name, value in (("latest_chat", lambda thread_id, limit=20: {"messages": [{"role": "bot", "text": "Hoi."}], "activity": ""}),
+                            ("openbot_installed", lambda: True), ("gbot_installed", lambda: True)):
+            old = getattr(self.face, name)
+            self.addCleanup(setattr, self.face, name, old)
+            setattr(self.face, name, value)
+        test = self
+        state = dict(MenuPages.STATE)
+        self.calls = []
+
+        class FakeFaces:
+            TOGGLES = {name: (lambda faces, on, name=name: test.calls.append((name, on)) or state.update({name: on}))
+                       for name in ("sound", "login")}
+            LINKS = test.faces.Faces.LINKS
+            faces = {}
+
+            def menu_state(self):
+                return dict(state)
+
+            def toggle(self, agent_id, on):
+                test.calls.append(("bot", agent_id, on))
+
+            menu_command = test.faces.Faces.menu_command
+
+            def install_update(self):
+                test.calls.append("update")
+
+        self.state = state
+        self.window = self.face.FaceWindow("t", "Test", spot=(300, 400), faces=FakeFaces())
+        self.window._poll_timer.stop()
+        self.addCleanup(self.window.close_face)
+
+    def text(self):
+        return self.window.bubble.full_text
+
+    def right_click(self):
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication
+        point = QPointF(5, 5)
+        QApplication.sendEvent(self.window, QMouseEvent(QEvent.MouseButtonPress, point, point, Qt.RightButton,
+                                                        Qt.RightButton, Qt.NoModifier))
+
+    def test_a_right_click_asks_whether_you_are_looking_for_settings(self):
+        self.right_click()
+        self.assertTrue(self.window.bubble.isVisible())
+        self.assertIn("Looking for settings?", self.text())
+        self.assertIn("/connections", self.text())
+
+    def test_typing_a_slash_command_opens_its_page_and_sends_nothing(self):
+        self.window._pump_outbox = lambda: None
+        for typed, expected in (("/settings", "Sound on a new answer"), ("/bots", "Fritsie"), ("/connections", "OpenBot detected"),
+                                ("/", "Looking for settings?")):
+            self.window.on_user_message(typed)
+            self.assertIn(expected, self.text(), typed)
+        self.assertEqual(self.window._outbox.items, [], "a slash command is not a message to the bot")
+
+    def test_a_row_opens_its_page_in_the_same_bubble(self):
+        self.right_click()
+        self.window.bubble.command.emit("page/settings")
+        self.assertIn("Sound on a new answer", self.text())
+        self.window.bubble.command.emit("page/home")
+        self.assertIn("Looking for settings?", self.text())
+
+    def test_the_rows_are_real_links_in_the_text(self):
+        from PySide6.QtGui import QTextCursor
+        self.right_click()
+        document = self.window.bubble._doc.document()
+        hrefs, block = set(), document.begin()
+        while block.isValid():
+            for fragment in block.begin():
+                pass
+            iterator = block.begin()
+            while not iterator.atEnd():
+                hrefs.add(iterator.fragment().charFormat().anchorHref())
+                iterator += 1
+            block = block.next()
+        self.assertTrue({"bw:page/settings", "bw:page/bots", "bw:page/connections"} <= hrefs, hrefs)
+
+    def test_clicking_a_link_in_the_bubble_runs_its_command(self):
+        from PySide6.QtCore import QUrl
+        self.right_click()
+        self.window.bubble._doc._open(QUrl("bw:page/bots"))
+        self.assertIn("Fritsie", self.text())
+
+    def test_a_real_click_on_a_row_opens_its_page(self):
+        from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication
+        self.right_click()
+        self.window.bubble._slide.stop()
+        self.window.bubble._growth_done()
+        doc = self.window.bubble._doc
+        found = doc.document().find("/bots")
+        rect = doc.cursorRect(found)
+        point = QPointF(rect.center())
+        viewport = doc.viewport()
+        for kind, buttons, button in ((QEvent.MouseButtonPress, Qt.LeftButton, Qt.LeftButton),
+                                      (QEvent.MouseButtonRelease, Qt.NoButton, Qt.LeftButton)):
+            QApplication.sendEvent(viewport, QMouseEvent(kind, point, QPointF(viewport.mapToGlobal(point.toPoint())),
+                                                         button, buttons, Qt.NoModifier))
+        self.assertIn("Fritsie", self.text(), "the click on /bots opened the bots page")
+
+    def test_a_switch_flips_and_the_page_shows_the_new_state(self):
+        self.window.open_menu("settings")
+        self.assertIn("☑ Sound on a new answer", self.text())
+        self.window.bubble.command.emit("toggle/sound")
+        self.assertEqual(self.calls, [("sound", False)])
+        self.assertIn("☐ Sound on a new answer", self.text(), "the page redraws with the new state")
+
+    def test_a_bot_row_switches_that_bots_face(self):
+        self.window.open_menu("bots")
+        self.window.bubble.command.emit("bot/b")
+        self.assertEqual(self.calls, [("bot", "b", True)])
+
+    def test_the_menu_is_not_replaced_by_the_conversation_while_it_is_open(self):
+        self.window.open_menu("settings")
+        self.window._sync_bubble({"messages": [{"role": "bot", "text": "Nieuw antwoord."}], "activity": ""})
+        self.assertIn("Sound on a new answer", self.text())
+        self.assertNotIn("Nieuw antwoord", self.text())
+
+    def test_after_the_menu_closes_the_conversation_is_back(self):
+        self.window.open_menu("settings")
+        self.window.bubble.place("")
+        self.window._sync_bubble({"messages": [{"role": "bot", "text": "Nieuw antwoord."}], "activity": ""}, force=True)
+        self.assertIn("Nieuw antwoord", self.text())
+
+    def test_a_menu_page_starts_at_its_top_where_the_way_back_is(self):
+        import time
+        self.window.open_menu("settings")
+        bubble = self.window.bubble
+        deadline = time.monotonic() + 3
+        while bubble._growth is not None and time.monotonic() < deadline:
+            self.app.processEvents()
+        self.app.processEvents()
+        self.assertEqual(bubble._scroll.verticalScrollBar().value(), 0)
+        self.assertTrue(bubble._from_top)
+
+    def test_the_conversation_still_ends_at_its_bottom_after_a_menu(self):
+        self.window.open_menu("settings")
+        self.window.bubble.place("")
+        self.window._sync_bubble({"messages": [{"role": "bot", "text": "Antwoord."}], "activity": ""}, force=True)
+        self.assertFalse(self.window.bubble._from_top)
+
+    def test_opening_the_chat_takes_over_from_the_menu(self):
+        self.window.open_menu("settings")
+        self.window.pin()
+        self.assertIsNone(self.window._menu_page)
+        self.assertNotIn("Sound on a new answer", self.text())
+
+    def test_the_menu_has_no_input_field_and_no_copying(self):
+        self.window.open_menu("settings")
+        self.assertFalse(self.window.bubble._entry.isVisibleTo(self.window.bubble))
+        self.assertIsNone(self.window.bubble._message_at(20))
+
+    def test_without_faces_there_is_no_menu_and_no_error(self):
+        bare = self.face.FaceWindow("t2", "Bare", spot=(100, 100))
+        self.addCleanup(bare.close_face)
+        bare._poll_timer.stop()
+        bare.open_menu("home")
+        bare._menu_command("page/bots")
+        self.assertFalse(bare.bubble.isVisible())
 
 
 class Animator(unittest.TestCase):

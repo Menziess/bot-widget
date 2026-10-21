@@ -51,6 +51,7 @@ from botwidget.openbot import (
     latest_chat,
     openbot_installed,
 )
+from botwidget import menu_pages
 from botwidget.qt_ui import desktops, screens
 from botwidget.qt_ui.bubble_window import BubbleWindow
 from botwidget.qt_ui.render import svg_pixmap
@@ -131,6 +132,7 @@ class FaceWindow(QWidget):
         self._hover_since = 0.0
         self._hover_blocked_until = 0.0  # closed on purpose while the pointer is on the face
         self._hover_retry = 0.0
+        self._menu_page = None  # a page of the menu is in the bubble
         self._depth = 1  # how many of the latest messages the bubble shows
         self._loading_older = False
         self._conversation = None
@@ -152,6 +154,7 @@ class FaceWindow(QWidget):
 
         self.bubble = BubbleWindow(self)
         self.bubble.older.connect(self.show_older)
+        self.bubble.command.connect(self._menu_command)
 
         if spot:
             self.move(int(spot[0]), int(spot[1]))
@@ -263,8 +266,7 @@ class FaceWindow(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton:
-            if self.faces is not None:
-                self.faces.show_menu(self)
+            self.open_menu("home")
             return
         if event.button() != Qt.LeftButton:
             return
@@ -515,6 +517,7 @@ class FaceWindow(QWidget):
     def pin(self):
         """Click on the face: the speech bubble stays, with an input field."""
         self.pinned = True
+        self._menu_page = None
         self.has_pending = False
         self._refused = False
         self.update()
@@ -614,6 +617,10 @@ class FaceWindow(QWidget):
                 play_sound()
         if self._drag_origin is not None or time.monotonic() < self._welcome_until:
             return
+        if self._menu_page is not None:
+            if self.bubble.isVisible():
+                return  # a page of the menu is open: the conversation waits
+            self._menu_page = None
         if not (openbot_installed() or gbot_installed()):
             if self.pinned or force or not self._hint_shown:
                 self._hint_shown = True
@@ -656,6 +663,20 @@ class FaceWindow(QWidget):
         elif not blocks and self.bubble.kind:
             self.bubble.place("")
 
+    def open_menu(self, page: str = "home"):
+        """A page of the menu in the bubble: right-click, or /settings, /bots or /connections typed."""
+        if self.faces is None:
+            return
+        self._menu_page = page
+        self.bubble.show_blocks(menu_pages.page_blocks(page, self.faces.menu_state()), "say", from_top=True)
+
+    def _menu_command(self, command: str):
+        if self.faces is None or self._menu_page is None:
+            return
+        page = self.faces.menu_command(command, self._menu_page)
+        if page and self._menu_page is not None:
+            self.open_menu(page)
+
     def show_older(self):
         """Scrolled up past the top: one message more, which slides in."""
         if self.bubble.kind != "say" or self._depth >= len(self._messages):
@@ -691,9 +712,9 @@ class FaceWindow(QWidget):
 
     def on_user_message(self, text: str):
         """Send a message from the bubble; it only counts as sent once the POST succeeded."""
-        if text.strip() == "/settings":
-            if self.faces is not None:
-                self.faces.show_menu(self)
+        page = menu_pages.SLASH.get(text.strip().lower())
+        if page:
+            self.open_menu(page)
             return
         text = text[:500]
         day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
