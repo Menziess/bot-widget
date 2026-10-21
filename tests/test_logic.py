@@ -523,6 +523,10 @@ class BubbleScroll(unittest.TestCase):
         window._poll_timer.stop()
         text = "Ja.\n\n" + "Een lange regel. " * 60 + "\n\nZal ik pushen?"
         window.bubble.show_blocks(conversation_blocks([{"role": "bot", "text": text}], "Test"), "say")
+        import time
+        deadline = time.monotonic() + 3
+        while window.bubble._growth is not None and time.monotonic() < deadline:
+            self.app.processEvents()
         self.app.processEvents()
         bar = window.bubble._scroll.verticalScrollBar()
         self.assertGreater(bar.maximum(), 0)
@@ -758,6 +762,22 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(self.clipboard(), "Klaar?")
         self.click(1)
         self.assertEqual(self.clipboard(), "Ja.\n\nZal ik pushen?")
+
+    def test_clicking_the_arrow_loads_the_message_before(self):
+        from PySide6.QtCore import Qt
+        self.hover()
+        self.assertEqual(self.window._depth, 1)
+        x, y = self.message_point(0, down=8)
+        self.assertEqual(self.window.bubble._geom[0][0]["role"], "more")
+        self.send_mouse("move", x, y)
+        self.assertEqual(self.window.bubble._doc.viewport().cursor().shape(), Qt.PointingHandCursor)
+        self.click_at(x, y)
+        self.assertEqual(self.window._depth, 2)
+
+    def click_at(self, x, y):
+        from PySide6.QtCore import Qt
+        self.send_mouse("press", x, y, Qt.LeftButton, Qt.LeftButton)
+        self.send_mouse("release", x, y, Qt.NoButton, Qt.LeftButton)
 
     def test_a_click_neither_selects_nor_closes(self):
         self.hover()

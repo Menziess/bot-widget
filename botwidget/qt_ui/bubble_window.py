@@ -280,19 +280,21 @@ class BubbleWindow(QWidget):
             self.face.on_user_message(text)
 
     def _message_at(self, y: float) -> dict | None:
-        """The message under this height in the text, if it is one a click can copy."""
+        """The panel a click at this height in the text does something with: a message to copy, or the arrow."""
         if self.kind != "say" or not self._geom:
             return None
         content_y = y + self._doc.y()
         for (top, height), panel in zip(panel_rects(self._geom[0]), self._geom[0]):
-            if top <= content_y < top + height and panel.get("copy"):
+            if top <= content_y < top + height and (panel.get("copy") or panel["role"] == "more"):
                 return panel
         return None
 
     def _on_click(self, y: float, shift: bool):
-        """Click copies the message as plain text, shift+click as the markdown it was written in."""
+        """Click on the arrow loads the message before; on a message it copies it, shift+click as markdown."""
         panel = self._message_at(y)
-        if panel:
+        if panel and panel["role"] == "more":
+            self._wheel_older()
+        elif panel:
             self._copied_to_clipboard(panel["copy"] if shift else plain_text(panel["copy"]), y)
 
     def _on_selected(self, text: str, y: float):
