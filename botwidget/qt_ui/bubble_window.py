@@ -110,11 +110,8 @@ class OlderScroll(QScrollArea):
 class BubbleText(QTextBrowser):
     """The words in the bubble as real text: selectable, and links open in the browser."""
 
-    pressed = Signal()
-
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._on_link = False
         self.setFrameShape(QTextBrowser.NoFrame)
         # Not openLinks: that would navigate this read-only view. The window opens the link itself.
         self.setOpenLinks(False)
@@ -134,19 +131,8 @@ class BubbleText(QTextBrowser):
         """The text is never taller than its frame: the bubble scrolls, not the text."""
         event.ignore()
 
-    def mousePressEvent(self, event):
-        self._on_link = bool(self.anchorAt(event.position().toPoint()))
-        super().mousePressEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        """A plain click still pins the bubble; a drag selects, a link click opens."""
-        super().mouseReleaseEvent(event)
-        if not self._on_link and not self.textCursor().hasSelection():
-            self.pressed.emit()
-
 
 class BubbleWindow(QWidget):
-    clicked = Signal()
     older = Signal()
 
     def __init__(self, face):
@@ -184,7 +170,6 @@ class BubbleWindow(QWidget):
         self._text = QLabel()
         self._text.setAttribute(Qt.WA_TranslucentBackground)
         self._doc = BubbleText(self._text)
-        self._doc.pressed.connect(self.clicked)
         self._scroll = OlderScroll(self)
         self._scroll.older.connect(self._wheel_older)
         self._scroll.setWidget(self._text)
@@ -246,7 +231,8 @@ class BubbleWindow(QWidget):
     def _update_copy(self):
         """A copy button in the corner of the message under the pointer, and only there."""
         under = None
-        if self.kind == "say" and self._geom:
+        selecting = self._doc.textCursor().hasSelection() or bool(QApplication.mouseButtons() & Qt.LeftButton)
+        if self.kind == "say" and self._geom and not selecting:
             viewport = self._scroll.viewport()
             point = viewport.mapFromGlobal(QCursor.pos())
             if viewport.rect().contains(point):
@@ -287,10 +273,6 @@ class BubbleWindow(QWidget):
     def enterEvent(self, event):
         """Mouse over the bubble: it stays."""
         self.changed = time.monotonic()
-
-    def mousePressEvent(self, event):
-        """Click on the bubble: pin it and type."""
-        self.clicked.emit()
 
     # ── Content ─────────────────────────────────────────────────
 
@@ -495,8 +477,10 @@ class BubbleWindow(QWidget):
         now = time.monotonic()
         if self._input and self._entry.hasFocus():
             self._had_focus = True
-        elif self._had_focus and self._input and not self._entry.text():
-            # Clicked away with nothing typed: the bubble goes, pinned or not.
+        elif (self._had_focus and self._input and not self._entry.text()
+              and QApplication.activeWindow() not in (self, self.face)):
+            # Clicked into another window with nothing typed: the bubble goes, pinned or not.
+            # Clicking on its own words or on the face is not leaving.
             self.face.unpin()
             self.place("")
             return

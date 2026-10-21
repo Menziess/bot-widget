@@ -147,7 +147,6 @@ class FaceWindow(QWidget):
         self._render()
 
         self.bubble = BubbleWindow(self)
-        self.bubble.clicked.connect(self.pin)
         self.bubble.older.connect(self.show_older)
 
         if spot:
@@ -288,7 +287,7 @@ class FaceWindow(QWidget):
             self._drag_sample = (now, x, y)
 
     def mouseReleaseEvent(self, event):
-        """A click (hardly any movement) toggles the chat."""
+        """A click (hardly any movement) puts the cursor in the field."""
         if event.button() != Qt.LeftButton:
             return
         click = False
@@ -300,7 +299,7 @@ class FaceWindow(QWidget):
         self._press_pos = None
         self._drag_origin = None
         if click:
-            self.toggle_pin()
+            self.open_input()
             # The happy eyes stay a moment; then the cycle picks up again.
             QTimer.singleShot(600, self._happy_off)
         else:
@@ -477,6 +476,14 @@ class FaceWindow(QWidget):
         self._happy_on = False
 
     # ── Pinning the bubble ──────────────────────────────────────
+
+    def open_input(self):
+        """Click on the face: the bubble is there and the cursor is in the field."""
+        if not self.bubble.isVisible():
+            self._depth = 1
+            self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+        activate_app()
+        self.bubble.focus_entry()
 
     def toggle_pin(self):
         if self.pinned:

@@ -895,6 +895,52 @@ class BubbleHover(unittest.TestCase):
         self.hover()
         self.assertEqual(self.window._depth, 1)
 
+    def test_clicking_on_its_own_words_to_select_them_is_not_leaving(self):
+        from unittest import mock
+        from PySide6.QtWidgets import QApplication
+        self.window.pin()
+        bubble = self.window.bubble
+        has = {"focus": True}
+        bubble._entry.hasFocus = lambda: has["focus"]
+        bubble._tick()
+        has["focus"] = False
+        with mock.patch.object(QApplication, "activeWindow", return_value=bubble):
+            bubble._tick()
+        self.assertTrue(bubble.kind)
+        self.assertTrue(self.window.pinned)
+
+    def test_clicking_the_words_neither_opens_nor_closes_the_bubble(self):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        self.hover()
+        bubble = self.window.bubble
+        pinned = self.window.pinned
+        QTest.mouseClick(bubble._doc.viewport(), Qt.LeftButton, Qt.NoModifier, QPoint(30, 30))
+        self.assertTrue(bubble.isVisible())
+        self.assertEqual(self.window.pinned, pinned)
+
+    def test_no_copy_icon_while_words_are_selected(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.point_at_panel(1)
+        bubble._tick()
+        self.assertTrue(bubble._copy.isVisibleTo(bubble))
+        bubble._doc.selectAll()
+        bubble._tick()
+        self.assertFalse(bubble._copy.isVisibleTo(bubble))
+
+    def test_a_click_on_the_face_puts_the_cursor_in_the_field(self):
+        focus = []
+        old = self.face.activate_app
+        self.addCleanup(setattr, self.face, "activate_app", old)
+        self.face.activate_app = lambda: None
+        self.window.bubble.focus_entry = lambda: focus.append(1)
+        self.window.open_input()
+        self.assertTrue(self.window.bubble.isVisible())
+        self.assertEqual(focus, [1])
+        self.window.open_input()
+        self.assertTrue(self.window.bubble.isVisible(), "a second click does not close it")
+
     def test_there_is_no_tooltip(self):
         self.assertEqual(self.window.toolTip(), "")
 
