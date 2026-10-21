@@ -20,6 +20,7 @@ SM_ENABLED = 1  # SMAppServiceStatusEnabled
 DESKTOP_ICON_LEVEL_KEY = 18  # kCGDesktopIconWindowLevelKey
 CAN_JOIN_ALL_SPACES = 1 << 0
 STATIONARY = 1 << 4
+ACCESSORY = 1  # NSApplicationActivationPolicyAccessory
 
 process_cmdline = posix.process_cmdline
 
@@ -41,6 +42,15 @@ def _objc():
     objc.sel_registerName.restype = ctypes.c_void_p
     objc.sel_registerName.argtypes = [ctypes.c_char_p]
     return objc
+
+
+def hide_from_dock() -> None:
+    """No Dock icon: run as an accessory app. A packaged app says so in its Info.plist; a plain Python does not."""
+    objc = _objc()
+    objc.objc_getClass.restype = ctypes.c_void_p
+    objc.objc_getClass.argtypes = [ctypes.c_char_p]
+    app = _send(objc, ctypes.c_void_p)(objc.objc_getClass(b"NSApplication"), objc.sel_registerName(b"sharedApplication"))
+    _send(objc, ctypes.c_bool, ctypes.c_long)(app, objc.sel_registerName(b"setActivationPolicy:"), ACCESSORY)
 
 
 def send_behind_windows(win_id: int) -> None:

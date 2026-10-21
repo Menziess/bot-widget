@@ -17,6 +17,7 @@ else:
 UPDATE_ASSET = _os.UPDATE_ASSET
 can_install_update = _os.can_install_update
 data_home = _os.data_home
+hide_from_dock = _os.hide_from_dock
 install_update = _os.install_update
 launch_at_login = _os.launch_at_login
 play_notification = _os.play_notification

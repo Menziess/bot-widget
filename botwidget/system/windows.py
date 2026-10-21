@@ -3,6 +3,10 @@
 import os
 
 
+def hide_from_dock() -> None:
+    pass
+
+
 def prepare_gui_environment() -> None:
     pass
 

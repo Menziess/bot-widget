@@ -81,6 +81,10 @@ def ensure_x11_libraries() -> None:
     print("On Debian or Ubuntu: sudo apt install " + " ".join(XCB_PACKAGES), file=sys.stderr)
 
 
+def hide_from_dock() -> None:
+    pass
+
+
 def prepare_gui_environment() -> None:
     # X11 (XWayland) rather than Wayland: on Wayland a normal window may not decide its own position
     # and stacking order, so the widget would sink behind other windows and could not be dragged.
