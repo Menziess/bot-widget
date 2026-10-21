@@ -28,6 +28,9 @@ from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document
 from botwidget.theme import (
     BUBBLE_LINGER,
+    BUBBLE_MAX_SCREEN_SHARE,
+    BUBBLE_MAX_W,
+    BUBBLE_WIDER,
     DOTS_CYCLE_S,
     DOTS_GAP,
     DOTS_MS,
@@ -222,13 +225,25 @@ class BubbleWindow(QWidget):
     def _parts(self):
         """Panels, width of the text area and height of the content."""
         blocks = self.blocks or md_blocks("…")
-        panels = bubble_panels(measure, blocks) or bubble_panels(measure, md_blocks("…"))
+        panels = self._panels(blocks) or bubble_panels(measure, md_blocks("…"))
         self._dots_lines = [line for panel in panels for line in panel["lines"]
                             if line["kind"] == "dots"]
         box_w = bubble_width(panels)
         if self._input or self._links:
             box_w = max(box_w, MIN_INTERACTIVE_W)
         return panels, box_w, content_height(panels)
+
+    def _panels(self, blocks: list) -> list:
+        """The text broken into lines; wider, step by step, while it would not fit the height."""
+        panels = bubble_panels(measure, blocks)
+        fx, fy = self.face.spot()
+        screen_w = screens.rect_at(fx + AVATAR_SIZE // 2, fy + AVATAR_SIZE // 2)[2]
+        room = self._ceiling() - PAD_SVG - TAIL_ROOM - 2 * PAD_BODY - self._extras()
+        for width in BUBBLE_WIDER:
+            if content_height(panels) <= room or width > screen_w * BUBBLE_MAX_SCREEN_SHARE:
+                break
+            panels = bubble_panels(measure, blocks, width)
+        return panels
 
     def _extras(self) -> int:
         """Height below the text for the link row and the input field."""

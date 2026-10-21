@@ -464,6 +464,50 @@ class BubbleScroll(unittest.TestCase):
         self.assertEqual(bar.value(), bar.maximum())
 
 
+class BubbleWidth(unittest.TestCase):
+    """Should give a long answer a wider bubble instead of only scrolling it."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+            from botwidget.qt_ui import face
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.face = face
+        cls.app = QApplication.instance() or QApplication([])
+
+    def width(self, text, screen=(0, 0, 1600, 900)):
+        from botwidget.markdown import conversation_blocks
+        old = self.face.screens.rects
+        self.addCleanup(setattr, self.face.screens, "rects", old)
+        self.face.screens.rects = lambda: [screen]
+        old_at = self.face.screens.rect_at
+        self.addCleanup(setattr, self.face.screens, "rect_at", old_at)
+        self.face.screens.rect_at = lambda x, y: screen
+        from botwidget.qt_ui import bubble_window
+        self.addCleanup(setattr, bubble_window.screens, "rect_at", bubble_window.screens.rect_at)
+        bubble_window.screens.rect_at = lambda x, y: screen
+        window = self.face.FaceWindow("t", "Test", spot=(300, 400))
+        self.addCleanup(window.close_face)
+        window._poll_timer.stop()
+        window.bubble.show_blocks(conversation_blocks([{"role": "bot", "text": text}], "Test"), "say")
+        return window.bubble._geom[1]
+
+    def test_a_short_answer_keeps_its_natural_width(self):
+        from botwidget.theme import BUBBLE_MAX_W
+        self.assertLessEqual(self.width("Ja."), BUBBLE_MAX_W)
+
+    def test_a_long_answer_gets_a_wider_bubble(self):
+        from botwidget.theme import BUBBLE_MAX_W
+        self.assertGreater(self.width("Een lange regel met woorden. " * 80), BUBBLE_MAX_W)
+
+    def test_the_bubble_never_takes_more_than_its_share_of_a_small_screen(self):
+        from botwidget.theme import BUBBLE_MAX_W
+        self.assertLessEqual(self.width("Een lange regel met woorden. " * 80, screen=(0, 0, 600, 900)), BUBBLE_MAX_W + 40)
+
+
 class BubbleHover(unittest.TestCase):
     """Should show the bubble when pointed at and close it a while after the pointer left."""
 

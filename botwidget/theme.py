@@ -27,6 +27,9 @@ BUBBLE_FONT = 15
 BUBBLE_CODE_FONT = 13
 BUBBLE_CODE_LINES = 6
 BUBBLE_MAX_W = 300
+# A long answer gets a wider bubble, in these steps, so it scrolls less; never wider than this share of the screen.
+BUBBLE_WIDER = (380, 460, 540)
+BUBBLE_MAX_SCREEN_SHARE = 0.45
 # Librsvg draws text a few percent wider than Pango measures; this margin keeps the line inside the
 # text area.
 MEET_SLACK = 1.06
