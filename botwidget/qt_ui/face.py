@@ -131,7 +131,6 @@ class FaceWindow(QWidget):
         self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
         self.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
         self.setWindowTitle(name)
-        self.setToolTip(name)
 
         self._pixmap = None
         self._render()
@@ -331,6 +330,7 @@ class FaceWindow(QWidget):
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         return (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2
+
     def _check_hover(self):
         """Pointing at the face brings the bubble back: the latest answer, or what the bot is doing."""
         px, py = self._pointer()
@@ -340,7 +340,6 @@ class FaceWindow(QWidget):
         self._hovered = hovered
         if entered and self._drag_origin is None and not self.pinned and not self.bubble.isVisible():
             self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
-
 
     def _animate(self):
         """One frame: determine targets, step the springs, draw if something changed."""
@@ -353,8 +352,8 @@ class FaceWindow(QWidget):
                             moving=self._moving, pointer_near=self._pointer_on_head())
         if self._anim_timer.interval() != interval:
             self._anim_timer.setInterval(interval)
-        self._check_hover()
         self._aim(dt * 1000)
+        self._check_hover()
         self._moving = self.anim.step(dt)
         if self._moving:
             self._render()
