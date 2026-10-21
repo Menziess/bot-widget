@@ -671,6 +671,9 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble._copy.isVisibleTo(bubble))
         bubble._copy.click()
         self.assertEqual(QApplication.clipboard().text(), "Ja.\n\nZal ik pushen?")
+        self.window.show_older()
+        bubble._slide.stop()
+        bubble._reveal_done()
         self.point_at_panel(0)
         bubble._tick()
         bubble._copy.click()
@@ -746,9 +749,9 @@ class BubbleHover(unittest.TestCase):
         self.window.pin()
         self.window._outbox.add("Hallo daar", "c8")
         self.window._on_message_done("c8", False, False, "HTTP 400")
-        text = self.window.bubble.full_text
-        self.assertIn("Hallo daar", text)
-        self.assertIn("I couldn't send that", text)
+        self.assertIn("I couldn't send that", self.window.bubble.full_text)
+        self.window.show_older()
+        self.assertIn("Hallo daar", self.window.bubble.full_text, "what you typed is one scroll up")
 
     def test_the_input_field_is_there_from_the_start(self):
         self.hover()
@@ -816,6 +819,72 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "")
         self.assertFalse(self.window.pinned)
+
+    def test_only_the_latest_message_shows_at_first(self):
+        self.hover()
+        text = self.window.bubble.full_text
+        self.assertIn("Zal ik pushen?", text)
+        self.assertNotIn("Klaar?", text)
+        self.assertIn("Scroll up for earlier messages", text)
+
+    def test_scrolling_up_adds_the_message_before_and_the_hint_goes_when_there_is_no_more(self):
+        self.hover()
+        self.window.show_older()
+        text = self.window.bubble.full_text
+        self.assertIn("Klaar?", text)
+        self.assertIn("Zal ik pushen?", text)
+        self.assertNotIn("Scroll up", text)
+        self.window.show_older()
+        self.assertEqual(self.window._depth, 2, "nothing older to load")
+
+    def test_the_older_message_slides_in_and_the_bubble_ends_up_complete(self):
+        import time
+        self.hover()
+        bubble = self.window.bubble
+        before = bubble.height()
+        self.window.show_older()
+        self.assertIsNotNone(bubble._reveal, "sliding in")
+        self.assertLess(bubble.height(), before + 200)
+        deadline = time.monotonic() + 3
+        while bubble._reveal is not None and time.monotonic() < deadline:
+            self.app.processEvents()
+        self.assertIsNone(bubble._reveal)
+        self.assertGreater(bubble.height(), before, "grown to hold the older message")
+        self.assertEqual(bubble._scroll.verticalScrollBar().value(), 0, "the new message is at the top")
+
+    def test_the_mouse_wheel_at_the_top_loads_the_message_before_once_per_pause(self):
+        from PySide6.QtCore import QPoint, QPointF, Qt
+        from PySide6.QtGui import QWheelEvent
+        from PySide6.QtWidgets import QApplication
+        self.hover()
+        bubble = self.window.bubble
+        up = lambda: QApplication.sendEvent(bubble._scroll.viewport(), QWheelEvent(
+            QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, 120), Qt.NoButton, Qt.NoModifier,
+            Qt.NoScrollPhase, False))
+        up()
+        self.assertEqual(self.window._depth, 2)
+        up()
+        self.assertEqual(self.window._depth, 2, "no flood of messages from one flick")
+
+    def test_a_new_message_brings_back_only_the_latest(self):
+        self.hover()
+        self.window.show_older()
+        self.assertEqual(self.window._depth, 2)
+        self.MESSAGES = self.MESSAGES + [{"role": "bot", "text": "Nog iets."}]
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
+        self.assertEqual(self.window._depth, 1)
+        self.assertNotIn("Klaar?", self.window.bubble.full_text)
+
+    def test_pointing_at_the_face_again_starts_from_the_latest_message(self):
+        self.hover()
+        self.window.show_older()
+        self.where["at"] = (5000, 5000)
+        self.window._animate()
+        self.window.bubble._tick()
+        self.window.bubble.place("")
+        self.window._hovered = False
+        self.hover()
+        self.assertEqual(self.window._depth, 1)
 
     def test_there_is_no_tooltip(self):
         self.assertEqual(self.window.toolTip(), "")

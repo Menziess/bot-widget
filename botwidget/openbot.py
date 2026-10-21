@@ -194,7 +194,7 @@ def _clip(text: str) -> str:
     return text if len(text) <= MESSAGE_CHARS else text[:MESSAGE_CHARS].rstrip() + "…"
 
 
-def latest_chat(thread_id: str, limit: int = 8) -> dict:
+def latest_chat(thread_id: str, limit: int = 20) -> dict:
     """Latest chat lines plus one busy line.
 
     The final answer is only in the store when the turn is done. In between, loose

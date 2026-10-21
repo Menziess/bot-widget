@@ -59,6 +59,7 @@ from botwidget.system.current import activate_app, send_behind_windows
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
+EARLIER_NOTE = "↑ Scroll up for earlier messages"
 RETRY_NOTE = "No connection to OpenBot — retrying…"
 REFUSED_NOTE = "I couldn't send that. OpenBot answered: {why}."
 # OpenBot only opens its local API once this switch is on, per bot.
@@ -126,6 +127,11 @@ class FaceWindow(QWidget):
         self._happy_on = False
         self._hovered = False
         self._hover_since = 0.0
+        self._depth = 1  # how many of the latest messages the bubble shows
+        self._loading_older = False
+        self._conversation = None
+        self._messages = []
+        self._chat = {}
         self._moving = False
         self.anim = FaceAnimator()
         self.anim.jump(dx=POSES["idle"][0], dy=POSES["idle"][1])
@@ -142,6 +148,7 @@ class FaceWindow(QWidget):
 
         self.bubble = BubbleWindow(self)
         self.bubble.clicked.connect(self.pin)
+        self.bubble.older.connect(self.show_older)
 
         if spot:
             self.move(int(spot[0]), int(spot[1]))
@@ -376,6 +383,7 @@ class FaceWindow(QWidget):
         if entered:
             self._hover_since = now
             if self._drag_origin is None and not self.pinned and not self.bubble.isVisible():
+                self._depth = 1
                 self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
         elif (hovered and self._hover_since and now - self._hover_since >= FOCUS_DWELL_S
               and self._drag_origin is None):
@@ -573,6 +581,12 @@ class FaceWindow(QWidget):
                                         links=[("Get OpenBot", OPENBOT_URL), ("Get Grok Bot", GROKBOT_URL)])
             return
         messages = self._with_local(stored)
+        self._chat, self._messages = chat, messages
+        newest = (len(messages), messages[-1]["text"] if messages else "")
+        if newest != self._conversation:
+            # Something new came in: the latest message alone again, the older ones a scroll away.
+            self._conversation = newest
+            self._depth = 1
         if self._working and not self.pinned:
             # What you just asked, three pulsing dots and one line about what the bot is doing.
             asked = [m for m in messages if m.get("role") == "user"][-1:]
@@ -590,20 +604,32 @@ class FaceWindow(QWidget):
             return
         blocks = self._chat_blocks(messages, greet=force or self.pinned)
         text = block_text(blocks)
+        older, self._loading_older = self._loading_older, False
         if self.pinned:
             self._shown_text = text
             if not self.bubble.shows("say", text, True):
-                self.bubble.show_blocks(blocks, "say", input=True)
+                self.bubble.show_blocks(blocks, "say", input=True, older=older)
         elif blocks and (force or text != self._shown_text):
             # Only new text brings the bubble back by itself; after it slid away it stays away.
             self._shown_text = text
-            self.bubble.show_blocks(blocks, "say", input=True)
+            self.bubble.show_blocks(blocks, "say", input=True, older=older)
         elif not blocks and self.bubble.kind:
             self.bubble.place("")
 
+    def show_older(self):
+        """Scrolled up past the top: one message more, which slides in."""
+        if self.bubble.kind != "say" or self._depth >= len(self._messages):
+            return
+        self._depth += 1
+        self._loading_older = True
+        self._sync_bubble(self._chat, force=True)
+
     def _chat_blocks(self, messages: list, greet: bool) -> list:
         """The conversation, then the dots while a message is on its way, then why it is not going out."""
-        blocks = conversation_blocks(messages, self.bot_name)
+        shown = messages[-self._depth:]
+        blocks = conversation_blocks(shown, self.bot_name, limit=len(shown), max_chars=10 ** 9)
+        if blocks and len(messages) > len(shown):
+            blocks.insert(0, status_block(EARLIER_NOTE))
         if not blocks and greet:
             blocks = conversation_blocks([{"role": "bot", "text": f"Hi, I'm {self.bot_name}. Ask me anything."}],
                                          self.bot_name)

@@ -6,7 +6,7 @@ and "hint"). A speech bubble can get an input field and a row of links.
 
 import time
 
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEasingCurve, QSize, Qt, QTimer, QUrl, QVariantAnimation, Signal
 from PySide6.QtGui import QCursor, QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QScrollArea, QTextBrowser, QWidget
 
@@ -70,6 +70,8 @@ MIN_INTERACTIVE_W = 240
 SCROLLBAR_W = 6
 COPY_SIZE, COPY_ICON_SIZE = 24, 14
 COPIED_MS = 1200
+OLDER_MS = 240
+OLDER_PAUSE_S = 0.3
 _ICON = ('<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16">{}'
          '</svg>')
 _STROKE = 'fill="none" stroke="#1c1c1c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"'
@@ -89,6 +91,20 @@ class BubbleEntry(QLineEdit):
             self.dismissed.emit()
             return
         super().keyPressEvent(event)
+
+
+class OlderScroll(QScrollArea):
+    """Scrolling up when already at the top asks for the message before."""
+
+    older = Signal()
+
+    def wheelEvent(self, event):
+        bar = self.verticalScrollBar()
+        if event.angleDelta().y() > 0 and bar.value() <= bar.minimum():
+            self.older.emit()
+            event.accept()
+            return
+        super().wheelEvent(event)
 
 
 class BubbleText(QTextBrowser):
@@ -131,6 +147,7 @@ class BubbleText(QTextBrowser):
 
 class BubbleWindow(QWidget):
     clicked = Signal()
+    older = Signal()
 
     def __init__(self, face):
         super().__init__()
@@ -154,6 +171,8 @@ class BubbleWindow(QWidget):
         self._chrome_key = self._chrome_pix = None
         self._was_near = False
         self._had_focus = False
+        self._reveal = None  # [body height before, progress 0..1, height added] while an older message slides in
+        self._older_until = 0.0
         self._tip = None
         self._vx = self._vy = 0.0
         self._physics_on = False
@@ -166,7 +185,8 @@ class BubbleWindow(QWidget):
         self._text.setAttribute(Qt.WA_TranslucentBackground)
         self._doc = BubbleText(self._text)
         self._doc.pressed.connect(self.clicked)
-        self._scroll = QScrollArea(self)
+        self._scroll = OlderScroll(self)
+        self._scroll.older.connect(self._wheel_older)
         self._scroll.setWidget(self._text)
         self._scroll.setFrameShape(QScrollArea.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -193,6 +213,13 @@ class BubbleWindow(QWidget):
         self._physics = QTimer(self)
         self._physics.setInterval(16)
         self._physics.timeout.connect(self._tick)
+        self._slide = QVariantAnimation(self)
+        self._slide.setDuration(OLDER_MS)
+        self._slide.setStartValue(0.0)
+        self._slide.setEndValue(1.0)
+        self._slide.setEasingCurve(QEasingCurve.OutCubic)
+        self._slide.valueChanged.connect(self._reveal_step)
+        self._slide.finished.connect(self._reveal_done)
         self._dots = QTimer(self)
         self._dots.setInterval(DOTS_MS)
         self._dots.timeout.connect(self._tick_dots)
@@ -298,7 +325,11 @@ class BubbleWindow(QWidget):
         """Height of the white area; never taller than the ceiling."""
         natural = inner + 2 * PAD_BODY + self._extras()
         cap = self._ceiling() - PAD_SVG - TAIL_ROOM
-        return max(2 * PAD_BODY + 12 + self._extras(), min(natural, cap))
+        body = max(2 * PAD_BODY + 12 + self._extras(), min(natural, cap))
+        if self._reveal is not None:
+            before, progress, _added = self._reveal
+            body = round(before + (body - before) * progress)
+        return body
 
     def _ceiling(self) -> int:
         """About 40% of the screen; the bubble stays against the head."""
@@ -355,8 +386,9 @@ class BubbleWindow(QWidget):
         panels, box_w, _inner = self._geom
         fill_document(self._doc.document(), panels, box_w)
 
-    def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None):
-        """Put blocks in the bubble; newest at the bottom."""
+    def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
+                    older: bool = False):
+        """Put blocks in the bubble; newest at the bottom. With older, a message was added above."""
         key = (kind, block_text(blocks), input, tuple(links or []), self._ceiling())
         if key == self._built and not self._dots_lines:
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
@@ -365,6 +397,9 @@ class BubbleWindow(QWidget):
                 self.place(kind)
                 QTimer.singleShot(0, self._scroll_to_bottom)
             return
+        before = (self._geom[2], self._body_h(self._geom[2])) if older and self._geom and self.isVisible() else None
+        self._slide.stop()
+        self._reveal = None
         self._built = key
         self._links = links or []
         self._input = input
@@ -376,14 +411,45 @@ class BubbleWindow(QWidget):
         restyle = kind != self.kind
         self.kind = kind
         self._geom = self._parts()
+        if before and self._geom[2] > before[0]:
+            self._reveal = [before[1], 0.0, self._geom[2] - before[0]]
         pix = self._paint_chrome()
         self._layout_children(pix)
         self._set_text()
         self._set_doc()
         if restyle or not self.isVisible():
             self.place(kind)
+        if self._reveal is not None:
+            self._slide.start()
+            return
         self._scroll_to_bottom()
         QTimer.singleShot(0, self._scroll_to_bottom)
+
+    def _wheel_older(self):
+        now = time.monotonic()
+        if self._reveal is None and now >= self._older_until and self.kind == "say":
+            self._older_until = now + OLDER_PAUSE_S
+            self.older.emit()
+
+    def _reveal_step(self, progress):
+        """The older message slides in from the top: the bubble grows upward while the text stays put."""
+        if self._reveal is None or not self.kind:
+            return
+        self._reveal[1] = float(progress)
+        self._layout_children(self._paint_chrome())
+        tx, ty, _tip = self._goal()
+        self._vx = self._vy = 0.0
+        self.move(int(tx), int(ty))
+        bar = self._scroll.verticalScrollBar()
+        bar.setValue(min(bar.maximum(), round(self._reveal[2] * (1 - progress))))
+
+    def _reveal_done(self):
+        if self._reveal is None:
+            return
+        self._reveal = None
+        if self.kind:
+            self._layout_children(self._paint_chrome())
+            self._scroll.verticalScrollBar().setValue(0)
 
     def _scroll_to_bottom(self):
         bar = self._scroll.verticalScrollBar()
@@ -451,6 +517,8 @@ class BubbleWindow(QWidget):
             self._layout_children(self._paint_chrome())
             tx, ty, _tip = self._goal()
         self._update_copy()
+        if self._reveal is not None:
+            return
         x, y = self.x(), self.y()
         self._vx = (self._vx + (tx - x) * 0.16) * 0.7
         self._vy = (self._vy + (ty - y) * 0.16) * 0.7
