@@ -744,7 +744,9 @@ class BubbleHover(unittest.TestCase):
         self.hover()
         self.click(0)
         self.assertEqual(self.clipboard(), "Dit is vet en code.\n\nTweede alinea.")
-        self.assertTrue(self.window.bubble._copied.isVisibleTo(self.window.bubble), "a check shows it worked")
+        notice = self.window.bubble._notice
+        self.assertTrue(notice.isVisibleTo(self.window.bubble))
+        self.assertEqual(notice.text, "Copied")
 
     def test_shift_click_copies_the_markdown(self):
         from PySide6.QtCore import Qt
@@ -753,6 +755,7 @@ class BubbleHover(unittest.TestCase):
         self.hover()
         self.click(0, Qt.ShiftModifier)
         self.assertEqual(self.clipboard(), raw)
+        self.assertEqual(self.window.bubble._notice.text, "Copied markdown")
 
     def test_each_message_copies_its_own_words(self):
         self.hover()
@@ -799,7 +802,33 @@ class BubbleHover(unittest.TestCase):
         selected = bubble._doc.textCursor().selectedText()
         self.assertTrue(selected)
         self.assertEqual(self.clipboard(), selected.replace("\u2029", "\n"))
-        self.assertTrue(bubble._copied.isVisibleTo(bubble))
+        self.assertTrue(bubble._notice.isVisibleTo(bubble))
+        self.assertEqual(bubble._notice.text, "Copied")
+
+    def test_the_notice_fades_the_words_behind_it_and_then_goes(self):
+        import time
+        self.MESSAGES = [{"role": "bot", "text": "Een korte zin."}]
+        self.hover()
+        self.click(0)
+        notice = self.window.bubble._notice
+        levels, deadline = [], time.monotonic() + 4
+        while notice.isVisible() and time.monotonic() < deadline:
+            self.app.processEvents()
+            levels.append(notice.level)
+        self.assertFalse(notice.isVisible(), "gone again")
+        self.assertGreater(max(levels), 0.95, "fully over the words at its strongest")
+        self.assertLess(levels[0], max(levels), "fades in")
+        self.assertLess(levels[-1], max(levels), "and out")
+
+    def test_the_notice_sits_over_the_message_that_was_copied(self):
+        self.hover()
+        self.window.show_older()
+        self.finish_growth()
+        self.click(1)
+        from botwidget.bubble import panel_rects
+        bubble = self.window.bubble
+        top, height = panel_rects(bubble._geom[0])[1]
+        self.assertEqual((bubble._notice.y(), bubble._notice.height()), (top - bubble._scroll.verticalScrollBar().value(), height))
 
     def test_a_selection_over_wrapped_lines_copies_as_one_line(self):
         from PySide6.QtCore import Qt

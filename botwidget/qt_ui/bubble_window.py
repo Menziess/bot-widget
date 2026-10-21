@@ -6,9 +6,9 @@ and "hint"). A speech bubble can get an input field and a row of links.
 
 import time
 
-from PySide6.QtCore import QEasingCurve, QSize, Qt, QTimer, QUrl, QVariantAnimation, Signal
-from PySide6.QtGui import QDesktopServices, QIcon
-from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QScrollArea, QTextBrowser, QWidget
+from PySide6.QtCore import QEasingCurve, QRect, Qt, QTimer, QUrl, QVariantAnimation, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QScrollArea, QTextBrowser, QWidget
 
 from botwidget.avatar import AVATAR_SIZE
 from botwidget.bubble import (
@@ -30,6 +30,7 @@ from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document, selected_text
 from botwidget.theme import (
+    BUBBLE_FONT,
     BUBBLE_MAX_SCREEN_SHARE,
     BUBBLE_MAX_W,
     BUBBLE_WAIT_MAX,
@@ -40,7 +41,12 @@ from botwidget.theme import (
     PAD_BODY,
     PAD_SVG,
     SAND_ACCENT,
+    SAND_BUBBLE,
     SAND_INK,
+    SAND_ON_USER,
+    SAND_PANEL_USER,
+    SAND_RADIUS_PANEL,
+    SAND_SANS,
     SHADOW_BLUR,
     TAIL_ROOM,
 )
@@ -59,26 +65,17 @@ QLineEdit {{
 }}
 QLineEdit:focus {{ border-color: rgba(22, 128, 243, 140); }}
 QLabel#links {{ color: {SAND_ACCENT}; }}
-QPushButton#copy {{
-    background: #ffffff; border: 1px solid rgba(28, 28, 28, 31); border-radius: 12px; padding: 0;
-}}
-QPushButton#copy:hover {{ background: #f2f2f2; }}
 """
 ENTRY_H = 34
 ENTRY_GAP = 8
 LINKS_H = 26
 MIN_INTERACTIVE_W = 240
 SCROLLBAR_W = 6
-COPY_SIZE, COPY_ICON_SIZE = 24, 14
-COPIED_MS = 1200
+NOTICE_MS = 1600
 GROW_MS = 240
 OLDER_PAUSE_S = 0.3
 # Where a bubble starts when it grows out of nothing: the text width and the white height.
 SEED_W, SEED_H = 36, 22
-_ICON = ('<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16">{}'
-         '</svg>')
-_STROKE = 'fill="none" stroke="#1c1c1c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"'
-CHECK_ICON = _ICON.format(f'<path d="M3 8.6l3.2 3.2L13 4.6" {_STROKE}/>')
 
 
 class BubbleEntry(QLineEdit):
@@ -91,6 +88,51 @@ class BubbleEntry(QLineEdit):
             self.dismissed.emit()
             return
         super().keyPressEvent(event)
+
+
+class CopyNotice(QWidget):
+    """"Copied" in the middle of a message: the words fade out behind it, then it fades away itself."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.text, self.dark, self.level = "", False, 0.0
+        self._fade = QVariantAnimation(self)
+        self._fade.setDuration(NOTICE_MS)
+        for at, level in ((0.0, 0.0), (0.12, 1.0), (0.7, 1.0), (1.0, 0.0)):
+            self._fade.setKeyValueAt(at, level)
+        self._fade.valueChanged.connect(self._set_level)
+        self._fade.finished.connect(self.hide)
+        self.hide()
+
+    def show_over(self, rect: QRect, text: str, dark: bool):
+        self.text, self.dark = text, dark
+        self.setGeometry(rect)
+        self.show()
+        self.raise_()
+        self._fade.stop()
+        self._fade.start()
+
+    def _set_level(self, level):
+        self.level = float(level)
+        self.update()
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        ground = QColor(SAND_PANEL_USER if self.dark else SAND_BUBBLE)
+        ground.setAlphaF(0.94 * self.level)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(ground)
+        painter.drawRoundedRect(self.rect(), SAND_RADIUS_PANEL, SAND_RADIUS_PANEL)
+        ink = QColor(SAND_ON_USER if self.dark else SAND_INK)
+        ink.setAlphaF(self.level)
+        painter.setPen(ink)
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(self.rect(), Qt.AlignCenter, self.text)
 
 
 class Growth:
@@ -242,16 +284,7 @@ class BubbleWindow(QWidget):
         self._link_row.setObjectName("links")
         self._link_row.setOpenExternalLinks(True)
         self._link_row.setTextFormat(Qt.RichText)
-        self._copied_icon = None
-        self._copied = QPushButton(self)
-        self._copied.setObjectName("copy")
-        self._copied.setFixedSize(COPY_SIZE, COPY_SIZE)
-        self._copied.setIconSize(QSize(COPY_ICON_SIZE, COPY_ICON_SIZE))
-        self._copied.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._copied.hide()
-        self._hide_copied = QTimer(self)
-        self._hide_copied.setSingleShot(True)
-        self._hide_copied.timeout.connect(self._copied.hide)
+        self._notice = CopyNotice(self._scroll.viewport())
         self._entry = BubbleEntry(self)
         self._entry.setPlaceholderText("Send a message…")
         self._entry.returnPressed.connect(self._send)
@@ -294,26 +327,24 @@ class BubbleWindow(QWidget):
         panel = self._message_at(y)
         if panel and panel["role"] == "more":
             self._wheel_older()
+        elif panel and shift:
+            self._copied_to_clipboard(panel["copy"], "Copied markdown", y)
         elif panel:
-            self._copied_to_clipboard(panel["copy"] if shift else plain_text(panel["copy"]), y)
+            self._copied_to_clipboard(plain_text(panel["copy"]), "Copied", y)
 
     def _on_selected(self, text: str, y: float):
-        self._copied_to_clipboard(text, y)
+        self._copied_to_clipboard(text, "Copied", y)
 
-    def _copied_to_clipboard(self, text: str, y: float):
-        """Copy, and show a check in the corner of the message so you know it worked."""
+    def _copied_to_clipboard(self, text: str, notice: str, y: float):
+        """Copy, and say so over the message: its words fade out behind the notice, which fades away too."""
         QApplication.clipboard().setText(text)
         self.changed = time.monotonic()
-        if self._copied_icon is None:
-            self._copied_icon = QIcon(svg_pixmap(CHECK_ICON))
-        self._copied.setIcon(self._copied_icon)
         content_y, scrolled = y + self._doc.y(), self._scroll.verticalScrollBar().value()
-        top = next((t for (t, h) in panel_rects(self._geom[0]) if t <= content_y < t + h), content_y)
-        box_w = self._shown_w(self._geom[1])
-        self._copied.move(self._scroll.x() + box_w - COPY_SIZE - 6, self._scroll.y() + max(top - scrolled, 0) + 6)
-        self._copied.show()
-        self._copied.raise_()
-        self._hide_copied.start(COPIED_MS)
+        for (top, height), panel in zip(panel_rects(self._geom[0]), self._geom[0]):
+            if top <= content_y < top + height:
+                rect = QRect(0, top - scrolled, self._shown_w(self._geom[1]), height)
+                self._notice.show_over(rect, notice, panel["role"] == "user")
+                return
 
     def focus_entry(self):
         if self._input:
