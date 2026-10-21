@@ -23,13 +23,16 @@ botwidget
 
 - Point at the face to open the bubble: the latest message, and a field to type in
 - The field is focused once the pointer stays on the face for a moment, press Enter to send
-- Scroll up in the bubble to load the earlier messages, one at a time
-- The bubble closes as soon as the pointer leaves, or when you click away with nothing typed
-- A new answer opens it by itself, and it closes again after 4 seconds if you never pointed at it
-- It stays while you have typed words or selected words, and click the face to keep it open
+- Scroll up in the bubble to load the earlier messages one at a time, an arrow shows there are more
+- Names only show above the messages when there are several
+- The bubble grows out of the face, and closes as soon as the pointer leaves or you click into another window with nothing typed
+- After you send a message the bubble stays, with moving dots, until the bot has answered
+- A new answer opens it by itself and it stays for as long as it takes to read, unless you point at it
+- It also stays while you have typed words or selected words
+- Words in the bubble can be selected, clicking in it never opens or closes it
 - A copy icon appears on the message under the pointer and copies that message
 - The eyes follow the pointer when it is near, and look at you when it is over the face
-- While the bot works the bubble turns into a thought cloud
+- While the bot works with nothing sent from the bubble, it turns into a thought cloud
 - Drag the face to move it, it bounces off screen edges
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
 - Right-click the face to see which bot apps were found, switch bots on and off, and reach Settings
