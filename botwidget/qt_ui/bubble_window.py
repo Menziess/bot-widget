@@ -10,7 +10,7 @@ from PySide6.QtCore import QEasingCurve, QRect, Qt, QTimer, QUrl, QVariantAnimat
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QScrollArea, QTextBrowser, QWidget
 
-from botwidget.avatar import AVATAR_SIZE
+from botwidget.avatar import AVATAR_SIZE, CIRCLE_R
 from botwidget.bubble import (
     bubble_body_svg,
     bubble_deco_svg,
@@ -76,6 +76,7 @@ GROW_MS = 240
 OLDER_PAUSE_S = 0.3
 # Where a bubble starts when it grows out of nothing: the text width and the white height.
 SEED_W, SEED_H = 36, 22
+TAIL_LENGTH = 7
 
 
 class BubbleEntry(QLineEdit):
@@ -432,8 +433,8 @@ class BubbleWindow(QWidget):
         if self._geom is None:
             self._geom = self._parts()
         _panels, box_w, inner = self._geom
-        tip_x, tip_up = self._tip or (None, False)
-        args = (self._shown_w(box_w) + 2 * PAD_BODY, self._body_h(inner), tip_x, tip_up)
+        tip, side = self._tip or (None, "above")
+        args = (self._shown_w(box_w) + 2 * PAD_BODY, self._body_h(inner), tip, side)
         if (self.kind, args) == self._chrome_key:
             return self._chrome_pix
         cloud = self.kind == "think"
@@ -588,29 +589,48 @@ class BubbleWindow(QWidget):
     # ── Position and movement ───────────────────────────────────
 
     def _goal(self, size: tuple | None = None):
-        """The bubble hangs above the head; the tail follows the head. size is the window size it is about to get."""
+        """Where the window goes, and how its tail points. size is the window size it is about to get.
+
+        Above the face if it fits there, else to the right of it, else to the left, and below only
+        when that is the one place left. A bubble is judged by the size it will grow to, so it does
+        not swing to another side while it is still growing.
+        """
         fx, fy = self.face.spot()
         bw, bh = size or (self.width() or 80, self.height() or 48)
+        final_w, final_h = self._final_size()
         gx, gy, gw, gh = screens.rect_at(fx + AVATAR_SIZE // 2, fy + AVATAR_SIZE // 2)
-        tx = round(fx + (AVATAR_SIZE - bw) / 2)
-        ty = fy - bh + 6 + self.face.head_top
-        up = False
-        # The side follows the size it will have: a bubble that still fits above while small must not
-        # swing below once it has grown.
-        if fy - self._final_height() + 6 + self.face.head_top < gy + 4:  # no room above the head: below, tail up
-            ty = fy + self.face.head_bottom - 8
-            up = True
+        cx, cy = fx + AVATAR_SIZE / 2, fy + AVATAR_SIZE / 2
+        reach = CIRCLE_R + 4 + TAIL_LENGTH  # from the middle of the face to where the white area may begin
+        body_h = bh - PAD_SVG - TAIL_ROOM
+        final_body_h = final_h - PAD_SVG - TAIL_ROOM
+        right = cx + reach
+        left = cx - reach
+        if fy - final_h + 6 + self.face.head_top >= gy + 4:
+            side = "above"
+        elif right - PAD_SVG + final_w <= gx + gw - 4 and final_body_h <= gh - 8:
+            side = "right"
+        elif left - (final_w - PAD_SVG) >= gx + 4 and final_body_h <= gh - 8:
+            side = "left"
+        else:
+            side = "below"
+        if side in ("above", "below"):
+            tx = round(fx + (AVATAR_SIZE - bw) / 2)
+            ty = fy - bh + 6 + self.face.head_top if side == "above" else fy + self.face.head_bottom - 8
+        else:
+            tx = round(right - PAD_SVG if side == "right" else left - (bw - PAD_SVG))
+            ty = round(cy - PAD_SVG - body_h / 2)
         tx = max(gx + 4, min(tx, gx + gw - bw - 4))
         ty = max(gy + 4, min(ty, gy + gh - bh - 4))
-        return tx, ty, (round(fx + AVATAR_SIZE / 2 - tx), up)
+        return tx, ty, (round(cx - tx) if side in ("above", "below") else round(cy - ty), side)
 
-    def _final_height(self) -> int:
-        """The window height once it has grown to its size."""
+    def _final_size(self) -> tuple:
+        """The window size once it has grown to its size."""
         if self._growth is None or not self._geom:
-            return self.height() or 48
+            return self.width() or 80, self.height() or 48
         growth, self._growth = self._growth, None
         try:
-            return self._body_h(self._geom[2]) + PAD_SVG + TAIL_ROOM
+            return (self._geom[1] + 2 * PAD_BODY + 2 * PAD_SVG,
+                    self._body_h(self._geom[2]) + PAD_SVG + TAIL_ROOM)
         finally:
             self._growth = growth
 

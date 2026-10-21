@@ -160,27 +160,49 @@ def _bubble_canvas(body_w: int, body_h: int, inner: str) -> str:
             f' height="{body_h + PAD_SVG + TAIL_ROOM}">' + inner + "</svg>")
 
 
-def _bubble_tail(tip: float, edge: float, up: bool, grow: float) -> str:
+# Where the bubble sits as seen from the face: above it (tail down), below it (tail up), right of it (tail left)
+# or left of it (tail right).
+SIDES = ("above", "below", "right", "left")
+VERTICAL = ("above", "below")
+
+
+def _tail_edge(side: str, body_w: int, body_h: int) -> tuple[float, int]:
+    """The edge of the white area facing the face, and +1 or -1 for which way is out of the bubble."""
+    return {"above": (PAD_SVG + body_h, 1), "below": (PAD_SVG, -1),
+            "right": (PAD_SVG, -1), "left": (PAD_SVG + body_w, 1)}[side]
+
+
+def _at(side: str, along: float, across: float) -> tuple[float, float]:
+    """A point given along the edge the tail leaves and across it, as (x, y)."""
+    return (along, across) if side in VERTICAL else (across, along)
+
+
+def _bubble_tail(tip: float, edge: float, side: str, grow: float) -> str:
     """The tail as a path; edge is the edge it comes out of, grow the bulge."""
-    s = -1 if up else 1
-    return (f'M {tip - 6} {edge + s * (grow - 1)} C {tip - 4} {edge + s * (grow - 1)}'
-            f' {tip - 1.5} {edge + s * (grow + 6)} {tip} {edge + s * (grow + 7)}'
-            f' C {tip + 1.5} {edge + s * (grow + 6)} {tip + 4} {edge + s * (grow - 1)}'
-            f' {tip + 6} {edge + s * (grow - 1)} Z')
+    s = _tail_edge(side, 0, 0)[1]
+
+    def point(along, across):
+        x, y = _at(side, along, across)
+        return f"{x:g} {y:g}"
+    return (f'M {point(tip - 6, edge + s * (grow - 1))} C {point(tip - 4, edge + s * (grow - 1))}'
+            f' {point(tip - 1.5, edge + s * (grow + 6))} {point(tip, edge + s * (grow + 7))}'
+            f' C {point(tip + 1.5, edge + s * (grow + 6))} {point(tip + 4, edge + s * (grow - 1))}'
+            f' {point(tip + 6, edge + s * (grow - 1))} Z')
 
 
-def _bubble_tip(body_w: int, tip_x: float | None) -> float:
-    return PAD_SVG + body_w / 2 if tip_x is None else min(max(tip_x, PAD_SVG + 20), PAD_SVG + body_w - 20)
+def _bubble_tip(side: str, body_w: int, body_h: int, tip: float | None) -> float:
+    """Where along its edge the tail points: at the face, but never into a corner."""
+    length = body_w if side in VERTICAL else body_h
+    return PAD_SVG + length / 2 if tip is None else min(max(tip, PAD_SVG + 20), PAD_SVG + length - 20)
 
 
-def bubble_shadow_svg(body_w: int, body_h: int, tip_x: float | None = None,
-                      tip_up: bool = False) -> str:
+def bubble_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above") -> str:
     """The shadow, drawn sharp; the toolkit blurs it itself (SVG filters
     are not supported everywhere).
     """
     x0, y0 = PAD_SVG, PAD_SVG
-    edge = y0 if tip_up else y0 + body_h
-    tail = _bubble_tail(_bubble_tip(body_w, tip_x), edge, tip_up, 3)
+    edge = _tail_edge(side, body_w, body_h)[0]
+    tail = _bubble_tail(_bubble_tip(side, body_w, body_h, tip), edge, side, 3)
     return _bubble_canvas(body_w, body_h, (
         f'<rect x="{x0 - SHADOW_GROW}" y="{y0 - SHADOW_GROW + 2}"'
         f' width="{body_w + 2 * SHADOW_GROW}" height="{body_h + 2 * SHADOW_GROW}"'
@@ -188,16 +210,15 @@ def bubble_shadow_svg(body_w: int, body_h: int, tip_x: float | None = None,
         f'<path d="{tail}" fill="#000" opacity="{SHADOW_ALPHA}"/>'))
 
 
-def bubble_body_svg(body_w: int, body_h: int, tip_x: float | None = None,
-                    tip_up: bool = False) -> str:
-    """The white area with hairline and the tail toward the head.
+def bubble_body_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above") -> str:
+    """The white area with hairline and the tail toward the face.
 
-    tip_x is the head in image coordinates; the tail comes out of the bottom edge at
-    that x (top edge with tip_up), so it follows the head wherever it goes.
+    tip is the face in image coordinates, along the edge the tail comes out of (x above or below the
+    face, y beside it), so the tail follows the face wherever it goes.
     """
     x0, y0 = PAD_SVG, PAD_SVG
-    edge = y0 if tip_up else y0 + body_h
-    tail = _bubble_tail(_bubble_tip(body_w, tip_x), edge, tip_up, 0)
+    edge = _tail_edge(side, body_w, body_h)[0]
+    tail = _bubble_tail(_bubble_tip(side, body_w, body_h, tip), edge, side, 0)
     return _bubble_canvas(body_w, body_h, (
         f'<rect x="{x0}" y="{y0}" width="{body_w}" height="{body_h}"'
         f' rx="{SAND_RADIUS}" fill="{SAND_BUBBLE}" stroke="{SAND_HAIRLINE}"'
@@ -234,7 +255,7 @@ def _smooth_closed(pts: list) -> str:
     return "".join(out) + "Z"
 
 
-def _cloud_parts(body_w: int, body_h: int, tip_x: float | None, tip_up: bool,
+def _cloud_parts(body_w: int, body_h: int, tip: float | None, side: str,
                  grow: float = 0.0):
     """The cloud outline and the circles of the trail toward the head."""
     x0, y0 = PAD_SVG + CLOUD_INSET, PAD_SVG + CLOUD_INSET
@@ -253,10 +274,9 @@ def _cloud_parts(body_w: int, body_h: int, tip_x: float | None, tip_up: bool,
         cos_a, sin_a = math.cos(angle), math.sin(angle)
         pts.append((cx + math.copysign(abs(cos_a) ** CLOUD_SQUIRCLE, cos_a) * radius_x,
                     cy + math.copysign(abs(sin_a) ** CLOUD_SQUIRCLE, sin_a) * radius_y))
-    tip = _bubble_tip(body_w, tip_x)
-    edge = PAD_SVG if tip_up else PAD_SVG + body_h
-    sign = -1 if tip_up else 1
-    trail = [(tip, edge + sign * dist, radius + grow) for radius, dist in CLOUD_TRAIL]
+    tip = _bubble_tip(side, body_w, body_h, tip)
+    edge, sign = _tail_edge(side, body_w, body_h)
+    trail = [(*_at(side, tip, edge + sign * dist), radius + grow) for radius, dist in CLOUD_TRAIL]
     return _smooth_closed(pts), trail
 
 
@@ -264,20 +284,18 @@ def _circles_svg(circles: list, extra: str) -> str:
     return "".join(f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r:.2f}" {extra}/>' for cx, cy, r in circles)
 
 
-def cloud_shadow_svg(body_w: int, body_h: int, tip_x: float | None = None,
-                     tip_up: bool = False) -> str:
+def cloud_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above") -> str:
     """The shadow of the thinking cloud, drawn sharp; the toolkit blurs it."""
-    path, trail = _cloud_parts(body_w, body_h, tip_x, tip_up, grow=SHADOW_GROW)
+    path, trail = _cloud_parts(body_w, body_h, tip, side, grow=SHADOW_GROW)
     fill = f'fill="#000" opacity="{SHADOW_ALPHA}"'
     return _bubble_canvas(body_w, body_h, (
         f'<g transform="translate(0 2)"><path d="{path}" {fill}/>'
         + _circles_svg(trail, fill) + "</g>"))
 
 
-def cloud_body_svg(body_w: int, body_h: int, tip_x: float | None = None,
-                   tip_up: bool = False) -> str:
+def cloud_body_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above") -> str:
     """The white thinking cloud with hairline, shaped like the nuage face."""
-    path, trail = _cloud_parts(body_w, body_h, tip_x, tip_up)
+    path, trail = _cloud_parts(body_w, body_h, tip, side)
     paint = f'fill="{SAND_BUBBLE}" stroke="{SAND_HAIRLINE}" stroke-width="2"'
     return _bubble_canvas(body_w, body_h, (
         f'<path d="{path}" {paint} stroke-linejoin="round"/>'

@@ -343,11 +343,16 @@ class Thinking(unittest.TestCase):
 class Clouds(unittest.TestCase):
     """Should give the thinking cloud one lobed silhouette and a tail of shrinking circles."""
 
-    def test_trail_points_down_or_up(self):
-        down = bubble.cloud_body_svg(200, 100, tip_x=100, tip_up=False)
-        up = bubble.cloud_body_svg(200, 100, tip_x=100, tip_up=True)
-        self.assertEqual(down.count("<circle"), up.count("<circle"))
-        self.assertNotEqual(down, up)
+    def test_trail_points_toward_the_face_from_every_side(self):
+        clouds = {side: bubble.cloud_body_svg(200, 100, tip=50, side=side) for side in bubble.SIDES}
+        self.assertEqual(len({svg.count("<circle") for svg in clouds.values()}), 1)
+        self.assertEqual(len(set(clouds.values())), 4, "four different tails")
+
+    def test_the_tail_of_the_chat_bubble_comes_out_of_the_edge_facing_the_face(self):
+        # the white area is 200 by 100 at (18, 18); a tail pointing at 50 along its edge ends in these points
+        tips = {"above": "50 125", "below": "50 11", "right": "11 50", "left": "225 50"}
+        for side, apex in tips.items():
+            self.assertIn(apex, bubble.bubble_body_svg(200, 100, tip=50, side=side), side)
 
     def test_cloud_and_chat_bubble_share_a_canvas_size(self):
         cloud = bubble.cloud_body_svg(200, 100)
@@ -1123,6 +1128,45 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(len(sides), 1, "the same side from the first frame to the last")
         self.finish_growth()
 
+    def screen(self, rect):
+        from botwidget.qt_ui import bubble_window
+        for module in (self.face.screens, bubble_window.screens):
+            old = module.rect_at
+            self.addCleanup(setattr, module, "rect_at", old)
+            module.rect_at = lambda x, y, rect=rect: rect
+
+    def side_for(self, face_at, text, screen):
+        self.screen(screen)
+        self.window._move_icon(*face_at)
+        self.window._remember_spot()
+        self.MESSAGES = [{"role": "bot", "text": text}]
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.window._animate()
+        self.finish_growth()
+        return self.window.bubble._goal()
+
+    LONG = "Een lange regel met woorden. " * 25
+
+    def test_the_bubble_goes_above_the_face_when_there_is_room(self):
+        _tx, _ty, (_pos, side) = self.side_for((700, 500), "Kort.", (0, 0, 1600, 900))
+        self.assertEqual(side, "above")
+
+    def test_without_room_above_it_goes_to_the_right(self):
+        tx, ty, (pos, side) = self.side_for((300, 40), self.LONG, (0, 0, 1600, 900))
+        self.assertEqual(side, "right")
+        self.assertGreater(tx, self.window.x() + 34 - 20, "right of the face")
+        self.assertLessEqual(abs(ty + pos - (self.window.y() + 34)), 1, "the tail points at the middle of the face")
+
+    def test_without_room_above_or_to_the_right_it_goes_to_the_left(self):
+        tx, ty, (pos, side) = self.side_for((1500, 40), self.LONG, (0, 0, 1600, 900))
+        self.assertEqual(side, "left")
+        self.assertLess(tx + self.window.bubble.width(), self.window.x() + 34 + 20, "left of the face")
+        self.assertLessEqual(abs(ty + pos - (self.window.y() + 34)), 1)
+
+    def test_below_the_face_only_when_nothing_else_fits(self):
+        _tx, _ty, (_pos, side) = self.side_for((150, 40), self.LONG, (0, 0, 420, 900))
+        self.assertEqual(side, "below")
+
     def test_the_tail_points_at_the_face_in_every_frame_of_the_growth(self):
         self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
         self.window._animate()
@@ -1131,6 +1175,7 @@ class BubbleHover(unittest.TestCase):
         for t in (0.0, 0.15, 0.4, 0.7, 1.0):
             bubble._growth_step(t)
             tip_x = bubble.x() + bubble._tip[0]
+            self.assertEqual(bubble._tip[1], "above")
             self.assertLessEqual(abs(tip_x - face_x), 1, f"at {t}: the tail is at {tip_x}, the face at {face_x}")
 
     def test_the_tail_is_right_after_the_bubble_shrinks_too(self):
