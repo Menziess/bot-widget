@@ -9,6 +9,7 @@ import json
 import os
 import plistlib
 import shutil
+import shutil
 import sys
 import tempfile
 import time
@@ -467,6 +468,67 @@ class LatestChat(unittest.TestCase):
         text = self.chat("x" * (openbot.MESSAGE_CHARS + 500))
         self.assertTrue(text.endswith("…"))
         self.assertLessEqual(len(text), openbot.MESSAGE_CHARS + 1)
+
+
+
+class LatestChat(unittest.TestCase):
+    """Should hand the bubble whole messages, not the first 500 characters of them."""
+
+    def chat(self, text):
+        import sqlite3
+        from botwidget import openbot
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        path = os.path.join(folder, "openbot.db")
+        con = sqlite3.connect(path)
+        con.execute("CREATE TABLE projection_thread_messages (thread_id, author, item_type, message_json, created_at)")
+        con.execute("INSERT INTO projection_thread_messages VALUES ('t', 'bot', 'final_answer', ?, 1)",
+                    (json.dumps({"text": text}),))
+        con.commit()
+        con.close()
+        old = openbot.DB_FILE
+        self.addCleanup(setattr, openbot, "DB_FILE", old)
+        openbot.DB_FILE = path
+        return openbot.latest_chat("t")["messages"][-1]["text"]
+
+    def test_a_long_answer_arrives_whole(self):
+        text = "Dit is een lange zin. " * 60 + "Zal ik de 2 commits pushen?"
+        self.assertGreater(len(text), 500)
+        self.assertEqual(self.chat(text), text)
+
+    def test_a_runaway_answer_is_cut_with_an_ellipsis(self):
+        from botwidget import openbot
+        text = self.chat("x" * (openbot.MESSAGE_CHARS + 500))
+        self.assertTrue(text.endswith("…"))
+        self.assertLessEqual(len(text), openbot.MESSAGE_CHARS + 1)
+
+
+
+class BubbleScroll(unittest.TestCase):
+    """Should keep the end of a long answer in view."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+            from botwidget.qt_ui import face
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.face = face
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_the_bubble_ends_at_the_end_of_a_long_answer(self):
+        from botwidget.markdown import conversation_blocks
+        window = self.face.FaceWindow("t", "Test", spot=(300, 400))
+        self.addCleanup(window.close_face)
+        window._poll_timer.stop()
+        text = "Ja.\n\n" + "Een lange regel. " * 60 + "\n\nZal ik pushen?"
+        window.bubble.show_blocks(conversation_blocks([{"role": "bot", "text": text}], "Test"), "say")
+        self.app.processEvents()
+        bar = window.bubble._scroll.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+        self.assertEqual(bar.value(), bar.maximum())
 
 
 

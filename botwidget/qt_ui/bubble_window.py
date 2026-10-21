@@ -59,6 +59,7 @@ ENTRY_H = 34
 ENTRY_GAP = 8
 LINKS_H = 26
 MIN_INTERACTIVE_W = 240
+SCROLLBAR_W = 6
 
 
 class BubbleEntry(QLineEdit):
@@ -243,7 +244,7 @@ class BubbleWindow(QWidget):
         self.resize(size)
         x, y = PAD_SVG + PAD_BODY, PAD_SVG + PAD_BODY
         view_h = max(1, self._body_h(inner) - 2 * PAD_BODY - self._extras())
-        self._scroll.setGeometry(x, y, box_w, view_h)
+        self._scroll.setGeometry(x, y, box_w + SCROLLBAR_W, view_h)
         below = y + view_h
         if self._links:
             self._link_row.setGeometry(x, below + 4, box_w, LINKS_H - 4)
@@ -283,9 +284,10 @@ class BubbleWindow(QWidget):
         self._layout_children(pix)
         self._set_text()
         self._set_doc()
-        self._scroll_to_bottom()
         if restyle or not self.isVisible():
             self.place(kind)
+        self._scroll_to_bottom()
+        QTimer.singleShot(0, self._scroll_to_bottom)
 
     def _scroll_to_bottom(self):
         bar = self._scroll.verticalScrollBar()
