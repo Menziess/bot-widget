@@ -49,8 +49,8 @@ DOTS_GAP = 12.0
 # A short tick so the wave moves smoothly instead of in steps; one wave takes this many seconds.
 DOTS_MS = 32
 DOTS_CYCLE_S = 1.2
-# As long as nothing changes and the mouse is not nearby, the bubble stays until this many seconds
-# after the last change or after the pointer left.
+# A bubble nobody points at goes away this many seconds after it appeared or changed. One that was
+# pointed at closes as soon as the pointer leaves.
 BUBBLE_LINGER = 4.0
 # Room below (or above) the white area for the tail or the cloud circles.
 TAIL_ROOM = 22

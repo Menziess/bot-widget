@@ -547,18 +547,22 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(self.window.bubble.isVisible())
         self.assertIn("Zal ik pushen?", self.window.bubble.full_text)
 
-    def test_it_closes_after_the_linger_time_counted_from_the_pointer_leaving(self):
-        import time
-        from botwidget.theme import BUBBLE_LINGER
+    def test_it_closes_at_once_when_the_pointer_leaves(self):
         self.hover()
         bubble = self.window.bubble
-        bubble.changed = time.monotonic() - BUBBLE_LINGER - 1
         bubble._tick()
         self.assertTrue(bubble.kind, "the pointer is still on the face")
-        self.assertLess(time.monotonic() - bubble.changed, 1, "being near keeps the timer fresh")
         self.where["at"] = (5000, 5000)
         bubble._tick()
-        self.assertTrue(bubble.kind, "the timer only starts when the pointer has left")
+        self.assertEqual(bubble.kind, "")
+
+    def test_a_bubble_nobody_pointed_at_closes_after_the_linger_time(self):
+        import time
+        from botwidget.theme import BUBBLE_LINGER
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
+        bubble = self.window.bubble
+        bubble._tick()
+        self.assertTrue(bubble.kind)
         bubble.changed = time.monotonic() - BUBBLE_LINGER - 1
         bubble._tick()
         self.assertEqual(bubble.kind, "")
@@ -576,8 +580,7 @@ class BubbleHover(unittest.TestCase):
     def test_selected_words_keep_the_bubble_open_until_the_selection_goes(self):
         import time
         from botwidget.theme import BUBBLE_LINGER
-        self.hover()
-        self.where["at"] = (5000, 5000)
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
         bubble = self.window.bubble
         bubble._doc.hasFocus = lambda: True
         bubble._doc.selectAll()

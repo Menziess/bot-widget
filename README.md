@@ -22,7 +22,8 @@ botwidget
 ```
 
 - Point at the face to see the latest answer, or what the bot is doing
-- The bubble closes by itself 4 seconds after the pointer leaves, and stays while you type or have words selected
+- The bubble closes as soon as the pointer leaves, and 4 seconds after a new answer if you never pointed at it
+- It stays while you type or have words selected
 - Click the face to open the chat, type, press Enter
 - Copy in the corner of the bubble copies the latest answer
 - While the bot works the bubble turns into a thought cloud

@@ -143,6 +143,7 @@ class BubbleWindow(QWidget):
         self._input = False
         self._links = []
         self._geom = None
+        self._was_near = False
         self._tip = None
         self._vx = self._vy = 0.0
         self._physics_on = False
@@ -377,8 +378,13 @@ class BubbleWindow(QWidget):
         now = time.monotonic()
         if self.face.pointer_near(self) or self.holding():
             self.changed = now
-        elif (self.changed and now - self.changed > BUBBLE_LINGER and not self.face.pinned):
-            # Nothing new and the mouse has been away for a while: the bubble goes away.
+            self._was_near = True
+        elif self._was_near and not self.face.pinned:
+            # The pointer was here and left: gone at once.
+            self.place("")
+            return
+        elif self.changed and now - self.changed > BUBBLE_LINGER and not self.face.pinned:
+            # Nobody pointed at it and nothing new came: it goes away after a while.
             self.place("")
             return
         tx, ty, tip = self._goal()
@@ -398,6 +404,7 @@ class BubbleWindow(QWidget):
         """Show or hide the bubble. The face stays."""
         self.kind = kind
         if kind == "":
+            self._was_near = False
             self._physics.stop()
             self._physics_on = False
             self.hide()
