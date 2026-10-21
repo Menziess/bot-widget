@@ -129,7 +129,9 @@ def set_launch_at_login(command: list, on: bool) -> None:
     os.chmod(launcher, 0o755)
     os.makedirs(os.path.dirname(_launch_agent()), exist_ok=True)
     with open(_launch_agent(), "wb") as fh:
-        plistlib.dump({"Label": BUNDLE_ID, "ProgramArguments": [launcher], "RunAtLoad": True}, fh)
+        # Without ProcessType launchd runs the agent at background priority, which stretches 16 ms frames to 60+.
+        plistlib.dump({"Label": BUNDLE_ID, "ProgramArguments": [launcher], "RunAtLoad": True,
+                       "ProcessType": "Interactive"}, fh)
 
 
 UPDATE_ASSET = "BotWidget-macOS.zip"

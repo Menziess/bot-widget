@@ -26,6 +26,15 @@ SUBSTEP = 0.008
 SETTLED = {"dx": 0.04, "dy": 0.04, "converge": 0.04, "lift": 0.04, "lean": 0.04,
            "scale": 0.004, "happy": 0.004, "sx": 0.004, "sy": 0.004}
 
+# A calm 30 frames per second; 60 while the face is moving or the pointer is near it.
+IDLE_MS = 33
+BUSY_MS = 16
+
+
+def frame_ms(*, held: bool, moving: bool, pointer_near: bool) -> int:
+    """Timer interval: fast while anything on the face can change smoothly."""
+    return BUSY_MS if held or moving or pointer_near else IDLE_MS
+
 
 class FaceAnimator:
     def __init__(self):

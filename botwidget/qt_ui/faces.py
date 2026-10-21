@@ -3,8 +3,9 @@
 import json
 import os
 import threading
+import time
 
-from PySide6.QtCore import QObject, QUrl
+from PySide6.QtCore import QObject, QTimer, QUrl
 from PySide6.QtGui import QAction, QCursor, QDesktopServices
 from PySide6.QtWidgets import QApplication, QMenu
 
@@ -27,6 +28,10 @@ from botwidget.qt_ui.face import FaceWindow
 from botwidget.system.current import can_install_update
 
 
+UPDATE_TICK_MS = 10 * 60 * 1000
+RECHECK_S = 6 * 3600
+
+
 class Faces(QObject):
     def __init__(self):
         super().__init__()
@@ -38,8 +43,13 @@ class Faces(QObject):
         self.update = None
         self.staged = None
         threading.Thread(target=self._probe_grok, daemon=True).start()
+        self._probed = 0.0
         if check_updates():
-            threading.Thread(target=self._probe_update, daemon=True).start()
+            self._start_probe()
+            self._update_timer = QTimer(self)
+            self._update_timer.setInterval(UPDATE_TICK_MS)
+            self._update_timer.timeout.connect(self._update_tick)
+            self._update_timer.start()
         bots = {bot["id"]: bot for bot in list_bots()}
         ids = [agent_id for agent_id in enabled if agent_id in bots] or list(bots)[:1] or [UNLINKED_ID]
         for slot, agent_id in enumerate(ids):
@@ -73,6 +83,18 @@ class Faces(QObject):
         """Ask gbot once; no loop, gbot warns about that itself."""
         self.grok = grok_bot_status()
 
+    def _start_probe(self):
+        self._probed = time.monotonic()
+        threading.Thread(target=self._probe_update, daemon=True).start()
+
+    def _update_tick(self):
+        """A widget that stays open for days still moves to the newest release, once nobody is using it."""
+        if self.staged:
+            if all(face.idle() for face in self.faces.values()):
+                self.install_update()
+        elif time.monotonic() - self._probed > RECHECK_S:
+            self._start_probe()
+
     def _probe_update(self):
         """Is there a newer version? If so, and allowed, stage it already."""
         release = updates.newer_release()
@@ -87,6 +109,7 @@ class Faces(QObject):
             QApplication.exit(channel.HANDOVER_EXIT if channel.running() == "local" else 0)
 
     def install_update(self):
+        self.staged = None
         if updates.install_staged():
             QApplication.quit()
 

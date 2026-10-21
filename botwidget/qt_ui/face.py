@@ -10,7 +10,7 @@ from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QPainter
 from PySide6.QtWidgets import QWidget
 
-from botwidget.animation import FaceAnimator
+from botwidget.animation import IDLE_MS, FaceAnimator, frame_ms
 from botwidget.avatar import (
     AVATAR_SIZE,
     CIRCLE_R,
@@ -62,9 +62,6 @@ REFUSED_NOTE = "I couldn't send that. OpenBot answered: {why}."
 # OpenBot only opens its local API once this switch is on, per bot.
 AUTOMATION_NOTE = ("OpenBot's local API is off for {name}. In OpenBot open {name}'s settings and turn on "
                    '"Local scripts"; messages wait here until then.')
-# A calm 30 frames per second; 60 once you grab the face, then you see the difference.
-IDLE_MS = 33
-BUSY_MS = 16
 WELCOME_S = 9.0
 
 
@@ -123,6 +120,7 @@ class FaceWindow(QWidget):
         self._pose = "idle"
         self._last_bot = None
         self._happy_on = False
+        self._moving = False
         self.anim = FaceAnimator()
         self.anim.jump(dx=POSES["idle"][0], dy=POSES["idle"][1])
         self._last_tick = time.monotonic()
@@ -148,6 +146,7 @@ class FaceWindow(QWidget):
         self._coast_timer = ticker(self, 16, self._tick_coast)
         self._anim_timer = QTimer(self)
         self._anim_timer.setInterval(IDLE_MS)
+        self._anim_timer.setTimerType(Qt.PreciseTimer)
         self._anim_timer.timeout.connect(self._animate)
         self._anim_timer.start()
         self._poll_timer = QTimer(self)
@@ -327,6 +326,11 @@ class FaceWindow(QWidget):
             return True
         return bubble.isVisible() and bubble.frameGeometry().contains(QPoint(px, py))
 
+    def _pointer_on_head(self) -> bool:
+        px, py = self._pointer()
+        cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
+        return (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2
+
     def _animate(self):
         """One frame: determine targets, step the springs, draw if something changed."""
         if not self._alive:
@@ -334,11 +338,13 @@ class FaceWindow(QWidget):
             return
         now = time.monotonic()
         dt, self._last_tick = now - self._last_tick, now
-        busy = self._drag_origin is not None or self._coasting or self._happy_on
-        if self._anim_timer.interval() != (BUSY_MS if busy else IDLE_MS):
-            self._anim_timer.setInterval(BUSY_MS if busy else IDLE_MS)
+        interval = frame_ms(held=self._drag_origin is not None or self._coasting or self._happy_on,
+                            moving=self._moving, pointer_near=self._pointer_on_head())
+        if self._anim_timer.interval() != interval:
+            self._anim_timer.setInterval(interval)
         self._aim(dt * 1000)
-        if self.anim.step(dt):
+        self._moving = self.anim.step(dt)
+        if self._moving:
             self._render()
 
     def _render(self):
@@ -429,6 +435,11 @@ class FaceWindow(QWidget):
             self._sync_bubble(latest_chat(thread_id=self.thread_id))
         else:
             self.bubble.place("")
+
+    def idle(self) -> bool:
+        """Nobody is dragging, typing or waiting on this face: a restart would go unnoticed."""
+        return not (self.pinned or self._sending or self._working or self._coasting
+                    or self._drag_origin is not None)
 
     def close_face(self):
         """Hide this face and stop its timers."""

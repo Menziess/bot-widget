@@ -10,6 +10,7 @@ import os
 import plistlib
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -328,6 +329,113 @@ class Clouds(unittest.TestCase):
         self.assertEqual(shadow.count("<circle"), body.count("<circle"))
 
 
+class FrameRate(unittest.TestCase):
+    """Should animate at the fast rate whenever the face is held, moving or the pointer is near."""
+
+    def test_calm_only_when_nothing_is_happening(self):
+        self.assertEqual(animation.frame_ms(held=False, moving=False, pointer_near=False), animation.IDLE_MS)
+
+    def test_hovering_alone_is_fast(self):
+        self.assertEqual(animation.frame_ms(held=False, moving=False, pointer_near=True), animation.BUSY_MS)
+
+    def test_held_or_moving_is_fast(self):
+        self.assertEqual(animation.frame_ms(held=True, moving=False, pointer_near=False), animation.BUSY_MS)
+        self.assertEqual(animation.frame_ms(held=False, moving=True, pointer_near=False), animation.BUSY_MS)
+
+    def test_fast_means_at_least_sixty_frames_per_second(self):
+        self.assertLessEqual(animation.BUSY_MS, 17)
+
+
+class FrameCost(unittest.TestCase):
+    """Should build a face frame far inside the 16 ms budget; the limit is loose so CI does not flake."""
+
+    def test_building_a_frame_svg_is_fast(self):
+        start = time.perf_counter()
+        for i in range(100):
+            avatar.face_svg(dx=i % 8, dy=2.0, converge=0.5, seed="robo", happy=0.5)
+        self.assertLess((time.perf_counter() - start) / 100, 0.005)
+
+
+class Rendering(unittest.TestCase):
+    """Should render and animate a real face window offscreen."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+            from botwidget.qt_ui import face
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.face = face
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_a_frame_renders_in_a_few_milliseconds(self):
+        from botwidget.qt_ui.render import svg_pixmap
+        svg = avatar.face_svg(seed="robo")
+        start = time.perf_counter()
+        for _ in range(50):
+            svg_pixmap(svg)
+        self.assertLess((time.perf_counter() - start) / 50, 0.005)
+
+    def test_hovering_switches_the_timer_to_the_fast_rate_and_back(self):
+        window = self.face.FaceWindow("t", "Test", spot=(100, 100))
+        try:
+            near = {"on": True}
+            window._pointer = lambda: (134, 134) if near["on"] else (5000, 5000)
+            window._last_tick -= 0.05
+            window._animate()
+            self.assertEqual(window._anim_timer.interval(), animation.BUSY_MS)
+            near["on"] = False
+            for _ in range(200):
+                window._last_tick -= 0.03
+                window._animate()
+            self.assertEqual(window._anim_timer.interval(), animation.IDLE_MS)
+        finally:
+            window._alive = False
+            window.close()
+
+
+class UpdateTick(unittest.TestCase):
+    """Should restart into a staged update only when no face is in use, and look again for releases now and then."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from botwidget.qt_ui import faces
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.faces = faces
+
+    def stub(self, staged, idle, probed=0.0):
+        from types import SimpleNamespace
+        calls = []
+        me = SimpleNamespace(staged=staged, faces={"a": SimpleNamespace(idle=lambda: idle)},
+                             _probed=probed, calls=calls,
+                             install_update=lambda: calls.append("install"),
+                             _start_probe=lambda: calls.append("probe"))
+        return me
+
+    def test_installs_a_staged_update_when_every_face_is_idle(self):
+        me = self.stub("/x.zip", idle=True)
+        self.faces.Faces._update_tick(me)
+        self.assertEqual(me.calls, ["install"])
+
+    def test_waits_while_someone_is_using_a_face(self):
+        me = self.stub("/x.zip", idle=False)
+        self.faces.Faces._update_tick(me)
+        self.assertEqual(me.calls, [])
+
+    def test_looks_for_a_new_release_after_the_recheck_interval_only(self):
+        me = self.stub(None, idle=True, probed=time.monotonic())
+        self.faces.Faces._update_tick(me)
+        self.assertEqual(me.calls, [])
+        me = self.stub(None, idle=True, probed=time.monotonic() - self.faces.RECHECK_S - 1)
+        self.faces.Faces._update_tick(me)
+        self.assertEqual(me.calls, ["probe"])
+
+
 class Animator(unittest.TestCase):
     """Should move the springs smoothly to the target, overshoot where it should, and then really stand still."""
 
@@ -526,6 +634,7 @@ class LaunchAtLogin(unittest.TestCase):
             with open(path, "rb") as fh:
                 agent = plistlib.load(fh)
             self.assertTrue(agent["RunAtLoad"])
+            self.assertEqual(agent["ProcessType"], "Interactive", "else launchd throttles the animation")
             launcher = agent["ProgramArguments"][0]
             self.assertEqual(os.path.basename(launcher), macos.DEV_LAUNCHER_NAME, "not shown as 'python'")
             with open(launcher) as fh:
@@ -782,11 +891,11 @@ class BubbleTextDocument(unittest.TestCase):
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
-            from PySide6.QtGui import QGuiApplication
+            from PySide6.QtWidgets import QApplication
         except ImportError:  # no toolkit at all: nothing to test here
             raise unittest.SkipTest("PySide6 is not available")
         try:
-            cls.app = QGuiApplication.instance() or QGuiApplication([])
+            cls.app = QApplication.instance() or QApplication([])
         except Exception as err:  # no screen and no offscreen platform
             raise unittest.SkipTest(str(err))
 
