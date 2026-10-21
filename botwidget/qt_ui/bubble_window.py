@@ -117,7 +117,7 @@ class BubbleWindow(QWidget):
     def __init__(self, face):
         super().__init__()
         self.face = face
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint | Qt.NoDropShadowWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         # Tool windows hide themselves on macOS as soon as the app is not active; the bubble must
