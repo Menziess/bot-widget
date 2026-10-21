@@ -8,6 +8,7 @@ import io
 import json
 import os
 import plistlib
+import shutil
 import sys
 import tempfile
 import time
@@ -434,6 +435,39 @@ class UpdateTick(unittest.TestCase):
         me = self.stub(None, idle=True, probed=time.monotonic() - self.faces.RECHECK_S - 1)
         self.faces.Faces._update_tick(me)
         self.assertEqual(me.calls, ["probe"])
+
+
+class LatestChat(unittest.TestCase):
+    """Should hand the bubble whole messages, not the first 500 characters of them."""
+
+    def chat(self, text):
+        import sqlite3
+        from botwidget import openbot
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        path = os.path.join(folder, "openbot.db")
+        con = sqlite3.connect(path)
+        con.execute("CREATE TABLE projection_thread_messages (thread_id, author, item_type, message_json, created_at)")
+        con.execute("INSERT INTO projection_thread_messages VALUES ('t', 'bot', 'final_answer', ?, 1)",
+                    (json.dumps({"text": text}),))
+        con.commit()
+        con.close()
+        old = openbot.DB_FILE
+        self.addCleanup(setattr, openbot, "DB_FILE", old)
+        openbot.DB_FILE = path
+        return openbot.latest_chat("t")["messages"][-1]["text"]
+
+    def test_a_long_answer_arrives_whole(self):
+        text = "Dit is een lange zin. " * 60 + "Zal ik de 2 commits pushen?"
+        self.assertGreater(len(text), 500)
+        self.assertEqual(self.chat(text), text)
+
+    def test_a_runaway_answer_is_cut_with_an_ellipsis(self):
+        from botwidget import openbot
+        text = self.chat("x" * (openbot.MESSAGE_CHARS + 500))
+        self.assertTrue(text.endswith("…"))
+        self.assertLessEqual(len(text), openbot.MESSAGE_CHARS + 1)
+
 
 
 class Animator(unittest.TestCase):

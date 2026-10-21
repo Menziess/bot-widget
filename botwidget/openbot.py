@@ -186,6 +186,14 @@ def _chat_text(raw: str) -> str:
     return text.strip()
 
 
+# The bubble scrolls, so this only guards against a runaway message; a cut shows as an ellipsis.
+MESSAGE_CHARS = 4000
+
+
+def _clip(text: str) -> str:
+    return text if len(text) <= MESSAGE_CHARS else text[:MESSAGE_CHARS].rstrip() + "…"
+
+
 def latest_chat(thread_id: str, limit: int = 8) -> dict:
     """Latest chat lines plus one busy line.
 
@@ -233,9 +241,9 @@ def latest_chat(thread_id: str, limit: int = 8) -> dict:
         if not text:
             continue
         if item_type == "final_answer":
-            messages.append({"role": "bot", "text": text[:500]})
+            messages.append({"role": "bot", "text": _clip(text)})
         elif author == "user":
-            messages.append({"role": "user", "text": text[:500]})
+            messages.append({"role": "user", "text": _clip(text)})
     messages.reverse()
     activity = ""
     if live:
