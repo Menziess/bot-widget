@@ -500,8 +500,11 @@ class BubbleWindow(QWidget):
         if growth is None or not self.kind:
             return
         growth.progress = float(progress)
+        # The tail is drawn for the size the window is about to have, so it points at the face all the way.
+        size = (self._shown_w(self._geom[1]) + 2 * PAD_BODY + 2 * PAD_SVG,
+                self._body_h(self._geom[2]) + PAD_SVG + TAIL_ROOM)
+        tx, ty, self._tip = self._goal(size)
         self._layout_children(self._paint_chrome())
-        tx, ty, _tip = self._goal()
         self._vx = self._vy = 0.0
         self.move(int(tx), int(ty))
         bar = self._scroll.verticalScrollBar()
@@ -540,13 +543,12 @@ class BubbleWindow(QWidget):
 
     # ── Position and movement ───────────────────────────────────
 
-    def _goal(self):
-        """The bubble hangs above the head; the tail follows the head."""
+    def _goal(self, size: tuple | None = None):
+        """The bubble hangs above the head; the tail follows the head. size is the window size it is about to get."""
         fx, fy = self.face.spot()
-        bw = self.width() or 80
-        bh = self.height() or 48
+        bw, bh = size or (self.width() or 80, self.height() or 48)
         gx, gy, gw, gh = screens.rect_at(fx + AVATAR_SIZE // 2, fy + AVATAR_SIZE // 2)
-        tx = fx + (AVATAR_SIZE - bw) / 2
+        tx = round(fx + (AVATAR_SIZE - bw) / 2)
         ty = fy - bh + 6 + self.face.head_top
         up = False
         # The side follows the size it will have: a bubble that still fits above while small must not

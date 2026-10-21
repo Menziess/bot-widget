@@ -1034,6 +1034,27 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(len(sides), 1, "the same side from the first frame to the last")
         self.finish_growth()
 
+    def test_the_tail_points_at_the_face_in_every_frame_of_the_growth(self):
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.window._animate()
+        bubble = self.window.bubble
+        face_x = self.window.x() + 34
+        for t in (0.0, 0.15, 0.4, 0.7, 1.0):
+            bubble._growth_step(t)
+            tip_x = bubble.x() + bubble._tip[0]
+            self.assertLessEqual(abs(tip_x - face_x), 1, f"at {t}: the tail is at {tip_x}, the face at {face_x}")
+
+    def test_the_tail_is_right_after_the_bubble_shrinks_too(self):
+        self.hover()
+        self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Een lange regel. " * 40}], "activity": ""})
+        self.finish_growth()
+        self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Kort."}], "activity": ""})
+        bubble = self.window.bubble
+        for t in (0.0, 0.5, 1.0):
+            bubble._growth_step(t)
+            self.assertLessEqual(abs(bubble.x() + bubble._tip[0] - (self.window.x() + 34)), 1)
+        self.finish_growth()
+
     def test_the_field_waits_until_the_bubble_has_grown_a_bit(self):
         self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
         self.window._animate()
