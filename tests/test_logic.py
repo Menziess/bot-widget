@@ -597,6 +597,53 @@ class LatestChat(unittest.TestCase):
         self.assertLessEqual(len(text), openbot.MESSAGE_CHARS + 1)
 
 
+class ScreenChanges(unittest.TestCase):
+    """Should move the face onto a screen when its screen goes, and back when the screen returns."""
+
+    BOTH = [(0, 0, 1000, 800), (1000, 0, 1000, 800)]
+    LAPTOP = [(0, 0, 1000, 800)]
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+            from botwidget.qt_ui import face
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.face = face
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.layout = list(self.BOTH)
+        old = self.face.screens.rects
+        self.addCleanup(setattr, self.face.screens, "rects", old)
+        self.face.screens.rects = lambda: self.layout
+        self.window = self.face.FaceWindow("t", "Test", spot=(1500, 300))
+        self.window._poll_timer.stop()
+        self.addCleanup(self.window.close_face)
+
+    def test_it_stays_when_its_screen_stays(self):
+        self.window._settle()
+        self.assertEqual(self.window.spot(), (1500, 300))
+
+    def test_it_moves_onto_the_remaining_screen_and_returns_with_the_second_one(self):
+        self.layout[:] = self.LAPTOP
+        self.window._settle()
+        x, y = self.window.spot()
+        self.assertTrue(0 <= x <= 1000 - 68 and 0 <= y <= 800 - 68, self.window.spot())
+        self.layout[:] = self.BOTH
+        self.window._settle()
+        self.assertEqual(self.window.spot(), (1500, 300))
+
+    def test_a_spot_chosen_by_the_user_is_the_one_to_return_to(self):
+        self.window._move_icon(200, 100)
+        self.window._remember_spot()
+        self.layout[:] = self.LAPTOP
+        self.window._settle()
+        self.assertEqual(self.window.spot(), (200, 100))
+
+
 class Animator(unittest.TestCase):
     """Should move the springs smoothly to the target, overshoot where it should, and then really stand still."""
 

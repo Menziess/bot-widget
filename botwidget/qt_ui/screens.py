@@ -17,3 +17,9 @@ def rect_at(x: float, y: float) -> tuple:
     """The screen under (x, y), otherwise the primary screen."""
     screen = QGuiApplication.screenAt(QPoint(int(x), int(y))) or QGuiApplication.primaryScreen()
     return _rect(screen)
+
+
+def fits(x: float, y: float, size: float) -> bool:
+    """Is a square of this size at (x, y) completely on one screen?"""
+    return any(x >= gx and y >= gy and x + size <= gx + gw and y + size <= gy + gh
+               for gx, gy, gw, gh in rects())

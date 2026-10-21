@@ -7,7 +7,7 @@ import threading
 import time
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QCursor, QPainter
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter
 from PySide6.QtWidgets import QWidget
 
 from botwidget.animation import IDLE_MS, FaceAnimator, frame_ms
@@ -142,6 +142,12 @@ class FaceWindow(QWidget):
             self.move(int(spot[0]), int(spot[1]))
         else:
             self._position_bottom_right(slot)
+        # Where the user put the face: it goes back there when the screen it was on returns.
+        self._home = self.spot()
+        app = QGuiApplication.instance()
+        for signal in (app.screenAdded, app.screenRemoved, app.primaryScreenChanged):
+            signal.connect(self._screens_changed)
+        QTimer.singleShot(0, self._settle)
 
         self._coast_timer = ticker(self, 16, self._tick_coast)
         self._anim_timer = QTimer(self)
@@ -308,7 +314,22 @@ class FaceWindow(QWidget):
             return False
         return True
 
+    def _screens_changed(self, *_):
+        # The system needs a moment to arrange the windows and screens itself.
+        QTimer.singleShot(400, self._settle)
+
+    def _settle(self):
+        """Back to the remembered spot if it is on a screen again, else onto the nearest screen."""
+        if not self._alive or self._drag_origin is not None or self._coasting:
+            return
+        x, y = self._home
+        if not screens.fits(x, y, AVATAR_SIZE):
+            x, y, _, _ = self._stay_on_screen(self.x(), self.y(), 0, 0)
+        if (int(x), int(y)) != self.spot():
+            self._move_icon(x, y)
+
     def _remember_spot(self):
+        self._home = self.spot()
         if self.faces is not None:
             self.faces.remember(self.agent_id, self.x(), self.y())
 
