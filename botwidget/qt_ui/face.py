@@ -59,7 +59,7 @@ from botwidget.system.current import activate_app, send_behind_windows
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
-EARLIER_NOTE = "↑ Scroll up for earlier messages"
+EARLIER_NOTE = "↑"
 RETRY_NOTE = "No connection to OpenBot — retrying…"
 REFUSED_NOTE = "I couldn't send that. OpenBot answered: {why}."
 # OpenBot only opens its local API once this switch is on, per bot.

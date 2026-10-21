@@ -825,7 +825,7 @@ class BubbleHover(unittest.TestCase):
         text = self.window.bubble.full_text
         self.assertIn("Zal ik pushen?", text)
         self.assertNotIn("Klaar?", text)
-        self.assertIn("Scroll up for earlier messages", text)
+        self.assertIn("↑", text)
 
     def test_scrolling_up_adds_the_message_before_and_the_hint_goes_when_there_is_no_more(self):
         self.hover()
@@ -833,7 +833,7 @@ class BubbleHover(unittest.TestCase):
         text = self.window.bubble.full_text
         self.assertIn("Klaar?", text)
         self.assertIn("Zal ik pushen?", text)
-        self.assertNotIn("Scroll up", text)
+        self.assertNotIn("↑", text)
         self.window.show_older()
         self.assertEqual(self.window._depth, 2, "nothing older to load")
 
