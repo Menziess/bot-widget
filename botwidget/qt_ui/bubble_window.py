@@ -205,18 +205,29 @@ class BubbleText(QTextBrowser):
             self._press = event.position().toPoint()
             self._shift = bool(event.modifiers() & Qt.ShiftModifier)
             self._dragging = False
+            if self._shift:
+                # Shift is for copying markdown; the text control would take it as "extend the selection".
+                cursor = self.textCursor()
+                cursor.clearSelection()
+                self.setTextCursor(cursor)
+                event.accept()
+                return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        super().mouseMoveEvent(event)
         pos = event.position().toPoint()
+        if self._shift and self._press is not None:
+            self._cursor_for(pos)
+            return
+        super().mouseMoveEvent(event)
         if self._press is not None and event.buttons() & Qt.LeftButton and not self._dragging:
             if (pos - self._press).manhattanLength() > self.SLOP:
                 self._dragging = True
         self._cursor_for(pos)
 
     def mouseReleaseEvent(self, event):
-        super().mouseReleaseEvent(event)
+        if not self._shift:
+            super().mouseReleaseEvent(event)
         pos = event.position().toPoint()
         if event.button() == Qt.LeftButton and self._press is not None:
             if self._dragging:

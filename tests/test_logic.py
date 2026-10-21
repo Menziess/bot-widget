@@ -757,6 +757,20 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(self.clipboard(), raw)
         self.assertEqual(self.window.bubble._notice.text, "Copied markdown")
 
+    def test_shift_click_only_copies_and_never_extends_a_selection(self):
+        from PySide6.QtCore import Qt
+        raw = "Een lange regel met woorden die over meerdere regels loopt in de bubbel, " * 2
+        self.MESSAGES = [{"role": "bot", "text": raw}]
+        self.hover()
+        x, y = self.message_point(0)
+        self.click_at(30, y)  # puts the text cursor somewhere
+        self.send_mouse("move", 200, y + 25)
+        self.send_mouse("press", 200, y + 25, Qt.LeftButton, Qt.LeftButton, Qt.ShiftModifier)
+        self.assertFalse(self.window.bubble._doc.textCursor().hasSelection(), "not even while the button is down")
+        self.send_mouse("release", 200, y + 25, Qt.NoButton, Qt.LeftButton, Qt.ShiftModifier)
+        self.assertFalse(self.window.bubble._doc.textCursor().hasSelection(), "shift+click selects nothing")
+        self.assertEqual(self.clipboard(), raw.strip(), "just the markdown")
+
     def test_each_message_copies_its_own_words(self):
         self.hover()
         self.window.show_older()
