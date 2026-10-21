@@ -66,6 +66,7 @@ AUTOMATION_NOTE = ("OpenBot's local API is off for {name}. In OpenBot open {name
                    '"Local scripts"; messages wait here until then.')
 WELCOME_S = 9.0
 FOCUS_DWELL_S = 0.25
+HOVER_RETRY_S = 0.5
 
 
 def ticker(parent, ms: int, step) -> QTimer:
@@ -126,6 +127,8 @@ class FaceWindow(QWidget):
         self._happy_on = False
         self._hovered = False
         self._hover_since = 0.0
+        self._hover_blocked = False  # closed on purpose while the pointer is still on the face
+        self._hover_retry = 0.0
         self._depth = 1  # how many of the latest messages the bubble shows
         self._loading_older = False
         self._conversation = None
@@ -378,20 +381,23 @@ class FaceWindow(QWidget):
         return (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2
 
     def _check_hover(self):
-        """Pointing at the face brings the bubble back: the latest answer, or what the bot is doing."""
+        """Pointing at the face shows the bubble, also when the pointer was already there and did not move."""
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         hovered = (px - cx) ** 2 + (py - cy) ** 2 <= ON_FACE ** 2
-        entered = hovered and not self._hovered
         self._hovered = hovered
         now = time.monotonic()
-        if entered:
-            self._hover_since = now
-            if self._drag_origin is None and not self.pinned and not self.bubble.isVisible():
-                self._depth = 1
-                self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
-        elif (hovered and self._hover_since and now - self._hover_since >= FOCUS_DWELL_S
-              and self._drag_origin is None):
+        if not hovered:
+            self._hover_blocked = False
+            self._hover_since = 0.0
+            return
+        if (not self.bubble.isVisible() and self._drag_origin is None and not self.pinned
+                and not self._hover_blocked and now >= self._hover_retry):
+            self._hover_retry = now + HOVER_RETRY_S
+            self._depth = 1
+            self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+            self._hover_since = now if self.bubble.isVisible() else 0.0
+        elif self._hover_since and now - self._hover_since >= FOCUS_DWELL_S and self._drag_origin is None:
             # Typing starts at once, but only when the pointer stays: passing over the face is not asking.
             self._hover_since = 0.0
             if self.bubble.isVisible():
@@ -508,6 +514,7 @@ class FaceWindow(QWidget):
 
     def unpin(self):
         self.pinned = False
+        self._hover_blocked = self._hovered
         if self._working:
             self._sync_bubble(latest_chat(thread_id=self.thread_id))
         else:

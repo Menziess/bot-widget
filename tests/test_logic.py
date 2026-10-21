@@ -652,7 +652,7 @@ class BubbleHover(unittest.TestCase):
         calls = []
         old = bubble._parts
         bubble._parts = lambda: calls.append(1) or old()
-        self.window._hovered = False
+        self.window._hover_retry = 0.0
         self.hover()
         self.assertTrue(bubble.isVisible())
         self.assertEqual(calls, [], "no new layout")
@@ -892,6 +892,28 @@ class BubbleHover(unittest.TestCase):
         self.window.show_older()
         self.assertIn("Hallo daar", self.window.bubble.full_text, "what you typed is one scroll up")
 
+    def test_a_pointer_that_never_moved_still_opens_the_bubble(self):
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        bubble = self.window.bubble
+        bubble.place("")
+        self.window._hovered = True  # it was on the face before, as when the desktop changes under it
+        self.window._animate()
+        self.assertTrue(bubble.isVisible(), "no movement needed")
+
+    def test_a_bubble_closed_on_purpose_stays_closed_until_the_pointer_leaves(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.window.unpin()
+        self.assertFalse(bubble.isVisible())
+        self.window._hover_retry = 0.0
+        self.window._animate()
+        self.assertFalse(bubble.isVisible(), "Escape or clicking away is not undone by the pointer resting there")
+        self.where["at"] = (5000, 5000)
+        self.window._animate()
+        self.window._hover_retry = 0.0
+        self.hover()
+        self.assertTrue(bubble.isVisible(), "pointing at it again opens it")
+
     def test_the_input_field_is_there_from_the_start(self):
         self.hover()
         self.assertTrue(self.window.bubble._entry.isVisibleTo(self.window.bubble))
@@ -1032,7 +1054,7 @@ class BubbleHover(unittest.TestCase):
         full = (bubble.width(), bubble.height())
         bubble.place("")
         bubble._built = None
-        self.window._hovered = False
+        self.window._hover_retry = 0.0
         self.hover()
         self.assertEqual((bubble.width(), bubble.height()), full)
 
@@ -1091,7 +1113,7 @@ class BubbleHover(unittest.TestCase):
         self.window._animate()
         self.window.bubble._tick()
         self.window.bubble.place("")
-        self.window._hovered = False
+        self.window._hover_retry = 0.0
         self.hover()
         self.assertEqual(self.window._depth, 1)
 
