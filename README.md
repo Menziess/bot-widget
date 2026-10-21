@@ -21,16 +21,16 @@ uv tool install git+https://github.com/Menziess/bot-widget
 botwidget
 ```
 
-- Point at the face to open the bubble: the latest message, and a field to type in
+- Point at the face to open the bubble, also when the pointer was already there: the latest message, and a field to type in
 - The field is focused once the pointer stays on the face for a moment, press Enter to send
-- Scroll up in the bubble to load the earlier messages one at a time, an arrow shows there are more
+- Scroll up in the bubble, or click the arrow, to load the earlier messages one at a time
 - Names only show above the messages when there are several
 - The bubble grows out of the face, and closes as soon as the pointer leaves or you click into another window with nothing typed
 - After you send a message the bubble stays, with moving dots, until the bot has answered
 - A new answer opens it by itself and it stays for as long as it takes to read, unless you point at it
 - It also stays while you have typed words or selected words
 - A hand shows over a message: click copies it as plain text, shift+click copies the markdown it was written in
-- Drag over the words to select them, the selection is copied when you let go, and a check shows it worked
+- Drag over the words to select them, the selection is copied when you let go, and "Copied" shows over the message and its words fade behind it for a moment
 - Clicking in the bubble never opens or closes it
 - The eyes follow the pointer when it is near, and look at you when it is over the face
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
@@ -40,7 +40,7 @@ botwidget
 - Settings holds sound, quiet hours, window stacking, start at login and update checks, and Quit
 - On macOS Control+Option+Space opens the chat from any app, and closes it again
 - The face goes back to where you put it when its screen comes back
-- On macOS the face and its bubble are on every desktop, Settings, Show on all desktops keeps them on one so you can drag the face to another desktop in Mission Control
+- On macOS the face and its bubble are on every desktop. With Settings, Show on all desktops off the face stays on one, and Control+Option+Space on another desktop brings it there, as Mission Control does not list floating windows
 
 The widget needs OpenBot or Grok Bot. Without either, the face says so and links to both.
 
