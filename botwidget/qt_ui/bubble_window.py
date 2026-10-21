@@ -687,6 +687,8 @@ class BubbleWindow(QWidget):
             self.move(int(tx), int(ty))
             self.show()
             desktops.apply(self)
+            # Living on one desktop, it must not open on the one the face is not on.
+            desktops.bring_here(self)
         if not self._physics_on:
             self._physics_on = True
             self._physics.start()

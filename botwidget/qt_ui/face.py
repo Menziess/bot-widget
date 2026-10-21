@@ -194,7 +194,11 @@ class FaceWindow(QWidget):
         self.apply_desktops()
 
     def bring_here(self) -> bool:
-        return desktops.bring_here(self)
+        """The face, and the bubble if it is open, to the desktop you are on; True when the face moved."""
+        moved = desktops.bring_here(self)
+        if self.bubble.isVisible():
+            desktops.bring_here(self.bubble)
+        return moved
 
     def apply_desktops(self):
         """On every desktop, or only on this one; the bubble follows the face."""

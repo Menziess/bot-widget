@@ -1402,6 +1402,33 @@ class Hotkey(unittest.TestCase):
         self.faces.Faces.hotkey(me)
         self.assertEqual(calls[2:], ["unpin"])
 
+    def test_the_bubble_comes_along_with_the_face(self):
+        from unittest import mock
+        from botwidget.qt_ui import face as face_module
+        window = face_module.FaceWindow("t", "Test", spot=(300, 400))
+        self.addCleanup(window.close_face)
+        window._poll_timer.stop()
+        window.bubble.show_blocks(face_module.conversation_blocks([{"role": "bot", "text": "Hoi"}], "T"), "say")
+        moved = []
+        with mock.patch.object(face_module.desktops, "bring_here", side_effect=lambda w: moved.append(w) or True):
+            self.assertTrue(window.bring_here())
+        self.assertEqual(moved, [window, window.bubble])
+        moved.clear()
+        window.bubble.place("")
+        with mock.patch.object(face_module.desktops, "bring_here", side_effect=lambda w: moved.append(w) or True):
+            window.bring_here()
+        self.assertEqual(moved, [window], "a closed bubble opens on the right desktop by itself")
+
+    def test_a_bubble_that_opens_checks_which_desktop_it_is_on(self):
+        from unittest import mock
+        from botwidget.qt_ui import bubble_window, face as face_module
+        window = face_module.FaceWindow("t", "Test", spot=(300, 400))
+        self.addCleanup(window.close_face)
+        window._poll_timer.stop()
+        with mock.patch.object(bubble_window.desktops, "bring_here") as bring:
+            window.bubble.show_blocks(face_module.conversation_blocks([{"role": "bot", "text": "Hoi"}], "T"), "say")
+        bring.assert_called_with(window.bubble)
+
     def test_the_key_brings_a_face_from_another_desktop_and_opens_it_instead_of_closing(self):
         from types import SimpleNamespace
         calls = []
