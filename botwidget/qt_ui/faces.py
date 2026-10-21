@@ -113,7 +113,9 @@ class Faces(QObject):
         face = next(iter(self.faces.values()), None)
         if face is None:
             return
-        if face.pinned:
+        # Living on one desktop, the face first comes to the one you are on.
+        moved = any([other.bring_here() for other in self.faces.values()])
+        if face.pinned and not moved:
             face.unpin()
         else:
             activate_app()

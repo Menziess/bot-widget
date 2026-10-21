@@ -1350,7 +1350,8 @@ class Hotkey(unittest.TestCase):
     def test_the_key_toggles_the_chat_of_the_first_face(self):
         from types import SimpleNamespace
         calls = []
-        face = SimpleNamespace(pinned=False, pin=lambda: calls.append("pin"), unpin=lambda: calls.append("unpin"))
+        face = SimpleNamespace(pinned=False, pin=lambda: calls.append("pin"), unpin=lambda: calls.append("unpin"),
+                               bring_here=lambda: False)
         me = SimpleNamespace(faces={"a": face})
         old = self.faces.activate_app
         self.addCleanup(setattr, self.faces, "activate_app", old)
@@ -1360,6 +1361,17 @@ class Hotkey(unittest.TestCase):
         face.pinned = True
         self.faces.Faces.hotkey(me)
         self.assertEqual(calls[2:], ["unpin"])
+
+    def test_the_key_brings_a_face_from_another_desktop_and_opens_it_instead_of_closing(self):
+        from types import SimpleNamespace
+        calls = []
+        face = SimpleNamespace(pinned=True, pin=lambda: calls.append("pin"), unpin=lambda: calls.append("unpin"),
+                               bring_here=lambda: True)
+        old = self.faces.activate_app
+        self.addCleanup(setattr, self.faces, "activate_app", old)
+        self.faces.activate_app = lambda: None
+        self.faces.Faces.hotkey(SimpleNamespace(faces={"a": face}))
+        self.assertEqual(calls, ["pin"], "it was pinned on the other desktop; here it must show, not close")
 
     def test_no_faces_no_error(self):
         from types import SimpleNamespace
@@ -1411,6 +1423,37 @@ class Desktops(unittest.TestCase):
                 desktops.apply(widget)
             self.assertEqual(call.call_count, 1)
         self.assertIsNotNone(app)
+
+    def bring(self, everywhere, here, platform="cocoa"):
+        from unittest import mock
+        from PySide6.QtWidgets import QApplication, QWidget
+        from botwidget.qt_ui import desktops
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        app = QApplication.instance() or QApplication([])
+        widget = QWidget()
+        with mock.patch.object(desktops, "all_desktops", return_value=everywhere), \
+                mock.patch.object(desktops, "on_active_space", return_value=here), \
+                mock.patch.object(desktops, "move_to_active_space") as move, \
+                mock.patch.object(desktops, "apply") as apply, \
+                mock.patch.object(desktops, "QTimer") as timer, \
+                mock.patch.object(desktops.QGuiApplication, "platformName", return_value=platform):
+            moved = desktops.bring_here(widget)
+        self.assertIsNotNone(app)
+        return moved, move.call_count, timer.singleShot.call_count, apply.call_count
+
+    def test_a_face_on_another_desktop_comes_to_this_one_and_stays_here(self):
+        try:
+            self.assertEqual(self.bring(everywhere=False, here=False), (True, 1, 1, 0))
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+
+    def test_nothing_moves_when_the_face_is_here_or_everywhere_or_the_system_has_no_desktops(self):
+        try:
+            self.assertEqual(self.bring(everywhere=False, here=True)[0], False)
+            self.assertEqual(self.bring(everywhere=True, here=False)[0], False)
+            self.assertEqual(self.bring(everywhere=False, here=False, platform="offscreen")[0], False)
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
 
     def test_other_systems_have_nothing_to_choose(self):
         self.assertFalse(linux.CAN_PICK_DESKTOPS or windows.CAN_PICK_DESKTOPS)

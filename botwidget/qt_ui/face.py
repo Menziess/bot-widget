@@ -191,6 +191,9 @@ class FaceWindow(QWidget):
             send_behind_windows(int(self.winId()))
         self.apply_desktops()
 
+    def bring_here(self) -> bool:
+        return desktops.bring_here(self)
+
     def apply_desktops(self):
         """On every desktop, or only on this one; the bubble follows the face."""
         desktops.apply(self)

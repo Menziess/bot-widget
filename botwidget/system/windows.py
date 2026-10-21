@@ -11,6 +11,14 @@ def set_desktops(win_id: int, everywhere: bool) -> None:
     pass
 
 
+def on_active_space(win_id: int) -> bool:
+    return True
+
+
+def move_to_active_space(win_id: int) -> None:
+    pass
+
+
 def activate_app() -> None:
     pass
 

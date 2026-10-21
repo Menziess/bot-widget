@@ -22,6 +22,7 @@ CAN_JOIN_ALL_SPACES = 1 << 0
 STATIONARY = 1 << 4
 MANAGED = 1 << 2
 FULL_SCREEN_AUXILIARY = 1 << 8
+MOVE_TO_ACTIVE_SPACE = 1 << 1
 CAN_PICK_DESKTOPS = True
 ACCESSORY = 1  # NSApplicationActivationPolicyAccessory
 HOTKEY_LABEL = "⌃⌥Space"
@@ -121,6 +122,22 @@ def set_desktops(win_id: int, everywhere: bool) -> None:
     window = _send(objc, ctypes.c_void_p)(win_id, objc.sel_registerName(b"window"))
     _send(objc, None, ctypes.c_ulong)(window, objc.sel_registerName(b"setCollectionBehavior:"),
                                       desktop_behavior(everywhere))
+
+
+def on_active_space(win_id: int) -> bool:
+    """Is this window on the desktop you are looking at?"""
+    objc = _objc()
+    window = _send(objc, ctypes.c_void_p)(win_id, objc.sel_registerName(b"window"))
+    return bool(_send(objc, ctypes.c_bool)(window, objc.sel_registerName(b"isOnActiveSpace")))
+
+
+def move_to_active_space(win_id: int) -> None:
+    """Pull a window that lives on another desktop onto this one. Afterwards set_desktops pins it here."""
+    objc = _objc()
+    window = _send(objc, ctypes.c_void_p)(win_id, objc.sel_registerName(b"window"))
+    _send(objc, None, ctypes.c_ulong)(window, objc.sel_registerName(b"setCollectionBehavior:"),
+                                      MOVE_TO_ACTIVE_SPACE | FULL_SCREEN_AUXILIARY)
+    _send(objc, None)(window, objc.sel_registerName(b"orderFrontRegardless"))
 
 
 def send_behind_windows(win_id: int) -> None:
