@@ -529,6 +529,25 @@ class BubbleHover(unittest.TestCase):
         bubble._tick_dots()
         self.assertEqual(bubble.changed, before)
 
+    def test_selected_words_keep_the_bubble_open_until_the_selection_goes(self):
+        import time
+        from botwidget.theme import BUBBLE_LINGER
+        self.hover()
+        self.where["at"] = (5000, 5000)
+        bubble = self.window.bubble
+        bubble._doc.hasFocus = lambda: True
+        bubble._doc.selectAll()
+        bubble.changed = time.monotonic() - BUBBLE_LINGER - 1
+        bubble._tick()
+        self.assertTrue(bubble.kind, "words are selected")
+        bubble._doc.textCursor().clearSelection()
+        cursor = bubble._doc.textCursor()
+        cursor.clearSelection()
+        bubble._doc.setTextCursor(cursor)
+        bubble.changed = time.monotonic() - BUBBLE_LINGER - 1
+        bubble._tick()
+        self.assertEqual(bubble.kind, "")
+
     def test_there_is_no_tooltip(self):
         self.assertEqual(self.window.toolTip(), "")
 

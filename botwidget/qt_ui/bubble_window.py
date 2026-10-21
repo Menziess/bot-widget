@@ -186,6 +186,10 @@ class BubbleWindow(QWidget):
     def typing(self) -> bool:
         return self._input and self._entry.hasFocus()
 
+    def holding(self) -> bool:
+        """Typing, or words selected to copy: the bubble stays for as long as that lasts."""
+        return self.typing() or (self._doc.hasFocus() and self._doc.textCursor().hasSelection())
+
     def enterEvent(self, event):
         """Mouse over the bubble: it stays."""
         self.changed = time.monotonic()
@@ -331,10 +335,9 @@ class BubbleWindow(QWidget):
             self._physics.stop()
             return
         now = time.monotonic()
-        if self.face.pointer_near(self):
+        if self.face.pointer_near(self) or self.holding():
             self.changed = now
-        elif (self.changed and now - self.changed > BUBBLE_LINGER
-                and not self.face.pinned and not self.typing()):
+        elif (self.changed and now - self.changed > BUBBLE_LINGER and not self.face.pinned):
             # Nothing new and the mouse has been away for a while: the bubble goes away.
             self.place("")
             return
