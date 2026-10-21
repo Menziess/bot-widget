@@ -27,7 +27,7 @@ from botwidget.config import (
 )
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
 from botwidget.qt_ui.face import FaceWindow
-from botwidget.system.current import can_install_update
+from botwidget.system.current import HOTKEY_LABEL, activate_app, can_install_update
 
 
 UPDATE_TICK_MS = 10 * 60 * 1000
@@ -44,6 +44,7 @@ class Faces(QObject):
         self.grok = {"connected": False, "bots": [], "note": "not tried yet"}
         self.update = None
         self.staged = None
+        self.hotkey_on = False
         threading.Thread(target=self._probe_grok, daemon=True).start()
         self._probed = 0.0
         if check_updates():
@@ -106,6 +107,17 @@ class Faces(QObject):
         if auto_update() and can_install_update():
             self.staged = updates.stage(release)
 
+    def hotkey(self):
+        """The global key combination: open the chat of the first face, or close it again."""
+        face = next(iter(self.faces.values()), None)
+        if face is None:
+            return
+        if face.pinned:
+            face.unpin()
+        else:
+            activate_app()
+            face.pin()
+
     def switch_channel(self):
         if channel.switch():
             QApplication.exit(channel.HANDOVER_EXIT if channel.running() == "local" else 0)
@@ -164,6 +176,8 @@ class Faces(QObject):
     def _settings_entries(self, menu: QMenu):
         settings = menu.addMenu("Settings")
         settings.addAction(f"Running the {channel.running()} version, v{__version__}").setEnabled(False)
+        if self.hotkey_on:
+            settings.addAction(f"Open the chat from any app with {HOTKEY_LABEL}").setEnabled(False)
         label = channel.switch_label()
         if label:
             settings.addAction(label).triggered.connect(self.switch_channel)

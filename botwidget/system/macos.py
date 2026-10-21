@@ -21,6 +21,11 @@ DESKTOP_ICON_LEVEL_KEY = 18  # kCGDesktopIconWindowLevelKey
 CAN_JOIN_ALL_SPACES = 1 << 0
 STATIONARY = 1 << 4
 ACCESSORY = 1  # NSApplicationActivationPolicyAccessory
+HOTKEY_LABEL = "⌃⌥Space"
+KEY_SPACE, CONTROL_KEY, OPTION_KEY = 49, 1 << 12, 1 << 11
+EVENT_CLASS_KEYBOARD, EVENT_HOTKEY_PRESSED = 0x6B657962, 5  # 'keyb'
+HOTKEY_SIGNATURE = 0x42574447  # 'BWDG'
+_hotkey_refs = []  # the C callback must outlive the call that installed it
 
 process_cmdline = posix.process_cmdline
 
@@ -51,6 +56,54 @@ def hide_from_dock() -> None:
     objc.objc_getClass.argtypes = [ctypes.c_char_p]
     app = _send(objc, ctypes.c_void_p)(objc.objc_getClass(b"NSApplication"), objc.sel_registerName(b"sharedApplication"))
     _send(objc, ctypes.c_bool, ctypes.c_long)(app, objc.sel_registerName(b"setActivationPolicy:"), ACCESSORY)
+
+
+def activate_app() -> None:
+    """Bring this app to the front, so typing goes to the chat even when another app has focus."""
+    objc = _objc()
+    objc.objc_getClass.restype = ctypes.c_void_p
+    objc.objc_getClass.argtypes = [ctypes.c_char_p]
+    app = _send(objc, ctypes.c_void_p)(objc.objc_getClass(b"NSApplication"), objc.sel_registerName(b"sharedApplication"))
+    _send(objc, None, ctypes.c_bool)(app, objc.sel_registerName(b"activateIgnoringOtherApps:"), True)
+
+
+_HANDLER = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+
+
+def _hotkey_handler(callback):
+    """The C function the system calls when the key combination is pressed."""
+    def on_event(_call, _event, _data):
+        callback()
+        return 0
+    return _HANDLER(on_event)
+
+
+def register_hotkey(callback) -> bool:
+    """Call callback on Control+Option+Space, in any app. False when the system refuses the key."""
+    class EventTypeSpec(ctypes.Structure):
+        _fields_ = [("event_class", ctypes.c_uint32), ("event_kind", ctypes.c_uint32)]
+
+    class EventHotKeyID(ctypes.Structure):
+        _fields_ = [("signature", ctypes.c_uint32), ("id", ctypes.c_uint32)]
+
+    carbon = ctypes.cdll.LoadLibrary(ctypes.util.find_library("Carbon"))
+    carbon.GetApplicationEventTarget.restype = ctypes.c_void_p
+    carbon.InstallEventHandler.argtypes = [ctypes.c_void_p, _HANDLER, ctypes.c_uint32,
+                                           ctypes.POINTER(EventTypeSpec), ctypes.c_void_p, ctypes.c_void_p]
+    carbon.InstallEventHandler.restype = ctypes.c_int32
+    carbon.RegisterEventHotKey.argtypes = [ctypes.c_uint32, ctypes.c_uint32, EventHotKeyID, ctypes.c_void_p,
+                                           ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p)]
+    carbon.RegisterEventHotKey.restype = ctypes.c_int32
+    target = carbon.GetApplicationEventTarget()
+    handler = _hotkey_handler(callback)
+    spec = EventTypeSpec(EVENT_CLASS_KEYBOARD, EVENT_HOTKEY_PRESSED)
+    if carbon.InstallEventHandler(target, handler, 1, ctypes.byref(spec), None, None) != 0:
+        return False
+    ref = ctypes.c_void_p()
+    status = carbon.RegisterEventHotKey(KEY_SPACE, CONTROL_KEY | OPTION_KEY, EventHotKeyID(HOTKEY_SIGNATURE, 1),
+                                        target, 0, ctypes.byref(ref))
+    _hotkey_refs.append((handler, ref))
+    return status == 0
 
 
 def send_behind_windows(win_id: int) -> None:

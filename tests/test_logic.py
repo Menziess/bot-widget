@@ -32,7 +32,7 @@ from botwidget import (
     theme,
     updates,
 )
-from botwidget.system import linux, macos
+from botwidget.system import linux, macos, windows
 from botwidget.system.current import process_cmdline
 
 
@@ -738,6 +738,50 @@ class QuietHours(unittest.TestCase):
                 now.now.return_value.hour = hour
                 sound.play_sound()
                 self.assertEqual(play.call_count, plays, (settings, hour))
+
+
+class Hotkey(unittest.TestCase):
+    """Should open the chat of the first face from the global key combination, and close it again."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+            from botwidget.qt_ui import faces
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.faces = faces
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_the_key_toggles_the_chat_of_the_first_face(self):
+        from types import SimpleNamespace
+        calls = []
+        face = SimpleNamespace(pinned=False, pin=lambda: calls.append("pin"), unpin=lambda: calls.append("unpin"))
+        me = SimpleNamespace(faces={"a": face})
+        old = self.faces.activate_app
+        self.addCleanup(setattr, self.faces, "activate_app", old)
+        self.faces.activate_app = lambda: calls.append("activate")
+        self.faces.Faces.hotkey(me)
+        self.assertEqual(calls, ["activate", "pin"])
+        face.pinned = True
+        self.faces.Faces.hotkey(me)
+        self.assertEqual(calls[2:], ["unpin"])
+
+    def test_no_faces_no_error(self):
+        from types import SimpleNamespace
+        self.faces.Faces.hotkey(SimpleNamespace(faces={}))
+
+    @unittest.skipUnless(sys.platform == "darwin", "the key combination is macOS only so far")
+    def test_the_system_callback_reaches_our_function(self):
+        calls = []
+        handler = macos._hotkey_handler(lambda: calls.append(1))
+        self.assertEqual(handler(None, None, None), 0)
+        self.assertEqual(calls, [1])
+
+    def test_other_systems_say_there_is_no_key_yet(self):
+        for module in (linux, windows):
+            self.assertFalse(module.register_hotkey(lambda: None))
 
 
 class Animator(unittest.TestCase):

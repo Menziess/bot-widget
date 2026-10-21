@@ -11,7 +11,7 @@ from botwidget.config import auto_update
 from botwidget.instance import ensure_single_instance
 from botwidget.qt_ui.faces import Faces
 from botwidget.qt_ui.fonts import install_font_fallbacks
-from botwidget.system.current import hide_from_dock, prepare_gui_environment
+from botwidget.system.current import hide_from_dock, prepare_gui_environment, register_hotkey
 
 
 def _login_item(args: list):
@@ -48,6 +48,7 @@ def main():
     if "--keep-login" in sys.argv[1:]:
         startup.set_enabled(True)
     faces = Faces()
+    faces.hotkey_on = register_hotkey(faces.hotkey)
     faces.welcome(startup.apply_default())
     first = next(iter(faces.faces.values()), None)
     if first and os.environ.get("BOT_WIDGET_OPEN_CHAT"):

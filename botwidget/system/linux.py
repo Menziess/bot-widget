@@ -81,8 +81,20 @@ def ensure_x11_libraries() -> None:
     print("On Debian or Ubuntu: sudo apt install " + " ".join(XCB_PACKAGES), file=sys.stderr)
 
 
+HOTKEY_LABEL = ""
+
+
+def activate_app() -> None:
+    pass
+
+
 def hide_from_dock() -> None:
     pass
+
+
+def register_hotkey(callback) -> bool:
+    """No global key combination here yet."""
+    return False
 
 
 def prepare_gui_environment() -> None:

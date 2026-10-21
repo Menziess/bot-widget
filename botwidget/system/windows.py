@@ -3,8 +3,20 @@
 import os
 
 
+HOTKEY_LABEL = ""
+
+
+def activate_app() -> None:
+    pass
+
+
 def hide_from_dock() -> None:
     pass
+
+
+def register_hotkey(callback) -> bool:
+    """No global key combination here yet."""
+    return False
 
 
 def prepare_gui_environment() -> None:
