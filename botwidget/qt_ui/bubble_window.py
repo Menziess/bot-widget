@@ -393,6 +393,9 @@ class BubbleWindow(QWidget):
         restyle = kind != self.kind
         self.kind = kind
         self._geom = self._parts()
+        if self._dots_lines and not self._dots_on:
+            self._dots_on = True
+            self._dots.start()
         if before and self._geom[2] > before[0]:
             self._reveal = [before[1], 0.0, self._geom[2] - before[0]]
         pix = self._paint_chrome()

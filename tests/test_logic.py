@@ -747,6 +747,19 @@ class BubbleHover(unittest.TestCase):
         self.assertIn("Hallo daar", self.window.bubble.full_text)
         self.assertTrue(self.window.bubble._dots_lines, "the dots show as soon as the message is on its way")
 
+    def test_the_dots_move_in_a_bubble_that_was_already_open(self):
+        self.window.pin()
+        bubble = self.window.bubble
+        self.assertFalse(bubble._dots.isActive())
+        self.window._pump_outbox = lambda: None
+        self.window.bubble._entry.setText("Hallo daar")
+        self.window.bubble._entry.returnPressed.emit()
+        self.assertTrue(bubble._dots_lines)
+        self.assertTrue(bubble._dots.isActive(), "the animation timer runs as soon as there are dots")
+        phase = bubble._dots_phase
+        bubble._tick_dots()
+        self.assertNotEqual(bubble._dots_phase, phase)
+
     def test_a_message_that_waits_for_openbot_shows_the_note_and_no_dots(self):
         self.window.pin()
         self.window._outbox.add("Hallo daar", "c9")
