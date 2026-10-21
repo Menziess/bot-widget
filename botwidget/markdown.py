@@ -180,6 +180,21 @@ def block_text(blocks: list) -> str:
     return "\n".join(out)
 
 
+def plain_text(markdown: str) -> str:
+    """The words of a message as you read them, without the markdown marks and without the link hosts."""
+    out = []
+    for block in md_blocks(markdown):
+        kind = block.get("kind")
+        if kind == "gap":
+            out.append("")
+        elif kind == "code":
+            out.extend(block["lines"])
+        elif kind == "text":
+            words = "".join(chunk for chunk, style in block["chunks"] if style != "dim")
+            out.append(block.get("prefix", "") + " ".join(words.split()))
+    return "\n".join(out).strip("\n")
+
+
 def role_panel(role: str, copy: str = "") -> dict:
     """Start of a new panel: user is dark, bot sits on the white bubble. copy is the text its button copies."""
     return {"kind": "panel", "role": role, "copy": copy, "size": 0, "indent": 0,

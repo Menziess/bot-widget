@@ -96,6 +96,8 @@ def fill_document(doc, panels: list, box_w: int):
                 first = False
             else:
                 cursor.insertBlock(block)
+            # A line that only continues the one above: copied text joins them with a space.
+            cursor.block().setUserState(1 if line.get("cont") else 0)
             for text, style in line_pieces(line):
                 fmt = char_format(style, user, line["size"], line["grey"], line.get("head", False))
                 url = anchor_url(style)
@@ -104,3 +106,15 @@ def fill_document(doc, panels: list, box_w: int):
                     fmt.setAnchorHref(url)
                 cursor.insertText(text, fmt)
     return doc
+
+
+def selected_text(doc, start: int, end: int) -> str:
+    """The words between two positions; lines that are one paragraph wrapped become one line again."""
+    parts, block = [], doc.findBlock(start)
+    while block.isValid() and block.position() < end:
+        first, last = max(start, block.position()), min(end, block.position() + block.length() - 1)
+        if last > first or not parts:
+            text = block.text()[first - block.position():last - block.position()]
+            parts.append((" " if block.userState() == 1 else "\n", text))
+        block = block.next()
+    return "".join((sep if i else "") + text for i, (sep, text) in enumerate(parts))

@@ -95,7 +95,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
                 ws.append(width(piece, block["size"]))
                 acc += piece
             laid.append({**block, "words": row, "prefix": prefix, "width": w,
-                         "xs": xs, "ws": ws})
+                         "xs": xs, "ws": ws, "cont": i > 0})
 
     for block in (md_blocks(text) if isinstance(text, str) else text):
         kind = block.get("kind")

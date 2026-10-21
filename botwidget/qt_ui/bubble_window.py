@@ -7,7 +7,7 @@ and "hint"). A speech bubble can get an input field and a row of links.
 import time
 
 from PySide6.QtCore import QEasingCurve, QSize, Qt, QTimer, QUrl, QVariantAnimation, Signal
-from PySide6.QtGui import QCursor, QDesktopServices, QIcon
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QScrollArea, QTextBrowser, QWidget
 
 from botwidget.avatar import AVATAR_SIZE
@@ -24,11 +24,11 @@ from botwidget.bubble import (
     reading_seconds,
 )
 from botwidget.bubble_layout import bubble_panels
-from botwidget.markdown import block_text, md_blocks
+from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, screens
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
-from botwidget.qt_ui.text_doc import fill_document
+from botwidget.qt_ui.text_doc import fill_document, selected_text
 from botwidget.theme import (
     BUBBLE_MAX_SCREEN_SHARE,
     BUBBLE_MAX_W,
@@ -78,9 +78,6 @@ SEED_W, SEED_H = 36, 22
 _ICON = ('<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16">{}'
          '</svg>')
 _STROKE = 'fill="none" stroke="#1c1c1c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"'
-COPY_ICON = _ICON.format(
-    f'<rect x="5.6" y="5.6" width="8.2" height="8.2" rx="2" {_STROKE}/>'
-    f'<path d="M10.4 3.6V3.4a1.9 1.9 0 0 0-1.9-1.9H3.4a1.9 1.9 0 0 0-1.9 1.9v5.1a1.9 1.9 0 0 0 1.9 1.9h.2" {_STROKE}/>')
 CHECK_ICON = _ICON.format(f'<path d="M3 8.6l3.2 3.2L13 4.6" {_STROKE}/>')
 
 
@@ -119,10 +116,18 @@ class OlderScroll(QScrollArea):
 
 
 class BubbleText(QTextBrowser):
-    """The words in the bubble as real text: selectable, and links open in the browser."""
+    """The words in the bubble as real text: a click copies the message, a drag selects and copies."""
+
+    clicked = Signal(float, bool)  # where in the text, and whether shift was held
+    selected = Signal(str, float)  # the selected words, and where the pointer was let go
+    SLOP = 4
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.message_at = lambda y: None
+        self._press = None
+        self._shift = False
+        self._dragging = False
         self.setFrameShape(QTextBrowser.NoFrame)
         # Not openLinks: that would navigate this read-only view. The window opens the link itself.
         self.setOpenLinks(False)
@@ -133,6 +138,7 @@ class BubbleText(QTextBrowser):
         self.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
         self.setFocusPolicy(Qt.ClickFocus)
         self.viewport().setAutoFillBackground(False)
+        self.viewport().setMouseTracking(True)
 
     def _open(self, url: QUrl):
         if url.scheme() in ("http", "https"):
@@ -142,6 +148,47 @@ class BubbleText(QTextBrowser):
         """The text is never taller than its frame: the bubble scrolls, not the text."""
         event.ignore()
 
+    def _cursor_for(self, pos):
+        """A hand over a message (a click copies it), the text cursor while selecting."""
+        if self._dragging:
+            shape = Qt.IBeamCursor
+        elif self.anchorAt(pos) or self.message_at(pos.y()) is not None:
+            shape = Qt.PointingHandCursor
+        else:
+            shape = Qt.ArrowCursor
+        self.viewport().setCursor(shape)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._press = event.position().toPoint()
+            self._shift = bool(event.modifiers() & Qt.ShiftModifier)
+            self._dragging = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        pos = event.position().toPoint()
+        if self._press is not None and event.buttons() & Qt.LeftButton and not self._dragging:
+            if (pos - self._press).manhattanLength() > self.SLOP:
+                self._dragging = True
+        self._cursor_for(pos)
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        pos = event.position().toPoint()
+        if event.button() == Qt.LeftButton and self._press is not None:
+            if self._dragging:
+                cursor = self.textCursor()
+                text = selected_text(self.document(), cursor.selectionStart(), cursor.selectionEnd())
+                if text.strip():
+                    self.selected.emit(text, pos.y())
+            elif not self.anchorAt(self._press):
+                cursor = self.textCursor()
+                cursor.clearSelection()
+                self.setTextCursor(cursor)
+                self.clicked.emit(pos.y(), self._shift)
+        self._press, self._dragging = None, False
+        self._cursor_for(pos)
 
 class BubbleWindow(QWidget):
     older = Signal()
@@ -182,6 +229,9 @@ class BubbleWindow(QWidget):
         self._text = QLabel()
         self._text.setAttribute(Qt.WA_TranslucentBackground)
         self._doc = BubbleText(self._text)
+        self._doc.message_at = self._message_at
+        self._doc.clicked.connect(self._on_click)
+        self._doc.selected.connect(self._on_selected)
         self._scroll = OlderScroll(self)
         self._scroll.older.connect(self._wheel_older)
         self._scroll.setWidget(self._text)
@@ -192,16 +242,16 @@ class BubbleWindow(QWidget):
         self._link_row.setObjectName("links")
         self._link_row.setOpenExternalLinks(True)
         self._link_row.setTextFormat(Qt.RichText)
-        self._copy_text = ""
-        self._copy_icons = None
-        self._copy = QPushButton(self)
-        self._copy.setObjectName("copy")
-        self._copy.setFixedSize(COPY_SIZE, COPY_SIZE)
-        self._copy.setIconSize(QSize(COPY_ICON_SIZE, COPY_ICON_SIZE))
-        self._copy.hide()
-        self._copy.setCursor(Qt.PointingHandCursor)
-        self._copy.setFocusPolicy(Qt.NoFocus)
-        self._copy.clicked.connect(self._copy_answer)
+        self._copied_icon = None
+        self._copied = QPushButton(self)
+        self._copied.setObjectName("copy")
+        self._copied.setFixedSize(COPY_SIZE, COPY_SIZE)
+        self._copied.setIconSize(QSize(COPY_ICON_SIZE, COPY_ICON_SIZE))
+        self._copied.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._copied.hide()
+        self._hide_copied = QTimer(self)
+        self._hide_copied.setSingleShot(True)
+        self._hide_copied.timeout.connect(self._copied.hide)
         self._entry = BubbleEntry(self)
         self._entry.setPlaceholderText("Send a message…")
         self._entry.returnPressed.connect(self._send)
@@ -229,41 +279,39 @@ class BubbleWindow(QWidget):
             self._entry.clear()
             self.face.on_user_message(text)
 
-    def _icon(self, name: str) -> QIcon:
-        if self._copy_icons is None:
-            self._copy_icons = {"copy": QIcon(svg_pixmap(COPY_ICON)), "check": QIcon(svg_pixmap(CHECK_ICON))}
-        return self._copy_icons[name]
+    def _message_at(self, y: float) -> dict | None:
+        """The message under this height in the text, if it is one a click can copy."""
+        if self.kind != "say" or not self._geom:
+            return None
+        content_y = y + self._doc.y()
+        for (top, height), panel in zip(panel_rects(self._geom[0]), self._geom[0]):
+            if top <= content_y < top + height and panel.get("copy"):
+                return panel
+        return None
 
-    def _copy_answer(self):
-        QApplication.clipboard().setText(self._copy_text)
-        self._copy.setIcon(self._icon("check"))
-        QTimer.singleShot(COPIED_MS, lambda: self._copy.setIcon(self._icon("copy")))
+    def _on_click(self, y: float, shift: bool):
+        """Click copies the message as plain text, shift+click as the markdown it was written in."""
+        panel = self._message_at(y)
+        if panel:
+            self._copied_to_clipboard(panel["copy"] if shift else plain_text(panel["copy"]), y)
+
+    def _on_selected(self, text: str, y: float):
+        self._copied_to_clipboard(text, y)
+
+    def _copied_to_clipboard(self, text: str, y: float):
+        """Copy, and show a check in the corner of the message so you know it worked."""
+        QApplication.clipboard().setText(text)
         self.changed = time.monotonic()
-
-    def _update_copy(self):
-        """A copy button in the corner of the message under the pointer, and only there."""
-        under = None
-        selecting = self._doc.textCursor().hasSelection() or bool(QApplication.mouseButtons() & Qt.LeftButton)
-        if self.kind == "say" and self._geom and not selecting:
-            viewport = self._scroll.viewport()
-            point = viewport.mapFromGlobal(QCursor.pos())
-            if viewport.rect().contains(point):
-                scrolled = self._scroll.verticalScrollBar().value()
-                for (top, height), panel in zip(panel_rects(self._geom[0]), self._geom[0]):
-                    if top <= point.y() + scrolled < top + height and panel.get("copy"):
-                        under = (panel["copy"], top - scrolled)
-                        break
-        if under is None:
-            self._copy.hide()
-            return
-        text, top = under
-        if text != self._copy_text or not self._copy.isVisible():
-            self._copy_text = text
-            self._copy.setIcon(self._icon("copy"))
+        if self._copied_icon is None:
+            self._copied_icon = QIcon(svg_pixmap(CHECK_ICON))
+        self._copied.setIcon(self._copied_icon)
+        content_y, scrolled = y + self._doc.y(), self._scroll.verticalScrollBar().value()
+        top = next((t for (t, h) in panel_rects(self._geom[0]) if t <= content_y < t + h), content_y)
         box_w = self._shown_w(self._geom[1])
-        self._copy.move(self._scroll.x() + box_w - COPY_SIZE - 6, self._scroll.y() + max(top, 0) + 6)
-        self._copy.show()
-        self._copy.raise_()
+        self._copied.move(self._scroll.x() + box_w - COPY_SIZE - 6, self._scroll.y() + max(top - scrolled, 0) + 6)
+        self._copied.show()
+        self._copied.raise_()
+        self._hide_copied.start(COPIED_MS)
 
     def focus_entry(self):
         if self._input:
@@ -554,7 +602,6 @@ class BubbleWindow(QWidget):
             self._tip = tip
             self._layout_children(self._paint_chrome())
             tx, ty, _tip = self._goal()
-        self._update_copy()
         if self._growth is not None:
             return
         x, y = self.x(), self.y()

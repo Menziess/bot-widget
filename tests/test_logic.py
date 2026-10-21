@@ -233,6 +233,11 @@ class BubbleLayout(unittest.TestCase):
             if role == "user":
                 self.assertGreater(message_top, chevron_bottom, "the dark panel does not cover the arrow")
 
+    def test_plain_text_drops_the_marks_and_keeps_the_shape(self):
+        raw = "Dit is **vet** en `code`.\n\n- punt een\n- punt twee\n\n```\nx = 1\n```\n\n[de site](https://x.nl)!"
+        self.assertEqual(markdown.plain_text(raw),
+                         "Dit is vet en code.\n\n• punt een\n• punt twee\n\nx = 1\n\nde site!")
+
     def test_a_single_message_has_no_name_above_it(self):
         text = markdown.block_text(markdown.conversation_blocks([{"role": "bot", "text": "Hoi daar"}], "Fritsie"))
         self.assertEqual(text, "Hoi daar")
@@ -683,64 +688,114 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "")
 
-    def point_at_panel(self, index, from_the_top=10):
-        """Put the pointer inside the n-th message of the bubble."""
-        from PySide6.QtCore import QPoint
+    def send_mouse(self, kind, x, y, buttons=None, button=None, modifiers=None):
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication
+        viewport = self.window.bubble._doc.viewport()
+        kind = {"press": QEvent.MouseButtonPress, "move": QEvent.MouseMove, "release": QEvent.MouseButtonRelease}[kind]
+        buttons = Qt.NoButton if buttons is None else buttons
+        button = Qt.NoButton if button is None else button
+        modifiers = Qt.NoModifier if modifiers is None else modifiers
+        point = QPointF(x, y)
+        QApplication.sendEvent(viewport, QMouseEvent(kind, point, QPointF(viewport.mapToGlobal(point.toPoint())),
+                                                     button, buttons, modifiers))
+
+    def message_point(self, index, down=24):
+        """Where in the text view the n-th message is."""
         from botwidget.bubble import panel_rects
         bubble = self.window.bubble
         top, _height = panel_rects(bubble._geom[0])[index]
-        scrolled = bubble._scroll.verticalScrollBar().value()
-        point = bubble._scroll.viewport().mapToGlobal(QPoint(20, top - scrolled + from_the_top))
-        self.cursor_at(point)
+        return 40, top + down - bubble._doc.y()
 
-    def cursor_at(self, point):
-        from types import SimpleNamespace
-        from botwidget.qt_ui import bubble_window
-        if not hasattr(self, "_real_cursor"):
-            self._real_cursor = bubble_window.QCursor
-            self.addCleanup(setattr, bubble_window, "QCursor", self._real_cursor)
-        bubble_window.QCursor = SimpleNamespace(pos=lambda: point)
+    def click(self, index, modifiers=None):
+        from PySide6.QtCore import Qt
+        x, y = self.message_point(index)
+        self.send_mouse("press", x, y, Qt.LeftButton, Qt.LeftButton, modifiers)
+        self.send_mouse("release", x, y, Qt.NoButton, Qt.LeftButton, modifiers)
 
-    def test_the_copy_icon_shows_only_on_the_message_under_the_pointer(self):
+    def clipboard(self):
         from PySide6.QtWidgets import QApplication
-        self.hover()
-        bubble = self.window.bubble
-        self.assertFalse(bubble._copy.isVisibleTo(bubble))
-        self.point_at_panel(1)
-        bubble._tick()
-        self.assertTrue(bubble._copy.isVisibleTo(bubble))
-        bubble._copy.click()
-        self.assertEqual(QApplication.clipboard().text(), "Ja.\n\nZal ik pushen?")
-        self.window.show_older()
-        bubble._slide.stop()
-        bubble._growth_done()
-        self.point_at_panel(0)
-        bubble._tick()
-        bubble._copy.click()
-        self.assertEqual(QApplication.clipboard().text(), "Klaar?", "each message copies its own words")
+        return QApplication.clipboard().text()
 
-    def test_the_copy_icon_goes_when_the_pointer_leaves_the_messages(self):
-        from PySide6.QtCore import QPoint
-        self.hover()
-        bubble = self.window.bubble
-        self.point_at_panel(1)
-        bubble._tick()
-        self.assertTrue(bubble._copy.isVisibleTo(bubble))
-        self.cursor_at(QPoint(-500, -500))
-        bubble._tick()
-        self.assertFalse(bubble._copy.isVisibleTo(bubble))
-
-    def test_no_copy_icon_on_the_thinking_dots_or_in_the_cloud(self):
+    def test_a_hand_shows_over_a_message_and_not_over_the_dots(self):
+        from PySide6.QtCore import Qt
         self.window.pin()
         self.window._outbox.add("Hallo", "c7")
         self.window._pump_outbox = lambda: None
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
         bubble = self.window.bubble
+        self.finish_growth()
         panels = bubble._geom[0]
         self.assertEqual(panels[-1]["copy"], "", "the dots are not a message")
-        self.point_at_panel(len(panels) - 1)
-        bubble._tick()
-        self.assertFalse(bubble._copy.isVisibleTo(bubble))
+        x, y = self.message_point(len(panels) - 2)
+        self.send_mouse("move", x, y)
+        self.assertEqual(bubble._doc.viewport().cursor().shape(), Qt.PointingHandCursor)
+        x, y = self.message_point(len(panels) - 1)
+        self.send_mouse("move", x, y)
+        self.assertEqual(bubble._doc.viewport().cursor().shape(), Qt.ArrowCursor)
+
+    def test_a_click_copies_the_message_as_plain_text(self):
+        self.MESSAGES = [{"role": "bot", "text": "Dit is **vet** en `code`.\n\nTweede alinea."}]
+        self.hover()
+        self.click(0)
+        self.assertEqual(self.clipboard(), "Dit is vet en code.\n\nTweede alinea.")
+        self.assertTrue(self.window.bubble._copied.isVisibleTo(self.window.bubble), "a check shows it worked")
+
+    def test_shift_click_copies_the_markdown(self):
+        from PySide6.QtCore import Qt
+        raw = "Dit is **vet** en `code`."
+        self.MESSAGES = [{"role": "bot", "text": raw}]
+        self.hover()
+        self.click(0, Qt.ShiftModifier)
+        self.assertEqual(self.clipboard(), raw)
+
+    def test_each_message_copies_its_own_words(self):
+        self.hover()
+        self.window.show_older()
+        self.finish_growth()
+        self.click(0)
+        self.assertEqual(self.clipboard(), "Klaar?")
+        self.click(1)
+        self.assertEqual(self.clipboard(), "Ja.\n\nZal ik pushen?")
+
+    def test_a_click_neither_selects_nor_closes(self):
+        self.hover()
+        self.click(0)
+        self.assertFalse(self.window.bubble._doc.textCursor().hasSelection())
+        self.assertTrue(self.window.bubble.isVisible())
+
+    def test_dragging_selects_with_the_text_cursor_and_copies_the_selection_on_release(self):
+        from PySide6.QtCore import Qt
+        self.MESSAGES = [{"role": "bot", "text": "Een lange regel met woorden die vanzelf over twee regels loopt in de bubbel."}]
+        self.hover()
+        bubble = self.window.bubble
+        x, y = self.message_point(0)
+        self.send_mouse("press", 20, y, Qt.LeftButton, Qt.LeftButton)
+        self.send_mouse("move", 120, y, Qt.LeftButton, Qt.NoButton)
+        self.assertEqual(bubble._doc.viewport().cursor().shape(), Qt.IBeamCursor, "selecting")
+        self.send_mouse("move", 240, y, Qt.LeftButton, Qt.NoButton)
+        self.send_mouse("release", 240, y, Qt.NoButton, Qt.LeftButton)
+        selected = bubble._doc.textCursor().selectedText()
+        self.assertTrue(selected)
+        self.assertEqual(self.clipboard(), selected.replace("\u2029", "\n"))
+        self.assertTrue(bubble._copied.isVisibleTo(bubble))
+
+    def test_a_selection_over_wrapped_lines_copies_as_one_line(self):
+        from PySide6.QtCore import Qt
+        text = "Een lange regel met woorden die vanzelf over meerdere regels loopt in de bubbel, " * 2
+        self.MESSAGES = [{"role": "bot", "text": text}]
+        self.hover()
+        bubble = self.window.bubble
+        doc = bubble._doc
+        cursor = doc.textCursor()
+        cursor.setPosition(0)
+        cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
+        doc.setTextCursor(cursor)
+        from botwidget.qt_ui.text_doc import selected_text
+        copied = selected_text(doc.document(), cursor.selectionStart(), cursor.selectionEnd())
+        self.assertNotIn("\n", copied, "wrapped lines are one paragraph")
+        self.assertEqual(copied.split(), text.split())
 
     def corner_is_warning(self):
         from PySide6.QtGui import QColor
@@ -1064,15 +1119,6 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble.isVisible())
         self.assertEqual(self.window.pinned, pinned)
 
-    def test_no_copy_icon_while_words_are_selected(self):
-        self.hover()
-        bubble = self.window.bubble
-        self.point_at_panel(1)
-        bubble._tick()
-        self.assertTrue(bubble._copy.isVisibleTo(bubble))
-        bubble._doc.selectAll()
-        bubble._tick()
-        self.assertFalse(bubble._copy.isVisibleTo(bubble))
 
     def test_a_click_on_the_face_puts_the_cursor_in_the_field(self):
         focus = []
