@@ -963,19 +963,27 @@ class BubbleHover(unittest.TestCase):
         self.window._animate()
         self.assertTrue(bubble.isVisible(), "no movement needed")
 
-    def test_a_bubble_closed_on_purpose_stays_closed_until_the_pointer_leaves(self):
+    def test_a_bubble_closed_on_purpose_comes_back_after_a_while_if_the_pointer_stays(self):
+        import time
         self.hover()
         bubble = self.window.bubble
         self.window.unpin()
         self.assertFalse(bubble.isVisible())
         self.window._hover_retry = 0.0
         self.window._animate()
-        self.assertFalse(bubble.isVisible(), "Escape or clicking away is not undone by the pointer resting there")
+        self.assertFalse(bubble.isVisible(), "not at once: Escape or clicking away was meant")
+        self.window._hover_blocked_until = time.monotonic() - 0.1
+        self.window._hover_retry = 0.0
+        self.window._animate()
+        self.assertTrue(bubble.isVisible(), "the pointer is still on the face")
+
+    def test_closing_with_the_pointer_elsewhere_blocks_nothing(self):
+        self.hover()
         self.where["at"] = (5000, 5000)
         self.window._animate()
-        self.window._hover_retry = 0.0
-        self.hover()
-        self.assertTrue(bubble.isVisible(), "pointing at it again opens it")
+        self.window.unpin()
+        self.assertEqual(self.window._hover_blocked_until, 0.0)
+
 
     def test_the_input_field_is_there_from_the_start(self):
         self.hover()

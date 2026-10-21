@@ -67,6 +67,8 @@ AUTOMATION_NOTE = ("OpenBot's local API is off for {name}. In OpenBot open {name
 WELCOME_S = 9.0
 FOCUS_DWELL_S = 0.25
 HOVER_RETRY_S = 0.5
+# After you closed the bubble on purpose it stays closed this long; if the pointer is still on the face it comes back.
+REOPEN_AFTER_S = 3.0
 
 
 def ticker(parent, ms: int, step) -> QTimer:
@@ -127,7 +129,7 @@ class FaceWindow(QWidget):
         self._happy_on = False
         self._hovered = False
         self._hover_since = 0.0
-        self._hover_blocked = False  # closed on purpose while the pointer is still on the face
+        self._hover_blocked_until = 0.0  # closed on purpose while the pointer is on the face
         self._hover_retry = 0.0
         self._depth = 1  # how many of the latest messages the bubble shows
         self._loading_older = False
@@ -391,11 +393,10 @@ class FaceWindow(QWidget):
         self._hovered = hovered
         now = time.monotonic()
         if not hovered:
-            self._hover_blocked = False
             self._hover_since = 0.0
             return
         if (not self.bubble.isVisible() and self._drag_origin is None and not self.pinned
-                and not self._hover_blocked and now >= self._hover_retry):
+                and now >= self._hover_blocked_until and now >= self._hover_retry):
             self._hover_retry = now + HOVER_RETRY_S
             self._depth = 1
             self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
@@ -517,7 +518,8 @@ class FaceWindow(QWidget):
 
     def unpin(self):
         self.pinned = False
-        self._hover_blocked = self._hovered
+        if self._hovered:
+            self._hover_blocked_until = time.monotonic() + REOPEN_AFTER_S
         if self._working:
             self._sync_bubble(latest_chat(thread_id=self.thread_id))
         else:
