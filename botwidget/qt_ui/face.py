@@ -530,6 +530,11 @@ class FaceWindow(QWidget):
         else:
             self.bubble.place("")
 
+    def visible_to_user(self) -> bool:
+        """On the screen in front of you, not covered by other windows or on another desktop."""
+        handle = self.windowHandle()
+        return bool(handle and handle.isExposed())
+
     def awaiting(self) -> bool:
         """A message of yours is on its way or being answered: the bubble stays until the answer is in."""
         return self._working or self._sending or bool(self._outbox.items)
@@ -605,7 +610,8 @@ class FaceWindow(QWidget):
             self._last_bot = last  # conversation that was already there: no beep
         elif last and last != self._last_bot:
             self._last_bot = last
-            play_sound()
+            if not self.visible_to_user():
+                play_sound()
         if self._drag_origin is not None or time.monotonic() < self._welcome_until:
             return
         if not (openbot_installed() or gbot_installed()):

@@ -901,6 +901,27 @@ class BubbleHover(unittest.TestCase):
         self.assertIn("Hallo daar", self.window.bubble.full_text)
         self.assertTrue(self.window.bubble._dots_lines, "the dots show as soon as the message is on its way")
 
+    def answer_sounds(self, visible):
+        from unittest import mock
+        self.window.visible_to_user = lambda: visible
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
+        with mock.patch.object(self.face, "play_sound") as sound:
+            self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Nieuw."}], "activity": ""})
+        return sound.call_count
+
+    def test_a_new_answer_makes_no_sound_while_the_face_is_in_view(self):
+        self.assertEqual(self.answer_sounds(visible=True), 0)
+
+    def test_a_new_answer_sounds_when_the_face_is_out_of_view(self):
+        self.assertEqual(self.answer_sounds(visible=False), 1)
+
+    def test_a_window_that_is_not_shown_is_not_in_view(self):
+        self.assertFalse(self.window.visible_to_user())
+        self.window.show()
+        self.app.processEvents()
+        self.assertTrue(self.window.visible_to_user())
+        self.window.hide()
+
     def test_the_bubble_stays_open_until_the_answer_is_in(self):
         self.hover()
         bubble = self.window.bubble

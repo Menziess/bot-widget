@@ -13,7 +13,7 @@ import sys
 
 from botwidget.system import posix
 
-SOUND_FILE = "/System/Library/Sounds/Glass.aiff"
+SOUND_FILE = "/System/Library/Sounds/Tink.aiff"
 BUNDLE_ID = "com.bot-widget.app"
 DEV_LAUNCHER_NAME = "Bot Widget (dev)"
 SM_ENABLED = 1  # SMAppServiceStatusEnabled

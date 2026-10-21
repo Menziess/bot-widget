@@ -33,6 +33,7 @@ botwidget
 - A hand shows over a message: click copies it as plain text, shift+click copies the markdown it was written in
 - Drag over the words to select them, the selection is copied when you let go, and "Copied" shows over the message and its words fade behind it for a moment
 - Clicking in the bubble never opens or closes it
+- The answer sound is off by default, and when on it only plays while the face is out of view (covered or on another desktop)
 - The eyes follow the pointer when it is near, and look at you when it is over the face
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
 - Drag the face to move it, it bounces off screen edges
