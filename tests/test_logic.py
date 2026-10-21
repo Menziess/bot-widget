@@ -548,6 +548,19 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "")
 
+    def test_the_copy_button_puts_the_latest_answer_on_the_clipboard(self):
+        from PySide6.QtWidgets import QApplication
+        self.hover()
+        bubble = self.window.bubble
+        self.assertTrue(bubble._copy.isVisibleTo(bubble))
+        bubble._copy.click()
+        self.assertEqual(QApplication.clipboard().text(), "Ja.\n\nZal ik pushen?")
+        self.assertEqual(bubble._copy.text(), "Copied")
+
+    def test_no_copy_button_for_the_thinking_cloud(self):
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)
+        self.assertFalse(self.window.bubble._copy.isVisibleTo(self.window.bubble))
+
     def test_there_is_no_tooltip(self):
         self.assertEqual(self.window.toolTip(), "")
 

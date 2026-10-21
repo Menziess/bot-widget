@@ -539,7 +539,7 @@ class FaceWindow(QWidget):
                 blocks.append(status_block(status))
             self._shown_text = block_text(blocks)
             if not self.bubble.shows("say", self._shown_text, True):
-                self.bubble.show_blocks(blocks, "say", input=True)
+                self.bubble.show_blocks(blocks, "say", input=True, copy_text=last)
             return
         if self._working:
             # What you just asked, three pulsing dots and one line about what the bot is doing.
@@ -563,7 +563,7 @@ class FaceWindow(QWidget):
         if blocks and (force or text != self._shown_text):
             # Only new text brings the bubble back by itself; after it slid away it stays away.
             self._shown_text = text
-            self.bubble.show_blocks(blocks, "say")
+            self.bubble.show_blocks(blocks, "say", copy_text=last)
         elif not blocks and self.bubble.kind:
             self.bubble.place("")
 

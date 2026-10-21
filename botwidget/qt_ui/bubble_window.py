@@ -8,7 +8,7 @@ import time
 
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QLabel, QLineEdit, QScrollArea, QTextBrowser, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QScrollArea, QTextBrowser, QWidget
 
 from botwidget.avatar import AVATAR_SIZE
 from botwidget.bubble import (
@@ -54,12 +54,19 @@ QLineEdit {{
 }}
 QLineEdit:focus {{ border-color: rgba(22, 128, 243, 140); }}
 QLabel#links {{ color: {SAND_ACCENT}; }}
+QPushButton#copy {{
+    background: #ffffff; color: {SAND_INK}; border: 1px solid rgba(28, 28, 28, 31);
+    border-radius: 11px; font-size: 12px; padding: 0;
+}}
+QPushButton#copy:hover {{ background: #f2f2f2; }}
 """
 ENTRY_H = 34
 ENTRY_GAP = 8
 LINKS_H = 26
 MIN_INTERACTIVE_W = 240
 SCROLLBAR_W = 6
+COPY_W, COPY_H = 52, 22
+COPIED_MS = 1200
 
 
 class BubbleEntry(QLineEdit):
@@ -154,6 +161,12 @@ class BubbleWindow(QWidget):
         self._link_row.setObjectName("links")
         self._link_row.setOpenExternalLinks(True)
         self._link_row.setTextFormat(Qt.RichText)
+        self.copy_text = ""
+        self._copy = QPushButton("Copy", self)
+        self._copy.setObjectName("copy")
+        self._copy.setCursor(Qt.PointingHandCursor)
+        self._copy.setFocusPolicy(Qt.NoFocus)
+        self._copy.clicked.connect(self._copy_answer)
         self._entry = BubbleEntry(self)
         self._entry.setPlaceholderText("Send a message…")
         self._entry.returnPressed.connect(self._send)
@@ -173,6 +186,12 @@ class BubbleWindow(QWidget):
         if text:
             self._entry.clear()
             self.face.on_user_message(text)
+
+    def _copy_answer(self):
+        QApplication.clipboard().setText(self.copy_text)
+        self._copy.setText("Copied")
+        QTimer.singleShot(COPIED_MS, lambda: self._copy.setText("Copy"))
+        self.changed = time.monotonic()
 
     def focus_entry(self):
         if self._input:
@@ -257,6 +276,10 @@ class BubbleWindow(QWidget):
             self._entry.setGeometry(x, below + ENTRY_GAP, box_w, ENTRY_H)
         self._link_row.setVisible(bool(self._links))
         self._entry.setVisible(self._input)
+        # Half over the top right corner, so it never covers a word.
+        self._copy.setGeometry(PAD_SVG + 2 * PAD_BODY + box_w - COPY_W - 6, PAD_SVG - COPY_H // 2, COPY_W, COPY_H)
+        self._copy.setVisible(bool(self.copy_text) and self.kind == "say")
+        self._copy.raise_()
 
     def _set_text(self):
         """The shapes behind the text; the words themselves are the text document."""
@@ -272,10 +295,12 @@ class BubbleWindow(QWidget):
         panels, box_w, _inner = self._geom
         fill_document(self._doc.document(), panels, box_w)
 
-    def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None):
+    def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
+                    copy_text: str = ""):
         """Put blocks in the bubble; newest at the bottom."""
         self._links = links or []
         self._input = input
+        self.copy_text = copy_text
         self._link_row.setText(" &nbsp;·&nbsp; ".join(
             f'<a href="{url}" style="color:{SAND_ACCENT}">{label} ↗</a>' for label, url in self._links))
         self.blocks = blocks
