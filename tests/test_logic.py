@@ -212,6 +212,15 @@ class BubbleLayout(unittest.TestCase):
     def measure(text, style, size):
         return len(text) * 7.0
 
+    def test_a_single_message_has_no_name_above_it(self):
+        text = markdown.block_text(markdown.conversation_blocks([{"role": "bot", "text": "Hoi daar"}], "Fritsie"))
+        self.assertEqual(text, "Hoi daar")
+
+    def test_several_messages_each_get_their_name(self):
+        messages = [{"role": "user", "text": "Hoi"}, {"role": "bot", "text": "Hoi daar"}]
+        text = markdown.block_text(markdown.conversation_blocks(messages, "Fritsie"))
+        self.assertEqual(text, "You\nHoi\nFritsie\nHoi daar")
+
     def test_every_message_panel_knows_its_place_and_its_own_words(self):
         from botwidget.bubble import content_height, panel_rects
         messages = [{"role": "user", "text": "Eerste"}, {"role": "bot", "text": "Tweede\n\nderde"}]

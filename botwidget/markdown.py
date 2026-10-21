@@ -188,7 +188,7 @@ def role_panel(role: str, copy: str = "") -> dict:
 
 def conversation_blocks(messages: list, bot_name: str, limit: int = 6,
                         max_chars: int = 800) -> list:
-    """The last turns as panels: per turn a small role label and the markdown."""
+    """The last turns as panels. Several turns get a small role label each; a single message needs none."""
     turns, total = [], 0
     for msg in reversed(messages or []):
         text = (msg.get("text") or "").strip()
@@ -203,7 +203,8 @@ def conversation_blocks(messages: list, bot_name: str, limit: int = 6,
     blocks = []
     for role, label, text in turns:
         blocks.append(role_panel(role, text))
-        blocks.append(text_block(11, 0, "", True, [(label, "b")]))
+        if len(turns) > 1:
+            blocks.append(text_block(11, 0, "", True, [(label, "b")]))
         blocks.extend(md_blocks(text))
     return blocks
 
