@@ -21,20 +21,26 @@ uv tool install git+https://github.com/Menziess/bot-widget
 botwidget
 ```
 
-- Click the face to open the chat bubble, type, press Enter
+- Point at the face to see the latest answer, or what the bot is doing
+- The bubble closes by itself 4 seconds after the pointer leaves, and stays while you type or have words selected
+- Click the face to open the chat, type, press Enter
+- Copy in the corner of the bubble copies the latest answer
 - While the bot works the bubble turns into a thought cloud
 - Drag the face to move it, it bounces off screen edges
+- A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
 - Right-click the face to see which bot apps were found, switch bots on and off, and reach Settings
-- Settings holds sound, window stacking, start at login and update checks, and Quit
+- Settings holds sound, quiet hours, window stacking, start at login and update checks, and Quit
+- On macOS Control+Option+Space opens the chat from any app, and closes it again
+- The face goes back to where you put it when its screen comes back
 
 The widget needs OpenBot or Grok Bot. Without either, the face says so and links to both.
 
 ## Updates
 
-The widget updates itself, and you can switch that off. On each start it asks GitHub whether a newer release exists.
+The widget updates itself, and you can switch that off. At each start, and every 6 hours after, it asks GitHub whether a newer release exists.
 
 - It downloads the new version in the background and checks it against the SHA256SUMS.txt published with the release
-- The new version installs the next time the widget starts, or straight away through Restart to update in the right-click menu
+- The widget restarts into the new version as soon as nobody is using a face, or straight away through Restart to update in the right-click menu
 - Settings has two switches, Check for updates and Install updates automatically
 - With checking off nothing is requested, with automatic installing off the menu only links to the download page
 - The request is anonymous and sends no data about you beyond what any web request carries
