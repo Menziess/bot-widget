@@ -523,7 +523,9 @@ class FaceWindow(QWidget):
         stored = {m["text"] for m in messages if m.get("role") == "user"}
         self._local = [m for m in self._local
                        if m["until"] > now and not (m["role"] == "user" and m["text"] in stored)]
-        return messages + [{"role": m["role"], "text": m["text"]} for m in self._local]
+        # What was just typed shows at once, before OpenBot has confirmed it.
+        waiting = [{"role": "user", "text": item["text"]} for item in self._outbox.items]
+        return messages + [{"role": m["role"], "text": m["text"]} for m in self._local] + waiting
 
     def welcome(self):
         """A short explanation on first start: starting at login can be turned off in Settings."""
@@ -563,7 +565,7 @@ class FaceWindow(QWidget):
             if not blocks:
                 blocks = conversation_blocks([{"role": "bot", "text": f"Hi, I'm {self.bot_name}. Ask me anything."}],
                                              self.bot_name)
-            if self._working:
+            if self._working or (self._outbox.items and not self._send_status):
                 blocks += [role_panel("bot"), plain_block("dots")]
             # Open the chat and learn at once that sending is not possible yet.
             status = self._send_status or ("" if automation_ready() else self._waiting_note())
@@ -656,10 +658,13 @@ class FaceWindow(QWidget):
                 self._local.append({"role": "user", "text": item["text"],
                                     "until": time.monotonic() + 120})
         else:
+            item = next((i for i in self._outbox.items if i["cid"] == cid), None)
             wait = self._outbox.failed(cid, retryable)
             if wait is None:
                 self._send_status = ""
                 self._refused = True
+                if item is not None:
+                    self._local.append({"role": "user", "text": item["text"], "until": time.monotonic() + 60})
                 self._local.append({"role": "bot", "until": time.monotonic() + 60,
                                     "text": REFUSED_NOTE.format(why=error)})
             else:

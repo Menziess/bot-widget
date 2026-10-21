@@ -652,6 +652,31 @@ class BubbleHover(unittest.TestCase):
         self.window.pin()
         self.assertFalse(self.window.unsent())
 
+    def test_a_message_shows_at_once_with_the_thinking_dots_before_openbot_confirms(self):
+        self.window.pin()
+        self.window.bubble._entry.setText("Hallo daar")
+        old = self.window._pump_outbox
+        self.window._pump_outbox = lambda: None
+        self.addCleanup(setattr, self.window, "_pump_outbox", old)
+        self.window.bubble._entry.returnPressed.emit()
+        self.assertIn("Hallo daar", self.window.bubble.full_text)
+        self.assertTrue(self.window.bubble._dots_lines, "the dots show as soon as the message is on its way")
+
+    def test_a_message_that_waits_for_openbot_shows_the_note_and_no_dots(self):
+        self.window.pin()
+        self.window._outbox.add("Hallo daar", "c9")
+        self.window._on_message_done("c9", False, True, "HTTP 503")
+        self.assertIn("Hallo daar", self.window.bubble.full_text)
+        self.assertFalse(self.window.bubble._dots_lines)
+
+    def test_a_refused_message_stays_visible_next_to_the_reason(self):
+        self.window.pin()
+        self.window._outbox.add("Hallo daar", "c8")
+        self.window._on_message_done("c8", False, False, "HTTP 400")
+        text = self.window.bubble.full_text
+        self.assertIn("Hallo daar", text)
+        self.assertIn("I couldn't send that", text)
+
     def test_there_is_no_tooltip(self):
         self.assertEqual(self.window.toolTip(), "")
 
