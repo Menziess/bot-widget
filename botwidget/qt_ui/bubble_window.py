@@ -6,8 +6,8 @@ and "hint"). A speech bubble can get an input field and a row of links.
 
 import time
 
-from PySide6.QtCore import Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QCursor, QDesktopServices, QIcon
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QScrollArea, QTextBrowser, QWidget
 
 from botwidget.avatar import AVATAR_SIZE
@@ -19,6 +19,7 @@ from botwidget.bubble import (
     cloud_body_svg,
     cloud_shadow_svg,
     content_height,
+    panel_rects,
 )
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks
@@ -58,8 +59,7 @@ QLineEdit {{
 QLineEdit:focus {{ border-color: rgba(22, 128, 243, 140); }}
 QLabel#links {{ color: {SAND_ACCENT}; }}
 QPushButton#copy {{
-    background: #ffffff; color: {SAND_INK}; border: 1px solid rgba(28, 28, 28, 31);
-    border-radius: 11px; font-size: 12px; padding: 0;
+    background: #ffffff; border: 1px solid rgba(28, 28, 28, 31); border-radius: 12px; padding: 0;
 }}
 QPushButton#copy:hover {{ background: #f2f2f2; }}
 """
@@ -68,8 +68,15 @@ ENTRY_GAP = 8
 LINKS_H = 26
 MIN_INTERACTIVE_W = 240
 SCROLLBAR_W = 6
-COPY_W, COPY_H = 52, 22
+COPY_SIZE, COPY_ICON_SIZE = 24, 14
 COPIED_MS = 1200
+_ICON = ('<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16">{}'
+         '</svg>')
+_STROKE = 'fill="none" stroke="#1c1c1c" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"'
+COPY_ICON = _ICON.format(
+    f'<rect x="5.6" y="5.6" width="8.2" height="8.2" rx="2" {_STROKE}/>'
+    f'<path d="M10.4 3.6V3.4a1.9 1.9 0 0 0-1.9-1.9H3.4a1.9 1.9 0 0 0-1.9 1.9v5.1a1.9 1.9 0 0 0 1.9 1.9h.2" {_STROKE}/>')
+CHECK_ICON = _ICON.format(f'<path d="M3 8.6l3.2 3.2L13 4.6" {_STROKE}/>')
 
 
 class BubbleEntry(QLineEdit):
@@ -168,9 +175,13 @@ class BubbleWindow(QWidget):
         self._link_row.setObjectName("links")
         self._link_row.setOpenExternalLinks(True)
         self._link_row.setTextFormat(Qt.RichText)
-        self.copy_text = ""
-        self._copy = QPushButton("Copy", self)
+        self._copy_text = ""
+        self._copy_icons = None
+        self._copy = QPushButton(self)
         self._copy.setObjectName("copy")
+        self._copy.setFixedSize(COPY_SIZE, COPY_SIZE)
+        self._copy.setIconSize(QSize(COPY_ICON_SIZE, COPY_ICON_SIZE))
+        self._copy.hide()
         self._copy.setCursor(Qt.PointingHandCursor)
         self._copy.setFocusPolicy(Qt.NoFocus)
         self._copy.clicked.connect(self._copy_answer)
@@ -194,11 +205,40 @@ class BubbleWindow(QWidget):
             self._entry.clear()
             self.face.on_user_message(text)
 
+    def _icon(self, name: str) -> QIcon:
+        if self._copy_icons is None:
+            self._copy_icons = {"copy": QIcon(svg_pixmap(COPY_ICON)), "check": QIcon(svg_pixmap(CHECK_ICON))}
+        return self._copy_icons[name]
+
     def _copy_answer(self):
-        QApplication.clipboard().setText(self.copy_text)
-        self._copy.setText("Copied")
-        QTimer.singleShot(COPIED_MS, lambda: self._copy.setText("Copy"))
+        QApplication.clipboard().setText(self._copy_text)
+        self._copy.setIcon(self._icon("check"))
+        QTimer.singleShot(COPIED_MS, lambda: self._copy.setIcon(self._icon("copy")))
         self.changed = time.monotonic()
+
+    def _update_copy(self):
+        """A copy button in the corner of the message under the pointer, and only there."""
+        under = None
+        if self.kind == "say" and self._geom:
+            viewport = self._scroll.viewport()
+            point = viewport.mapFromGlobal(QCursor.pos())
+            if viewport.rect().contains(point):
+                scrolled = self._scroll.verticalScrollBar().value()
+                for (top, height), panel in zip(panel_rects(self._geom[0]), self._geom[0]):
+                    if top <= point.y() + scrolled < top + height and panel.get("copy"):
+                        under = (panel["copy"], top - scrolled)
+                        break
+        if under is None:
+            self._copy.hide()
+            return
+        text, top = under
+        if text != self._copy_text or not self._copy.isVisible():
+            self._copy_text = text
+            self._copy.setIcon(self._icon("copy"))
+        box_w = self._geom[1]
+        self._copy.move(self._scroll.x() + box_w - COPY_SIZE - 6, self._scroll.y() + max(top, 0) + 6)
+        self._copy.show()
+        self._copy.raise_()
 
     def focus_entry(self):
         if self._input:
@@ -299,10 +339,7 @@ class BubbleWindow(QWidget):
             self._entry.setGeometry(x, below + ENTRY_GAP, box_w, ENTRY_H)
         self._link_row.setVisible(bool(self._links))
         self._entry.setVisible(self._input)
-        # Half over the top right corner, so it never covers a word.
-        self._copy.setGeometry(PAD_SVG + 2 * PAD_BODY + box_w - COPY_W - 6, PAD_SVG - COPY_H // 2, COPY_W, COPY_H)
-        self._copy.setVisible(bool(self.copy_text) and self.kind == "say")
-        self._copy.raise_()
+
 
     def _set_text(self):
         """The shapes behind the text; the words themselves are the text document."""
@@ -318,10 +355,9 @@ class BubbleWindow(QWidget):
         panels, box_w, _inner = self._geom
         fill_document(self._doc.document(), panels, box_w)
 
-    def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
-                    copy_text: str = ""):
+    def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None):
         """Put blocks in the bubble; newest at the bottom."""
-        key = (kind, block_text(blocks), input, tuple(links or []), copy_text, self._ceiling())
+        key = (kind, block_text(blocks), input, tuple(links or []), self._ceiling())
         if key == self._built and not self._dots_lines:
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
             self.changed = time.monotonic()
@@ -332,7 +368,6 @@ class BubbleWindow(QWidget):
         self._built = key
         self._links = links or []
         self._input = input
-        self.copy_text = copy_text
         self._link_row.setText(" &nbsp;·&nbsp; ".join(
             f'<a href="{url}" style="color:{SAND_ACCENT}">{label} ↗</a>' for label, url in self._links))
         self.blocks = blocks
@@ -415,6 +450,7 @@ class BubbleWindow(QWidget):
             self._tip = tip
             self._layout_children(self._paint_chrome())
             tx, ty, _tip = self._goal()
+        self._update_copy()
         x, y = self.x(), self.y()
         self._vx = (self._vx + (tx - x) * 0.16) * 0.7
         self._vy = (self._vy + (ty - y) * 0.16) * 0.7

@@ -53,6 +53,16 @@ def content_height(panels: list) -> int:
     return bubble_height(panels) - PAD_SVG - TAIL_ROOM - 2 * PAD_BODY
 
 
+def panel_rects(panels: list) -> list:
+    """(top, height) of every panel in the scrolling content, where panel_svg draws it."""
+    rects, top = [], 0
+    for panel in panels:
+        height = 2 * PAD_PANEL_Y + sum(line_height(line) for line in panel["lines"])
+        rects.append((top, height))
+        top += height + GAP_PANEL
+    return rects
+
+
 def bubble_width(panels: list) -> int:
     """Width of the text area."""
     return max((panel["text_w"] for panel in panels), default=16) + 2 * PAD_PANEL_X

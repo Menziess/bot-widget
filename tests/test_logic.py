@@ -212,6 +212,16 @@ class BubbleLayout(unittest.TestCase):
     def measure(text, style, size):
         return len(text) * 7.0
 
+    def test_every_message_panel_knows_its_place_and_its_own_words(self):
+        from botwidget.bubble import content_height, panel_rects
+        messages = [{"role": "user", "text": "Eerste"}, {"role": "bot", "text": "Tweede\n\nderde"}]
+        panels = bubble_layout.bubble_panels(self.measure, markdown.conversation_blocks(messages, "Bot"))
+        self.assertEqual([p["copy"] for p in panels], ["Eerste", "Tweede\n\nderde"])
+        rects = panel_rects(panels)
+        self.assertEqual(rects[0][0], 0)
+        self.assertGreater(rects[1][0], rects[0][0] + rects[0][1], "a gap between the panels")
+        self.assertEqual(rects[-1][0] + rects[-1][1], content_height(panels))
+
     def test_long_text_breaks_within_the_width(self):
         lines, widest = bubble_layout.md_layout(self.measure, "word " * 40, 200)
         self.assertGreater(len(lines), 1)
@@ -633,18 +643,61 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "")
 
-    def test_the_copy_button_puts_the_latest_answer_on_the_clipboard(self):
+    def point_at_panel(self, index, from_the_top=10):
+        """Put the pointer inside the n-th message of the bubble."""
+        from PySide6.QtCore import QPoint
+        from botwidget.bubble import panel_rects
+        bubble = self.window.bubble
+        top, _height = panel_rects(bubble._geom[0])[index]
+        scrolled = bubble._scroll.verticalScrollBar().value()
+        point = bubble._scroll.viewport().mapToGlobal(QPoint(20, top - scrolled + from_the_top))
+        self.cursor_at(point)
+
+    def cursor_at(self, point):
+        from types import SimpleNamespace
+        from botwidget.qt_ui import bubble_window
+        if not hasattr(self, "_real_cursor"):
+            self._real_cursor = bubble_window.QCursor
+            self.addCleanup(setattr, bubble_window, "QCursor", self._real_cursor)
+        bubble_window.QCursor = SimpleNamespace(pos=lambda: point)
+
+    def test_the_copy_icon_shows_only_on_the_message_under_the_pointer(self):
         from PySide6.QtWidgets import QApplication
         self.hover()
         bubble = self.window.bubble
+        self.assertFalse(bubble._copy.isVisibleTo(bubble))
+        self.point_at_panel(1)
+        bubble._tick()
         self.assertTrue(bubble._copy.isVisibleTo(bubble))
         bubble._copy.click()
         self.assertEqual(QApplication.clipboard().text(), "Ja.\n\nZal ik pushen?")
-        self.assertEqual(bubble._copy.text(), "Copied")
+        self.point_at_panel(0)
+        bubble._tick()
+        bubble._copy.click()
+        self.assertEqual(QApplication.clipboard().text(), "Klaar?", "each message copies its own words")
 
-    def test_no_copy_button_for_the_thinking_cloud(self):
-        self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)
-        self.assertFalse(self.window.bubble._copy.isVisibleTo(self.window.bubble))
+    def test_the_copy_icon_goes_when_the_pointer_leaves_the_messages(self):
+        from PySide6.QtCore import QPoint
+        self.hover()
+        bubble = self.window.bubble
+        self.point_at_panel(1)
+        bubble._tick()
+        self.assertTrue(bubble._copy.isVisibleTo(bubble))
+        self.cursor_at(QPoint(-500, -500))
+        bubble._tick()
+        self.assertFalse(bubble._copy.isVisibleTo(bubble))
+
+    def test_no_copy_icon_on_the_thinking_dots_or_in_the_cloud(self):
+        self.window.pin()
+        self.window._outbox.add("Hallo", "c7")
+        self.window._pump_outbox = lambda: None
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
+        bubble = self.window.bubble
+        panels = bubble._geom[0]
+        self.assertEqual(panels[-1]["copy"], "", "the dots are not a message")
+        self.point_at_panel(len(panels) - 1)
+        bubble._tick()
+        self.assertFalse(bubble._copy.isVisibleTo(bubble))
 
     def corner_is_warning(self):
         from PySide6.QtGui import QColor

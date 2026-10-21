@@ -593,11 +593,11 @@ class FaceWindow(QWidget):
         if self.pinned:
             self._shown_text = text
             if not self.bubble.shows("say", text, True):
-                self.bubble.show_blocks(blocks, "say", input=True, copy_text=last)
+                self.bubble.show_blocks(blocks, "say", input=True)
         elif blocks and (force or text != self._shown_text):
             # Only new text brings the bubble back by itself; after it slid away it stays away.
             self._shown_text = text
-            self.bubble.show_blocks(blocks, "say", input=True, copy_text=last)
+            self.bubble.show_blocks(blocks, "say", input=True)
         elif not blocks and self.bubble.kind:
             self.bubble.place("")
 

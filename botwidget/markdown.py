@@ -180,9 +180,9 @@ def block_text(blocks: list) -> str:
     return "\n".join(out)
 
 
-def role_panel(role: str) -> dict:
-    """Start of a new panel: user is dark, bot sits on the white bubble."""
-    return {"kind": "panel", "role": role, "size": 0, "indent": 0,
+def role_panel(role: str, copy: str = "") -> dict:
+    """Start of a new panel: user is dark, bot sits on the white bubble. copy is the text its button copies."""
+    return {"kind": "panel", "role": role, "copy": copy, "size": 0, "indent": 0,
             "prefix": "", "grey": False, "chunks": []}
 
 
@@ -202,7 +202,7 @@ def conversation_blocks(messages: list, bot_name: str, limit: int = 6,
     turns.reverse()
     blocks = []
     for role, label, text in turns:
-        blocks.append(role_panel(role))
+        blocks.append(role_panel(role, text))
         blocks.append(text_block(11, 0, "", True, [(label, "b")]))
         blocks.extend(md_blocks(text))
     return blocks
@@ -213,7 +213,7 @@ def split_panels(blocks: list) -> list:
     panels = []
     for block in blocks:
         if block.get("kind") == "panel":
-            panels.append({"role": block.get("role", "bot"), "blocks": []})
+            panels.append({"role": block.get("role", "bot"), "copy": block.get("copy", ""), "blocks": []})
             continue
         if not panels:
             panels.append({"role": "bot", "blocks": []})

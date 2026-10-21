@@ -129,5 +129,5 @@ def bubble_panels(measure, blocks: list, max_w: int = BUBBLE_MAX_W) -> list:
         lines, widest = md_layout(measure, panel["blocks"], content_w)
         if not lines:
             continue
-        panels.append({"role": panel["role"], "lines": lines, "text_w": widest})
+        panels.append({"role": panel["role"], "copy": panel.get("copy", ""), "lines": lines, "text_w": widest})
     return panels
