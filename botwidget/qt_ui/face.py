@@ -3,6 +3,7 @@
 import datetime
 import hashlib
 import math
+import os
 import random
 import threading
 import time
@@ -79,7 +80,6 @@ FOCUS_DWELL_S = 0.25
 QUEUE_HOLD_S = 30.0
 MENU_KEEP_S = 2.5  # a menu page stays this long after it opened, pointer or not
 BUBBLE_HOVER_MARGIN = 24  # the pointer counts as on the bubble this far outside it
-THINK_CLOUD_HOVER_MARGIN = 60  # larger area to reveal thought text via hover
 HOVER_RETRY_S = 0.5
 # After you closed the bubble on purpose it stays closed this long; if the pointer is still on the face it comes back.
 REOPEN_AFTER_S = 3.0
@@ -88,9 +88,11 @@ REOPEN_AFTER_S = 3.0
 def global_pointer() -> bool:
     """Whether the platform tells us where the pointer is anywhere on screen.
 
-    A Wayland client only hears about its own windows: until one of them has the pointer, QCursor.pos()
-    keeps its last value or stays at 0,0, which reads as a pointer parked on the face.
+    A Wayland client only hears about its own windows, and so does XWayland: QCursor.pos() keeps its last
+    value, which reads as a pointer parked on the bubble, so the bubble never closes.
     """
+    if os.environ.get("XDG_SESSION_TYPE") == "wayland" and QGuiApplication.platformName() in ("wayland", "xcb"):
+        return False
     return QGuiApplication.platformName() != "wayland"
 
 
@@ -226,10 +228,8 @@ class FaceWindow(QWidget):
     def _apply_flags(self):
         """Separate from the taskbar; above or below normal windows according to widget.json."""
         layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
-        # Wayland parents a tool window to whichever normal window is in front. A plain window stays put
-        # when that other window is minimized.
-        kind = Qt.Tool if global_pointer() else Qt.Window
-        self.setWindowFlags(Qt.FramelessWindowHint | kind | layer)
+        # Tool: no taskbar button. A normal window shows up as __main__.py.
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | layer)
 
     def restack(self):
         """After a change of the setting: new flags ask the window to be shown again."""
@@ -239,7 +239,8 @@ class FaceWindow(QWidget):
     def showEvent(self, event):
         super().showEvent(event)
         handle = self.windowHandle()
-        if handle is not None and not global_pointer():
+        # Not a child of whichever window was in front, so minimizing that one leaves the face up.
+        if handle is not None:
             handle.setTransientParent(None)
         if not always_on_top():
             send_behind_windows(int(self.winId()))
@@ -535,6 +536,10 @@ class FaceWindow(QWidget):
         """Whether the platform says where the pointer is outside our own windows."""
         return global_pointer()
 
+    def _think_expanded(self) -> bool:
+        """Thought text and the field, while the pointer is on the bot or its bubble."""
+        return self._pointer_on_head() or self.pointer_near(self.bubble)
+
     def _pointer_on_head(self) -> bool:
         if not global_pointer():
             return self.underMouse()
@@ -553,6 +558,13 @@ class FaceWindow(QWidget):
         """Pointing at the face shows the bubble, also when the pointer was already there and did not move."""
         if self._semicircle_visible:
             return
+        on_bot = self._think_expanded()
+        pending = self._working or self._sending or bool(self._outbox.items)
+        if pending and not self.pinned and on_bot != getattr(self, "_think_on_bot", False):
+            self._think_on_bot = on_bot
+            if self._chat is not None:
+                self._sync_bubble(self._chat, force=True)
+                return
         if not global_pointer():
             hovered = self.underMouse()
         else:
@@ -895,36 +907,37 @@ class FaceWindow(QWidget):
             # Something new came in: the latest message alone again, the older ones a scroll away.
             self._conversation = newest
             self._depth = 1
-        if self._working and not self.pinned:
+        pending = self._working or self._sending or bool(self._outbox.items)
+        if pending and not self.pinned:
             if self._muted and not self._has_attention():
                 # Thinking is silenced: no cloud, until the face is clicked again.
                 self._shown_text = ""
                 if self.bubble.kind == "think":
                     self.bubble.place("")
                 return
-            # The thought, what needs an answer, what waits in line, and last the pulsing dots: the cloud
-            # follows the end of the text, so that is where the dots belong.
-            blocks = [role_panel("bot")] + thought_blocks(chat.get("activity") or "")
-            blocks += self._attention_blocks()
-            if self._send_status:
-                blocks.append(status_block(self._send_status))
-            elif self.grok and self.grok.note():
-                blocks.append(status_block(self.grok.note()))
-            if self._queue:
-                blocks.append(status_block("Queued, click one to edit it"))
-                waiting = [{"role": "user", "text": attachments.label_with(item["text"], item["files"]),
-                            "queued": item["id"]} for item in self._queue]
-                blocks += conversation_blocks(waiting, self.bot_name, limit=len(waiting), max_chars=10 ** 9)
-            blocks += [role_panel("bot"), plain_block("dots")]
-            # Like an answer: only new things to think about bring the bubble back by themselves.
-            text = block_text(blocks)
-            if force or text != self._shown_text:
+            # Dots from the moment you ask, before the bot is marked as thinking.
+            # Hover shows the thought and the field. Leaving shrinks it back to the dots.
+            expanded = self._think_expanded()
+            self._think_on_bot = expanded
+            if expanded:
+                blocks = [role_panel("bot")] + thought_blocks(chat.get("activity") or "")
+                blocks += self._attention_blocks()
+                if self._send_status:
+                    blocks.append(status_block(self._send_status))
+                elif self.grok and self.grok.note():
+                    blocks.append(status_block(self.grok.note()))
+                if self._queue:
+                    blocks.append(status_block("Queued, click one to edit it"))
+                    waiting = [{"role": "user", "text": attachments.label_with(item["text"], item["files"]),
+                                "queued": item["id"]} for item in self._queue]
+                    blocks += conversation_blocks(waiting, self.bot_name, limit=len(waiting), max_chars=10 ** 9)
+                blocks += [role_panel("bot"), plain_block("dots")]
+            else:
+                blocks = [role_panel("bot"), plain_block("dots")]
+            text = block_text(blocks) + ("|field" if expanded else "")
+            if force or text != self._shown_text or self.bubble.kind != "think":
                 self._shown_text = text
-                # Show the activity line only while the pointer hovers the thinking cloud.
-                if not self.pointer_near(self.bubble, THINK_CLOUD_HOVER_MARGIN):
-                    # pointer is not over the bubble: only show the dots part of the text.
-                    self._shown_text = plain_block("dots")
-                self.bubble.show_blocks(blocks, "think", input=True)
+                self.bubble.show_blocks(blocks, "think", input=expanded)
             return
         blocks = self._chat_blocks(messages, greet=force or self.pinned)
         text = block_text(blocks)
@@ -1024,7 +1037,6 @@ class FaceWindow(QWidget):
     def on_user_message(self, text: str, files: list = ()):
         """Send a message from the bubble; it only counts as sent once the POST succeeded."""
         files = list(files)
-        self.bubble.keep_for(USER_KEEP_S)
         page = None if files else menu_pages.SLASH.get(text.strip().lower())
         if page:
             self.open_menu(page)
@@ -1042,6 +1054,7 @@ class FaceWindow(QWidget):
         if self.grok:
             # A new message is a fresh attempt: the link that stopped tries again.
             self.grok.resume()
+        self.pinned = False
         text = attachments.message_with(text, files)
         day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
         cid = hashlib.sha256(f"{self.agent_id}\n{text}\n{day}".encode()).hexdigest()[:32]

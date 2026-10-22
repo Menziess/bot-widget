@@ -554,10 +554,7 @@ class Faces(QObject):
             self._semicircle_hide_timer.start()
 
     def _check_mouse_position(self):
-        """Top-centre hotspot. Wayland does not report the pointer outside our windows."""
-        from botwidget.qt_ui.face import global_pointer
-        if not global_pointer():
-            return
+        """Top-centre hotspot. The pointer is read even when a window cannot see it on its own."""
         from PySide6.QtGui import QCursor
         pos = QCursor.pos()
         if self._in_hotspot(pos.x(), pos.y()):

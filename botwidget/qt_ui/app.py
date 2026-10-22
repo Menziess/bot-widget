@@ -39,6 +39,7 @@ def main():
         sys.exit(0)
     prepare_gui_environment()
     app = QApplication(sys.argv)
+    app.setApplicationName("Bot Widget")
     hide_from_dock()
     # The faces and bubbles are Tool windows; closing one must not stop the app.
     app.setQuitOnLastWindowClosed(False)

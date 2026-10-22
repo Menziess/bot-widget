@@ -1211,7 +1211,8 @@ class BubbleHover(unittest.TestCase):
         self.window._pump_outbox = lambda: None
         self.addCleanup(setattr, self.window, "_pump_outbox", old)
         self.window.bubble._entry.returnPressed.emit()
-        self.assertIn("Hallo daar", self.window.bubble.full_text)
+        self.assertEqual(self.window.bubble.kind, "think")
+        self.assertFalse(self.window.bubble._input)
         self.assertTrue(self.window.bubble._dots_lines, "the dots show as soon as the message is on its way")
 
     def answer_sounds(self, visible):
@@ -1248,22 +1249,34 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(self.window.visible_to_user())
         self.window.hide()
 
-    def test_the_bubble_stays_open_until_the_answer_is_in(self):
-        self.hover()
-        bubble = self.window.bubble
-        bubble._tick()
-        self.window._outbox.add("Hallo", "w1")
+    def test_asking_shows_dots_at_once_and_hover_brings_the_thought_back(self):
+        """Should open a dots cloud before the bot is thinking, close it, and expand it on hover."""
+        import time
+        from botwidget.bubble import reading_seconds
         self.window._pump_outbox = lambda: None
-        self.where["at"] = (5000, 5000)
+        self.window._seeded = True
+        self.window.on_user_message("Hallo")
+        bubble = self.window.bubble
+        self.assertEqual(bubble.kind, "think")
+        self.assertFalse(bubble._input)
+        self.assertNotIn("reading", bubble.full_text)
+        bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) - 1
         bubble._tick()
-        self.assertTrue(bubble.kind, "pointer gone, answer not in yet")
-        bubble.changed -= 100
+        self.assertEqual(bubble.kind, "")
+        self.window._pointer_on_head = lambda: True
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)
+        self.assertIn("reading files", bubble.full_text)
+        self.assertTrue(bubble._input)
+        self.window._pointer_on_head = lambda: False
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)
+        self.assertNotIn("reading files", bubble.full_text)
+        self.assertFalse(bubble._input)
+        self.assertEqual(bubble.kind, "think")
         bubble._tick()
-        self.assertTrue(bubble.kind, "waiting does not run out of patience quickly")
-        self.window._outbox.sent("w1")
-        self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Antwoord."}], "activity": ""})
+        self.assertEqual(bubble.kind, "think", "leaving starts the wait again")
+        bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) - 1
         bubble._tick()
-        self.assertTrue(bubble.kind, "the answer itself gets shown before the bubble goes")
+        self.assertEqual(bubble.kind, "")
 
     def test_a_bot_that_never_answers_does_not_keep_the_bubble_forever(self):
         import time
@@ -1410,6 +1423,16 @@ class BubbleHover(unittest.TestCase):
         self.where["at"] = (5000, 5000)
         bubble._tick()
         self.assertTrue(bubble.kind)
+
+    def test_an_empty_pinned_field_closes_when_the_pointer_leaves(self):
+        self.hover()
+        self.window.pin()
+        bubble = self.window.bubble
+        bubble._tick()
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertEqual(bubble.kind, "")
+        self.assertFalse(self.window.pinned)
 
     def test_clicking_away_from_an_empty_field_closes_even_a_pinned_bubble(self):
         self.window.pin()
@@ -1802,6 +1825,7 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(entry.verticalScrollBarPolicy(), Qt.ScrollBarAlwaysOff)
 
     def test_the_thinking_cloud_has_the_field_so_you_can_write_ahead(self):
+        self.window._pointer_on_head = lambda: True
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading"}, force=True)
         self.finish_growth()
         bubble = self.window.bubble
@@ -1813,6 +1837,7 @@ class BubbleHover(unittest.TestCase):
         self.state = {"activity": "reading"}
         self.face.latest_chat = lambda thread_id, limit=8: {"messages": self.MESSAGES, "activity": self.state["activity"]}
         self.window._pump_outbox = lambda: None
+        self.window._pointer_on_head = lambda: True
         self.window._sync_bubble(self.face.latest_chat("t"), force=True)
 
     def type_while_working(self, text):
@@ -2294,6 +2319,7 @@ class BubbleHover(unittest.TestCase):
 
     def think(self, text):
         self.state["activity"] = text
+        self.window._pointer_on_head = lambda: True
         self.window._sync_bubble(self.face.latest_chat("t"))
         self.finish_growth()
         self.app.processEvents()
@@ -2316,6 +2342,14 @@ class BubbleHover(unittest.TestCase):
         bar.setValue(bar.maximum())
         bubble, bar = self.think(self.LONG_THOUGHT + "More. " * 80)
         self.assertEqual(bar.value(), bar.maximum(), "back at the end it follows again")
+
+    def test_the_thought_stays_hidden_until_the_pointer_is_on_the_bot(self):
+        """Should show only the dots until the pointer is on the bot, then the thought."""
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)
+        self.assertNotIn("reading files", self.window.bubble.full_text)
+        self.window._pointer_on_head = lambda: True
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)
+        self.assertIn("reading files", self.window.bubble.full_text)
 
     def test_the_dots_sit_at_the_end_of_the_cloud(self):
         self.start_working()
@@ -2446,7 +2480,7 @@ class BubbleHover(unittest.TestCase):
             bubble._kept_until = 0.0
             self.where["at"] = (5000, 5000)
             bubble._tick()
-        self.assertTrue(bubble.kind, "the answer still has to come")
+        self.assertEqual(bubble.kind, "", "waiting does not keep the bubble up")
 
     def test_a_field_emptied_again_lets_the_bubble_go_when_the_pointer_leaves(self):
         self.hover()

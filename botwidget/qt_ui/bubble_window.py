@@ -1202,16 +1202,14 @@ class BubbleWindow(QWidget):
     def _show_at(self, tx, ty):
         self._vx = self._vy = 0.0
         self.move(int(tx), int(ty))
-        # Follow the face, not whichever window happens to be in front.
-        from botwidget.qt_ui.face import global_pointer
-        if not global_pointer():
-            self.winId()
-            parent = self.face.windowHandle()
-            handle = self.windowHandle()
-            if parent is not None and handle is not None:
-                handle.setTransientParent(parent)
         self.show()
         desktops.apply(self)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        handle = self.windowHandle()
+        if handle is not None:
+            handle.setTransientParent(None)
 
     def _final_size(self) -> tuple:
         """The window size once it has grown to its size."""
@@ -1256,18 +1254,27 @@ class BubbleWindow(QWidget):
             self._show_at(tx, ty)
             self._slide.start()
             return
-        if self.face.pointer_near(self) or self.holding() or awaiting or now < self._kept_until:
+        pointer = self.face.pointer_near(self)
+        # The thinking cloud uses the same reading time as any bubble. The face keeps moving without it.
+        # Leaving starts that time again, on the dots only. A writing bubble still goes once you leave it.
+        if pointer or self.holding() or now < self._kept_until:
             self.changed = now
             self._was_near = self._was_near or not awaiting
-            self._near_at = now
-        elif self._was_near and not self.face.pinned:
-            # The pointer was here and left. On a platform that only reports the pointer over our own
-            # windows, that leave may be the pointer crossing the gap to the face: it gets a moment.
+            if pointer:
+                self._near_at = now
+        elif self._was_near and self.kind == "think":
+            self._was_near = False
+            self.changed = now
+        elif self._was_near:
+            # On a platform that only reports the pointer over our own windows, that leave may be the
+            # pointer crossing the gap to the face: it gets a moment.
             if self.face.pointer_known() or now - self._near_at >= CROSS_GAP_S:
+                self.face.pinned = False
                 self.place("")
                 return
-        elif self.changed and now - self.changed > reading_seconds(self.full_text) and not self.face.pinned:
+        elif self.changed and now - self.changed > reading_seconds(self.full_text):
             # Nobody pointed at it and nothing new came: it goes away after a while.
+            self.face.pinned = False
             self.place("")
             return
         if tip != self._tip:
