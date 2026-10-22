@@ -234,8 +234,16 @@ class Stopped(FakeGbot):
         link = self.link()
         link.poll()
         self.assertTrue(link.stopped)
-        self.assertIn("no live route", link.status)
-        self.assertIn("not running", link.status)
+        self.assertIn("connection stopped", link.note())
+        self.assertIn("send a message to try again", link.note())
+        self.assertIn("not running", link.note())
+
+    def test_a_send_without_a_route_still_names_it(self):
+        self.behaviour(rc=75, stderr="no route")
+        link = self.link()
+        ok, error = link.send("Hoi")
+        self.assertFalse(ok)
+        self.assertIn("no live route", error)
 
     def test_a_stopped_link_does_not_ask_again(self):
         self.behaviour(rc=75, stderr="no route")
@@ -410,7 +418,17 @@ class Sending(FakeGbot):
         self.assertTrue(ok, "not refused: it may have gone out")
         self.assertEqual(link.chat()["messages"], [{"role": "user", "text": "Hoi (?)"}])
         self.assertTrue(link.waiting, "an answer may still come")
-        self.assertIn("may or may not", link.status)
+        self.assertIn("may or may not", link.note())
+
+    def test_the_unsure_note_stays_through_a_look_and_goes_with_an_answer(self):
+        self.steps({"sleep": 2.0}, {"stdout": thread([])}, {"stdout": thread([entry("Hoi")], cursor="t1")})
+        link = self.link()
+        link.TIMEOUT_S = 0.3
+        link.send("Hoi")
+        link.poll()
+        self.assertIn("may or may not", link.note(), "a look without an answer keeps it in sight")
+        link.poll()
+        self.assertEqual(link.note(), "", "the answer shows the message arrived")
 
     def test_only_a_send_may_wake_the_app(self):
         self.steps({"stdout": SENT}, {"stdout": thread([])})
@@ -460,3 +478,37 @@ class Target(unittest.TestCase):
         self.assertEqual(grokbot.face_id("General"), "grok:General")
         self.assertTrue(grokbot.is_grok("grok:General"))
         self.assertFalse(grokbot.is_grok("agent-1"))
+
+
+class GrokFaceBubble(unittest.TestCase):
+    """Should show the notes of a Grok face in its bubble, also with nothing in the chat."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            from botwidget.qt_ui import face
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.face = face
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.window = self.face.FaceWindow(grokbot.face_id("General"), "General", spot=(300, 400))
+        self.window._poll_timer.stop()
+        self.addCleanup(self.window.close_face)
+
+    def text(self, messages):
+        from botwidget.markdown import block_text
+        return block_text(self.window._chat_blocks(messages, greet=False))
+
+    def test_a_stopped_read_says_so_in_the_bubble(self):
+        self.window.grok._apply(grokbot.Result(75, None, "app not running"))
+        self.assertIn("connection stopped", self.text([]))
+        self.assertIn("send a message to try again", self.text([{"role": "bot", "text": "Hoi"}]))
+
+    def test_an_unsure_send_says_so_in_the_bubble(self):
+        self.window.grok.unsure = grokbot.UNSURE_NOTE
+        self.assertIn("may or may not have gone out", self.text([{"role": "user", "text": "Hoi (?)"}]))

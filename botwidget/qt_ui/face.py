@@ -654,7 +654,7 @@ class FaceWindow(QWidget):
     def _waiting_note(self, error: str = "") -> str:
         """Why a message is waiting: the switch in OpenBot is off, or the link dropped."""
         if self.grok:
-            return self.grok.status
+            return self.grok.note()
         if error == AUTOMATION_OFF or not automation_ready():
             return AUTOMATION_NOTE.format(name=self.bot_name)
         return RETRY_NOTE
@@ -734,8 +734,8 @@ class FaceWindow(QWidget):
             blocks += self._attention_blocks()
             if self._send_status:
                 blocks.append(status_block(self._send_status))
-            elif self.grok and self.grok.status:
-                blocks.append(status_block(self.grok.status))
+            elif self.grok and self.grok.note():
+                blocks.append(status_block(self.grok.note()))
             if self._queue:
                 blocks.append(status_block("Queued, click one to edit it"))
                 waiting = [{"role": "user", "text": attachments.label_with(item["text"], item["files"]),
@@ -813,13 +813,15 @@ class FaceWindow(QWidget):
             blocks = conversation_blocks([{"role": "bot", "text": f"Hi, I'm {self.bot_name}. Ask me anything."}],
                                          self.bot_name)
         if not blocks:
-            return blocks
+            # A Grok face says why it stopped even with nothing in the chat yet.
+            note = self.grok.note() if self.grok else ""
+            return [status_block(note)] if note else blocks
         if self._working or (self._outbox.items and not self._send_status):
             blocks += [role_panel("bot"), plain_block("dots")]
         blocks += self._attention_blocks()
         # Learn at once that sending is not possible yet.
         if self.grok:
-            status = self._send_status or self.grok.status
+            status = self._send_status or self.grok.note()
         else:
             status = self._send_status or ("" if automation_ready() else self._waiting_note())
         if status:

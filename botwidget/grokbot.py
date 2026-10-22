@@ -176,8 +176,15 @@ def _key(message: dict) -> str | None:
     return f"{entry_id}@{message.get('at') or 0}"
 
 
-def _stopped(rc: int, note: str) -> str:
+# A read that found no route stops the link; only a message of the user tries again.
+STOPPED_READ = "Grok Bot: connection stopped{why}; send a message to try again."
+UNSURE_NOTE = "No answer from gbot; the message may or may not have gone out."
+
+
+def _stopped(rc: int, note: str, read: bool = False) -> str:
     """Why the link is closed."""
+    if rc == 75 and read:
+        return STOPPED_READ.format(why=f" ({note})" if note else "")
     if rc == 75:
         return f"Grok Bot: no live route ({note})" if note else "Grok Bot: no live route"
     return "Grok Bot: gbot is not installed or Node is missing"
@@ -232,6 +239,8 @@ class GrokLink:
         self.last_poll = None
         self.polling = False
         self.want_fetch = False
+        # Stays in sight until an answer comes or the waiting ends: a look in between does not clear it.
+        self.unsure = ""
         self.seen = set()
         self._lock = threading.Lock()
 
@@ -246,6 +255,7 @@ class GrokLink:
         """The waiting ends by itself after WAIT_MAX_S; then the widget stops asking."""
         if self.waiting_since is not None and now - self.waiting_since >= self.WAIT_MAX_S:
             self.waiting_since = None
+            self.unsure = ""
             self.status = f"No answer from {self.target} yet; open the chat later to look again."
             return True
         return False
@@ -313,7 +323,7 @@ class GrokLink:
                 self.stopped = True
                 self.waiting_since = None
                 self.want_fetch = False
-                self.status = _stopped(result.rc, result.note)
+                self.status = _stopped(result.rc, result.note, read=True)
                 return False
             if result.rc != 0 or not isinstance(result.data, dict):
                 self.status = f"Grok Bot did not answer: {result.note or 'no answer'}"
@@ -336,6 +346,7 @@ class GrokLink:
             del self.messages[:-self.KEEP]
             if added:
                 self.waiting_since = None
+                self.unsure = ""
             self.status = ""
             self.cursor = _cursor(data, entries, self.cursor)
             return added
@@ -356,7 +367,7 @@ class GrokLink:
         if result.rc is None:
             with self._lock:
                 self._sent(text + self.UNSURE_MARK)
-                self.status = "No answer from gbot; the message may or may not have gone out."
+                self.unsure = UNSURE_NOTE
             return True, ""
         if result.rc in STOPPED:
             with self._lock:
@@ -367,6 +378,7 @@ class GrokLink:
         if result.rc == 0 and accepted(result.data):
             with self._lock:
                 self._sent(text)
+                self.unsure = ""
                 self.status = ""
             return True, ""
         return False, _error(result.data, result.note, result.rc)
@@ -376,6 +388,12 @@ class GrokLink:
         with self._lock:
             self.stopped = False
             self.status = ""
+
+    def note(self) -> str:
+        """What the bubble says under the conversation: why the link stopped, or that a send is unsure."""
+        with self._lock:
+            self._wait_over(self.now())
+            return self.status or self.unsure
 
     def chat(self) -> dict:
         """The conversation so far, and what is still coming."""
