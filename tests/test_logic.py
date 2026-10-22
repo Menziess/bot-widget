@@ -2194,6 +2194,29 @@ class BubbleHover(unittest.TestCase):
         other._claim_bubble()
         self.assertTrue(self.window.bubble.isVisible(), "nothing opened, nothing closes")
 
+    def test_a_bubble_that_macos_took_off_the_screen_is_taken_away_so_it_opens_again(self):
+        from unittest import mock
+        from botwidget.qt_ui import desktops
+        self.hover()
+        bubble = self.window.bubble
+        self.assertTrue(bubble.isVisible())
+        with mock.patch.object(desktops, "shown_here", return_value=False), \
+                mock.patch.object(desktops, "apply") as apply:
+            self.window._keep_bubble_here()
+        apply.assert_called_once_with(bubble)
+        self.assertFalse(bubble.isVisible(), "gone, so that the next hover opens it where you are")
+        self.window._hover_retry = 0.0
+        self.hover()
+        self.assertTrue(bubble.isVisible())
+
+    def test_a_bubble_that_is_where_you_are_is_left_alone(self):
+        from unittest import mock
+        from botwidget.qt_ui import desktops
+        self.hover()
+        with mock.patch.object(desktops, "shown_here", return_value=True):
+            self.window._keep_bubble_here()
+        self.assertTrue(self.window.bubble.isVisible())
+
     def test_the_field_never_has_a_horizontal_scrollbar(self):
         from PySide6.QtCore import Qt
         self.hover()

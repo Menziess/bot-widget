@@ -452,6 +452,7 @@ class FaceWindow(QWidget):
         if not hovered:
             self._hover_since = 0.0
             return
+        self._keep_bubble_here()
         if (not self.bubble.isVisible() and self._drag_origin is None and not self.pinned and not self._coasting
                 and now >= self._hover_blocked_until and now >= self._hover_retry):
             self._hover_retry = now + HOVER_RETRY_S
@@ -560,6 +561,17 @@ class FaceWindow(QWidget):
         activate_app()
         self.bubble.focus_entry()
 
+    def _keep_bubble_here(self):
+        """A bubble that Qt calls open but that is not on the screen, because macOS took it off or it stayed on
+        the desktop you left, never opens again by itself: take it away so that it can open here."""
+        bubble = self.bubble
+        if not bubble.isVisible() or desktops.shown_here(bubble):
+            return
+        desktops.apply(bubble)
+        if not desktops.shown_here(bubble):
+            bubble.place("")
+            self._shown_text = ""
+
     def _claim_bubble(self):
         """One bubble at a time: when this face shows one on your say-so, the bubbles of the others close."""
         if self.faces is not None and self.bubble.isVisible():
@@ -628,6 +640,7 @@ class FaceWindow(QWidget):
         """
         if not self._alive:
             return
+        self._keep_bubble_here()
         if self.grok:
             # Grok Bot is only asked while an answer is awaited or the bubble just opened: no idle timer.
             if self.grok.due():

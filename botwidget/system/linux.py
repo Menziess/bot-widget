@@ -93,6 +93,10 @@ def on_active_space(win_id: int) -> bool:
     return True
 
 
+def is_shown_here(win_id: int) -> bool:
+    return True
+
+
 def move_to_active_space(win_id: int) -> None:
     pass
 

@@ -131,6 +131,15 @@ def on_active_space(win_id: int) -> bool:
     return bool(_send(objc, ctypes.c_bool)(window, objc.sel_registerName(b"isOnActiveSpace")))
 
 
+def is_shown_here(win_id: int) -> bool:
+    """On the screen you are looking at: ordered in, and on this desktop. Qt keeps calling a window visible that
+    macOS took off the screen or that stayed behind on the desktop you left."""
+    objc = _objc()
+    window = _send(objc, ctypes.c_void_p)(win_id, objc.sel_registerName(b"window"))
+    return bool(_send(objc, ctypes.c_bool)(window, objc.sel_registerName(b"isVisible"))
+                and _send(objc, ctypes.c_bool)(window, objc.sel_registerName(b"isOnActiveSpace")))
+
+
 def move_to_active_space(win_id: int) -> None:
     """Pull a window that lives on another desktop onto this one. Afterwards set_desktops pins it here."""
     objc = _objc()

@@ -23,6 +23,7 @@ data_home = _os.data_home
 hide_from_dock = _os.hide_from_dock
 install_update = _os.install_update
 launch_at_login = _os.launch_at_login
+is_shown_here = _os.is_shown_here
 move_to_active_space = _os.move_to_active_space
 on_active_space = _os.on_active_space
 play_notification = _os.play_notification
