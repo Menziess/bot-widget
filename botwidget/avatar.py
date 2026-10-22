@@ -74,6 +74,24 @@ SILHOUETTES = {
     "goutte": (0.6151, 0.6442, 0.6737, 0.7041, 0.7351, 0.7658, 0.7954, 0.8249, 0.8515, 0.8773, 0.8995, 0.9201, 0.9363, 0.9499, 0.9596, 0.9653, 0.9679, 0.9653, 0.9596, 0.9499, 0.9363, 0.9201, 0.8995, 0.8773, 0.8515, 0.8249, 0.7954, 0.7658, 0.7351, 0.7041, 0.6737, 0.6442, 0.6151, 0.5879, 0.5661, 0.551, 0.5418, 0.5379, 0.5393, 0.5459, 0.5582, 0.5766, 0.6024, 0.637, 0.6827, 0.7433, 0.8244, 0.9354, 1.04, 0.9354, 0.8244, 0.7433, 0.6827, 0.637, 0.6024, 0.5766, 0.5582, 0.5459, 0.5393, 0.5379, 0.5418, 0.551, 0.5661, 0.5879),
 }
 SUPPORTED_SHAPES = ("cercle", "galet", "squircle", "capsule", "triangle", "hexagone", "nuage")
+# Grok Bot draws a bot's own face from an avatar shape and colour of its own: its colour names are
+# not OpenBot's, and these shapes come from its avatar art instead of a seed.
+GROK_HEX = {"black": "#000000", "brown": "#936439", "red": "#ff263c", "orange": "#ff6700",
+            "yellow": "#ff9800", "green": "#00c972", "cyan": "#00bca6", "blue": "#1084fe",
+            "violet": "#9159fe", "magenta": "#ff309b", "gray": "#777777"}
+# The blob, traced from Grok Bot's own blob avatar: a round face, a little fuller at the top.
+GROK_BLOB = (1.036, 1.036, 1.037, 1.037, 1.038, 1.039, 1.04, 1.042, 1.043, 1.044, 1.045, 1.045,
+             1.043, 1.041, 1.037, 1.032, 1.027, 1.02, 1.014, 1.007, 1.0, 0.994, 0.989, 0.984,
+             0.981, 0.978, 0.975, 0.972, 0.97, 0.967, 0.964, 0.961, 0.957, 0.954, 0.95, 0.948,
+             0.946, 0.945, 0.946, 0.948, 0.95, 0.955, 0.959, 0.965, 0.97, 0.976, 0.981, 0.985,
+             0.99, 0.993, 0.997, 1.0, 1.003, 1.006, 1.01, 1.013, 1.017, 1.02, 1.024, 1.027, 1.029,
+             1.032, 1.034, 1.035)
+GROK_SHAPES = {"blob": GROK_BLOB}
+
+
+def silhouette_radii(shape: str) -> tuple:
+    """The 64 radii of a face shape: Grok Bot's own art when it names one, ours otherwise."""
+    return GROK_SHAPES.get(shape) or SILHOUETTES[shape]
 # split in degrees; per eye (width, height, tilt, opening)
 EXPRESSIONS = {
     "neutre": (15.46, (0.186, 0.412, 0, 1), (0.186, 0.412, 0, 1)),
@@ -112,8 +130,12 @@ def stable_index(value: str, length: int) -> int:
     return h % length
 
 
-def avatar_profile(seed: str, hue: float | None) -> dict:
-    """Silhouette, expression and colour that OpenBot derives from this seed."""
+def avatar_profile(seed: str, hue: float | None, avatar: dict | None = None) -> dict:
+    """Silhouette, expression and colour that OpenBot derives from this seed.
+
+    avatar is the shape and colour Grok Bot draws for the bot, when it has one: that face wins,
+    because the widget should show the same face as Grok Bot itself.
+    """
     seed = seed or "agent"
     shapes = list(SILHOUETTES)
     shape = shapes[stable_index(f"{seed}:shape", len(shapes))]
@@ -121,13 +143,18 @@ def avatar_profile(seed: str, hue: float | None) -> dict:
         shape = SUPPORTED_SHAPES[stable_index(f"{seed}:shape:replacement", len(SUPPORTED_SHAPES))]
     names = list(EXPRESSIONS)
     expression = names[stable_index(f"{seed}:expression", len(names))]
-    if hue is None:
-        colour = AUTO_COLORS[stable_index(f"{seed}:color", len(AUTO_COLORS))]
-    else:
-        colour = HUE_COLORS.get(int(hue), "gris")
-    radii = SILHOUETTES[shape]
     tilt = (stable_index(f"{seed}:tilt", 25) - 12) * 0.8
-    return {"shape": shape, "expression": expression, "hex": AVATAR_HEX[colour], "tilt": tilt,
+    if isinstance(avatar, dict) and avatar.get("shape") in GROK_SHAPES:
+        shape = avatar["shape"]
+        tilt = 0.0  # the blob is already drawn the way Grok Bot draws it; a tilt would skew it
+    if isinstance(avatar, dict) and avatar.get("color") in GROK_HEX:
+        colour = GROK_HEX[avatar["color"]]
+    elif hue is None:
+        colour = AVATAR_HEX[AUTO_COLORS[stable_index(f"{seed}:color", len(AUTO_COLORS))]]
+    else:
+        colour = AVATAR_HEX[HUE_COLORS.get(int(hue), "gris")]
+    radii = silhouette_radii(shape)
+    return {"shape": shape, "expression": expression, "hex": colour, "tilt": tilt,
             "top": radii[48], "bottom": radii[16]}
 
 
@@ -217,7 +244,7 @@ def _mouth(cx: float, cy: float, fill: str, opacity: float) -> str:
 def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float = 0,
              seed: str = "", hue: float | None = None, lift: float = 0.0,
              happy: float = 0.0, lean: float = 0.0, squash: tuple = (1.0, 1.0),
-             muted: bool = False) -> str:
+             muted: bool = False, avatar: dict | None = None) -> str:
     """This bot's own silhouette and colour, with its two eyes.
 
     dx/dy move the eyes fully and the head partly; lift raises the whole face for a
@@ -225,7 +252,7 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
     happy 0 is the normal eye shape, 1 the happy one (^^): the eyes morph into each
     other, so a half value is a real transition. A muted bot has a cross for a mouth.
     """
-    profile = avatar_profile(seed, hue)
+    profile = avatar_profile(seed, hue, avatar)
     spec = EXPRESSIONS[profile["expression"]]
     centre = AVATAR_SIZE / 2
     apart = math.sin(math.radians(spec[0])) * CIRCLE_R
@@ -242,7 +269,7 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
         drop = min(MOUTH_DROP, 0.6 * profile["bottom"]) * CIRCLE_R
         eyes.append(_mouth(centre + dx, centre + dy + drop + 1.3, "#000", 0.14))
         eyes.append(_mouth(centre + dx, centre + dy + drop, EYE_FILL, 1.0))
-    body = silhouette_path(SILHOUETTES[profile["shape"]], CIRCLE_R, centre, centre)
+    body = silhouette_path(silhouette_radii(profile["shape"]), CIRCLE_R, centre, centre)
     head = (f'<path d="{body}" fill="{profile["hex"]}"/>'
             f'<path d="{body}" fill="url(#sh)"/><path d="{body}" fill="url(#hl)"/>')
     sx, sy = squash
@@ -259,9 +286,9 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
 
 
 def avatar_svg(pose: str = "rest", seed: str = "", hue: float | None = None,
-               happy: float = 0.0) -> str:
+               happy: float = 0.0, avatar: dict | None = None) -> str:
     dx, dy, scale = POSES[pose]
-    return face_svg(dx, dy, scale, 0, seed, hue, LIFT.get(pose, 0.0), happy)
+    return face_svg(dx, dy, scale, 0, seed, hue, LIFT.get(pose, 0.0), happy, avatar=avatar)
 
 
 def xml_escape(text: str) -> str:

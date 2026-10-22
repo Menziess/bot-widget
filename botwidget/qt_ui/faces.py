@@ -5,7 +5,7 @@ import os
 import threading
 import time
 
-from PySide6.QtCore import QObject, QTimer, QUrl
+from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication
 
@@ -47,15 +47,19 @@ def _all_bots() -> list:
 
 
 class Faces(QObject):
+    grok_probed = Signal()  # the roster came back, so the Grok Bot face can take its own avatar
+
     def __init__(self):
         super().__init__()
         self.pos = {}
         enabled = self._load()
         self.faces = {}
         self.grok = {"connected": False, "bots": [], "note": "not tried yet"}
+        self.avatar = None
         self.update = None
         self.staged = None
         self.hotkey_on = False
+        self.grok_probed.connect(self._take_grok_avatar)
         threading.Thread(target=self._probe_grok, daemon=True).start()
         self._probed = 0.0
         if check_updates():
@@ -96,6 +100,14 @@ class Faces(QObject):
     def _probe_grok(self):
         """Ask gbot once; no loop, gbot warns about that itself."""
         self.grok = grok_bot_status()
+        self.avatar = grokbot.avatar_of(self.grok.get("bots"), grokbot.target())
+        self.grok_probed.emit()
+
+    def _take_grok_avatar(self):
+        """The roster arrived: the Grok Bot face wears the shape and colour Grok Bot gives that bot."""
+        face = self.faces.get(grokbot.face_id(grokbot.target()))
+        if face is not None and self.avatar:
+            face.set_avatar(self.avatar)
 
     def _start_probe(self):
         self._probed = time.monotonic()
@@ -154,8 +166,9 @@ class Faces(QObject):
         spot = self.pos.get(bot["id"])
         if not (isinstance(spot, (list, tuple)) and len(spot) == 2):
             spot = None
+        avatar = self.avatar if grokbot.is_grok(bot["id"]) else None
         face = FaceWindow(bot["id"], bot["name"], spot, slot, bot.get("threadId"), self,
-                          bot.get("hue"), bot.get("seed"))
+                          bot.get("hue"), bot.get("seed"), avatar)
         self.faces[bot["id"]] = face
         face.show()
 

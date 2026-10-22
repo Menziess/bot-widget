@@ -29,6 +29,24 @@ def face_id(target: str) -> str:
     return PREFIX + target
 
 
+def avatar_of(bots, target: str) -> dict | None:
+    """The shape and colour Grok Bot draws for this bot, from a roster entry.
+
+    Grok Bot names its own colours ("black", "brown", ...) and shapes ("blob", "cloud", ...); a
+    bot without them gets None and keeps the face the widget derives from its seed.
+    """
+    for bot in bots or []:
+        if not isinstance(bot, dict):
+            continue
+        if str(bot.get("name") or "").strip().lower() != (target or "").strip().lower():
+            continue
+        avatar = {key: bot.get(field) for key, field in (("shape", "avatarShape"), ("color", "avatarColor"))
+                  if isinstance(bot.get(field), str) and bot.get(field)}
+        return avatar or None
+    return None
+
+
+
 def is_grok(agent_id: str) -> bool:
     """Is this the id of a Grok Bot face?"""
     return isinstance(agent_id, str) and agent_id.startswith(PREFIX)

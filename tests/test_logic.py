@@ -25,6 +25,7 @@ from botwidget import (
     config,
     delivery,
     dev,
+    grokbot,
     instance,
     markdown,
     menu_pages,
@@ -187,9 +188,44 @@ class AvatarProfile(unittest.TestCase):
         self.assertIn(profile["shape"], avatar.SUPPORTED_SHAPES)
         self.assertGreater(profile["bottom"], 0)
 
+    def test_a_grok_bot_wears_the_shape_and_colour_grok_bot_draws_for_it(self):
+        profile = avatar.avatar_profile("grok:General", None, {"shape": "blob", "color": "black"})
+        self.assertEqual(profile["shape"], "blob")
+        self.assertEqual(profile["hex"], "#000000", "black, as Grok Bot names it")
+        self.assertEqual(profile["tilt"], 0.0, "the blob is drawn the way Grok Bot draws it")
+        self.assertEqual(profile["top"], avatar.GROK_BLOB[48])
+
+    def test_a_grok_bot_only_takes_what_grok_bot_actually_sends(self):
+        seeded = avatar.avatar_profile("grok:General", None)
+        self.assertEqual(avatar.avatar_profile("grok:General", None, {"shape": "cloud"}), seeded,
+                         "a shape the widget cannot draw leaves the seed's face alone")
+        self.assertEqual(avatar.avatar_profile("grok:General", None, {"color": "chartreuse"}), seeded,
+                         "no colour is invented")
+        body = avatar.face_svg(seed="grok:General", avatar={"shape": "blob", "color": "black"})
+        self.assertIn('fill="#000000"', body)
+        self.assertNotIn(seeded["hex"], body)
+
     def test_stable_index_matches_fnv1a(self):
         # FNV-1a of "a" is 0xe40c292c; at length 7 that is 4.
         self.assertEqual(avatar.stable_index("a", 7), 0xE40C292C % 7)
+
+
+class GrokAvatar(unittest.TestCase):
+    """The face of a Grok Bot bot comes from Grok Bot's own roster, not from a seed."""
+
+    ROSTER = [{"name": "Critic", "avatarShape": "hex"},
+              {"name": "General", "avatarShape": "blob", "avatarColor": "black"}]
+
+    def test_the_bot_named_in_full_wins_over_a_prefix(self):
+        self.assertEqual(grokbot.avatar_of(self.ROSTER, "General"), {"shape": "blob", "color": "black"})
+        self.assertEqual(grokbot.avatar_of(self.ROSTER, "general"), {"shape": "blob", "color": "black"})
+        self.assertEqual(grokbot.avatar_of(self.ROSTER, "Critic"), {"shape": "hex"},
+                         "only what the roster has")
+
+    def test_a_bot_that_is_not_there_says_nothing(self):
+        self.assertIsNone(grokbot.avatar_of(self.ROSTER, "Nobody"))
+        self.assertIsNone(grokbot.avatar_of(None, "General"))
+        self.assertIsNone(grokbot.avatar_of([{"name": "General"}], "General"))
 
 
 class ProcessCmdline(unittest.TestCase):
@@ -503,6 +539,18 @@ class Rendering(unittest.TestCase):
 
     def test_far_away_it_goes_back_to_its_own_cycle(self):
         self.assertEqual(self.aimed((900, 900))["dx"], avatar.POSES["idle"][0])
+
+    def test_a_grok_bot_face_switches_to_the_avatar_grok_bot_sent(self):
+        window = self.face.FaceWindow("grok:General", "General", spot=(300, 400),
+                                      avatar={"shape": "blob", "color": "black"})
+        try:
+            window._poll_timer.stop()
+            self.assertEqual(window._avatar, {"shape": "blob", "color": "black"})
+            self.assertEqual(window.head_top, avatar.AVATAR_SIZE / 2 - avatar.GROK_BLOB[48] * avatar.CIRCLE_R)
+            window.set_avatar({"shape": "blob", "color": "blue"})
+            self.assertEqual(window._avatar["color"], "blue", "the roster moved on")
+        finally:
+            window.close_face()
 
     def test_a_frame_renders_in_a_few_milliseconds(self):
         from botwidget.qt_ui.render import svg_pixmap

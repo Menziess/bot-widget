@@ -115,7 +115,7 @@ class FaceWindow(QWidget):
 
     def __init__(self, agent_id: str, name: str,
                  spot=None, slot: int = 0, thread_id: str | None = None, faces=None,
-                 hue: float | None = None, seed: str = ""):
+                 hue: float | None = None, seed: str = "", avatar: dict | None = None):
         super().__init__()
         self.agent_id = agent_id
         self.bot_name = name
@@ -125,7 +125,8 @@ class FaceWindow(QWidget):
         self.faces = faces
         self._hue = hue
         self._seed = seed or agent_id
-        profile = avatar_profile(self._seed, hue)
+        self._avatar = avatar
+        profile = avatar_profile(self._seed, hue, avatar)
         self.head_top = AVATAR_SIZE / 2 - profile["top"] * CIRCLE_R
         self.head_bottom = AVATAR_SIZE / 2 + profile["bottom"] * CIRCLE_R
         self._alive = True
@@ -488,8 +489,18 @@ class FaceWindow(QWidget):
         v = self.anim.value
         svg = face_svg(v["dx"], v["dy"], max(v["scale"], 0.05), v["converge"], self._seed, self._hue,
                        v["lift"], min(max(v["happy"], 0.0), 1.0), lean=v["lean"],
-                       squash=(v["sx"], v["sy"]), muted=self._muted)
+                       squash=(v["sx"], v["sy"]), muted=self._muted, avatar=self._avatar)
         self._set_pixmap(svg_pixmap(svg))
+
+    def set_avatar(self, avatar: dict | None):
+        """Grok Bot told us the bot's own avatar: draw that face from now on."""
+        if avatar == self._avatar:
+            return
+        self._avatar = avatar
+        profile = avatar_profile(self._seed, self._hue, avatar)
+        self.head_top = AVATAR_SIZE / 2 - profile["top"] * CIRCLE_R
+        self.head_bottom = AVATAR_SIZE / 2 + profile["bottom"] * CIRCLE_R
+        self._render()
 
     def _aim(self, dt_ms: float):
         """Where the face wants to go: dragging, happy, looking at the mouse, or the normal cycle."""
