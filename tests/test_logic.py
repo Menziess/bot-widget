@@ -770,6 +770,7 @@ class BubbleHover(unittest.TestCase):
     def test_a_bubble_nobody_pointed_at_closes_after_the_time_to_read_it(self):
         import time
         from botwidget.bubble import reading_seconds
+        self.window._seeded = True
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
         bubble = self.window.bubble
         bubble._tick()
@@ -813,6 +814,7 @@ class BubbleHover(unittest.TestCase):
     def test_selected_words_keep_the_bubble_open_until_the_selection_goes(self):
         import time
         from botwidget.theme import BUBBLE_LINGER
+        self.window._seeded = True
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
         bubble = self.window.bubble
         bubble._doc.hasFocus = lambda: True
@@ -2286,6 +2288,14 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble.kind, "dirty: it stays until Escape or a click on the face")
         bubble.place("")
         self.assertFalse(bubble._dirty)
+
+    def test_the_conversation_as_it_was_at_the_start_does_not_open_the_bubble_but_a_new_message_does(self):
+        chat = {"messages": self.MESSAGES, "activity": ""}
+        self.window._sync_bubble(chat)
+        self.assertFalse(self.window.bubble.isVisible(), "old news after a restart")
+        newer = {"messages": self.MESSAGES + [{"role": "bot", "text": "Nieuw"}], "activity": ""}
+        self.window._sync_bubble(newer)
+        self.assertTrue(self.window.bubble.isVisible())
 
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt

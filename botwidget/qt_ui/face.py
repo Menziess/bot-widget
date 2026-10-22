@@ -153,6 +153,7 @@ class FaceWindow(QWidget):
         self._hint_shown = False
         self._shown_text = ""
         self._welcome_until = 0.0
+        self._seeded = False
         self._press_pos = None
         self._drag_origin = None
         self._drag_sample = None
@@ -801,6 +802,11 @@ class FaceWindow(QWidget):
         blocks = self._chat_blocks(messages, greet=force or self.pinned)
         text = block_text(blocks)
         older, self._loading_older = self._loading_older, False
+        first, self._seeded = not self._seeded, True
+        if first and not force and not self.pinned:
+            # The conversation as it was when the widget started is old news: only what comes after opens the bubble.
+            self._shown_text = text
+            return
         if self.pinned:
             self._shown_text = text
             if not self.bubble.shows("say", text, True):

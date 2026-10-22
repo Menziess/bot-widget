@@ -22,6 +22,7 @@ botwidget
 ```
 
 - Point at the face to open the bubble, also when the pointer was already there: the latest message, and a field to type in
+- After a restart the old conversation does not open the bubble by itself; only a message that comes after does
 - The field is focused once the pointer stays on the face for a moment, press Enter to send
 - Scroll up in the bubble, or click the arrow, to load the earlier messages one at a time
 - Scrolling up past the top of a message bounces once, and only a new pull loads the one before, with dots in place of the arrow while it loads
