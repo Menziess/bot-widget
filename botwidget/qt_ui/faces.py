@@ -382,10 +382,9 @@ class Faces(QObject):
         dist_sq = (px - cx) ** 2 + (py - cy) ** 2
         within_radius = dist_sq <= SEMICIRCLE_RADIUS ** 2
         if within_radius:
-            if self._semicircle_phase == "idle":
-                self.show_semicircle()
-            # if already showing: keep visible; don't hide just because we're
-            # between bots – only hide when the mouse has truly left the radius.
+            # Keep bots down while the pointer is inside the arc — even in gaps.
+            # Stop the hide timer so the 500ms grace period does not fire.
+            self.show_semicircle()
             self._semicircle_hide_timer.stop()
         else:
             # mouse left the radius: start grace period; if still outside after 500ms,
