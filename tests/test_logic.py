@@ -3422,8 +3422,10 @@ class Sending(unittest.TestCase):
                     self.assertIsNone(box.failed("abc", result.retryable), "the message is dropped")
                     self.assertIsNone(box.current())
 
-    def test_a_200_body_of_only_a_byte_order_mark_is_a_refusal(self):
-        for body in (b"\xef\xbb\xbf", b"\xef\xbb\xbf \n", b" \xef\xbb\xbf\t"):
+    def test_a_200_body_of_only_byte_order_marks_is_a_refusal(self):
+        one, two = b"\xef\xbb\xbf", b"\xef\xbb\xbf\xef\xbb\xbf"
+        for body in (one, one + b" \n", b" " + one + b"\t", two, two + b" \n",
+                     one + b" " + one, two + one + b"\n"):
             with self.subTest(body=body):
                 with _FlakyApi([200], bodies=[body]):
                     result = openbot.api_post("/v1/agents/me/messages",
