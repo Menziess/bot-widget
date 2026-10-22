@@ -2,6 +2,7 @@
 
 import json
 import os
+import signal
 import subprocess
 import threading
 import time
@@ -67,18 +68,55 @@ def _note(done) -> str:
     return ""
 
 
-def run(args: list, timeout: float) -> Result:
-    """Ask gbot something and keep what it said."""
+KILL_GRACE_S = 2
+
+
+def _stop_group(proc):
+    """Stop gbot and everything it started (node, gbot.mjs): TERM first, KILL when that is not enough."""
+    if not hasattr(os, "killpg"):
+        # Windows has no process groups to signal; stop at least gbot itself.
+        proc.kill()
+        return
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(proc.pid, sig)
+        except (ProcessLookupError, PermissionError, OSError):
+            return
+        try:
+            proc.wait(timeout=KILL_GRACE_S)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
+def run(args: list, timeout: float, wake: bool = False) -> Result:
+    """Ask gbot something and keep what it said.
+
+    Only a send may wake the Grok Bot app (wake=True); a read never starts or focuses it.
+    gbot runs in its own process group, so a timeout stops node and gbot.mjs too.
+    """
     env = dict(os.environ)
     env.setdefault("GBOT_WAKE_TIMEOUT", "20")
     env.setdefault("GBOT_RETRY_TIMEOUT", "30")
+    if wake:
+        env.pop("GBOT_NO_WAKE", None)
+    else:
+        env["GBOT_NO_WAKE"] = "1"
     try:
-        done = subprocess.run([openbot.GBOT, *args], capture_output=True, text=True,
-                              timeout=timeout, stdin=subprocess.DEVNULL, env=env, check=False)
-    except subprocess.TimeoutExpired:
-        return Result(None, None, "gbot gave no answer")
+        proc = subprocess.Popen([openbot.GBOT, *args], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                stdin=subprocess.DEVNULL, text=True, env=env, start_new_session=True)
     except OSError as err:
         return Result(127, None, str(err))
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _stop_group(proc)
+        try:
+            proc.communicate(timeout=KILL_GRACE_S)
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass
+        return Result(None, None, "gbot gave no answer")
+    done = subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
     return Result(done.returncode, _data(done.stdout), _note(done))
 
 
@@ -129,10 +167,13 @@ def _cursor(data: dict, entries: list, old: str) -> str:
     return cursor or old
 
 
-def _key(message: dict) -> str:
-    """What makes an answer the same one as before."""
+def _key(message: dict) -> str | None:
+    """What makes an answer the same one as before: its id and time. Without an id there is
+    no telling, so a second identical answer still shows."""
     entry_id = message.get("id")
-    return entry_id if isinstance(entry_id, str) and entry_id else "text:" + message["text"]
+    if not isinstance(entry_id, str) or not entry_id:
+        return None
+    return f"{entry_id}@{message.get('at') or 0}"
 
 
 def _stopped(rc: int, note: str) -> str:
@@ -142,15 +183,43 @@ def _stopped(rc: int, note: str) -> str:
     return "Grok Bot: gbot is not installed or Node is missing"
 
 
-class GrokLink:
-    """One Grok Bot bot: its thread, what it answered and what is still missing."""
+def accepted(data) -> bool:
+    """gbot 0.12 says delivery "unknown" even when the message went out; result.accepted is the answer."""
+    if not isinstance(data, dict):
+        return False
+    result = data.get("result")
+    return isinstance(result, dict) and result.get("accepted") is True
 
-    FAST_S = 3
-    IDLE_S = 60
+
+def _error(data, note: str, rc) -> str:
+    """Why a message did not go out, in words."""
+    error = data.get("error") if isinstance(data, dict) else None
+    if isinstance(error, dict):
+        error = error.get("message")
+    if isinstance(error, str) and error.strip():
+        return error.strip()[:NOTE_CHARS]
+    if note:
+        return note
+    if isinstance(data, dict) and data.get("delivery"):
+        return f"not accepted (delivery: {data['delivery']})"[:NOTE_CHARS]
+    return f"exit {rc}"
+
+
+class GrokLink:
+    """One Grok Bot bot: its thread, what it answered and what is still missing.
+
+    It only asks when there is a reason: every FAST_S seconds for WAIT_MAX_S after a message
+    went out, and once when the bubble opens. With nothing to wait for there is no polling at all.
+    """
+
+    FAST_S = 5
     WAIT_MAX_S = 600
     KEEP = 200
     LIMIT = 40
+    # A first look (or a gap) shows only the latest few answers as history.
+    FIRST_SHOW = 5
     TIMEOUT_S = 90
+    UNSURE_MARK = " (?)"
 
     def __init__(self, target: str, now=time.monotonic):
         self.target = target
@@ -162,6 +231,7 @@ class GrokLink:
         self.waiting_since = None
         self.last_poll = None
         self.polling = False
+        self.want_fetch = False
         self.seen = set()
         self._lock = threading.Lock()
 
@@ -173,12 +243,27 @@ class GrokLink:
             return self.waiting_since is not None
 
     def _wait_over(self, now: float) -> bool:
-        """The waiting ends by itself after a while; after that the widget checks every minute."""
+        """The waiting ends by itself after WAIT_MAX_S; then the widget stops asking."""
         if self.waiting_since is not None and now - self.waiting_since >= self.WAIT_MAX_S:
             self.waiting_since = None
-            self.status = f"No answer from {self.target} yet; I'll check every minute."
+            self.status = f"No answer from {self.target} yet; open the chat later to look again."
             return True
         return False
+
+    def request_fetch(self):
+        """The bubble opened: look once for what came in."""
+        with self._lock:
+            recent = self.last_poll is not None and self.now() - self.last_poll < self.FAST_S
+            if not self.stopped and not recent:
+                self.want_fetch = True
+
+    def active(self) -> bool:
+        """Is there a reason to keep a timer: a look is asked for, running, or an answer is awaited."""
+        with self._lock:
+            self._wait_over(self.now())
+            if self.stopped:
+                return self.polling
+            return self.want_fetch or self.polling or self.waiting_since is not None
 
     def due(self) -> bool:
         """Is it time to look for an answer?"""
@@ -187,10 +272,11 @@ class GrokLink:
                 return False
             now = self.now()
             self._wait_over(now)
-            if self.last_poll is None:
+            if self.want_fetch:
                 return True
-            waited = now - self.last_poll
-            return waited >= (self.FAST_S if self.waiting_since is not None else self.IDLE_S)
+            if self.waiting_since is None:
+                return False
+            return self.last_poll is None or self.last_poll < self.waiting_since or now - self.last_poll >= self.FAST_S
 
     def poll(self) -> bool:
         """Look for new answers; True when something new came in."""
@@ -198,6 +284,7 @@ class GrokLink:
             if self.polling:
                 return False
             self.polling = True
+            self.want_fetch = False
             cursor = self.cursor
         args = ["thread", self.target, "--limit", str(self.LIMIT)]
         if cursor:
@@ -225,6 +312,7 @@ class GrokLink:
             if result.rc in STOPPED:
                 self.stopped = True
                 self.waiting_since = None
+                self.want_fetch = False
                 self.status = _stopped(result.rc, result.note)
                 return False
             if result.rc != 0 or not isinstance(result.data, dict):
@@ -234,15 +322,16 @@ class GrokLink:
             entries = _entries(data)
             parsed = parse_entries(entries)
             if not self.cursor or data.get("gapReset"):
-                # The thread was cut off: what came back is all there is.
+                # A first look, or the thread was cut off: only the latest few answers, as history.
+                shown = parsed[-self.FIRST_SHOW:]
                 kept = self._user_lines_after_the_last_bot()
-                self.messages = [{"role": m["role"], "text": m["text"]} for m in parsed] + kept
-                self.seen = {_key(m) for m in parsed}
-                added = bool(parsed)
+                self.messages = [{"role": m["role"], "text": m["text"]} for m in shown] + kept
+                self.seen = {k for k in map(_key, parsed) if k}
+                added = bool(shown)
             else:
-                fresh = [m for m in parsed if _key(m) not in self.seen]
+                fresh = [m for m in parsed if _key(m) is None or _key(m) not in self.seen]
                 self.messages += [{"role": m["role"], "text": m["text"]} for m in fresh]
-                self.seen |= {_key(m) for m in fresh}
+                self.seen |= {k for k in map(_key, fresh) if k}
                 added = bool(fresh)
             del self.messages[:-self.KEEP]
             if added:
@@ -251,32 +340,36 @@ class GrokLink:
             self.cursor = _cursor(data, entries, self.cursor)
             return added
 
+    def _sent(self, line: str):
+        self.messages.append({"role": "user", "text": line})
+        del self.messages[:-self.KEEP]
+        self.waiting_since = self.now()
+        self.stopped = False
+
     def send(self, text: str) -> tuple[bool, str]:
-        """Send a message to the bot; never twice, a retry could send it twice."""
-        result = run(["send", self.target, "--json", "--", text], timeout=self.TIMEOUT_S)
+        """Send a message to the bot, never twice: a retry could send it twice.
+
+        A send that timed out may have gone out: its line shows with a question mark, the
+        widget waits for an answer as usual, and the status says it is not sure.
+        """
+        result = run(["send", self.target, "--json", "--", text], timeout=self.TIMEOUT_S, wake=True)
         if result.rc is None:
-            return False, "no answer from gbot; the message may or may not have gone out"
+            with self._lock:
+                self._sent(text + self.UNSURE_MARK)
+                self.status = "No answer from gbot; the message may or may not have gone out."
+            return True, ""
         if result.rc in STOPPED:
             with self._lock:
                 self.stopped = True
                 self.waiting_since = None
                 self.status = _stopped(result.rc, result.note)
             return False, self.status
-        delivery = (result.data or {}).get("delivery")
-        if result.rc == 0 and delivery != "rejected":
+        if result.rc == 0 and accepted(result.data):
             with self._lock:
-                self.messages.append({"role": "user", "text": text})
-                del self.messages[:-self.KEEP]
-                self.waiting_since = self.now()
-                self.stopped = False
+                self._sent(text)
                 self.status = ""
             return True, ""
-        error = (result.data or {}).get("error")
-        if isinstance(error, dict):
-            error = error.get("message")
-        if not isinstance(error, str) or not error.strip():
-            error = result.note or f"exit {result.rc}"
-        return False, error.strip()[:NOTE_CHARS]
+        return False, _error(result.data, result.note, result.rc)
 
     def resume(self):
         """The user sends again: one fresh attempt, no loop."""

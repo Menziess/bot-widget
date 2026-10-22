@@ -63,8 +63,11 @@ The widget needs OpenBot or Grok Bot. Without either, the face says so and links
 The widget can also talk to one bot of Grok Bot. It does that with the `gbot` command, so the Grok Bot app on this computer has to be running and signed in.
 
 - The bot is the one named in `grokbot_target` in widget.json, General without it
-- While an answer is coming the widget asks for it every 3 seconds, for 10 minutes at the most
-- Without an answer to wait for it asks every minute
+- After you send a message the widget asks for the answer every 5 seconds, for 10 minutes at the most, then stops asking
+- Opening the bubble looks once for what came in; with nothing to wait for it does not ask at all
+- The first look shows only the latest 5 answers as history
+- Only sending may start the Grok Bot app; looking for answers never starts or focuses it
+- A message that got no answer from gbot in time shows with (?) after it: it may or may not have gone out
 - When gbot says there is no route, or is not there at all, the widget stops and says so
 - The next message you send tries again
 - /bots switches the Grok face on or off, like the faces of the other bots

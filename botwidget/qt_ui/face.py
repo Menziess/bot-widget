@@ -548,6 +548,8 @@ class FaceWindow(QWidget):
         """One bubble at a time: when this face shows one on your say-so, the bubbles of the others close."""
         if self.faces is not None and self.bubble.isVisible():
             self.faces.close_bubbles_except(self.agent_id)
+        if self.bubble.isVisible():
+            self._grok_fetch()
 
     def toggle_pin(self):
         if self.pinned:
@@ -611,10 +613,12 @@ class FaceWindow(QWidget):
         if not self._alive:
             return
         if self.grok:
+            # Grok Bot is only asked while an answer is awaited or the bubble just opened: no idle timer.
             if self.grok.due():
                 threading.Thread(target=self._poll_grok, daemon=True).start()
             self._sync_bubble(self._latest())
-            self._poll_timer.start(1000)
+            if self.grok.active():
+                self._poll_timer.start(1000)
             return
         data = api_get(f"/v1/agents/{self.agent_id}/pending")
         changed = False
@@ -637,6 +641,15 @@ class FaceWindow(QWidget):
     def _on_grok_polled(self):
         if self._alive:
             self._sync_bubble(self._latest())
+            if self.grok.active() and not self._poll_timer.isActive():
+                self._poll_timer.start(1000)
+
+    def _grok_fetch(self):
+        """The bubble opened on a Grok face: look once for what came in."""
+        if self.grok and self._alive:
+            self.grok.request_fetch()
+            if not self._poll_timer.isActive():
+                self._poll_timer.start(0)
 
     def _waiting_note(self, error: str = "") -> str:
         """Why a message is waiting: the switch in OpenBot is off, or the link dropped."""
@@ -1057,5 +1070,7 @@ class FaceWindow(QWidget):
                 QTimer.singleShot(int(wait * 1000), self._pump_outbox)
         self.update()
         self._sync_bubble(self._latest())
+        if self.grok and self.grok.active() and not self._poll_timer.isActive():
+            self._poll_timer.start(300)
         if next_ready:
             self._pump_outbox()
