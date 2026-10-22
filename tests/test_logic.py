@@ -9,6 +9,7 @@ import json
 import math
 import os
 import plistlib
+import random
 import re
 import shutil
 import sys
@@ -241,10 +242,8 @@ class GrokMarks(unittest.TestCase):
         profile = avatar.avatar_profile("grok:Builder", None, {"shape": "house", "color": "brown"})
         self.assertEqual((profile["shape"], profile["hex"], profile["tilt"]), ("house", "#936439", 0.0))
         self.assertEqual((profile["top"], profile["bottom"]), avatar.mark_extent("house"))
-        dx, dy, _scale = avatar.POSES["idle"]
-        svg = avatar.face_svg(dx=dx, dy=dy, seed="grok:Builder", avatar={"shape": "house", "color": "brown"})
-        self.assertIn(avatar.mark_path("house", avatar.CIRCLE_R, avatar.AVATAR_SIZE / 2, avatar.AVATAR_SIZE / 2), svg,
-                      "in its still pose it is Grok Bot's own art")
+        svg = avatar.face_svg(*[0, 0], seed="grok:Builder", avatar={"shape": "house", "color": "brown"},
+                              pitch=avatar.GROK_STILL[0], yaw=avatar.GROK_STILL[1], roll=avatar.GROK_STILL[2])
         self.assertEqual(len(eye_paths(svg)), 2, "two eyes, flat like Grok Bot's")
         self.assertNotIn("stroke=", svg, "no shadow, no outline")
 
@@ -606,8 +605,14 @@ class Clouds(unittest.TestCase):
 class FrameRate(unittest.TestCase):
     """Should animate at the fast rate whenever the face is held, moving or the pointer is near."""
 
-    def test_calm_only_when_nothing_is_happening(self):
-        self.assertEqual(animation.frame_ms(held=False, moving=False, pointer_near=False), animation.IDLE_MS)
+    def test_still_only_when_nothing_is_happening(self):
+        self.assertEqual(animation.frame_ms(held=False, moving=False, pointer_near=False), animation.STILL_MS)
+        self.assertGreaterEqual(animation.STILL_MS, 100, "ten frames a second at most while it holds still")
+
+    def test_a_playing_clip_is_calm_not_fast(self):
+        self.assertEqual(animation.frame_ms(held=False, moving=True, pointer_near=False, playing=True), animation.IDLE_MS)
+        self.assertEqual(animation.frame_ms(held=False, moving=False, pointer_near=False, playing=True), animation.IDLE_MS)
+        self.assertEqual(animation.frame_ms(held=False, moving=True, pointer_near=True, playing=True), animation.BUSY_MS)
 
     def test_hovering_alone_is_fast(self):
         self.assertEqual(animation.frame_ms(held=False, moving=False, pointer_near=True), animation.BUSY_MS)
@@ -659,8 +664,12 @@ class Rendering(unittest.TestCase):
     def test_near_the_face_it_follows_the_pointer(self):
         self.assertGreater(self.aimed((34 + 45, 34))["dx"], 0)
 
-    def test_far_away_it_goes_back_to_its_own_cycle(self):
-        self.assertEqual(self.aimed((900, 900))["dx"], avatar.POSES[avatar.FACE["idle"][0][0]][0])
+    def test_far_away_it_goes_back_to_grok_bots_still_pose(self):
+        from botwidget.motion import STILL
+        target = self.aimed((900, 900))
+        self.assertEqual((target["dx"], target["dy"]), (0.0, 0.0))
+        self.assertEqual((target["pitch"], target["yaw"], target["roll"]), STILL)
+        self.assertEqual(target["zoom"], 1.0, "no breathing")
 
     def test_a_grok_bot_face_switches_to_the_avatar_grok_bot_sent(self):
         window = self.face.FaceWindow("grok:General", "General", spot=(300, 400),
@@ -691,14 +700,13 @@ class Rendering(unittest.TestCase):
             window._animate()
             self.assertEqual(window._anim_timer.interval(), animation.BUSY_MS)
             near["on"] = False
-            # Back to the calm rate once the face has settled, between its idle turns (it breathes on
-            # at the calm rate).
+            # Back to the still rate once the face has settled: idle, it only waits for its next blink.
             for _ in range(400):
                 window._last_tick -= 0.03
                 window._animate()
-                if window._anim_timer.interval() == animation.IDLE_MS:
+                if window._anim_timer.interval() == animation.STILL_MS:
                     break
-            self.assertEqual(window._anim_timer.interval(), animation.IDLE_MS)
+            self.assertEqual(window._anim_timer.interval(), animation.STILL_MS)
         finally:
             window._alive = False
             window.close()
@@ -3337,32 +3345,162 @@ class FaceEyes(unittest.TestCase):
 
 
 class IdleLook(unittest.TestCase):
-    """Should idle the way Grok Bot's avatar engine does: its idle clips, their turns and their blinks."""
+    """Should idle calmly: Grok Bot's still pose, and only after a long random wait a blink or a look."""
 
-    def test_idle_plays_grok_bots_idle_clips_with_their_blinks(self):
-        total = sum(ms for _pose, ms in avatar.FACE["idle"])
-        clips = sum(avatar.GROK_IDLE_CLIPS[clip][0] for clip in avatar.GROK_IDLE_ORDER)
-        self.assertAlmostEqual(total / 1000, clips, delta=0.2)
-        blinks = sum(len(avatar.GROK_IDLE_CLIPS[clip][2]) for clip in avatar.GROK_IDLE_ORDER)
-        self.assertEqual(sum(1 for pose, _ms in avatar.FACE["idle"] if pose == "blink"), blinks)
-        self.assertEqual(sorted(avatar.GROK_IDLE_ORDER).count("Idle_B"), 3, "Idle_B is in Grok Bot's bag three times")
+    def motion(self, seed=1):
+        from botwidget import motion
+        return motion, motion.Motion(random.Random(seed))
 
-    def test_the_still_art_is_up_and_to_the_right_and_part_of_idle(self):
-        dx, dy, _scale = avatar.POSES["idle"]
-        self.assertTrue(dx > 0 and dy < 0)
-        self.assertIn("idle", {pose for pose, _ms in avatar.FACE["idle"]})
-        self.assertIn("front", {pose for pose, _ms in avatar.FACE["idle"]}, "and it looks straight out too")
+    def run_for(self, m, seconds, dt=0.05):
+        poses = []
+        for _ in range(round(seconds / dt)):
+            poses.append(m.step(dt))
+        return poses
 
-    def test_a_turn_never_takes_the_eyes_further_than_following_the_pointer(self):
-        for pose, _ms in avatar.FACE["idle"]:
-            dx, dy, _scale = avatar.POSES[pose]
-            if dx is not None:
-                self.assertLessEqual(math.hypot(dx, dy), avatar.LOOK_MAX + 0.1, pose)
-        self.assertEqual(avatar.grok_look(0, 0), (0.0, 0.0))
-        self.assertLess(avatar.grok_look(0, -8.7)[0], 0, "a turn to the left looks left")
+    def test_idle_holds_grok_bots_still_pose(self):
+        motion, m = self.motion()
+        pose = m.step(0.05)
+        self.assertEqual((pose["pitch"], pose["yaw"], pose["roll"]), motion.STILL)
+        self.assertEqual((pose["zoom"], pose["lids"], pose["face"]), (1.0, 0.0, "neutral"), "no breathing, eyes open")
+        self.assertFalse(m.active, "nothing plays: the face can draw at the still rate")
 
-    def test_a_blink_keeps_the_eyes_where_they_look(self):
-        self.assertEqual(avatar.POSES["blink"][:2], (None, None))
+    def test_nothing_happens_for_at_least_eight_seconds(self):
+        motion, _m = self.motion()
+        for seed in range(20):
+            _motion, m = self.motion(seed)
+            poses = self.run_for(m, motion.IDLE_GAP_S[0] - 0.1)
+            self.assertTrue(all((p["pitch"], p["yaw"], p["lids"]) == (*motion.STILL[:2], 0.0) for p in poses), seed)
+
+    def test_the_waits_are_random_and_between_eight_and_thirty_seconds(self):
+        motion, _m = self.motion()
+        waits = {round(self.motion(seed)[1].wait, 3) for seed in range(30)}
+        self.assertGreater(len(waits), 20, "random")
+        self.assertTrue(all(motion.IDLE_GAP_S[0] <= w <= motion.IDLE_GAP_S[1] for w in waits))
+
+    def test_after_the_wait_it_blinks_or_looks_around_with_a_grok_idle_clip(self):
+        motion, m = self.motion()
+        self.run_for(m, 10 * 60)
+        self.assertGreater(len(m.history), 10 * 60 / motion.IDLE_GAP_S[1])
+        self.assertLess(len(m.history), 10 * 60 / motion.IDLE_GAP_S[0] + 1)
+        self.assertIn("blink", m.history)
+        self.assertTrue(set(m.history) - {"blink"} <= set(motion.IDLE_LOOKS))
+        self.assertGreater(m.history.count("blink"), len(m.history) / 3, "mostly blinks")
+
+    def test_a_blink_shuts_and_opens_the_lids_like_grok_bots(self):
+        motion, _m = self.motion()
+        self.assertEqual(motion.blink_at(0.0), 0.0)
+        self.assertAlmostEqual(motion.blink_at(motion.BLINK_SHUT), 1.0)
+        self.assertEqual(motion.blink_at(motion.BLINK_OPEN), 0.0)
+        self.assertGreater(motion.blink_at(0.06), 0.3)
+
+    def test_clips_are_sampled_on_their_own_eases(self):
+        motion, _m = self.motion()
+        self.assertAlmostEqual(motion.ease(0.5, motion.STANDARD_EASE), 0.5, places=4)
+        self.assertLess(motion.ease(0.2, motion.STANDARD_EASE), 0.2, "eases in")
+        keys = ((0.0, (0.0,), (0, 0, 1, 1)), (1.0, (10.0,), (0, 0, 1, 1)))
+        self.assertEqual(motion.at(keys, -1), (0.0,))
+        self.assertEqual(motion.at(keys, 5), (10.0,), "held after the last key")
+        self.assertAlmostEqual(motion.at(keys, 0.5)[0], 5.0, places=3)
+        b = motion.clip_at("Idle_B", 1.62)
+        self.assertAlmostEqual(b["pitch"] if "pitch" in b else b["rotation"][0], 0.1, places=1)
+        self.assertAlmostEqual(b["zoom"], 0.64 / 0.6, places=2, msg="Idle_B swells, only while it plays")
+
+    def test_idle_a_spins_once_and_ends_facing_front(self):
+        motion, _m = self.motion()
+        self.assertGreater(motion.clip_at("Idle_A", 5.5)["rotation"][1], 180)
+        self.assertEqual(motion.clip_at("Idle_A", 6.0)["rotation"][1], 0)
+
+
+class Moods(unittest.TestCase):
+    """Should show what happens: every event and mood has its own Grok Bot clip and face."""
+
+    def setUp(self):
+        from botwidget import motion
+        self.motion = motion
+        self.m = motion.Motion(random.Random(3))
+
+    def faces_while(self, seconds, dt=0.05):
+        return [self.m.step(dt) for _ in range(round(seconds / dt))]
+
+    def test_every_event_maps_to_its_grok_clip_and_face(self):
+        expected = {"reply": ("Done_A", "happy"), "new_message": ("Idle_B", "surprised"), "sent": ("nod", None),
+                    "error": ("Blocked_B", "sad"), "no_route": ("Blocked_A", "confused"), "click": ("bounce", "happy")}
+        self.assertEqual({name: event[:2] for name, event in self.motion.EVENTS.items()}, expected)
+        self.assertEqual(self.motion.MOODS["thinking"], ("Working_B", "inspecting"))
+        self.assertEqual(self.motion.MOODS["ask"], ("Idle_D", "neutral"))
+        self.assertEqual(self.motion.MOODS["offline"], (None, "sleepy"))
+        for clip, _face, *_rest in self.motion.EVENTS.values():
+            self.assertTrue(clip in self.motion.CLIPS or clip in self.motion.POKES, clip)
+
+    def test_a_reply_hops_with_happy_eyes_and_then_settles(self):
+        self.m.event("reply")
+        poses = self.faces_while(self.motion.CLIPS["Done_A"]["duration"])
+        self.assertTrue(all(p["face"] == "happy" for p in poses))
+        self.assertGreater(max(p["y"] for p in poses), 0.2, "it hops")
+        after = self.faces_while(0.1)[-1]
+        self.assertEqual((after["face"], after["yaw"]), ("neutral", self.motion.STILL[1]))
+        self.assertFalse(self.m.active)
+
+    def test_a_message_nobody_asked_for_surprises(self):
+        self.m.event("new_message")
+        self.assertEqual(self.faces_while(0.5)[-1]["face"], "surprised")
+
+    def test_sending_nods(self):
+        self.m.event("sent")
+        poses = self.faces_while(self.motion.POKES["nod"])
+        self.assertAlmostEqual(max(p["pitch"] for p in poses), self.motion.STILL[0] + 16, delta=0.5)
+
+    def test_a_refusal_is_sad_and_stays_sad_a_moment(self):
+        self.m.event("error")
+        self.faces_while(self.motion.CLIPS["Blocked_B"]["duration"] + 0.5)
+        self.assertEqual(self.m.step(0.05)["face"], "sad")
+        self.faces_while(2.0)
+        self.assertEqual(self.m.step(0.05)["face"], "neutral")
+
+    def test_thinking_inspects_and_loops_until_the_answer(self):
+        self.m.set_mood("thinking")
+        poses = self.faces_while(12)
+        self.assertTrue(all(p["face"] in ("inspecting", "surprised") for p in poses), "Working_B's own faces")
+        self.assertTrue(self.m.active)
+        self.m.set_mood("idle")
+        self.assertEqual(self.m.step(0.05)["yaw"], self.motion.STILL[1])
+        self.assertFalse(self.m.active)
+
+    def test_no_route_is_confused_then_sleepy_and_still(self):
+        self.m.event("no_route")
+        self.m.set_mood("offline")
+        self.assertEqual(self.faces_while(1.0)[-1]["face"], "confused")
+        self.faces_while(self.motion.CLIPS["Blocked_A"]["duration"])
+        poses = self.faces_while(40)
+        self.assertTrue(all(p["face"] == "sleepy" and p["yaw"] == self.motion.STILL[1] for p in poses))
+        self.assertFalse(self.m.active, "asleep, the face is drawn at the still rate")
+
+    def test_an_event_finishes_before_the_mood_loop_takes_over(self):
+        self.m.event("sent")
+        self.m.set_mood("thinking")
+        self.assertEqual(self.m.playing[0], "nod")
+        self.faces_while(self.motion.POKES["nod"] + 0.1)
+        self.assertEqual(self.m.playing[0], "Working_B")
+
+    def test_a_question_listens_with_idle_d(self):
+        self.m.set_mood("ask")
+        self.assertEqual(self.m.playing[0], "Idle_D")
+
+    def test_every_grok_face_draws_for_every_kind_of_face(self):
+        for face in avatar.GROK_FACES:
+            for kw in ({"seed": "robo"}, {"seed": "grok:A", "avatar": {"shape": "house", "color": "red"}},
+                       {"seed": "grok:B", "avatar": {"shape": "blob", "color": "blue"}}):
+                svg = avatar.face_svg(expression=("neutral", face, 0.5), **kw)
+                eyes = eye_paths(svg)
+                self.assertEqual(len(eyes), 2, (face, kw))
+                self.assertEqual(len(eyes[0]), len(eye_paths(avatar.face_svg(**kw))[0]), "morphs point for point")
+
+    def test_inspecting_has_one_big_and_one_small_eye(self):
+        svg = avatar.face_svg(seed="grok:B", avatar={"shape": "blob", "color": "blue"},
+                              expression=("neutral", "inspecting", 1.0))
+        left, right = sorted(eye_paths(svg), key=lambda eye: min(x for x, _ in eye))
+        width = lambda eye: max(x for x, _ in eye) - min(x for x, _ in eye)
+        self.assertAlmostEqual(width(left) / width(right), 2.0, delta=0.2)
 
 
 class GrokEyes(unittest.TestCase):
@@ -3386,16 +3524,32 @@ class GrokEyes(unittest.TestCase):
         left, right = sorted(arcs, key=lambda arc: min(x for x, _ in arc))
         self.assertLess(max(x for x, _ in left), min(x for x, _ in right) + 0.5, "the two arcs never touch")
 
-    def test_at_rest_a_grok_mark_shows_its_eyes_where_grok_bot_draws_them(self):
-        dx, dy, _scale = avatar.POSES["idle"]
-        svg = avatar.face_svg(dx=dx, dy=dy, seed="grok:Builder", avatar={"shape": "house", "color": "brown"})
+    def test_at_rest_every_grok_shape_shows_its_eyes_where_grok_bot_draws_them(self):
+        pitch, yaw, roll = avatar.GROK_STILL
         centre = avatar.AVATAR_SIZE / 2
-        drawn = sorted(eye_paths(svg), key=lambda eye: min(x for x, _ in eye))
-        for eye, (x, y, w, length, _tilt) in zip(drawn, avatar.GROK_MARKS["house"][1]):
-            mx = (min(p[0] for p in eye) + max(p[0] for p in eye)) / 2
-            my = (min(p[1] for p in eye) + max(p[1] for p in eye)) / 2
-            self.assertAlmostEqual(mx, centre + x * avatar.CIRCLE_R, delta=1.0)
-            self.assertAlmostEqual(my, centre + y * avatar.CIRCLE_R, delta=1.0)
+        for shape, (_outline, marks) in avatar.GROK_MARKS.items():
+            if shape == "blob":
+                continue
+            svg = avatar.face_svg(seed="grok:Builder", avatar={"shape": shape, "color": "brown"},
+                                  pitch=pitch, yaw=yaw, roll=roll)
+            drawn = sorted(eye_paths(svg), key=lambda eye: min(x for x, _ in eye))
+            self.assertEqual(len(drawn), 2, shape)
+            for eye, (x, y, _w, _length, _tilt) in zip(drawn, marks):
+                mx = (min(p[0] for p in eye) + max(p[0] for p in eye)) / 2
+                my = (min(p[1] for p in eye) + max(p[1] for p in eye)) / 2
+                self.assertAlmostEqual(mx, centre + x * avatar.CIRCLE_R, delta=1.0, msg=shape)
+                self.assertAlmostEqual(my, centre + y * avatar.CIRCLE_R, delta=1.0, msg=shape)
+
+    def test_at_rest_every_grok_body_is_grok_bots_own_art(self):
+        def box(points):
+            return (min(x for x, _ in points), max(x for x, _ in points),
+                    min(y for _, y in points), max(y for _, y in points))
+        for shape, (outline, _eyes) in avatar.GROK_MARKS.items():
+            if shape == "blob":
+                continue
+            drawn = box(avatar.grok_body_points(shape, *avatar.GROK_STILL))
+            for got, art in zip(drawn, box(outline)):
+                self.assertAlmostEqual(got, art, delta=0.04, msg=shape)
 
 
 class FaceLook(unittest.TestCase):
@@ -4237,22 +4391,38 @@ class Body3D(unittest.TestCase):
             self.assertEqual(len(eye_paths(avatar.face_svg(happy=1.0, **kw))), 2, "happy")
             self.assertNotIn("stroke=", avatar.face_svg(dx=-9, **kw))
 
-    def test_the_idle_face_breathes_like_grok_bots_idle_b(self):
-        self.assertAlmostEqual(1 + avatar.BREATH, 0.64 / 0.6)
-        at = dict(avatar.IDLE_BREATH)
-        start = next(t for t, size in avatar.IDLE_BREATH if size > 1)
-        self.assertEqual(at[start + avatar.BREATH_IN_MS], 1.0)
-        self.assertGreater(avatar.breath_at(start + 10), 1.0)
-        self.assertEqual(avatar.breath_at(start + avatar.BREATH_IN_MS + 10), 1.0)
-        self.assertGreater(avatar.breath_at(avatar.IDLE_LOOP_MS + start + 10), 1.0, "it loops")
+    def test_zoom_sizes_the_face(self):
         big = avatar.face_svg(seed="zeta", zoom=1.05)
         self.assertIn("scale(1.0500 1.0500)", big)
 
-    def test_breathing_alone_keeps_the_calm_frame_rate(self):
-        anim = animation.FaceAnimator()
-        anim.aim(zoom=1.07)
-        self.assertTrue(anim.step(0.03))
-        self.assertTrue(anim.only_slow)
-        anim.aim(dx=5)
-        anim.step(0.03)
-        self.assertFalse(anim.only_slow)
+    def test_turns_follow_grok_bots_order_and_directions(self):
+        from botwidget import body3d
+        right = body3d.turn(0, 90)(0.0, 0.0, 1.0)
+        self.assertAlmostEqual(right[0], 1.0, msg="a positive yaw turns the front to the right")
+        down = body3d.turn(30, 0)(0.0, 0.0, 1.0)
+        self.assertGreater(down[1], 0.4, "a positive pitch turns it down")
+        # Grok Bot turns by roll after pitch after yaw.
+        both = body3d.turn(20, 30, 10)(0.0, 0.0, 1.0)
+        yawed = body3d.turn(0, 30)(0.0, 0.0, 1.0)
+        pitched = body3d.turn(20, 0)(*yawed)
+        rolled = body3d.turn(0, 0, 10)(*pitched)
+        for got, want in zip(both, rolled):
+            self.assertAlmostEqual(got, want)
+
+    def test_every_grok_body_turns_in_3d_and_stays_on_the_canvas(self):
+        from botwidget.grok_bodies import GROK_BODIES
+        for shape in GROK_BODIES:
+            rest = avatar.grok_body_points(shape, 0, 0)
+            turns = [avatar.grok_body_points(shape, pitch, yaw) for pitch, yaw in ((0, 45), (-30, 0), (20, -60))]
+            if shape != "blob":  # a ball looks the same from everywhere
+                self.assertTrue(any(turned != rest for turned in turns), shape)
+            for turned in turns:
+                self.assertLessEqual(max(math.hypot(x, y) for x, y in turned), 1.17, shape)
+
+    def test_a_cube_seen_from_the_side_shows_its_depth(self):
+        width = lambda points: max(x for x, _ in points) - min(x for x, _ in points)
+        front, side = (width(avatar.grok_body_points("square", 0, yaw)) for yaw in (0, 90))
+        self.assertLess(side, front * 0.4, "from the side Grok Bot's square is a thin slab")
+        self.assertGreater(side, 0.5, "with its own thickness")
+        pebble = [width(avatar.grok_body_points("pebble", 0, yaw)) for yaw in (0, 90)]
+        self.assertAlmostEqual(pebble[0], pebble[1], places=2, msg="a pebble is turned on a lathe")

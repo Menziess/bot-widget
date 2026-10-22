@@ -20,7 +20,7 @@
   // stiffness, damping. Below 1 a property overshoots a little: that gives the wobble.
   var SPRINGS = {
     dx: [320, 0.80], dy: [320, 0.80], scale: [900, 0.90], converge: [320, 0.90], happy: [400, 0.90],
-    lift: [500, 0.60], lean: [220, 0.32], sx: [260, 0.30], sy: [260, 0.30], zoom: [6, 1.0]
+    lift: [500, 0.60], lean: [220, 0.32], sx: [260, 0.30], sy: [260, 0.30], zoom: [300, 1.0]
   };
   var REST = { dx: 0, dy: 0, scale: 1, converge: 0, happy: 0, lift: 0, lean: 0, sx: 1, sy: 1, zoom: 1 };
   var SETTLED = { dx: 0.04, dy: 0.04, converge: 0.04, lift: 0.04, lean: 0.04, scale: 0.004, happy: 0.004, sx: 0.004, sy: 0.004, zoom: 0.002 };
@@ -62,16 +62,22 @@
   var POSES = {
     rest: [0, 0, 1.0], idle: [15.3, -7.9, 1.0], look: [0, 2, 1.0], blink: [null, null, 0.0], read0: [-2, 1, 1.0], read1: [2, 1, 1.0], turn1: [7.0, -16.3, 1.0], turn2: [1.6, -3.1, 1.0], turn3: [18.6, 3.8, 1.0], turn5: [-4.4, 0.1, 1.0], turn6: [2.9, 0.5, 1.0], turn7: [-15.1, -8.0, 1.0], turn8: [-14.8, -6.8, 1.0], turn9: [6.7, 5.2, 1.0], turn10: [2.5, 11.2, 1.0], turn11: [13.9, -12.2, 1.0], front: [0.0, 0.0, 1.0]
   };
-  // Grok Bot's Idle_B breathes: [ms into the idle loop, size], from avatar.py.
-  var BREATH = [[6000, 1.0667], [7610, 1.0000], [16000, 1.0667], [17610, 1.0000], [20000, 1.0667], [21610, 1.0000]], BREATH_LOOP = 24000;
-  function breathAt(ms) {
-    ms %= BREATH_LOOP;
-    var goal = 1;
-    BREATH.forEach(function (b) { if (b[0] <= ms) goal = b[1]; });
-    return goal;
+  // Idle is calm (botwidget/motion.py): the still pose, and after a random 8 to 30 s a blink or, less
+  // often, one of Grok Bot's idle clips as a look around; then still again. No breathing.
+  var IDLE_GAP = [8000, 30000], IDLE_BLINK_SHARE = 0.6;
+  var LOOKS = {
+    Idle_D: [["turn1", 590], ["blink", 130], ["turn2", 1240], ["turn3", 110], ["blink", 130], ["turn3", 170], ["blink", 130], ["turn3", 1410], ["idle", 340], ["blink", 130], ["idle", 1620]],
+    Idle_B: [["front", 900], ["turn5", 580], ["blink", 130], ["turn5", 10], ["turn6", 870], ["front", 970], ["blink", 130], ["front", 410], ["idle", 600]],
+    Idle_A: [["front", 490], ["turn7", 670], ["blink", 130], ["turn7", 90], ["turn8", 400], ["turn9", 970], ["turn10", 180], ["turn11", 1070], ["blink", 130], ["front", 1920], ["idle", 600]]
+  };
+  function idleGap() { return IDLE_GAP[0] + Math.random() * (IDLE_GAP[1] - IDLE_GAP[0]); }
+  // What the idle does next: a blink, or a look around.
+  function idleNext() {
+    if (Math.random() < IDLE_BLINK_SHARE) return [["blink", 130], ["idle", 0]];
+    var names = Object.keys(LOOKS);
+    return LOOKS[names[Math.floor(Math.random() * names.length)]];
   }
   var CYCLE = {
-    idle: [["turn1", 590], ["blink", 130], ["turn2", 1240], ["turn3", 110], ["blink", 130], ["turn3", 170], ["blink", 130], ["turn3", 1410], ["idle", 340], ["blink", 130], ["idle", 1620], ["front", 900], ["turn5", 580], ["blink", 130], ["turn5", 10], ["turn6", 870], ["front", 970], ["blink", 130], ["front", 410], ["front", 490], ["turn7", 670], ["blink", 130], ["turn7", 90], ["turn8", 400], ["turn9", 970], ["turn10", 180], ["turn11", 1070], ["blink", 130], ["front", 1920], ["front", 900], ["turn5", 580], ["blink", 130], ["turn5", 10], ["turn6", 870], ["front", 970], ["blink", 130], ["front", 410], ["front", 900], ["turn5", 580], ["blink", 130], ["turn5", 10], ["turn6", 870], ["front", 970], ["blink", 130], ["front", 410]],
     work: [["read0", 280], ["read1", 280], ["read0", 280], ["blink", 120]]
   };
 
@@ -255,5 +261,5 @@
     ctx.restore();
   }
 
-  window.BotFace = { SIZE: SIZE, R: R, GAZE_NEAR: GAZE_NEAR, Animator: Animator, POSES: POSES, CYCLE: CYCLE, gaze: gaze, draw: draw, breathAt: breathAt };
+  window.BotFace = { SIZE: SIZE, R: R, GAZE_NEAR: GAZE_NEAR, Animator: Animator, POSES: POSES, CYCLE: CYCLE, gaze: gaze, draw: draw, idleGap: idleGap, idleNext: idleNext };
 })();

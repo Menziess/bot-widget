@@ -37,7 +37,8 @@ botwidget
 - Clicking in the bubble never opens or closes it
 - The answer sound is off by default, and when on it only plays while the face is out of view (covered or on another desktop)
 - The eyes follow the pointer when it is near, and look at you when it is over the face
-- Every face is drawn as a 3D body, the way Grok Bot draws its avatars: when it turns, its outline and shading turn with it, and its eyes lie on its surface, so they curve and get narrower towards the edge. Idle, it looks around, blinks and breathes like a Grok Bot avatar
+- Every face is drawn as a 3D body, built the way Grok Bot builds its avatars (extruded, turned on a lathe, lofted or rounded), so when it turns, its outline and shading turn with it, and its eyes lie on its surface, so they curve and get narrower towards the edge.
+- Idle is calm: the face holds still and only now and then, after a random 8 to 30 seconds, blinks or looks around. When something happens it plays one of Grok Bot's own clips: a nod when your message goes out, an inspecting look while the bot thinks, a happy hop on the reply, surprise at a message nobody asked for, a sad face when a message is refused, confused and then sleepy when there is no route, and a bounce when you click it. While it holds still it draws only ten frames a second.
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
 - The cloud shows the thought as markdown, follows the end of it as it grows, and has the field below
 - What you type while the bot works waits in a queue under the thought, a click on one puts it back in the field to edit, and one goes out per finished turn

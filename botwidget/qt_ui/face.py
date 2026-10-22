@@ -3,6 +3,7 @@
 import datetime
 import hashlib
 import math
+import random
 import threading
 import time
 import uuid
@@ -15,13 +16,9 @@ from botwidget.animation import IDLE_MS, FaceAnimator, frame_ms
 from botwidget.avatar import (
     AVATAR_SIZE,
     CIRCLE_R,
-    FACE,
     GAZE_NEAR,
     ON_FACE,
-    LIFT,
-    POSES,
     avatar_profile,
-    breath_at,
     eye_aim,
     face_svg,
 )
@@ -38,6 +35,7 @@ from botwidget.config import (
     set_muted,
 )
 from botwidget.delivery import Outbox
+from botwidget.motion import STILL, Motion
 from botwidget.markdown import (
     block_text,
     code_block,
@@ -162,10 +160,10 @@ class FaceWindow(QWidget):
         self._wall_kick = (0.0, 0.0)
         self._coasting = False
         self._working = False
-        self._mood = "idle"
-        self._face_i = 0
-        self._cycle_left = 0.0
-        self._pose = "idle"
+        # Calm idle, and Grok Bot's clips when something happens (botwidget.motion).
+        self.motion = Motion(random.Random())
+        self._faces = ("neutral", "neutral")  # the face the eyes come from and go to
+        self._asked = False  # a message went out: the next answer is its reply
         self._last_bot = None
         self._answer_pending = False
         self._happy_on = False
@@ -181,7 +179,7 @@ class FaceWindow(QWidget):
         self._chat = {}
         self._moving = False
         self.anim = FaceAnimator()
-        self.anim.jump(dx=POSES["idle"][0], dy=POSES["idle"][1])
+        self.anim.jump(pitch=STILL[0], yaw=STILL[1], roll=STILL[2])
         self._last_tick = time.monotonic()
 
         self._apply_flags()
@@ -391,6 +389,7 @@ class FaceWindow(QWidget):
         if click and event.modifiers() & Qt.ShiftModifier:
             self.toggle_muted()
         elif click:
+            self.react("click")
             self.open_input()
             # The happy eyes stay a moment; then the cycle picks up again.
             QTimer.singleShot(600, self._happy_off)
@@ -519,7 +518,7 @@ class FaceWindow(QWidget):
         now = time.monotonic()
         dt, self._last_tick = now - self._last_tick, now
         interval = frame_ms(held=self._drag_origin is not None or self._coasting or self._happy_on,
-                            moving=self._moving and not self.anim.only_slow, pointer_near=self._pointer_on_head())
+                            moving=self._moving, pointer_near=self._pointer_on_head(), playing=self.motion.active)
         if self._anim_timer.interval() != interval:
             self._anim_timer.setInterval(interval)
         self._aim(dt * 1000)
@@ -532,7 +531,9 @@ class FaceWindow(QWidget):
         v = self.anim.value
         svg = face_svg(v["dx"], v["dy"], max(v["scale"], 0.05), v["converge"], self._seed, self._hue,
                        v["lift"], min(max(v["happy"], 0.0), 1.0), lean=v["lean"],
-                       squash=(v["sx"], v["sy"]), muted=self._muted, avatar=self._avatar, zoom=v["zoom"])
+                       squash=(v["sx"], v["sy"]), muted=self._muted, avatar=self._avatar, zoom=v["zoom"],
+                       roll=v["roll"], pitch=v["pitch"], yaw=v["yaw"], shift=v["shift"],
+                       expression=(*self._faces, min(max(v["morph"], 0.0), 1.0)))
         self._set_pixmap(svg_pixmap(svg))
 
     def set_avatar(self, avatar: dict | None):
@@ -546,61 +547,73 @@ class FaceWindow(QWidget):
         self._render()
 
     def _aim(self, dt_ms: float):
-        """Where the face wants to go: dragging, happy, looking at the mouse, or the normal cycle."""
+        """Where the face wants to go: dragging, happy, looking at the mouse, or what motion plays."""
         a = self.anim
+        self.motion.set_mood(self._motion_mood())
+        pose = self.motion.step(dt_ms / 1000)
+        # Grok Bot's hops and squashes, about its anchor (-1: the bottom stays put).
+        lift = (pose["y"] + pose["anchor"] * (1 - pose["sy"])) * CIRCLE_R
+        moved = {"shift": pose["x"] * CIRCLE_R, "lift": lift, "zoom": pose["zoom"]}
         dragging = self._drag_origin is not None
         speed = math.hypot(self._dvx, self._dvy) if (dragging or self._coasting) else 0.0
         if speed:
             # Stretch along the movement and lean in its direction.
             stretch = min(speed / 1200, 0.10) * (abs(self._dvx) - abs(self._dvy)) / (speed + 1e-6)
-            a.aim(sx=1 + stretch, sy=1 - stretch, lean=max(-12.0, min(12.0, self._dvx / 70)))
+            a.aim(sx=pose["sx"] * (1 + stretch), sy=pose["sy"] * (1 - stretch),
+                  lean=max(-12.0, min(12.0, self._dvx / 70)))
         else:
-            a.aim(sx=1.0, sy=1.0, lean=0.0)
+            a.aim(sx=pose["sx"], sy=pose["sy"], lean=0.0)
         if dragging or self._happy_on:
             # Happy face: ^^ as soon as the mouse is on the head, half happy while dragging.
             moving = dragging and speed > 20
             look_x = max(-8.0, min(8.0, self._dvx / speed * 8)) if moving else 0.0
             look_y = max(-8.0, min(8.0, self._dvy / speed * 8)) if moving else 0.0
-            a.aim(happy=0.5 if moving else 1.0, dx=look_x, dy=look_y, converge=0.0, scale=1.0, lift=0.0)
+            a.aim(happy=0.5 if moving else 1.0, dx=look_x, dy=look_y, converge=0.0, scale=1.0,
+                  pitch=0.0, yaw=0.0, roll=0.0, **moved)
+            self._show_face("neutral")
             return
         a.aim(happy=0.0)
-        if not (self._working or self.has_pending):
+        if self.motion.playing is None and not (self._working or self.has_pending):
             px, py = self._pointer()
             target = eye_aim(px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2))
             if target is not None:
                 dx, dy, converge, scale = target
-                a.aim(dx=dx, dy=dy, converge=converge, scale=scale, lift=0.0)
-                self._cycle_left = 0.0
+                a.aim(dx=dx, dy=dy, converge=converge, scale=scale * (1 - pose["lids"]),
+                      pitch=0.0, yaw=0.0, roll=0.0, **moved)
+                self._show_face(pose["face"])
                 return
-        self._cycle(dt_ms)
+        a.aim(dx=0.0, dy=0.0, converge=0.0, scale=1 - pose["lids"],
+              pitch=pose["pitch"], yaw=pose["yaw"], roll=pose["roll"], **moved)
+        # A full turn (Idle_A's spin) ends where it started: no turning back the long way.
+        for name in ("pitch", "yaw", "roll"):
+            off = a.value[name] - a.target[name]
+            if abs(off) > 180:
+                a.value[name] -= 360 * round(off / 360)
+        self._show_face(pose["face"])
 
-    def _cycle(self, dt_ms: float):
-        """Next pose. Idle looks up now and then, work reads, a question looks at you."""
-        mood = "ask" if self.has_pending else ("work" if self._working else "idle")
-        if mood != self._mood:
-            self._mood = mood
-            self._face_i = 0
-            self._cycle_left = 0.0
-            self._idle_ms = 0.0
-        # Idle breathes the way Grok Bot's Idle_B does; anything else holds its breath.
-        self._idle_ms = getattr(self, "_idle_ms", 0.0) + dt_ms if mood == "idle" else 0.0
-        self.anim.aim(zoom=breath_at(self._idle_ms) if mood == "idle" else 1.0)
-        self._cycle_left -= dt_ms
-        if self._cycle_left <= 0:
-            pose, self._cycle_left = FACE[mood][self._face_i % len(FACE[mood])]
-            self._face_i += 1
-            self._set_pose(pose)
+    def _motion_mood(self) -> str:
+        """What the face shows while it lasts: a question waits, the bot thinks, there is no route."""
+        if self.has_pending:
+            return "ask"
+        if self._working:
+            return "thinking"
+        if self._send_status or (self.grok and getattr(self.grok, "status", "")):
+            return "offline"
+        return "idle"
 
-    def _set_pose(self, pose: str):
-        dx, dy, scale = POSES[pose]
-        if dx is not None:  # a blink keeps the eyes where they look
-            self.anim.aim(dx=dx, dy=dy)
-        self.anim.aim(scale=scale, converge=0.0, lift=LIFT.get(pose, 0.0))
-        if pose == "hop":
-            self.anim.kick("sy", 0.8)
-        elif self._pose == "hop":
-            self.anim.kick("sy", -1.2)
-        self._pose = pose
+    def _show_face(self, face: str):
+        """Morph the eyes to one of Grok Bot's faces."""
+        if face == self._faces[1]:
+            return
+        self._faces = (self._faces[1], face)
+        self.anim.jump(morph=0.0)
+        self.anim.aim(morph=1.0)
+
+    def react(self, event: str):
+        """Something happened: play its clip (botwidget.motion.EVENTS) and draw at once."""
+        self.motion.event(event)
+        if hasattr(self, "_anim_timer") and self._anim_timer.interval() > IDLE_MS:
+            self._anim_timer.setInterval(IDLE_MS)
 
     def _landed(self):
         """After dragging: a small landing, and off any face it was dropped on."""
@@ -790,6 +803,8 @@ class FaceWindow(QWidget):
         if self._answer_pending and not self._working:
             # Not on every step the bot says while it works: once, when the turn is over.
             self._answer_pending = False
+            self.react("reply" if self._asked else "new_message")
+            self._asked = False
             if not self.visible_to_user():
                 play_sound()
         if self._drag_origin is not None or time.monotonic() < self._welcome_until:
@@ -1151,6 +1166,8 @@ class FaceWindow(QWidget):
             item = self._outbox.sent(cid)
             self._send_status = ""
             self._refused = False
+            self._asked = True
+            self.react("sent")
             # Grok Bot keeps the line the user sent itself.
             if item is not None and not self.grok:
                 self._local.append({"role": "user", "text": item["text"],
@@ -1161,6 +1178,7 @@ class FaceWindow(QWidget):
             if wait is None:
                 self._send_status = ""
                 self._refused = True
+                self.react("error")
                 if item is not None:
                     self._local.append({"role": "user", "text": item["text"], "until": time.monotonic() + 60})
                 note = GROK_REFUSED_NOTE if self.grok else REFUSED_NOTE
@@ -1168,6 +1186,8 @@ class FaceWindow(QWidget):
                                     "text": note.format(why=error)})
             else:
                 next_ready = False
+                if not self._send_status:
+                    self.react("no_route")
                 self._send_status = self._waiting_note(error)
                 QTimer.singleShot(int(wait * 1000), self._pump_outbox)
         self.update()

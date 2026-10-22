@@ -19,7 +19,7 @@
   var homed = true;                  // still sitting at its place in the page
   var dragging = null, coasting = false, returning = false, happyUntil = 0;
   var pointer = null, pointerAt = 0;
-  var mood = "idle", cycleI = 0, cycleLeft = 0, pose = "idle", idleMs = 0;
+  var mood = "idle", cycleI = 0, cycleLeft = 0, pose = "idle";
   var thinking = false, pinned = false, sayUntil = 0, bubbleKept = 0;
 
   function layout() {
@@ -73,15 +73,21 @@
     pose = name;
   }
 
+  // Calm idle: still, then now and then a blink or a look (F.idleNext); work reads.
+  var idleWait = F.idleGap(), playing = null;
   function cycle(ms) {
     var m = thinking ? "work" : "idle";
-    if (m !== mood) { mood = m; cycleI = 0; cycleLeft = 0; idleMs = 0; }
-    // Idle breathes the way Grok Bot's Idle_B does; work holds its breath.
-    idleMs = mood === "idle" ? idleMs + ms : 0;
-    anim.aim({ zoom: mood === "idle" ? F.breathAt(idleMs) : 1 });
+    if (m !== mood) { mood = m; cycleI = 0; cycleLeft = 0; playing = m === "work" ? F.CYCLE.work : null; idleWait = F.idleGap(); }
+    if (!playing) {
+      if (pose !== "idle") setPose("idle");
+      idleWait -= ms;
+      if (idleWait > 0) return;
+      idleWait = F.idleGap(); playing = F.idleNext(); cycleI = 0; cycleLeft = 0;
+    }
     cycleLeft -= ms;
     if (cycleLeft <= 0) {
-      var step = F.CYCLE[mood][cycleI % F.CYCLE[mood].length];
+      if (cycleI >= playing.length && mood === "idle") { playing = null; return; }
+      var step = playing[cycleI % playing.length];
       cycleI++; cycleLeft = step[1]; setPose(step[0]);
     }
   }
@@ -312,6 +318,7 @@
     text = text.trim();
     if (!text || thinking) return;
     add("you", text);
+    anim.kick("dy", 60);  // the nod: it went out
     thinking = true; bubble.classList.add("thinking");
     var dots = add("bot dots", "");
     dots.innerHTML = "<i></i><i></i><i></i>";

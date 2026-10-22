@@ -23,36 +23,46 @@ EYE_DEPTH = 1.0
 LOFT_POWER = 0.72
 
 
-def turn(pitch: float, yaw: float):
-    """A function that turns a point by pitch (up is negative) and then yaw (right is positive)."""
+def _matrix(pitch: float, yaw: float, roll: float = 0.0) -> tuple:
+    """Grok Bot's turn as a matrix: yaw (right is positive), then pitch (up is negative), then roll
+    (anticlockwise is positive), the order of its engine, for x right, y down, z to the viewer."""
     cp, sp = math.cos(math.radians(pitch)), math.sin(math.radians(pitch))
     cy, sy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+    cr, sr = math.cos(math.radians(roll)), math.sin(math.radians(roll))
+    yawed = ((cy, 0.0, sy), (0.0, 1.0, 0.0), (-sy, 0.0, cy))
+    pitched = ((1.0, 0.0, 0.0), (0.0, cp, sp), (0.0, -sp, cp))
+    rolled = ((cr, sr, 0.0), (-sr, cr, 0.0), (0.0, 0.0, 1.0))
+    return _mul(rolled, _mul(pitched, yawed))
+
+
+def _mul(a: tuple, b: tuple) -> tuple:
+    return tuple(tuple(sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)) for i in range(3))
+
+
+def _apply(m: tuple):
+    (a, b, c), (d, e, f), (g, h, i) = m
 
     def apply(x: float, y: float, z: float) -> tuple[float, float, float]:
-        y, z = y * cp + z * sp, z * cp - y * sp
-        return x * cy + z * sy, y, z * cy - x * sy
+        return a * x + b * y + c * z, d * x + e * y + f * z, g * x + h * y + i * z
     return apply
 
 
-def turn_from(rest: tuple, pitch: float, yaw: float):
-    """Turn a body seen in the rest turn on to pitch and yaw: undo rest, then turn."""
-    back_p, back_y = math.radians(-rest[0]), math.radians(-rest[1])
-    cp, sp = math.cos(back_p), math.sin(back_p)
-    cy, sy = math.cos(back_y), math.sin(back_y)
-    on = turn(pitch, yaw)
+def turn(pitch: float, yaw: float, roll: float = 0.0):
+    """A function that turns a point the way Grok Bot turns its avatars."""
+    return _apply(_matrix(pitch, yaw, roll))
 
-    def apply(x: float, y: float, z: float) -> tuple[float, float, float]:
-        x, z = x * cy + z * sy, z * cy - x * sy
-        y, z = y * cp + z * sp, z * cp - y * sp
-        return on(x, y, z)
-    return apply
+
+def turn_from(rest: tuple, pitch: float, yaw: float, roll: float = 0.0):
+    """Turn a body seen in the rest turn (pitch, yaw[, roll]) on to pitch, yaw and roll."""
+    back = tuple(zip(*_matrix(*rest)))  # a turn's inverse is its transpose
+    return _apply(_mul(_matrix(pitch, yaw, roll), back))
 
 
 def angles_for(dx: float, dy: float, radius: float) -> tuple[float, float]:
     """The pitch and yaw that move the front of the head by dx, dy px on a head of this radius."""
-    pitch = math.degrees(math.asin(max(-1.0, min(1.0, dy / radius))))
-    across = radius * math.cos(math.radians(pitch))
-    yaw = math.degrees(math.asin(max(-1.0, min(1.0, dx / across))))
+    yaw = math.degrees(math.asin(max(-1.0, min(1.0, dx / radius))))
+    across = radius * math.cos(math.radians(yaw))
+    pitch = math.degrees(math.asin(max(-1.0, min(1.0, dy / across)))) if across > 1e-9 else 0.0
     return pitch, yaw
 
 
@@ -82,7 +92,7 @@ def outline(points: tuple, pitch: float, yaw: float, rest: tuple = (0.0, 0.0)) -
     the outline was drawn in: Grok Bot's still art shows its bodies turned.
     """
     dense = _densify(points, OUTLINE_POINTS)
-    if (pitch, yaw) == rest:
+    if (pitch, yaw) == tuple(rest[:2]):
         return tuple(points)
     rot = turn_from(rest, pitch, yaw)
     best = [None] * BINS
@@ -153,20 +163,206 @@ def _stroke(line: list, half: float, caps: int = 7) -> list:
     return left + cap(line[-1], normals[-1], 1) + right[::-1] + cap(line[0], (-normals[0][0], -normals[0][1]), 1)
 
 
-def eye_on_surface(centre: tuple, shape: list, rot) -> list | None:
+def eye_on_surface(centre: tuple, shape: list, rot, normal: tuple | None = None) -> list | None:
     """Lay a flat eye shape (u right, v down, head radii) on the surface at centre, turned by rot.
 
-    centre is the eye's direction on the unit sphere, the surface Grok Bot lays its eye capsules
-    on. None when the eye has turned away.
+    The eye bends over a ball of radius 1 that touches the body at centre, with the surface's normal
+    there: a ball's own surface for a round head (the default, the unit sphere Grok Bot lays its eye
+    capsules on), the flat front or the wrap of the body Grok Bot seats them on otherwise. None when
+    the eye has turned away.
     """
     cx, cy, cz = centre
-    n = math.hypot(cx, cz) or 1.0
-    right = (cz / n, 0.0, -cx / n)
-    out, front = [], 0.0
+    nx, ny, nz = normal or centre
+    k = 1.0 / (math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0)
+    nx, ny, nz = nx * k, ny * k, nz * k
+    h = math.hypot(nx, nz) or 1.0
+    rx, ry, rz = nz / h, 0.0, -nx / h                                    # right: level, along the surface
+    dx, dy, dz = ny * rz - nz * ry, nz * rx - nx * rz, nx * ry - ny * rx  # down: normal x right
+    ox, oy, oz = cx - nx, cy - ny, cz - nz
+    out = []
     for u, v in shape:
-        x, y, z = cx + u * right[0], cy + v, cz + u * right[2]
+        x, y, z = nx + u * rx + v * dx, ny + u * ry + v * dy, nz + u * rz + v * dz
         k = 1.0 / (math.sqrt(x * x + y * y + z * z) or 1.0)
-        px, py, pz = rot(x * k, y * k, z * k * EYE_DEPTH)
-        front += pz
+        px, py, _pz = rot(ox + x * k, oy + y * k, (oz + z * k) * EYE_DEPTH)
         out.append((px, py))
-    return out if front > 0 else None
+    facing = rot(nx, ny, nz)[2]
+    return out if facing > -0.05 else None
+
+
+# ── Grok Bot's bodies ───────────────────────────────────────────────
+# Its engine builds each avatar shape in its own way (grok_bodies.py); the outline of the turned body
+# is what it draws. RAYS directions are cast from the middle, as the engine does.
+RAYS = 360
+AROUND = 32
+
+
+def _hull(points: list) -> list:
+    """The convex hull of 2D points, anticlockwise (monotone chain)."""
+    pts = sorted(set(points))
+    if len(pts) < 3:
+        return pts
+
+    def half(seq):
+        out = []
+        for p in seq:
+            while len(out) >= 2 and ((out[-1][0] - out[-2][0]) * (p[1] - out[-2][1])
+                                     - (out[-1][1] - out[-2][1]) * (p[0] - out[-2][0])) <= 0:
+                out.pop()
+            out.append(p)
+        return out
+    return half(pts)[:-1] + half(reversed(pts))[:-1]
+
+
+def _cast(segments: list, rays: int = RAYS) -> list:
+    """The outermost point of the segments' union along every ray from the middle."""
+    far = [0.0] * rays
+    step = math.tau / rays
+    for (ax, ay), (bx, by) in segments:
+        a0 = math.atan2(ay, ax) % math.tau
+        span = (math.atan2(by, bx) - math.atan2(ay, ax) + math.pi) % math.tau - math.pi
+        lo, hi = (a0, a0 + span) if span >= 0 else (a0 + span, a0)
+        ex, ey = bx - ax, by - ay
+        for k in range(math.floor(lo / step) - 1, math.ceil(hi / step) + 2):
+            angle = k * step
+            dx, dy = math.cos(angle), math.sin(angle)
+            den = dx * ey - dy * ex
+            if abs(den) < 1e-12:
+                continue
+            t = (ax * ey - ay * ex) / den
+            u = (ax * dy - ay * dx) / den
+            if t > 0 and -1e-9 <= u <= 1 + 1e-9:
+                i = k % rays
+                far[i] = max(far[i], t)
+    return [(math.cos(i * step) * r, math.sin(i * step) * r) for i, r in enumerate(far) if r > 0]
+
+
+def _rings(spec: dict) -> list:
+    """The rings of an extrusion or a loft, in 3D."""
+    outline = spec["outline"]
+    if spec["kind"] == "extrusion":
+        xs, ys = [p[0] for p in outline], [p[1] for p in outline]
+        cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+        h = max(1e-4, min((max(xs) - min(xs)) / 2, (max(ys) - min(ys)) / 2))
+        depth, bevel = spec["half_depth"], spec["bevel"]
+        steps = [(t, -1) for t in range(4, -1, -1)] + [(t, 1) for t in range(5)]
+        rings = []
+        for t, side in steps:
+            a = t / 4 * math.pi / 2
+            z = side * (depth - bevel + bevel * math.sin(a))
+            k = 1 - bevel / h * (1 - math.cos(a))
+            rings.append([(cx + (x - cx) * k, cy + (y - cy) * k, z) for x, y in outline])
+        return rings
+    cx, cy = spec["centre"]
+    rings = []
+    for t in range(17):
+        a = -math.pi / 2 + math.pi * t / 16
+        k = max(0.0, math.cos(a)) ** LOFT_POWER
+        rings.append([(cx + (x - cx) * k, cy + (y - cy) * k, spec["depth"] * math.sin(a)) for x, y in outline])
+    return rings
+
+
+def _solid(spec: dict) -> list:
+    """The sample points of a solid whose outline is their convex hull, in 3D."""
+    kind = spec["kind"]
+    if kind == "revolve":
+        pts = []
+        for y, r in spec["profile"]:
+            if r <= 0:
+                pts.append((0.0, y, 0.0))
+                continue
+            pts += [(r * math.sin(a), y, r * math.cos(a))
+                    for a in (i / AROUND * math.tau for i in range(AROUND))]
+        return pts
+    if kind == "roundedSlab":
+        ring, depth, edge = spec["ring"], spec["half_depth"], spec["edge"]
+        n, pts = len(ring), []
+        for i, (x, y) in enumerate(ring):
+            (lx, ly), (ox, oy) = ring[i - 1], ring[(i + 1) % n]
+            nx, ny = oy - ly, -(ox - lx)
+            length = math.hypot(nx, ny) or 1.0
+            nx, ny = nx / length, ny / length
+            if nx * x + ny * y < 0:
+                nx, ny = -nx, -ny
+            for t in range(5):
+                a = t / 4 * math.pi / 2
+                inset, z = edge * (1 - math.cos(a)), depth - edge + edge * math.sin(a)
+                pts += [(x - nx * inset, y - ny * inset, z), (x - nx * inset, y - ny * inset, -z)]
+        return pts
+    # The crystal: two tips and two rings of six corners, each a ball of 0.12.
+    s = spec["scale"]
+    corners = [(0.0, -1.04, 0.0), (0.0, 1.04, 0.0)]
+    for side in (-1, 1):
+        corners += [(0.52 * math.cos(a), -0.51 * side, 0.52 * math.sin(a))
+                    for a in (i / 6 * math.tau for i in range(6))]
+    pts = []
+    for x, y, z in corners:
+        for i in range(9):
+            a = i / 8 * math.pi
+            for j in range(1 if i in (0, 8) else 14):
+                b = j / 14 * math.tau
+                pts.append(((x + 0.12 * math.sin(a) * math.sin(b)) * s, (y - 0.12 * math.cos(a)) * s,
+                            (z + 0.12 * math.sin(a) * math.cos(b)) * s))
+    return pts
+
+
+@lru_cache(maxsize=64)
+def _prepared(name: str) -> tuple:
+    from botwidget.grok_bodies import GROK_BODIES
+    spec = GROK_BODIES[name]
+    if spec["kind"] in ("extrusion", "loft"):
+        return ("rings", _rings(spec))
+    if spec["kind"] == "balls":
+        return ("balls", spec["balls"])
+    if spec["kind"] == "sphere":
+        return ("sphere", None)
+    return ("solid", _solid(spec))
+
+
+def prepared_body(name: str, spec: dict) -> tuple:
+    """Prepare a body that is not one of Grok Bot's (an OpenBot face) the same way."""
+    if spec["kind"] in ("extrusion", "loft"):
+        return ("rings", _rings(spec))
+    if spec["kind"] == "balls":
+        return ("balls", spec["balls"])
+    return ("solid", _solid(spec))
+
+
+def body_outline(body: tuple, pitch: float, yaw: float) -> tuple:
+    """The outline of a prepared body turned by pitch and yaw, as Grok Bot's engine draws it."""
+    kind, data = body
+    rot = turn(pitch, yaw)
+    if kind == "sphere":
+        return tuple((math.cos(a), math.sin(a)) for a in (i / 96 * math.tau for i in range(96)))
+    if kind == "solid":
+        return tuple((round(x, 4), round(y, 4)) for x, y in _hull([rot(*p)[:2] for p in data]))
+    if kind == "balls":
+        centres = [(rot(x, y, z)[:2], r) for x, y, z, r in data]
+        ox = sum(c[0] for c, _ in centres) / len(centres)
+        oy = sum(c[1] for c, _ in centres) / len(centres)
+        out = []
+        for i in range(160):
+            a = i / 160 * math.tau
+            dx, dy = math.cos(a), math.sin(a)
+            best = 0.0
+            for (cx, cy), r in centres:
+                px, py = cx - ox, cy - oy
+                b = dx * px + dy * py
+                h = b * b - (px * px + py * py) + r * r
+                if h > 0:
+                    best = max(best, b + math.sqrt(h))
+            if best > 0:
+                out.append((round(ox + dx * best, 4), round(oy + dy * best, 4)))
+        return tuple(out)
+    turned = [[rot(*p)[:2] for p in ring] for ring in data]
+    segments = []
+    for i, ring in enumerate(turned):
+        segments += [(ring[j - 1], ring[j]) for j in range(len(ring))]
+        if i:
+            segments += list(zip(turned[i - 1], ring))
+    return tuple((round(x, 4), round(y, 4)) for x, y in _cast(segments))
+
+
+@lru_cache(maxsize=2048)
+def grok_outline(name: str, pitch: float, yaw: float) -> tuple:
+    """The outline of Grok Bot's body for this avatar shape, turned."""
+    return body_outline(_prepared(name), pitch, yaw)
