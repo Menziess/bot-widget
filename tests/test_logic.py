@@ -21,6 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from botwidget import (
     animation,
     avatar,
+    body3d,
     bubble,
     bubble_layout,
     channel,
@@ -212,6 +213,16 @@ class AvatarProfile(unittest.TestCase):
         self.assertEqual(avatar.stable_index("a", 7), 0xE40C292C % 7)
 
 
+def eye_paths(svg: str) -> list:
+    """The points of every eye in a face: the light filled paths."""
+    found = re.findall(r'<path d="M([^"]+)Z" fill="' + re.escape(avatar.EYE_FILL) + '"', svg)
+    return [[tuple(map(float, xy.split())) for xy in d.split("L")] for d in found]
+
+
+def body_d(svg: str) -> str:
+    return re.search(r'<path d="([^"]+)" fill="#', svg).group(1)
+
+
 class GrokMarks(unittest.TestCase):
     """Should draw every Grok Bot avatar shape as Grok Bot draws it, with the widget's own animation."""
 
@@ -230,23 +241,26 @@ class GrokMarks(unittest.TestCase):
         profile = avatar.avatar_profile("grok:Builder", None, {"shape": "house", "color": "brown"})
         self.assertEqual((profile["shape"], profile["hex"], profile["tilt"]), ("house", "#936439", 0.0))
         self.assertEqual((profile["top"], profile["bottom"]), avatar.mark_extent("house"))
-        svg = avatar.face_svg(seed="grok:Builder", avatar={"shape": "house", "color": "brown"})
-        self.assertIn(avatar.mark_path("house", avatar.CIRCLE_R, avatar.AVATAR_SIZE / 2, avatar.AVATAR_SIZE / 2), svg)
-        self.assertEqual(svg.count('stroke-linecap="round"'), 2, "two eyes, flat like Grok Bot's, no shadow")
+        dx, dy, _scale = avatar.POSES["idle"]
+        svg = avatar.face_svg(dx=dx, dy=dy, seed="grok:Builder", avatar={"shape": "house", "color": "brown"})
+        self.assertIn(avatar.mark_path("house", avatar.CIRCLE_R, avatar.AVATAR_SIZE / 2, avatar.AVATAR_SIZE / 2), svg,
+                      "in its still pose it is Grok Bot's own art")
+        self.assertEqual(len(eye_paths(svg)), 2, "two eyes, flat like Grok Bot's")
+        self.assertNotIn("stroke=", svg, "no shadow, no outline")
 
     def test_a_grok_bot_mark_blinks_and_follows_like_the_other_faces(self):
         shape = {"shape": "sparkle", "color": "orange"}
         rest = avatar.face_svg(seed="grok:Admin", avatar=shape)
         self.assertNotEqual(avatar.face_svg(dx=4, seed="grok:Admin", avatar=shape), rest)
         self.assertNotEqual(avatar.face_svg(scale=0.1, seed="grok:Admin", avatar=shape), rest)
-        self.assertEqual(avatar.face_svg(seed="grok:Admin", avatar=shape, muted=True).count('stroke-width="2.6"'), 2,
-                         "a muted mark gets the cross too")
+        self.assertIn('stroke-width="2.6"', avatar.face_svg(seed="grok:Admin", avatar=shape, muted=True),
+                      "a muted mark gets the cross too")
+        self.assertNotIn('stroke-width="2.6"', rest)
 
     def test_the_blob_has_grok_bots_two_pill_eyes_on_its_own_outline(self):
         blob = {"shape": "blob", "color": "black"}
         svg = avatar.face_svg(seed="grok:General", avatar=blob)
-        self.assertEqual(svg.count('stroke-linecap="round"'), 2, "two flat eyes, no highlights")
-        self.assertIn(f'stroke="{avatar.EYE_FILL}"', svg, "light eyes on the black ball")
+        self.assertEqual(len(eye_paths(svg)), 2, "two flat light eyes on the black ball, no highlights")
         self.assertNotIn(" A", svg, "no crescent any more")
         self.assertEqual(avatar.avatar_profile("grok:General", None, blob)["top"], avatar.GROK_BLOB[48])
         self.assertNotEqual(avatar.face_svg(seed="grok:General", avatar=blob, scale=0.0), svg, "it blinks")
@@ -257,7 +271,7 @@ class GrokMarks(unittest.TestCase):
         for seed in (f"seed-{i}" for i in range(40)):
             profile = avatar.avatar_profile(seed, None)
             self.assertFalse(profile["grok"], "a shared shape name is not a Grok Bot mark")
-            self.assertEqual(avatar.face_svg(seed=seed).count('stroke-linecap="round"'), 4, seed)
+            self.assertEqual(len(eye_paths(avatar.face_svg(seed=seed))), 2, seed)
         for seed in ("a", "b", "robo"):
             self.assertIn(avatar.avatar_profile(seed, None)["shape"], avatar.SUPPORTED_SHAPES)
             self.assertIn(avatar.avatar_profile(seed, 215)["shape"], avatar.SUPPORTED_SHAPES)
@@ -519,10 +533,10 @@ class MutedFace(unittest.TestCase):
     def test_a_grok_blob_has_eyes_and_no_mouth_unless_muted(self):
         from botwidget.avatar import face_svg
         ball = face_svg(seed="General", avatar={"shape": "blob", "color": "black"})
-        self.assertEqual(ball.count('fill="none" stroke='), 2, "Grok Bot's two eyes")
+        self.assertEqual(len(eye_paths(ball)), 2, "Grok Bot's two eyes")
         self.assertNotIn('stroke-width="2.6"', ball, "no cross for a mouth")
         self.assertEqual(face_svg(seed="x").count(" A"), 0, "no crescent on other faces")
-        self.assertEqual(face_svg(seed="x").count('fill="none" stroke='), 4, "others keep two eyes")
+        self.assertEqual(len(eye_paths(face_svg(seed="x"))), 2, "others keep two eyes")
 
     def test_the_cross_stays_inside_even_the_flattest_head(self):
         from botwidget.avatar import AVATAR_SIZE, CIRCLE_R, MOUTH_DROP, MOUTH_SIZE, SILHOUETTES
@@ -677,9 +691,13 @@ class Rendering(unittest.TestCase):
             window._animate()
             self.assertEqual(window._anim_timer.interval(), animation.BUSY_MS)
             near["on"] = False
-            for _ in range(200):
+            # Back to the calm rate once the face has settled, between its idle turns (it breathes on
+            # at the calm rate).
+            for _ in range(400):
                 window._last_tick -= 0.03
                 window._animate()
+                if window._anim_timer.interval() == animation.IDLE_MS:
+                    break
             self.assertEqual(window._anim_timer.interval(), animation.IDLE_MS)
         finally:
             window._alive = False
@@ -3308,9 +3326,9 @@ class FaceEyes(unittest.TestCase):
     def test_every_eye_is_fully_opaque_at_any_happy_value(self):
         for happy in (0.0, 0.25, 0.5, 0.75, 1.0):
             svg = avatar.face_svg(seed="robo", happy=happy)
-            white = [chunk for chunk in svg.split("<path") if 'stroke="#f9f9f9"' in chunk]
+            white = [chunk for chunk in svg.split("<path") if f'fill="{avatar.EYE_FILL}"' in chunk]
             self.assertEqual(len(white), 2)
-            self.assertTrue(all('opacity="1.0"' in chunk for chunk in white), f"happy={happy}")
+            self.assertTrue(all("opacity" not in chunk for chunk in white), f"happy={happy}")
 
     def test_happy_morphs_the_same_shape_instead_of_fading_in_a_second_one(self):
         count = lambda happy: avatar.face_svg(seed="robo", happy=happy).count('stroke="#f9f9f9"')
@@ -3358,24 +3376,26 @@ class GrokEyes(unittest.TestCase):
 
     def test_a_happy_eye_is_an_arc_as_thick_as_the_eye(self):
         svg = avatar.face_svg(seed="grok:Admin", avatar={"shape": "sparkle", "color": "orange"}, happy=1.0)
-        widths = re.findall(r'stroke-width="([\d.]+)"', svg)
+        arcs = eye_paths(svg)
+        self.assertEqual(len(arcs), 2)
         eyes = avatar.GROK_MARKS["sparkle"][1]
-        widest = max(max(2.0, eye[2] * avatar.CIRCLE_R) for eye in eyes)
-        apart = math.hypot(eyes[1][0] - eyes[0][0], eyes[1][1] - eyes[0][1]) * avatar.CIRCLE_R
-        self.assertEqual(len(widths), 2)
-        for width in map(float, widths):
-            self.assertGreater(width, 0.5 * widest, "thick, not the thin line it was")
-            self.assertLessEqual(width, widest + 0.01)
-            self.assertLessEqual(width * (2 * avatar.HAPPY_SPAN + 1), avatar.HAPPY_ROOM * apart + 0.01,
-                                 "the two arcs never touch")
+        widest = max(eye[2] for eye in eyes) * avatar.CIRCLE_R
+        for arc in arcs:
+            ys = [y for _, y in arc]
+            self.assertGreater(max(ys) - min(ys), 0.5 * widest, "thick, not a thin line")
+        left, right = sorted(arcs, key=lambda arc: min(x for x, _ in arc))
+        self.assertLess(max(x for x, _ in left), min(x for x, _ in right) + 0.5, "the two arcs never touch")
 
     def test_at_rest_a_grok_mark_shows_its_eyes_where_grok_bot_draws_them(self):
         dx, dy, _scale = avatar.POSES["idle"]
         svg = avatar.face_svg(dx=dx, dy=dy, seed="grok:Builder", avatar={"shape": "house", "color": "brown"})
-        x, y = avatar.GROK_MARKS["house"][1][0][:2]
         centre = avatar.AVATAR_SIZE / 2
-        self.assertIn(f"rotate({avatar.GROK_MARKS['house'][1][0][4]:.1f} {centre + x * avatar.CIRCLE_R:.2f} "
-                      f"{centre + y * avatar.CIRCLE_R:.2f})", svg)
+        drawn = sorted(eye_paths(svg), key=lambda eye: min(x for x, _ in eye))
+        for eye, (x, y, w, length, _tilt) in zip(drawn, avatar.GROK_MARKS["house"][1]):
+            mx = (min(p[0] for p in eye) + max(p[0] for p in eye)) / 2
+            my = (min(p[1] for p in eye) + max(p[1] for p in eye)) / 2
+            self.assertAlmostEqual(mx, centre + x * avatar.CIRCLE_R, delta=1.0)
+            self.assertAlmostEqual(my, centre + y * avatar.CIRCLE_R, delta=1.0)
 
 
 class FaceLook(unittest.TestCase):
@@ -3401,9 +3421,14 @@ class FaceLook(unittest.TestCase):
         self.assertTrue(all(abs(t) <= 9.7 for t in tilts.values()))
         self.assertGreater(len(set(tilts.values())), 1)
 
-    def test_head_follows_the_eyes_only_partly(self):
-        svg = avatar.face_svg(dx=8.0, dy=0.0, seed="robo")
-        self.assertIn(f"translate({8.0 * avatar.PARALLAX:.2f} 0.00)", svg)
+    def test_a_turn_turns_the_body_its_shading_and_its_eyes(self):
+        front = avatar.face_svg(seed="robo")
+        right = avatar.face_svg(dx=8.0, dy=0.0, seed="robo")
+        self.assertNotEqual(body_d(front), body_d(right), "the outline of a 3D body changes when it turns")
+        light = lambda svg: float(re.search(r'id="hl" cx="([\d.]+)"', svg).group(1))
+        self.assertGreater(light(right), light(front), "its shading turns with it")
+        mid = lambda svg: sum(sum(x for x, _ in e) / len(e) for e in eye_paths(svg)) / 2
+        self.assertGreater(mid(right), mid(front) + 3, "the eyes go with the front of the head")
 
 
 class TestUpdates(unittest.TestCase):
@@ -4155,3 +4180,79 @@ class CheckoutPull(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Body3D(unittest.TestCase):
+    """Should draw every face as Grok Bot draws its avatars: a turned 3D body with its eyes on it."""
+
+    def test_an_unturned_body_is_its_own_outline(self):
+        points = body3d.radii_points(avatar.silhouette_radii("hexagone"))
+        self.assertEqual(body3d.outline(points, 0.0, 0.0), points)
+        art = avatar.GROK_MARKS["house"][0]
+        self.assertEqual(body3d.outline(art, *avatar.MARK_REST, avatar.MARK_REST), tuple(art),
+                         "Grok Bot's still art is the body in its still pose")
+
+    def test_a_turned_body_changes_its_outline_but_not_its_size(self):
+        points = body3d.radii_points(avatar.silhouette_radii("hexagone"))
+        turned = body3d.outline(points, -10.0, 30.0)
+        self.assertNotEqual(turned, points)
+        widest = max(math.hypot(x, y) for x, y in points)
+        self.assertLess(max(math.hypot(x, y) for x, y in turned), widest * 1.1)
+        self.assertGreater(max(math.hypot(x, y) for x, y in turned), widest * 0.85)
+
+    def test_turn_from_undoes_the_rest_turn(self):
+        rot = body3d.turn_from((-15.9, 33.3), -15.9, 33.3)
+        for p in ((0.3, -0.2, 0.9), (0.0, 0.0, 1.0)):
+            for a, b in zip(rot(*p), p):
+                self.assertAlmostEqual(a, b, places=9)
+
+    def eye_size(self, svg):
+        widths = [max(x for x, _ in e) - min(x for x, _ in e) for e in eye_paths(svg)]
+        return sorted(widths)
+
+    def test_eyes_foreshorten_when_the_head_turns_away(self):
+        for kw in ({"seed": "zeta"}, {"seed": "grok:General", "avatar": {"shape": "blob", "color": "black"}}):
+            front = self.eye_size(avatar.face_svg(**kw))
+            turned = self.eye_size(avatar.face_svg(dx=14, **kw))
+            self.assertLess(turned[0], front[0] - 0.5, kw)
+
+    def test_eyes_bend_with_the_surface(self):
+        rot = body3d.turn(0.0, 35.0)
+        line = [(0.0, v / 8 - 0.5) for v in range(9)]
+        laid = body3d.eye_on_surface((0.4, 0.0, math.sqrt(1 - 0.16)), [(0.0, v) for _, v in line], rot)
+        (x0, y0), (x1, y1) = laid[0], laid[-1]
+        bend = max(abs((x1 - x0) * (y0 - y) - (x0 - x) * (y1 - y0)) / math.dist(laid[0], laid[-1])
+                   for x, y in laid)
+        self.assertGreater(bend, 0.01, "a straight eye curves on a turned ball")
+
+    def test_eyes_that_turned_away_are_not_drawn_and_eyes_stay_on_the_body(self):
+        self.assertIsNone(body3d.eye_on_surface((0.0, 0.0, 1.0), [(0.0, 0.0), (0.01, 0.0)], body3d.turn(0.0, 120.0)))
+        svg = avatar.face_svg(dx=14, seed="robo")
+        self.assertIn('clip-path="url(#body)"', svg)
+
+    def test_openbot_and_grok_bot_faces_share_one_eye_system(self):
+        for kw in ({"seed": "agent-7"}, {"seed": "grok:Admin", "avatar": {"shape": "sparkle", "color": "orange"}}):
+            self.assertEqual(len(eye_paths(avatar.face_svg(**kw))), 2)
+            self.assertEqual(len(eye_paths(avatar.face_svg(scale=0.0, **kw))), 2, "blinking")
+            self.assertEqual(len(eye_paths(avatar.face_svg(happy=1.0, **kw))), 2, "happy")
+            self.assertNotIn("stroke=", avatar.face_svg(dx=-9, **kw))
+
+    def test_the_idle_face_breathes_like_grok_bots_idle_b(self):
+        self.assertAlmostEqual(1 + avatar.BREATH, 0.64 / 0.6)
+        at = dict(avatar.IDLE_BREATH)
+        start = next(t for t, size in avatar.IDLE_BREATH if size > 1)
+        self.assertEqual(at[start + avatar.BREATH_IN_MS], 1.0)
+        self.assertGreater(avatar.breath_at(start + 10), 1.0)
+        self.assertEqual(avatar.breath_at(start + avatar.BREATH_IN_MS + 10), 1.0)
+        self.assertGreater(avatar.breath_at(avatar.IDLE_LOOP_MS + start + 10), 1.0, "it loops")
+        big = avatar.face_svg(seed="zeta", zoom=1.05)
+        self.assertIn("scale(1.0500 1.0500)", big)
+
+    def test_breathing_alone_keeps_the_calm_frame_rate(self):
+        anim = animation.FaceAnimator()
+        anim.aim(zoom=1.07)
+        self.assertTrue(anim.step(0.03))
+        self.assertTrue(anim.only_slow)
+        anim.aim(dx=5)
+        anim.step(0.03)
+        self.assertFalse(anim.only_slow)

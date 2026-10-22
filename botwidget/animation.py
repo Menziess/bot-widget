@@ -17,15 +17,19 @@ SPRINGS = {
     "lean": (220, 0.32),
     "sx": (260, 0.30),
     "sy": (260, 0.30),
+    # The breath: slow and without a wobble, like Grok Bot's Idle_B swells and settles.
+    "zoom": (6, 1.0),
 }
 REST = {"dx": 0.0, "dy": 0.0, "scale": 1.0, "converge": 0.0, "happy": 0.0, "lift": 0.0,
-        "lean": 0.0, "sx": 1.0, "sy": 1.0}
+        "lean": 0.0, "sx": 1.0, "sy": 1.0, "zoom": 1.0}
 MAX_STEP = 1 / 30
 SUBSTEP = 0.008
 # Below this deviation nobody can see the difference any more: px and degrees, or a factor.
 SETTLED = {"dx": 0.04, "dy": 0.04, "converge": 0.04, "lift": 0.04, "lean": 0.04,
-           "scale": 0.004, "happy": 0.004, "sx": 0.004, "sy": 0.004}
+           "scale": 0.004, "happy": 0.004, "sx": 0.004, "sy": 0.004, "zoom": 0.002}
 
+# Moves so slow that the calm frame rate shows them smoothly: the breath.
+SLOW = frozenset({"zoom"})
 # A calm 30 frames per second; 60 while the face is moving or the pointer is near it.
 IDLE_MS = 33
 BUSY_MS = 16
@@ -41,6 +45,8 @@ class FaceAnimator:
         self.value = dict(REST)
         self.velocity = {name: 0.0 for name in REST}
         self.target = dict(REST)
+        # Only slow springs (the breath) moved in the last step: the calm frame rate will do.
+        self.only_slow = False
 
     def jump(self, **values):
         """Jump straight to this state, without springing: the initial state."""
@@ -70,14 +76,15 @@ class FaceAnimator:
         pieces = max(1, math.ceil(dt / SUBSTEP))
         for _ in range(pieces):
             self._integrate(dt / pieces)
-        moving = False
+        moved = set()
         for name in SPRINGS:
             x, v, goal = self.value[name], self.velocity[name], self.target[name]
             if abs(goal - x) < SETTLED[name] and abs(v) < SETTLED[name] * 10:
                 self.value[name], self.velocity[name] = goal, 0.0
             else:
-                moving = True
-        return moving
+                moved.add(name)
+        self.only_slow = bool(moved) and moved <= SLOW
+        return bool(moved)
 
     def _integrate(self, dt: float):
         for name, (stiffness, damping) in SPRINGS.items():

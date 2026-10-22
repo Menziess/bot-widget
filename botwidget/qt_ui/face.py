@@ -21,6 +21,7 @@ from botwidget.avatar import (
     LIFT,
     POSES,
     avatar_profile,
+    breath_at,
     eye_aim,
     face_svg,
 )
@@ -518,7 +519,7 @@ class FaceWindow(QWidget):
         now = time.monotonic()
         dt, self._last_tick = now - self._last_tick, now
         interval = frame_ms(held=self._drag_origin is not None or self._coasting or self._happy_on,
-                            moving=self._moving, pointer_near=self._pointer_on_head())
+                            moving=self._moving and not self.anim.only_slow, pointer_near=self._pointer_on_head())
         if self._anim_timer.interval() != interval:
             self._anim_timer.setInterval(interval)
         self._aim(dt * 1000)
@@ -531,7 +532,7 @@ class FaceWindow(QWidget):
         v = self.anim.value
         svg = face_svg(v["dx"], v["dy"], max(v["scale"], 0.05), v["converge"], self._seed, self._hue,
                        v["lift"], min(max(v["happy"], 0.0), 1.0), lean=v["lean"],
-                       squash=(v["sx"], v["sy"]), muted=self._muted, avatar=self._avatar)
+                       squash=(v["sx"], v["sy"]), muted=self._muted, avatar=self._avatar, zoom=v["zoom"])
         self._set_pixmap(svg_pixmap(svg))
 
     def set_avatar(self, avatar: dict | None):
@@ -580,6 +581,10 @@ class FaceWindow(QWidget):
             self._mood = mood
             self._face_i = 0
             self._cycle_left = 0.0
+            self._idle_ms = 0.0
+        # Idle breathes the way Grok Bot's Idle_B does; anything else holds its breath.
+        self._idle_ms = getattr(self, "_idle_ms", 0.0) + dt_ms if mood == "idle" else 0.0
+        self.anim.aim(zoom=breath_at(self._idle_ms) if mood == "idle" else 1.0)
         self._cycle_left -= dt_ms
         if self._cycle_left <= 0:
             pose, self._cycle_left = FACE[mood][self._face_i % len(FACE[mood])]

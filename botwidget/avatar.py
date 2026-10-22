@@ -3,6 +3,7 @@
 import colorsys
 import math
 
+from botwidget import body3d
 from botwidget.grok_marks import GROK_MARKS
 
 # The face fits a circle of diameter 58 in a 68 px window; two long vertical eyes sit in the middle.
@@ -13,9 +14,9 @@ CIRCLE_R = 29.0
 # (x.ai, the "Motion Lab" engine behind the GrokBotMark). Its eyes sit on the front of the head, so
 # a turn moves them across the face; GROK_REST is the turn its still art is drawn in: up and right.
 GROK_REST = (-15.9, 33.3)
-# A turn moves the eyes as far as they would go on a ball of the face's size, capped at the same
-# reach the eyes have when they follow the pointer.
-LOOK_MAX = 8.0
+# A turn moves the front of the head as far as it would go on a ball of the face's size, up to the
+# 40 degrees or so that Grok Bot's idle turns reach.
+LOOK_MAX = 20.0
 
 
 def grok_look(pitch: float, yaw: float) -> tuple[float, float]:
@@ -75,6 +76,34 @@ def _idle_cycle(poses: dict) -> tuple:
                 if end > t:
                     steps.append((pose, round((end - t) * 1000)))
     return tuple(steps)
+
+
+# Grok Bot's Idle_B breathes: its size goes from 0.6 to 0.64 by 1.61 s and back by 3.84 s.
+BREATH = 0.64 / 0.6 - 1
+BREATH_IN_MS = 1610
+
+
+def _breath_events() -> tuple:
+    """(ms into the idle loop, size to swell to) for every Idle_B in it."""
+    events, at = [], 0
+    for clip in GROK_IDLE_ORDER:
+        if clip == "Idle_B":
+            events += [(at, 1 + BREATH), (at + BREATH_IN_MS, 1.0)]
+        at += round(GROK_IDLE_CLIPS[clip][0] * 1000)
+    return tuple(events), at
+
+
+IDLE_BREATH, IDLE_LOOP_MS = _breath_events()
+
+
+def breath_at(ms: float) -> float:
+    """The size the face swells to this far into its idle loop."""
+    ms %= IDLE_LOOP_MS
+    goal = 1.0
+    for at, size in IDLE_BREATH:
+        if at <= ms:
+            goal = size
+    return goal
 
 
 # dx, dy, length factor. Only shifts; the shape stays the same, except for a blink. A blink (length
@@ -284,20 +313,18 @@ def _darker(colour: str, factor: float) -> str:
     return "#{:02x}{:02x}{:02x}".format(round(red * 255), round(green * 255), round(blue * 255))
 
 
-def depth_defs(colour: str) -> str:
+def depth_defs(colour: str, shift_x: float = 0.0, shift_y: float = 0.0) -> str:
+    """The light from the top left and the shade at the bottom right; shift moves both with the
+    front of the turned body, in fractions of the body's size."""
     return (
-        '<defs><radialGradient id="hl" cx="0.30" cy="0.22" r="0.80">'
+        f'<defs><radialGradient id="hl" cx="{0.30 + shift_x:.3f}" cy="{0.22 + shift_y:.3f}" r="0.80">'
         f'<stop offset="0" stop-color="#fff" stop-opacity="{HIGHLIGHT}"/>'
         '<stop offset="0.6" stop-color="#fff" stop-opacity="0"/></radialGradient>'
-        '<radialGradient id="sh" cx="0.62" cy="0.68" r="0.75">'
+        f'<radialGradient id="sh" cx="{0.62 + shift_x:.3f}" cy="{0.68 + shift_y:.3f}" r="0.75">'
         f'<stop offset="0.45" stop-color="{_darker(colour, SHADE_DARKNESS)}" stop-opacity="0"/>'
         f'<stop offset="1" stop-color="{_darker(colour, SHADE_DARKNESS)}" stop-opacity="{SHADE}"/>'
         '</radialGradient></defs>'
     )
-
-
-# The head follows the eyes only partly: that difference gives depth.
-PARALLAX = 0.35
 
 
 def _lerp(a: float, b: float, t: float) -> float:
@@ -319,28 +346,6 @@ def eye_length(length: float, width: float, scale: float) -> float:
     return _lerp(length, LID_SHUT * width, 1 - max(0.0, scale))
 
 
-def _eye(ex: float, ey: float, ew: float, eh: float, tilt: float, happy: float,
-         fill: str, opacity: float, arc: float = 1.0) -> str:
-    """One eye as a thick line with round ends: a standing or lying pill that grows into
-    Grok Bot's happy arc (^) at happy 1, arc times its size. Everything stays solid; nothing is faded.
-    """
-    half = max(0.01, abs(eh - ew) / 2)
-    if eh >= ew:
-        pill, thick = ((ex, ey - half), (ex, ey), (ex, ey + half)), ew
-    else:
-        pill, thick = ((ex - half, ey), (ex, ey), (ex + half, ey)), eh
-    size = ew * arc
-    top = ey - HAPPY_TOP * size
-    foot = ey + HAPPY_FOOT * size
-    caret = ((ex - HAPPY_SPAN * size, foot), (ex, 2 * top - foot), (ex + HAPPY_SPAN * size, foot))
-    p0, ctrl, p1 = (tuple(_lerp(a, b, happy) for a, b in zip(u, v)) for u, v in zip(pill, caret))
-    width = _lerp(thick, size, happy)
-    turn = f' transform="rotate({tilt * (1 - happy):.1f} {ex:.2f} {ey:.2f})"' if tilt else ""
-    return (f'<path d="M{p0[0]:.2f} {p0[1]:.2f} Q{ctrl[0]:.2f} {ctrl[1]:.2f} {p1[0]:.2f} {p1[1]:.2f}"'
-            f' fill="none" stroke="{fill}" stroke-width="{width:.2f}" stroke-linecap="round"'
-            f' opacity="{opacity}"{turn}/>')
-
-
 MOUTH_SIZE = 3.2  # half the width of the cross
 MOUTH_DROP = 0.5  # below the eyes, in head radii, at most
 
@@ -353,65 +358,124 @@ def _mouth(cx: float, cy: float, fill: str, opacity: float) -> str:
             f' stroke-width="2.6" stroke-linecap="round" opacity="{opacity}"/>')
 
 
+# Grok Bot's neutral eye, in head radii: a capsule 0.26 wide and 0.57 long, the two 0.312 from the
+# middle (its engine's two eye capsules, seen from the front).
+GROK_EYE = (0.26, 0.57, 0.0, 1.0)
+GROK_EYE_X = 0.312
+MIN_EYE = 2.0 / CIRCLE_R
+
+
+def _eye_shape(w: float, h: float, tilt: float, happy: float, scale: float, arc: float) -> list:
+    """One eye, flat, around its own middle (u right, v down, head radii): a pill that blinks into a
+    lying one and smiles into Grok Bot's arc."""
+    ew = max(MIN_EYE, w)
+    eh = max(MIN_EYE, eye_length(h, ew, scale))
+    half = max(0.001, abs(eh - ew) / 2)
+    if eh >= ew:
+        pill, thick = ((0.0, -half), (0.0, 0.0), (0.0, half)), ew
+    else:
+        pill, thick = ((-half, 0.0), (0.0, 0.0), (half, 0.0)), eh
+    size = ew * arc
+    top, foot = -HAPPY_TOP * size, HAPPY_FOOT * size
+    caret = ((-HAPPY_SPAN * size, foot), (0.0, 2 * top - foot), (HAPPY_SPAN * size, foot))
+    p0, ctrl, p1 = (tuple(_lerp(a, b, happy) for a, b in zip(u, v)) for u, v in zip(pill, caret))
+    width = _lerp(thick, size, happy)
+    turn_by = math.radians(tilt * (1 - happy))
+    c, s_ = math.cos(turn_by), math.sin(turn_by)
+    line = []
+    for k in range(9):
+        t = k / 8
+        x = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * ctrl[0] + t * t * p1[0]
+        y = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * ctrl[1] + t * t * p1[1]
+        line.append((x * c - y * s_, x * s_ + y * c))
+    return body3d._stroke(line, width / 2)
+
+
+def _points_path(points, radius: float, cx: float, cy: float) -> str:
+    return "M" + "L".join(f"{cx + x * radius:.2f} {cy + y * radius:.2f}" for x, y in points) + "Z"
+
+
+# The turn of Grok Bot's still art on the half-degree grid the outlines are kept on.
+MARK_REST = (round(GROK_REST[0] * 2) / 2, round(GROK_REST[1] * 2) / 2)
+
+
+def mark_drawn(profile: dict) -> bool:
+    """A Grok Bot shape drawn from its still art, which shows it turned by GROK_REST."""
+    return profile["grok"] and profile["shape"] in GROK_MARKS and profile["shape"] not in GROK_SHAPES
+
+
+def body_path(profile: dict, pitch: float, yaw: float, radius: float, cx: float, cy: float) -> str:
+    """The outline of the face's body, turned by pitch and yaw like a 3D body."""
+    key = (round(pitch * 2) / 2, round(yaw * 2) / 2)
+    shape = profile["shape"]
+    if mark_drawn(profile):
+        return _points_path(body3d.outline(GROK_MARKS[shape][0], *key, MARK_REST), radius, cx, cy)
+    radii = silhouette_radii(shape)
+    if key == (0.0, 0.0):
+        return silhouette_path(radii, radius, cx, cy)
+    turned = body3d.radii_of(body3d.outline(body3d.radii_points(radii), *key), len(radii))
+    return silhouette_path(turned, radius, cx, cy)
+
+
 def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float = 0,
              seed: str = "", hue: float | None = None, lift: float = 0.0,
              happy: float = 0.0, lean: float = 0.0, squash: tuple = (1.0, 1.0),
-             muted: bool = False, avatar: dict | None = None) -> str:
-    """This bot’s own silhouette and colour, with its two eyes.
+             muted: bool = False, avatar: dict | None = None, zoom: float = 1.0) -> str:
+    """This bot’s own body and colour, with its two eyes, drawn as Grok Bot draws a 3D body.
 
-    dx/dy move the eyes fully and the head partly; lift raises the whole face for a
-    moment (the hop). lean tilts the head extra, squash stretches or flattens it.
-    happy 0 is the normal eye shape, 1 the happy one (^^): the eyes morph into each
-    other, so a half value is a real transition. A muted bot has a cross for a mouth.
-    A Grok Bot shape, the blob too, has Grok Bot's own eyes where its art puts them.
+    dx/dy turn the head: they are where its front goes, in px, so the body's outline and its
+    shading turn and the eyes, lying on the surface, move, bend and foreshorten with it. lift
+    raises the whole face for a moment (the hop), lean tilts it, squash stretches or flattens it,
+    zoom is the breath. happy 0 is the normal eye, 1 Grok Bot's happy arc; scale below 1 closes the
+    lids. A muted bot has a cross for a mouth. Every face, OpenBot's and Grok Bot's, has the same
+    eyes: Grok Bot's own for a Grok Bot avatar, the seed's sizes and spacing for an OpenBot one.
     """
     profile = avatar_profile(seed, hue, avatar)
     spec = EXPRESSIONS[profile["expression"]]
     centre = AVATAR_SIZE / 2
-    apart = math.sin(math.radians(spec[0])) * CIRCLE_R
-    mark = GROK_MARKS.get(profile["shape"]) if profile["grok"] else None
-    eyes = []
-    # A Grok Bot mark keeps Grok Bot's own eyes where it puts them; they move, blink and smile
-    # like every other face.
-    # Its art is the head turned to GROK_REST, so the eyes move from there.
-    rx, ry = POSES["idle"][:2]
-    seats = ([(centre + x * CIRCLE_R - rx, centre + y * CIRCLE_R - ry, w, h, tilt, 1)
-              for x, y, w, h, tilt in mark[1]] if mark else
-             [(centre + (-1 if i == 0 else 1) * apart, centre, w, h, tilt, open_)
-              for i, (w, h, tilt, open_) in enumerate(spec[1:])])
-    apart_px = math.hypot(seats[1][0] - seats[0][0], seats[1][1] - seats[0][1])
-    for i, (sx, sy, w, h, tilt, open_) in enumerate(seats):
-        ex = sx + (converge if i == 0 else -converge) + dx
-        ey = sy + dy
-        ew = max(2.0, w * CIRCLE_R)
-        eh = max(2.0, eye_length(h * CIRCLE_R * open_, ew, scale))
-        widest = max(2.0, max(seat[2] for seat in seats) * CIRCLE_R) * (2 * HAPPY_SPAN + 1)
-        arc = min(1.0, HAPPY_ROOM * apart_px / widest)
-        if not mark:  # Grok Bot's eyes are flat on the face, without a shadow
-            eyes.append(_eye(ex, ey + 1.3, ew, eh, tilt, happy, "#000", 0.14, arc))
-        eyes.append(_eye(ex, ey, ew, eh, tilt, happy, EYE_FILL, 1.0, arc))
+    pitch, yaw = body3d.angles_for(dx, dy, CIRCLE_R)
+    front = body3d.turn(pitch, yaw)
+    if mark_drawn(profile):
+        # Grok Bot's still art: its eyes where it draws them, on a head turned by GROK_REST.
+        rot = body3d.turn_from(MARK_REST, pitch, yaw)
+        seats = [((x, y), (w, h, tilt, 1.0)) for x, y, w, h, tilt in GROK_MARKS[profile["shape"]][1]]
+    elif profile["grok"]:
+        rot = front
+        seats = [((-GROK_EYE_X if i == 0 else GROK_EYE_X, 0.0), GROK_EYE) for i in range(2)]
+    else:
+        rot = front
+        across = math.sin(math.radians(spec[0]))
+        seats = [((-across if i == 0 else across, 0.0), eye) for i, eye in enumerate(spec[1:])]
+    widest = max(max(MIN_EYE, eye[0]) for _x, eye in seats) * (2 * HAPPY_SPAN + 1)
+    arc = min(1.0, HAPPY_ROOM * math.dist(seats[1][0], seats[0][0]) / widest)
+    eyes, middles = [], []
+    for i, ((x, y), (w, h, tilt, open_)) in enumerate(seats):
+        x += (converge if i == 0 else -converge) / CIRCLE_R
+        place = (x, y, math.sqrt(max(0.0, 1 - x * x - y * y)))
+        shape = _eye_shape(w, h * open_, tilt, happy, scale, arc)
+        laid = body3d.eye_on_surface(place, shape, rot)
+        middles.append(rot(*place))
+        if laid:
+            eyes.append(f'<path d="{_points_path(laid, CIRCLE_R, centre, centre)}" fill="{EYE_FILL}"/>')
     if muted:
-        mx = sum(seat[0] for seat in seats) / len(seats) - centre
-        my = sum(seat[1] for seat in seats) / len(seats) - centre
+        mx = sum(m[0] for m in middles) / 2 * CIRCLE_R
+        my = sum(m[1] for m in middles) / 2 * CIRCLE_R
         drop = min(MOUTH_DROP, 0.6 * (profile["bottom"] - my / CIRCLE_R)) * CIRCLE_R
-        eyes.append(_mouth(centre + mx + dx, centre + my + dy + drop + 1.3, "#000", 0.14))
-        eyes.append(_mouth(centre + mx + dx, centre + my + dy + drop, EYE_FILL, 1.0))
-    if mark and profile["shape"] not in GROK_SHAPES:
-        body = mark_path(profile["shape"], CIRCLE_R, centre, centre)
-    else:  # the blob keeps the outline traced from Grok Bot's app art
-        body = silhouette_path(silhouette_radii(profile["shape"]), CIRCLE_R, centre, centre)
+        eyes.append(_mouth(centre + mx, centre + my + drop, EYE_FILL, 1.0))
+    body = body_path(profile, pitch, yaw, CIRCLE_R, centre, centre)
+    bx, by, _bz = front(0.0, 0.0, body3d.DEPTH)
     head = (f'<path d="{body}" fill="{profile["hex"]}"/>'
             f'<path d="{body}" fill="url(#sh)"/><path d="{body}" fill="url(#hl)"/>')
     sx, sy = squash
-    pose = (f'translate({dx * PARALLAX:.2f} {dy * PARALLAX - lift:.2f})'
+    pose = (f'translate(0 {-lift:.2f})'
             f' rotate({profile["tilt"] + lean:.2f} {centre} {centre})'
-            f' translate({centre} {centre}) scale({sx:.4f} {sy:.4f}) translate({-centre} {-centre})')
+            f' translate({centre} {centre}) scale({sx * zoom:.4f} {sy * zoom:.4f}) translate({-centre} {-centre})')
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{AVATAR_SIZE}" height="{AVATAR_SIZE}">'
-        + depth_defs(profile["hex"])
-        + f'<g transform="{pose}">{head}'
-        + f'<g transform="translate({-dx * PARALLAX:.2f} {-dy * PARALLAX:.2f})">{"".join(eyes)}</g>'
-        + "</g></svg>"
+        + depth_defs(profile["hex"], bx * 0.45, by * 0.45)
+        + f'<g transform="{pose}"><clipPath id="body"><path d="{body}"/></clipPath>{head}'
+        + f'<g clip-path="url(#body)">{"".join(eyes)}</g></g>'
+        + "</svg>"
     )
 
 

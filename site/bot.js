@@ -19,7 +19,7 @@
   var homed = true;                  // still sitting at its place in the page
   var dragging = null, coasting = false, returning = false, happyUntil = 0;
   var pointer = null, pointerAt = 0;
-  var mood = "idle", cycleI = 0, cycleLeft = 0, pose = "idle";
+  var mood = "idle", cycleI = 0, cycleLeft = 0, pose = "idle", idleMs = 0;
   var thinking = false, pinned = false, sayUntil = 0, bubbleKept = 0;
 
   function layout() {
@@ -75,7 +75,10 @@
 
   function cycle(ms) {
     var m = thinking ? "work" : "idle";
-    if (m !== mood) { mood = m; cycleI = 0; cycleLeft = 0; }
+    if (m !== mood) { mood = m; cycleI = 0; cycleLeft = 0; idleMs = 0; }
+    // Idle breathes the way Grok Bot's Idle_B does; work holds its breath.
+    idleMs = mood === "idle" ? idleMs + ms : 0;
+    anim.aim({ zoom: mood === "idle" ? F.breathAt(idleMs) : 1 });
     cycleLeft -= ms;
     if (cycleLeft <= 0) {
       var step = F.CYCLE[mood][cycleI % F.CYCLE[mood].length];
