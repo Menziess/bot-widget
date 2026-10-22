@@ -820,10 +820,13 @@ class FaceWindow(QWidget):
             return
         again = page == self._menu_page and self.bubble.isVisible()
         self._menu_page = page
+        # A page goes away by itself like any bubble, and with Escape.
+        self.pinned = False
         # A page smaller than the one before may leave the pointer outside the bubble.
         self.bubble.keep_for(MENU_KEEP_S)
         self.bubble.show_blocks(menu_pages.page_blocks(page, self.faces.menu_state()), "say", keep_scroll=again)
         self._claim_bubble()
+        self.bubble.activateWindow()
 
     def _menu_command(self, command: str):
         kind, _, rest = command.partition("/")

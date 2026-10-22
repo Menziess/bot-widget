@@ -546,7 +546,7 @@ class BubbleWindow(QWidget):
         self._entry.moved.connect(self._slash.move_selection)
         self._entry.completed.connect(lambda: self._entry.setText(self._slash.current()))
         self._entry.chosen.connect(lambda: self._run_command(self._slash.current()))
-        self._entry.closed.connect(lambda: self._show_commands([]))
+        self._entry.closed.connect(self._close_commands)
         self._commands_forced = False
         self._attachments = []
         self._attachment_row = QLabel(self)
@@ -616,6 +616,18 @@ class BubbleWindow(QWidget):
         self._slash.show_rows(rows if self._input else [])
         if len(self._slash.rows) != before:
             self._entry_resized()
+
+    def _close_commands(self):
+        """Escape: a slash command that was typed goes away with its list; a message that was already there stays."""
+        if not self._commands_forced:
+            self._entry.clear()
+        self._show_commands([])
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape and not self._input:
+            self.face.unpin()
+            return
+        super().keyPressEvent(event)
 
     def _commands_h(self) -> int:
         return self._slash.height_for(len(self._slash.rows)) + COMMANDS_GAP if self._slash.rows else 0

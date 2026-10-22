@@ -2200,7 +2200,7 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(self.window._menu_page, "bots")
         self.assertEqual(bubble._entry.text(), "")
 
-    def test_tab_completes_the_command_without_running_it_and_escape_only_closes_the_list(self):
+    def test_tab_completes_the_command_without_running_it_and_escape_closes_the_list_with_what_was_typed(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         self.hover()
@@ -2215,7 +2215,27 @@ class BubbleHover(unittest.TestCase):
         bubble._entry.dismissed.connect(lambda: dismissed.append(1))
         QTest.keyClick(bubble._entry, Qt.Key_Escape)
         self.assertFalse(bubble._slash.isVisibleTo(bubble))
-        self.assertEqual((bubble._entry.text(), dismissed), ("/", []), "the bubble itself stays")
+        self.assertEqual((bubble._entry.text(), dismissed), ("", []), "the bubble itself stays")
+
+    def test_escape_keeps_a_message_that_was_already_in_the_field_when_the_list_was_opened_by_right_click(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.hover()
+        self.stub_faces()
+        bubble = self.window.bubble
+        bubble.type_text("een bericht")
+        bubble.open_command_list()
+        QTest.keyClick(bubble._entry, Qt.Key_Escape)
+        self.assertEqual(bubble._entry.text(), "een bericht")
+
+    def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.window.pin()
+        self.open_settings()
+        self.assertFalse(self.window.pinned, "it goes away by itself like any bubble")
+        QTest.keyClick(self.window.bubble, Qt.Key_Escape)
+        self.assertEqual(self.window.bubble.kind, "")
 
     def test_clicking_a_command_in_the_list_runs_it(self):
         self.hover()

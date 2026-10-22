@@ -49,7 +49,8 @@ botwidget
 - Drag the face to move it, it bounces off screen edges
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
 - Right-click the face, or start the field with a slash, and a list of commands opens above the field
-- Pick a command with the arrows and Return, Tab fills it in, and Escape closes the list
+- Pick a command with the arrows and Return, Tab fills it in, and Escape closes the list and clears the command you typed (a message that was already there stays)
+- A page (settings, bots, connections) goes away by itself like any bubble, and with Escape
 - The /settings page holds sound, quiet hours, window stacking, desktops, start at login, update checks, switching version, and Quit
 - The /bots page switches the face of each bot on or off, and mutes its thinking
 - The /connections page says which bot apps were found and whether the local API of OpenBot is on
