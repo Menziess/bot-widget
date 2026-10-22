@@ -3364,16 +3364,21 @@ class IdleLook(unittest.TestCase):
         self.assertEqual((pose["zoom"], pose["lids"], pose["face"]), (1.0, 0.0, "neutral"), "no breathing, eyes open")
         self.assertFalse(m.active, "nothing plays: the face can draw at the still rate")
 
-    def test_nothing_happens_for_at_least_eight_seconds(self):
+    def test_nothing_happens_for_at_least_eight_seconds_between_blinks_and_looks(self):
         motion, _m = self.motion()
         for seed in range(20):
             _motion, m = self.motion(seed)
+            m.wait = 0.01
+            m.step(0.05)  # the first blink or look
+            self.assertEqual(len(m.history), 1)
             poses = self.run_for(m, motion.IDLE_GAP_S[0] - 0.1)
-            self.assertTrue(all((p["pitch"], p["yaw"], p["lids"]) == (*motion.STILL[:2], 0.0) for p in poses), seed)
+            self.assertEqual(len(m.history), 1, seed)
+            self.assertTrue(all((p["pitch"], p["yaw"], p["lids"]) == (*motion.STILL[:2], 0.0)
+                                for p in poses[round((6 / (1 - motion.RATE_JITTER) + 0.1) / 0.05):]), seed)
 
     def test_the_waits_are_random_and_between_eight_and_thirty_seconds(self):
         motion, _m = self.motion()
-        waits = {round(self.motion(seed)[1].wait, 3) for seed in range(30)}
+        waits = {round(self.motion(seed)[1]._gap(), 3) for seed in range(30)}
         self.assertGreater(len(waits), 20, "random")
         self.assertTrue(all(motion.IDLE_GAP_S[0] <= w <= motion.IDLE_GAP_S[1] for w in waits))
 
@@ -3434,8 +3439,9 @@ class Moods(unittest.TestCase):
 
     def test_a_reply_hops_with_happy_eyes_and_then_settles(self):
         self.m.event("reply")
+        self.faces_while(self.motion.EVENT_DELAY_S)
         poses = self.faces_while(self.motion.CLIPS["Done_A"]["duration"])
-        self.assertTrue(all(p["face"] == "happy" for p in poses))
+        self.assertTrue(all(p["face"] == "happy" for p in poses[: -round(self.motion.EVENT_DELAY_S / 0.05) - 2]))
         self.assertGreater(max(p["y"] for p in poses), 0.2, "it hops")
         after = self.faces_while(0.1)[-1]
         self.assertEqual((after["face"], after["yaw"]), ("neutral", self.motion.STILL[1]))
@@ -3447,7 +3453,7 @@ class Moods(unittest.TestCase):
 
     def test_sending_nods(self):
         self.m.event("sent")
-        poses = self.faces_while(self.motion.POKES["nod"])
+        poses = self.faces_while(self.motion.POKES["nod"] * 1.2 + self.motion.EVENT_DELAY_S)
         self.assertAlmostEqual(max(p["pitch"] for p in poses), self.motion.STILL[0] + 16, delta=0.5)
 
     def test_a_refusal_is_sad_and_stays_sad_a_moment(self):
@@ -3479,7 +3485,7 @@ class Moods(unittest.TestCase):
         self.m.event("sent")
         self.m.set_mood("thinking")
         self.assertEqual(self.m.playing[0], "nod")
-        self.faces_while(self.motion.POKES["nod"] + 0.1)
+        self.faces_while(self.motion.POKES["nod"] / (1 - self.motion.RATE_JITTER) + self.motion.EVENT_DELAY_S + 0.1)
         self.assertEqual(self.m.playing[0], "Working_B")
 
     def test_a_question_listens_with_idle_d(self):
@@ -3501,6 +3507,174 @@ class Moods(unittest.TestCase):
         left, right = sorted(eye_paths(svg), key=lambda eye: min(x for x, _ in eye))
         width = lambda eye: max(x for x, _ in eye) - min(x for x, _ in eye)
         self.assertAlmostEqual(width(left) / width(right), 2.0, delta=0.2)
+
+
+def _polygon(d: str) -> list:
+    return [tuple(map(float, xy.split())) for xy in d[1:].rstrip("Z").split("L")]
+
+
+def _outside_by(point, polygon) -> float:
+    """0 for a point inside the polygon, else how far it is from it."""
+    x, y = point
+    inside = False
+    for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1]):
+        if (y0 > y) != (y1 > y) and x < x0 + (y - y0) * (x1 - x0) / (y1 - y0):
+            inside = not inside
+    if inside:
+        return 0.0
+    best = math.inf
+    for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1]):
+        dx, dy = x1 - x0, y1 - y0
+        t = max(0.0, min(1.0, ((x - x0) * dx + (y - y0) * dy) / ((dx * dx + dy * dy) or 1.0)))
+        best = min(best, math.hypot(x - x0 - t * dx, y - y0 - t * dy))
+    return best
+
+
+def _every_face() -> dict:
+    """A face for every OpenBot shape and every Grok Bot shape."""
+    faces, seed = {}, 0
+    while len(faces) < len(avatar.SUPPORTED_SHAPES) and seed < 5000:
+        shape = avatar.avatar_profile(f"s{seed}", None, None)["shape"]
+        faces.setdefault(f"openbot {shape}", {"seed": f"s{seed}"})
+        seed += 1
+    for shape in avatar.GROK_MARKS:
+        faces[f"grok {shape}"] = {"seed": "grok:X", "avatar": {"shape": shape, "color": "blue"}}
+    return faces
+
+
+def _clip_poses(step: float):
+    """Every pose of Grok Bot's clips and pokes, step seconds apart; the head's turn on a 5 degree grid,
+    so that the turned outlines are shared and the tests stay quick."""
+    from botwidget import motion
+    lengths = {name: clip["duration"] for name, clip in motion.CLIPS.items()} | dict(motion.POKES)
+    for name, length in lengths.items():
+        for i in range(int(length / step) + 1):
+            m = motion.Motion(random.Random(0))
+            m.playing, m.rate = (name, i * step, False, None), 1.0
+            pose = m.step(0.0)
+            pose["pitch"], pose["yaw"] = (round(pose[key] / 5) * 5 for key in ("pitch", "yaw"))
+            yield name, pose
+
+
+class EyesOnTheBody(unittest.TestCase):
+    """Should keep both eyes on the body, inside its outline, however it turns and whatever its face."""
+
+    def test_the_eyes_stay_inside_the_silhouette_in_every_turn_and_clip(self):
+        turns = [(p, y, 0.0) for p in range(-30, 31, 30) for y in range(-60, 61, 15)]
+        turns += [(pose["pitch"], pose["yaw"], pose["roll"]) for _n, pose in _clip_poses(1.0)]
+        for name, kw in _every_face().items():
+            for face in ("neutral", "surprised"):
+                for pitch, yaw, roll in turns:
+                    svg = avatar.face_svg(pitch=pitch, yaw=yaw, roll=roll, expression=("neutral", face, 1.0), **kw)
+                    body = _polygon(body_d(svg))
+                    for eye in eye_paths(svg):
+                        worst = max(_outside_by(point, body) for point in eye)
+                        self.assertLess(worst, 0.1, f"{name} {face} at {pitch}, {yaw}, {roll}")
+
+    def test_openbot_eyes_lie_on_the_front_of_their_own_body(self):
+        flat = avatar.openbot_surface("triangle", 0.3, 0.0)
+        self.assertEqual(flat, (avatar.EXTRUDE[0], (0.0, 0.0, 1.0)), "an extruded body: its flat front")
+        z, _normal = avatar.openbot_surface("cercle", 0.0, 0.0)
+        self.assertAlmostEqual(z, avatar.LOFT_DEPTH, places=3)
+        self.assertLess(avatar.openbot_surface("cercle", 0.6, 0.0)[0], z, "a loft is lower towards its edge")
+
+
+class InTheWindow(unittest.TestCase):
+    """Should keep the whole face inside its window in every frame of every hop, squash and swell."""
+
+    TRANSFORM = re.compile(r'translate\(([-\d.]+) ([-\d.]+)\) rotate\(([-\d.]+) [\d.]+ [\d.]+\) '
+                           r'translate\([\d.]+ [\d.]+\) scale\(([-\d.]+) ([-\d.]+)\)')
+
+    def drawn(self, svg: str) -> list:
+        """The body's outline in window px, after the face's own transform."""
+        tx, ty, angle, sx, sy = map(float, self.TRANSFORM.search(svg).groups())
+        c = avatar.AVATAR_SIZE / 2
+        cos, sin = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+        out = []
+        for x, y in _polygon(body_d(svg)):
+            x, y = (x - c) * sx, (y - c) * sy
+            out.append((c + x * cos - y * sin + tx, c + x * sin + y * cos + ty))
+        return out
+
+    def test_every_clip_frame_stays_inside_the_window(self):
+        from botwidget import motion
+        # Every half second, and each clip's highest hop, deepest squash, widest stretch and biggest swell.
+        everything = list(_clip_poses(0.05))
+        frames = everything[::10]
+        for clip in {name for name, _pose in everything}:
+            poses = [pose for name, pose in everything if name == clip]
+            for key in ("y", "sy", "sx", "zoom", "x"):
+                frames += [(clip, max(poses, key=lambda pose: pose[key])), (clip, min(poses, key=lambda pose: pose[key]))]
+        for name, kw in _every_face().items():
+            for clip, pose in frames:
+                lift, shift = motion.offsets(pose, avatar.CIRCLE_R)
+                svg = avatar.face_svg(pitch=pose["pitch"], yaw=pose["yaw"], roll=pose["roll"], lift=lift,
+                                      shift=shift, zoom=pose["zoom"], squash=(pose["sx"], pose["sy"]), **kw)
+                points = self.drawn(svg)
+                self.assertGreaterEqual(min(min(x, y) for x, y in points), 0.0, f"{name} in {clip}")
+                self.assertLessEqual(max(max(x, y) for x, y in points), avatar.AVATAR_SIZE, f"{name} in {clip}")
+
+    def test_a_hop_still_hops(self):
+        rest = avatar.fit_in_window(avatar.grok_body_points("blob", 0, 0), 1.0, 1.0, 0.0, 0.0, 0.0)
+        self.assertEqual(rest, (1.0, 0.0, 0.0), "nothing changes at rest")
+        k, lift, _shift = avatar.fit_in_window(avatar.grok_body_points("blob", 0, 0), 1.0, 1.0, 0.0, 7.8, 0.0)
+        self.assertGreater(lift, 3.0)
+        self.assertGreaterEqual(k, avatar.MIN_FIT)
+
+
+class NotInStep(unittest.TestCase):
+    """Should never move faces in lockstep: every face has its own seed, first wait, pace and phase."""
+
+    def test_faces_started_together_wait_differently_and_keep_their_own_pace(self):
+        from botwidget import motion
+        faces = [motion.Motion(seed=f"face{i}") for i in range(6)]
+        self.assertEqual(len({round(m.wait, 3) for m in faces}), 6, "a different first wait each")
+        self.assertTrue(all(motion.FIRST_WAIT_S[0] <= m.wait <= motion.FIRST_WAIT_S[1] for m in faces))
+        self.assertEqual(len({round(m.rate, 4) for m in faces}), 6, "a different pace each")
+        self.assertTrue(all(abs(m.rate - 1) <= motion.RATE_JITTER for m in faces))
+        firsts = []
+        for m in faces:
+            t = 0.0
+            while not m.history:
+                m.step(0.05)
+                t += 0.05
+            firsts.append(round(t, 2))
+        self.assertEqual(len(set(firsts)), 6, "nobody blinks or looks at the same moment")
+
+    def test_a_mood_loop_starts_anywhere_in_its_clip(self):
+        from botwidget import motion
+        phases = set()
+        for i in range(6):
+            m = motion.Motion(seed=f"face{i}")
+            m.set_mood("thinking")
+            phases.add(round(m.playing[1], 3))
+        self.assertEqual(len(phases), 6)
+
+    def test_an_event_reaches_the_faces_a_little_apart(self):
+        from botwidget import motion
+        delays = set()
+        for i in range(6):
+            m = motion.Motion(seed=f"face{i}")
+            m.event("no_route")
+            self.assertLessEqual(-m.playing[1], motion.EVENT_DELAY_S)
+            delays.add(round(m.playing[1], 3))
+        self.assertGreater(len(delays), 4)
+
+    def test_every_face_window_gets_its_own_seed(self):
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            from botwidget.qt_ui import face
+        except ImportError as error:
+            self.skipTest(f"no Qt: {error}")
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        QApplication.instance() or QApplication([])
+        windows = [face.FaceWindow(agent, agent, spot=(100 + 90 * i, 100)) for i, agent in enumerate(("a", "b", "c"))]
+        try:
+            self.assertEqual(len({round(w.motion.wait, 4) for w in windows}), 3)
+        finally:
+            for w in windows:
+                w.close_face()
 
 
 class GrokEyes(unittest.TestCase):
@@ -3582,7 +3756,8 @@ class FaceLook(unittest.TestCase):
         light = lambda svg: float(re.search(r'id="hl" cx="([\d.]+)"', svg).group(1))
         self.assertGreater(light(right), light(front), "its shading turns with it")
         mid = lambda svg: sum(sum(x for x, _ in e) / len(e) for e in eye_paths(svg)) / 2
-        self.assertGreater(mid(right), mid(front) + 3, "the eyes go with the front of the head")
+        # On the flat front of a slab, a little in front of the middle, as Grok Bot seats them.
+        self.assertGreater(mid(right), mid(front) + 1.5, "the eyes go with the front of the head")
 
 
 class TestUpdates(unittest.TestCase):

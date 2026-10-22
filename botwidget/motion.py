@@ -24,6 +24,12 @@ STANDARD_EASE = (0.42, 0.0, 0.58, 1.0)
 IDLE_GAP_S = (8.0, 30.0)
 IDLE_BLINK_SHARE = 0.6
 IDLE_LOOKS = ("Idle_B", "Idle_D", "Idle_A")
+# No two faces move in step: the first wait is anywhere up to a full gap, every face plays its clips a
+# little faster or slower, a looping mood starts anywhere in its clip, and an event starts up to a
+# quarter second late.
+FIRST_WAIT_S = (1.0, IDLE_GAP_S[1])
+RATE_JITTER = 0.06
+EVENT_DELAY_S = 0.25
 
 # event: (clip or poke, face held while it plays, face held after it, seconds that face stays)
 EVENTS = {
@@ -121,16 +127,23 @@ def clip_at(name: str, t: float) -> dict:
             "sx": sx, "sy": sy, "anchor": clip["anchor"], "lids": lids, "face": face}
 
 
+def offsets(pose: dict, radius: float) -> tuple:
+    """(lift, shift) in px for a pose: Grok Bot's hop and sway, and its squash about the anchor (-1:
+    the bottom stays put)."""
+    return (pose["y"] + pose["anchor"] * (1 - pose["sy"])) * radius, pose["x"] * radius
+
+
 class Motion:
     """The face's motion: a calm idle, moods that loop a clip, events that play one."""
 
-    def __init__(self, rng: random.Random | None = None):
-        self.rng = rng or random.Random()
+    def __init__(self, rng: random.Random | None = None, seed=None):
+        self.rng = rng or random.Random(seed)
+        self.rate = self.rng.uniform(1 - RATE_JITTER, 1 + RATE_JITTER)
         self.mood = "idle"
         self.playing = None      # (clip or poke name, seconds in, loops, face while it plays)
         self.after = None        # (face, seconds left) held once a clip is over
         self.blink = None        # seconds since an idle blink began
-        self.wait = self._gap()  # seconds to the next idle blink or look
+        self.wait = self.rng.uniform(*FIRST_WAIT_S)  # seconds to the next idle blink or look
         self.history = []        # what the idle did, for the curious
 
     def _gap(self) -> float:
@@ -143,7 +156,7 @@ class Motion:
 
     def event(self, name: str):
         what, face, after, hold = EVENTS[name]
-        self.playing = (what, 0.0, False, face)
+        self.playing = (what, -self.rng.uniform(0.0, EVENT_DELAY_S), False, face)
         self.after = (after, hold) if after else None
         self.blink = None
 
@@ -159,7 +172,7 @@ class Motion:
     def _loop_mood(self):
         clip, face = MOODS[self.mood]
         if clip:
-            self.playing = (clip, 0.0, True, face)
+            self.playing = (clip, self.rng.uniform(0.0, CLIPS[clip]["duration"]), True, face)
 
     def _idle(self, dt: float):
         self.wait -= dt
@@ -189,7 +202,10 @@ class Motion:
         if self.blink is not None:
             pose["lids"] = blink_at(self.blink)
             self.blink = self.blink + dt if self.blink + dt < BLINK_OPEN else None
-        if self.playing is not None:
+        if self.playing is not None and self.playing[1] < 0:  # an event about to start
+            name, t, loops, face = self.playing
+            self.playing = (name, t + dt, loops, face)
+        elif self.playing is not None:
             name, t, loops, face = self.playing
             if name in POKES:
                 for key, value in poke_at(name, min(1.0, t / POKES[name])).items():
@@ -204,7 +220,7 @@ class Motion:
                 pose["rotation"] = sample["rotation"] or STILL
                 pose["face"] = face or sample["face"] or pose["face"]
                 length = CLIPS[name]["duration"]
-            t += dt
+            t += dt * self.rate
             if t >= length and loops:
                 self.playing = (name, t % length, True, face)
             elif t >= length:

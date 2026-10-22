@@ -189,6 +189,23 @@ def eye_on_surface(centre: tuple, shape: list, rot, normal: tuple | None = None)
     return out if facing > -0.05 else None
 
 
+def eye_draped(centre: tuple, shape: list, rot, normal: tuple, height) -> list | None:
+    """Lay a flat eye shape on a body whose front is height(x, y): every point of the eye is put on
+    the surface itself, so the eye never stands off the body, however the body curves."""
+    nx, ny, nz = normal
+    k = 1.0 / (math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0)
+    nx, ny, nz = nx * k, ny * k, nz * k
+    h = math.hypot(nx, nz) or 1.0
+    rx, rz = nz / h, -nx / h
+    dx, dy = ny * rz, nz * rx - nx * rz
+    cx, cy, _cz = centre
+    out = []
+    for u, v in shape:
+        x, y = cx + u * rx + v * dx, cy + v * dy
+        out.append(rot(x, y, height(x, y))[:2])
+    return out if rot(nx, ny, nz)[2] > -0.05 else None
+
+
 # ── Grok Bot's bodies ───────────────────────────────────────────────
 # Its engine builds each avatar shape in its own way (grok_bodies.py); the outline of the turned body
 # is what it draws. RAYS directions are cast from the middle, as the engine does.

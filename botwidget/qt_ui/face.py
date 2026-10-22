@@ -35,7 +35,7 @@ from botwidget.config import (
     set_muted,
 )
 from botwidget.delivery import Outbox
-from botwidget.motion import STILL, Motion
+from botwidget.motion import STILL, Motion, offsets
 from botwidget.markdown import (
     block_text,
     code_block,
@@ -161,7 +161,8 @@ class FaceWindow(QWidget):
         self._coasting = False
         self._working = False
         # Calm idle, and Grok Bot's clips when something happens (botwidget.motion).
-        self.motion = Motion(random.Random())
+        # Every face its own seed, so that faces started together never move in step.
+        self.motion = Motion(seed=f"{agent_id}:{time.time_ns()}:{random.random()}")
         self._faces = ("neutral", "neutral")  # the face the eyes come from and go to
         self._asked = False  # a message went out: the next answer is its reply
         self._last_bot = None
@@ -551,9 +552,8 @@ class FaceWindow(QWidget):
         a = self.anim
         self.motion.set_mood(self._motion_mood())
         pose = self.motion.step(dt_ms / 1000)
-        # Grok Bot's hops and squashes, about its anchor (-1: the bottom stays put).
-        lift = (pose["y"] + pose["anchor"] * (1 - pose["sy"])) * CIRCLE_R
-        moved = {"shift": pose["x"] * CIRCLE_R, "lift": lift, "zoom": pose["zoom"]}
+        lift, shift = offsets(pose, CIRCLE_R)
+        moved = {"shift": shift, "lift": lift, "zoom": pose["zoom"]}
         dragging = self._drag_origin is not None
         speed = math.hypot(self._dvx, self._dvy) if (dragging or self._coasting) else 0.0
         if speed:

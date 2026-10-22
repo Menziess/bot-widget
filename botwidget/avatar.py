@@ -1,5 +1,6 @@
 """The face: colours, silhouettes, expressions and the SVGs, without a toolkit."""
 
+import bisect
 import colorsys
 import math
 from functools import lru_cache
@@ -418,6 +419,43 @@ def openbot_body(shape: str) -> tuple:
     return body3d.prepared_body(shape, spec)
 
 
+def _loft_height(radii: tuple, x: float, y: float) -> float:
+    """How far a loft's front stands out at (x, y): its rings shrink as cos^0.72 towards the front."""
+    n = len(radii)
+    at = (math.atan2(y, x) % math.tau) / math.tau * n
+    i = int(at) % n
+    edge = _lerp(radii[i], radii[(i + 1) % n], at - int(at))
+    reach = min(1.0, math.hypot(x, y) / max(edge, 1e-6))
+    return LOFT_DEPTH * math.sqrt(max(0.0, 1 - reach ** (2 / body3d.LOFT_POWER)))
+
+
+@lru_cache(maxsize=16)
+def _surface_height(shape: str):
+    return lambda x, y: openbot_surface(shape, x, y)[0]
+
+
+def openbot_surface(shape: str, x: float, y: float) -> tuple:
+    """Where the front of an OpenBot body is at (x, y), and its normal there: the eyes lie on it."""
+    kind = OPENBOT_BUILD.get(shape, "loft")
+    if kind == "extrusion":
+        return EXTRUDE[0], (0.0, 0.0, 1.0)
+    if kind == "roundedSlab":
+        return SLAB[0], (0.0, 0.0, 1.0)
+    if kind == "balls":
+        _kind, balls = openbot_body(shape)
+        r = balls[0][3]
+        if balls[0][0] != balls[-1][0]:  # lying: the round side is above and below
+            z = math.sqrt(max(1e-4, r * r - y * y))
+            return z, (0.0, y, z)
+        z = math.sqrt(max(1e-4, r * r - x * x))
+        return z, (x, 0.0, z)
+    radii, e = SILHOUETTES[shape], 0.01
+    z = _loft_height(radii, x, y)
+    gx = (_loft_height(radii, x + e, y) - _loft_height(radii, x - e, y)) / (2 * e)
+    gy = (_loft_height(radii, x, y + e) - _loft_height(radii, x, y - e)) / (2 * e)
+    return z, (-gx, -gy, 1.0)
+
+
 @lru_cache(maxsize=2048)
 def _openbot_outline(shape: str, pitch: float, yaw: float) -> tuple:
     return body3d.body_outline(openbot_body(shape), pitch, yaw)
@@ -437,6 +475,70 @@ def body_path(profile: dict, pitch: float, yaw: float, radius: float, cx: float,
               roll: float = 0.0) -> str:
     """The outline of the face's body, turned like a 3D body."""
     return _points_path(body_points(profile, pitch, yaw, roll), radius, cx, cy)
+
+
+# A hop, a squash or a swell never takes the face out of its window: it keeps this far from the edge,
+# and rather than clip it the face is drawn up to 12 % smaller for the moment and the hop lower.
+WINDOW_MARGIN = 0.5
+MIN_FIT = 0.88
+
+
+# An eye never leaves the body: a point beyond the outline is pulled back onto it, as if the eye
+# wrapped round the edge.
+EYE_INSET = 0.004
+
+
+def _within(outline):
+    """A function that pulls points (head radii) inside an outline seen from its middle."""
+    polar = sorted((math.atan2(y, x), x, y) for x, y in outline)
+    polar = [(a - math.tau, x, y) for a, x, y in polar[-1:]] + polar + [(a + math.tau, x, y) for a, x, y in polar[:1]]
+    angles = [a for a, _x, _y in polar]
+
+    def edge(a: float) -> float:
+        """How far the outline is in direction a: where that ray meets the outline between its samples."""
+        i = min(max(1, bisect.bisect_left(angles, a)), len(polar) - 1)
+        (_a0, x0, y0), (_a1, x1, y1) = polar[i - 1], polar[i]
+        dx, dy, ex, ey = math.cos(a), math.sin(a), x1 - x0, y1 - y0
+        den = dx * ey - dy * ex
+        if abs(den) < 1e-12:
+            return min(math.hypot(x0, y0), math.hypot(x1, y1))
+        return (x0 * ey - y0 * ex) / den
+
+    def pull(points: list) -> list:
+        out = []
+        for x, y in points:
+            r = math.hypot(x, y)
+            limit = edge(math.atan2(y, x)) - EYE_INSET
+            out.append((x * limit / r, y * limit / r) if r > limit > 0 else (x, y))
+        return out
+    return pull
+
+
+def fit_in_window(points, sx: float, sy: float, angle: float, lift: float, shift: float) -> tuple:
+    """(size factor, lift, shift) that keep a body (head radii, scaled by sx and sy, turned by angle
+    degrees clockwise, then lifted and shifted in px) inside the window."""
+    half = AVATAR_SIZE / 2 - WINDOW_MARGIN
+    c, s_ = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+    xs, ys = [], []
+    for x, y in points:
+        x, y = x * sx * CIRCLE_R, y * sy * CIRCLE_R
+        xs.append(x * c - y * s_)
+        ys.append(x * s_ + y * c)
+    left, right, top, bottom = min(xs), max(xs), min(ys), max(ys)
+    widest = max(-left, right, -top, bottom, 1e-6)
+    k = fits = min(1.0, half / widest)
+    if lift > 0:
+        k = min(k, (half - lift) / max(-top, 1e-6))
+    elif lift < 0:
+        k = min(k, (half + lift) / max(bottom, 1e-6))
+    if shift > 0:
+        k = min(k, (half - shift) / max(right, 1e-6))
+    elif shift < 0:
+        k = min(k, (half + shift) / max(-left, 1e-6))
+    k = max(k, MIN_FIT * fits)
+    lift = min(max(lift, bottom * k - half), half + top * k)
+    shift = min(max(shift, -half - left * k), half - right * k)
+    return k, lift, shift
 
 
 def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float = 0,
@@ -467,6 +569,8 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
     widest = max(max(MIN_EYE, eye[0]) for _c, _n, eye in seats) * (2 * HAPPY_SPAN + 1)
     arc = min(1.0, HAPPY_ROOM * math.dist(seats[1][0][:2], seats[0][0][:2]) / widest)
     start, end, t = expression
+    outline = body_points(profile, pitch, yaw, roll)
+    inside = _within(outline)
     eyes, middles = [], []
     for i, ((x, y, z), normal, (w, h, tilt, open_)) in enumerate(seats):
         eye = (w, h * open_, tilt)
@@ -477,26 +581,34 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
             du, dv = _lerp(bu, du, t), _lerp(bv, dv, t)
         x += du + (converge if i == 0 else -converge) / CIRCLE_R
         y += dv
-        if normal is None:  # on the ball
+        if not profile["grok"]:  # on the front of its own body
+            z, normal = openbot_surface(profile["shape"], x, y)
+        elif normal is None:  # on the ball
             z = math.sqrt(max(0.0, 1 - x * x - y * y))
         place = (x, y, z)
-        laid = body3d.eye_on_surface(place, shape, rot, normal)
+        if profile["grok"]:
+            laid = body3d.eye_on_surface(place, shape, rot, normal)
+        else:
+            laid = body3d.eye_draped(place, shape, rot, normal, _surface_height(profile["shape"]))
         middles.append(rot(*place))
         if laid:
+            laid = inside(laid)
             eyes.append(f'<path d="{_points_path(laid, CIRCLE_R, centre, centre)}" fill="{EYE_FILL}"/>')
     if muted:
         mx = sum(m[0] for m in middles) / 2 * CIRCLE_R
         my = sum(m[1] for m in middles) / 2 * CIRCLE_R
         drop = min(MOUTH_DROP, 0.6 * (profile["bottom"] - my / CIRCLE_R)) * CIRCLE_R
         eyes.append(_mouth(centre + mx, centre + my + drop, EYE_FILL, 1.0))
-    body = body_path(profile, pitch, yaw, CIRCLE_R, centre, centre, roll)
+    body = _points_path(outline, CIRCLE_R, centre, centre)
     bx, by, _bz = front(0.0, 0.0, body3d.DEPTH)
     head = (f'<path d="{body}" fill="{profile["hex"]}"/>'
             f'<path d="{body}" fill="url(#sh)"/><path d="{body}" fill="url(#hl)"/>')
     sx, sy = squash
+    angle = profile["tilt"] + lean
+    k, lift, shift = fit_in_window(outline, sx * zoom, sy * zoom, angle, lift, shift)
     pose = (f'translate({shift:.2f} {-lift:.2f})'
-            f' rotate({profile["tilt"] + lean:.2f} {centre} {centre})'
-            f' translate({centre} {centre}) scale({sx * zoom:.4f} {sy * zoom:.4f}) translate({-centre} {-centre})')
+            f' rotate({angle:.2f} {centre} {centre})'
+            f' translate({centre} {centre}) scale({sx * zoom * k:.4f} {sy * zoom * k:.4f}) translate({-centre} {-centre})')
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{AVATAR_SIZE}" height="{AVATAR_SIZE}">'
         + depth_defs(profile["hex"], bx * 0.45, by * 0.45)
