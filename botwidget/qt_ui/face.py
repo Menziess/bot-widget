@@ -305,6 +305,28 @@ class FaceWindow(QWidget):
     def _move_icon(self, x, y):
         self.move(int(x), int(y))
 
+    def _bounce_off_faces(self, x, y, vx, vy):
+        """Two heads do not share a spot: a face that runs into another bounces off it, as off a wall."""
+        half = AVATAR_SIZE / 2
+        for other in getattr(self.faces, "faces", {}).values():
+            if other is self or not other.isVisible():
+                continue
+            dx, dy = x + half - (other.x() + half), y + half - (other.y() + half)
+            gap = math.hypot(dx, dy)
+            if gap >= AVATAR_SIZE:
+                continue
+            nx, ny = (dx / gap, dy / gap) if gap else (1.0, 0.0)
+            x, y = other.x() + nx * AVATAR_SIZE, other.y() + ny * AVATAR_SIZE
+            speed = vx * nx + vy * ny
+            if speed < 0:
+                vx, vy = (vx - 2 * speed * nx) * 0.55, (vy - 2 * speed * ny) * 0.55
+        return self._stay_on_screen(x, y, vx, vy)
+
+    def _make_room(self):
+        """Dropped on another face: it steps aside, the way the bounce would have put it."""
+        x, y, _, _ = self._bounce_off_faces(self.x(), self.y(), 0.0, 0.0)
+        self._move_icon(x, y)
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and self.bubble.isVisible():
             self.unpin()
@@ -394,6 +416,7 @@ class FaceWindow(QWidget):
         self._dvy *= 0.90
         nx, ny, self._dvx, self._dvy = self._stay_on_screen(
             self.x() + self._dvx * 0.016, self.y() + self._dvy * 0.016, self._dvx, self._dvy)
+        nx, ny, self._dvx, self._dvy = self._bounce_off_faces(nx, ny, self._dvx, self._dvy)
         self._move_icon(nx, ny)
         if abs(self._dvx) < 80 and abs(self._dvy) < 80:
             self._coasting = False
@@ -573,7 +596,8 @@ class FaceWindow(QWidget):
         self._pose = pose
 
     def _landed(self):
-        """After dragging: a small landing."""
+        """After dragging: a small landing, and off any face it was dropped on."""
+        self._make_room()
         self.anim.kick("sy", -1.2)
 
     def _happy_off(self):

@@ -795,6 +795,31 @@ class BubbleWindow(QWidget):
     def _body_rect(self, x, y, w, h) -> QRect:
         return QRect(round(x + PAD_SVG), round(y + PAD_SVG), max(1, w - 2 * PAD_SVG), max(1, h - PAD_SVG - TAIL_ROOM))
 
+    def _clear_spot(self, x, y, w, h, bounds=None) -> tuple:
+        """Off the other bubbles: pushed aside on the side where they overlap least, so two never sit on each
+        other. bounds is the screen it has to stay on, if it can."""
+        for _ in range(4):
+            moved = False
+            for other in self._others():
+                dx = other.x() + other.width() / 2 - (x + w / 2)
+                dy = other.y() + other.height() / 2 - (y + h / 2)
+                over_x = (w + other.width()) / 2 - abs(dx)
+                over_y = (h + other.height()) / 2 - abs(dy)
+                if over_x <= 0 or over_y <= 0:
+                    continue
+                if over_x <= over_y:
+                    x += -over_x if dx > 0 else over_x
+                else:
+                    y += -over_y if dy > 0 else over_y
+                moved = True
+            if not moved:
+                break
+        if bounds:
+            gx, gy, gw, gh = bounds
+            x = max(gx + 4, min(x, gx + gw - w - 4))
+            y = max(gy + 4, min(y, gy + gh - h - 4))
+        return x, y
+
     def _covering(self, x, y, w, h) -> list:
         rect = self._body_rect(x, y, w, h)
         return [o for o in self._others() if rect.intersects(self._body_rect(o.x(), o.y(), o.width(), o.height()))]
@@ -1170,7 +1195,7 @@ class BubbleWindow(QWidget):
         # Another bubble in the way: the first side that is free; if none is, the preferred one, and one of the two yields.
         side = next((place for place in (*sides, *(["below"] if "below" not in sides else []))
                      if not self._covering(*spot(place), final_w, final_h)), sides[0])
-        tx, ty = spot(side)
+        tx, ty = self._clear_spot(*spot(side), final_w, final_h, bounds=(gx, gy, gw, gh))
         self._spot = (tx, ty, final_w, final_h)
         return tx, ty, (round(cx - tx) if side in ("above", "below") else round(cy - ty), side)
 
