@@ -394,7 +394,8 @@ def mark_drawn(profile: dict) -> bool:
 
 # OpenBot's shapes built the way Grok Bot builds the nearest of its own: round ones lofted, the
 # squircle a rounded slab, the capsule a chain of balls, the ones with corners extruded and bevelled.
-OPENBOT_BUILD = {"cercle": "loft", "galet": "loft", "nuage": "loft", "goutte": "loft",
+# The circle is a ball, so it stays perfectly round however it turns.
+OPENBOT_BUILD = {"cercle": "sphere", "galet": "loft", "nuage": "loft", "goutte": "loft",
                  "squircle": "roundedSlab", "capsule": "balls", "triangle": "extrusion", "hexagone": "extrusion"}
 # Grok Bot's depths for those constructions (its cloud, squircle and extruded shapes), in head radii.
 LOFT_DEPTH, SLAB, EXTRUDE = 0.82, (0.278, 0.109), (0.357, 0.218)
@@ -404,7 +405,9 @@ LOFT_DEPTH, SLAB, EXTRUDE = 0.82, (0.278, 0.109), (0.357, 0.218)
 def openbot_body(shape: str) -> tuple:
     points = body3d.radii_points(SILHOUETTES[shape])
     kind = OPENBOT_BUILD.get(shape, "loft")
-    if kind == "roundedSlab":
+    if kind == "sphere":
+        spec = {"kind": "balls", "balls": ((0.0, 0.0, 0.0, 1.0),)}
+    elif kind == "roundedSlab":
         spec = {"kind": kind, "ring": points, "half_depth": SLAB[0], "edge": SLAB[1]}
     elif kind == "extrusion":
         spec = {"kind": kind, "outline": points, "half_depth": EXTRUDE[0], "bevel": EXTRUDE[1]}
@@ -441,6 +444,9 @@ def openbot_surface(shape: str, x: float, y: float) -> tuple:
         return EXTRUDE[0], (0.0, 0.0, 1.0)
     if kind == "roundedSlab":
         return SLAB[0], (0.0, 0.0, 1.0)
+    if kind == "sphere":
+        z = math.sqrt(max(1e-4, 1.0 - x * x - y * y))
+        return z, (x, y, z)
     if kind == "balls":
         _kind, balls = openbot_body(shape)
         r = balls[0][3]

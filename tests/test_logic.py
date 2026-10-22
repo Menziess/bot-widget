@@ -3574,9 +3574,12 @@ class EyesOnTheBody(unittest.TestCase):
     def test_openbot_eyes_lie_on_the_front_of_their_own_body(self):
         flat = avatar.openbot_surface("triangle", 0.3, 0.0)
         self.assertEqual(flat, (avatar.EXTRUDE[0], (0.0, 0.0, 1.0)), "an extruded body: its flat front")
-        z, _normal = avatar.openbot_surface("cercle", 0.0, 0.0)
+        z, _normal = avatar.openbot_surface("galet", 0.0, 0.0)
         self.assertAlmostEqual(z, avatar.LOFT_DEPTH, places=3)
-        self.assertLess(avatar.openbot_surface("cercle", 0.6, 0.0)[0], z, "a loft is lower towards its edge")
+        self.assertLess(avatar.openbot_surface("galet", 0.6, 0.0)[0], z, "a loft is lower towards its edge")
+        ball, normal = avatar.openbot_surface("cercle", 0.6, 0.0)
+        self.assertAlmostEqual(ball, 0.8, places=3, msg="the circle is a ball")
+        self.assertEqual(normal, (0.6, 0.0, ball))
 
 
 class InTheWindow(unittest.TestCase):
