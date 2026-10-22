@@ -128,7 +128,7 @@ def grok_bot_status(timeout: float = 10.0) -> dict:
     if not os.path.exists(GBOT):
         return {"connected": False, "bots": [], "note": "gbot not found"}
     try:
-        done = subprocess.run([GBOT, "--json", "bots", "list"], capture_output=True,
+        done = subprocess.run([GBOT, "bots", "list", "--json"], capture_output=True,
                               text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"connected": False, "bots": [], "note": "gbot gave no answer"}

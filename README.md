@@ -58,6 +58,17 @@ botwidget
 
 The widget needs OpenBot or Grok Bot. Without either, the face says so and links to both.
 
+## Grok Bot
+
+The widget can also talk to one bot of Grok Bot. It does that with the `gbot` command, so the Grok Bot app on this computer has to be running and signed in.
+
+- The bot is the one named in `grokbot_target` in widget.json, General without it
+- While an answer is coming the widget asks for it every 3 seconds, for 10 minutes at the most
+- Without an answer to wait for it asks every minute
+- When gbot says there is no route, or is not there at all, the widget stops and says so
+- The next message you send tries again
+- /bots switches the Grok face on or off, like the faces of the other bots
+
 ## Updates
 
 The widget updates itself, and you can switch that off. At each start, and every 6 hours after, it asks GitHub whether a newer release exists.

@@ -58,7 +58,7 @@ from botwidget.openbot import (
     latest_chat,
     openbot_installed,
 )
-from botwidget import attachments, menu_pages
+from botwidget import attachments, grokbot, menu_pages
 from botwidget.qt_ui import desktops, screens
 from botwidget.qt_ui.bubble_window import BubbleWindow
 from botwidget.qt_ui.render import svg_pixmap
@@ -70,6 +70,7 @@ DOT_SIZE = 14
 CLICK_SLOP = 5
 RETRY_NOTE = "No connection to OpenBot — retrying…"
 REFUSED_NOTE = "I couldn't send that. OpenBot answered: {why}."
+GROK_REFUSED_NOTE = "I couldn't send that. {why}."
 # OpenBot only opens its local API once this switch is on, per bot.
 AUTOMATION_NOTE = ("OpenBot's local API is off for {name}. In OpenBot open {name}'s settings and turn on "
                    '"Local scripts"; messages wait here until then.')
@@ -101,6 +102,7 @@ class FaceWindow(QWidget):
     # Result of the POST from the sending thread back to the window.
     message_done = Signal(str, bool, bool, str)
     attention_done = Signal(bool, str)  # the answer to a question or approval went through, or why not
+    grok_polled = Signal()  # Grok Bot was asked for new answers
 
     def __init__(self, agent_id: str, name: str,
                  spot=None, slot: int = 0, thread_id: str | None = None, faces=None,
@@ -109,6 +111,8 @@ class FaceWindow(QWidget):
         self.agent_id = agent_id
         self.bot_name = name
         self.thread_id = thread_id or ("openbot-thread-" + agent_id)
+        # A Grok Bot face talks to the gbot command instead of the local OpenBot.
+        self.grok = grokbot.GrokLink(name) if grokbot.is_grok(agent_id) else None
         self.faces = faces
         self._hue = hue
         self._seed = seed or agent_id
@@ -135,6 +139,7 @@ class FaceWindow(QWidget):
         self._send_status = ""
         self._refused = False
         self.message_done.connect(self._on_message_done)
+        self.grok_polled.connect(self._on_grok_polled)
         self._hint_shown = False
         self._shown_text = ""
         self._welcome_until = 0.0
@@ -435,7 +440,7 @@ class FaceWindow(QWidget):
                 and now >= self._hover_blocked_until and now >= self._hover_retry):
             self._hover_retry = now + HOVER_RETRY_S
             self._depth = 1
-            self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+            self._sync_bubble(self._latest(), force=True)
             self._claim_bubble()
             self._hover_since = now if self.bubble.isVisible() else 0.0
         elif self._hover_since and now - self._hover_since >= FOCUS_DWELL_S and self._drag_origin is None:
@@ -534,7 +539,7 @@ class FaceWindow(QWidget):
         """Click on the face: the bubble is there and the cursor is in the field."""
         if not self.bubble.isVisible():
             self._depth = 1
-            self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+            self._sync_bubble(self._latest(), force=True)
         self._claim_bubble()
         activate_app()
         self.bubble.focus_entry()
@@ -557,7 +562,7 @@ class FaceWindow(QWidget):
         self.has_pending = False
         self._refused = False
         self.update()
-        self._sync_bubble(latest_chat(thread_id=self.thread_id))
+        self._sync_bubble(self._latest())
         self._claim_bubble()
         self.bubble.focus_entry()
 
@@ -566,7 +571,7 @@ class FaceWindow(QWidget):
         if self._hovered:
             self._hover_blocked_until = time.monotonic() + REOPEN_AFTER_S
         if self._working:
-            self._sync_bubble(latest_chat(thread_id=self.thread_id))
+            self._sync_bubble(self._latest())
         else:
             self.bubble.place("")
 
@@ -593,6 +598,10 @@ class FaceWindow(QWidget):
 
     # ── Polling ─────────────────────────────────────────────────
 
+    def _latest(self) -> dict:
+        """The latest chat of this bot: from Grok Bot or from the local OpenBot."""
+        return self.grok.chat() if self.grok else latest_chat(thread_id=self.thread_id)
+
     def _poll_pending(self):
         """Check whether a question or approval is waiting and refresh the bubble.
 
@@ -600,6 +609,12 @@ class FaceWindow(QWidget):
         POLL_INTERVAL seconds. One timer, no second loop next to it.
         """
         if not self._alive:
+            return
+        if self.grok:
+            if self.grok.due():
+                threading.Thread(target=self._poll_grok, daemon=True).start()
+            self._sync_bubble(self._latest())
+            self._poll_timer.start(1000)
             return
         data = api_get(f"/v1/agents/{self.agent_id}/pending")
         changed = False
@@ -610,11 +625,23 @@ class FaceWindow(QWidget):
                 self.has_pending = has_pending
                 self._update_notification()
             changed = self._set_attention(data)
-        self._sync_bubble(latest_chat(thread_id=self.thread_id), force=changed)
+        self._sync_bubble(self._latest(), force=changed)
         self._poll_timer.start((WORK_POLL_INTERVAL if self._working else POLL_INTERVAL) * 1000)
+
+    def _poll_grok(self):
+        """Ask Grok Bot for new answers, in a thread so the face keeps moving."""
+        self.grok.poll()
+        if self._alive:
+            self.grok_polled.emit()
+
+    def _on_grok_polled(self):
+        if self._alive:
+            self._sync_bubble(self._latest())
 
     def _waiting_note(self, error: str = "") -> str:
         """Why a message is waiting: the switch in OpenBot is off, or the link dropped."""
+        if self.grok:
+            return self.grok.status
         if error == AUTOMATION_OFF or not automation_ready():
             return AUTOMATION_NOTE.format(name=self.bot_name)
         return RETRY_NOTE
@@ -694,6 +721,8 @@ class FaceWindow(QWidget):
             blocks += self._attention_blocks()
             if self._send_status:
                 blocks.append(status_block(self._send_status))
+            elif self.grok and self.grok.status:
+                blocks.append(status_block(self.grok.status))
             if self._queue:
                 blocks.append(status_block("Queued, click one to edit it"))
                 waiting = [{"role": "user", "text": attachments.label_with(item["text"], item["files"]),
@@ -776,7 +805,10 @@ class FaceWindow(QWidget):
             blocks += [role_panel("bot"), plain_block("dots")]
         blocks += self._attention_blocks()
         # Learn at once that sending is not possible yet.
-        status = self._send_status or ("" if automation_ready() else self._waiting_note())
+        if self.grok:
+            status = self._send_status or self.grok.status
+        else:
+            status = self._send_status or ("" if automation_ready() else self._waiting_note())
         if status:
             blocks.append(status_block(status))
         return blocks
@@ -801,15 +833,18 @@ class FaceWindow(QWidget):
             return
         if self._working:
             self._queue.append({"text": text, "files": files, "id": uuid.uuid4().hex[:8]})
-            self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+            self._sync_bubble(self._latest(), force=True)
             self._poll_timer.start(300)
             return
+        if self.grok:
+            # A new message is a fresh attempt: the link that stopped tries again.
+            self.grok.resume()
         text = attachments.message_with(text, files)
         day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
         cid = hashlib.sha256(f"{self.agent_id}\n{text}\n{day}".encode()).hexdigest()[:32]
         self._outbox.add(text, cid)
         self._pump_outbox()
-        self._sync_bubble(latest_chat(thread_id=self.thread_id))
+        self._sync_bubble(self._latest())
         self._poll_timer.start(300)
 
     def _next_queued(self):
@@ -830,7 +865,7 @@ class FaceWindow(QWidget):
         if item is None:
             return
         self._queue.remove(item)
-        self._sync_bubble(self._chat or latest_chat(thread_id=self.thread_id), force=True)
+        self._sync_bubble(self._chat or self._latest(), force=True)
         self.bubble.edit_text(item["text"], item["files"])
         activate_app()
         self.bubble.focus_entry()
@@ -843,7 +878,7 @@ class FaceWindow(QWidget):
         self._muted = not self._muted
         set_muted(self.agent_id, self._muted)
         self._render()
-        self._sync_bubble(self._chat or latest_chat(thread_id=self.thread_id), force=True)
+        self._sync_bubble(self._chat or self._latest(), force=True)
 
     # ── Questions and approvals ─────────────────────────────────
 
@@ -977,6 +1012,11 @@ class FaceWindow(QWidget):
                          args=(item["text"], item["cid"])).start()
 
     def _post_message(self, text: str, cid: str):
+        if self.grok:
+            ok, error = self.grok.send(text)
+            if self._alive:
+                self.message_done.emit(cid, ok, False, error)
+            return
         if automation_ready():
             result = api_post(f"/v1/agents/{self.agent_id}/messages",
                               {"text": text, "clientMessageId": cid})
@@ -996,7 +1036,8 @@ class FaceWindow(QWidget):
             item = self._outbox.sent(cid)
             self._send_status = ""
             self._refused = False
-            if item is not None:
+            # Grok Bot keeps the line the user sent itself.
+            if item is not None and not self.grok:
                 self._local.append({"role": "user", "text": item["text"],
                                     "until": time.monotonic() + 120})
         else:
@@ -1007,13 +1048,14 @@ class FaceWindow(QWidget):
                 self._refused = True
                 if item is not None:
                     self._local.append({"role": "user", "text": item["text"], "until": time.monotonic() + 60})
+                note = GROK_REFUSED_NOTE if self.grok else REFUSED_NOTE
                 self._local.append({"role": "bot", "until": time.monotonic() + 60,
-                                    "text": REFUSED_NOTE.format(why=error)})
+                                    "text": note.format(why=error)})
             else:
                 next_ready = False
                 self._send_status = self._waiting_note(error)
                 QTimer.singleShot(int(wait * 1000), self._pump_outbox)
         self.update()
-        self._sync_bubble(latest_chat(thread_id=self.thread_id))
+        self._sync_bubble(self._latest())
         if next_ready:
             self._pump_outbox()

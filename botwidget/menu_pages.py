@@ -93,7 +93,13 @@ def connections(state: dict) -> list:
         blocks.append(_button("OpenBot not found · get it ↗", "open/openbot"))
     blocks.append(plain_block("gap"))
     if state["gbot"]:
-        blocks.append(_row(("Grok Bot", "b"), (f" {state['grok']}", "dim")))
+        line = state["grok"]
+        if line.startswith("Grok Bot"):
+            line = line[len("Grok Bot"):].strip()
+        target = state.get("grok_target")
+        if target and "talks to" not in line:
+            line = f"{line} · talks to {target}"
+        blocks.append(_row(("Grok Bot", "b"), (f" {line}", "dim")))
     else:
         blocks.append(_button("Grok Bot not found · get it ↗", "open/grokbot"))
     return blocks

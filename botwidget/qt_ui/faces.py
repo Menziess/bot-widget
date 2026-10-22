@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication
 
-from botwidget import __version__, channel, startup, updates
+from botwidget import __version__, channel, grokbot, startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -36,6 +36,16 @@ UPDATE_TICK_MS = 10 * 60 * 1000
 RECHECK_S = 6 * 3600
 
 
+def _all_bots() -> list:
+    """Every bot the widget can show a face for: the local ones and Grok Bot."""
+    bots = list(list_bots())
+    if gbot_installed():
+        target = grokbot.target()
+        bots.append({"id": grokbot.face_id(target), "name": target, "threadId": None,
+                     "hue": None, "seed": grokbot.face_id(target), "status": "ready"})
+    return bots
+
+
 class Faces(QObject):
     def __init__(self):
         super().__init__()
@@ -54,7 +64,7 @@ class Faces(QObject):
             self._update_timer.setInterval(UPDATE_TICK_MS)
             self._update_timer.timeout.connect(self._update_tick)
             self._update_timer.start()
-        bots = {bot["id"]: bot for bot in list_bots()}
+        bots = {bot["id"]: bot for bot in _all_bots()}
         ids = [agent_id for agent_id in enabled if agent_id in bots] or list(bots)[:1] or [UNLINKED_ID]
         for slot, agent_id in enumerate(ids):
             bot = bots.get(agent_id) or {
@@ -154,7 +164,7 @@ class Faces(QObject):
         self._save()
 
     def toggle(self, agent_id: str, on: bool):
-        bots = {bot["id"]: bot for bot in list_bots()}
+        bots = {bot["id"]: bot for bot in _all_bots()}
         if on and agent_id not in self.faces and agent_id in bots:
             self._open(bots[agent_id], len(self.faces))
         if not on and agent_id in self.faces:
@@ -171,7 +181,7 @@ class Faces(QObject):
     def menu_state(self) -> dict:
         """What the menu pages show: the settings as they are now, the bots, and what was found."""
         config = widget_config()
-        bots = list_bots()
+        bots = _all_bots()
         return {
             "version": __version__, "channel": channel.running(), "switch_label": channel.switch_label(),
             "hotkey": HOTKEY_LABEL if self.hotkey_on else "",
@@ -185,6 +195,7 @@ class Faces(QObject):
                       "muted": bot["id"] in muted_bots()} for bot in bots],
             "openbot": openbot_installed(), "automation_ready": automation_ready(),
             "gbot": gbot_installed(), "grok": self.grok_line(),
+            "grok_target": grokbot.target(),
         }
 
     TOGGLES = {
