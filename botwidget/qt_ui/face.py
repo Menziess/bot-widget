@@ -130,6 +130,7 @@ class FaceWindow(QWidget):
         self.head_top = AVATAR_SIZE / 2 - profile["top"] * CIRCLE_R
         self.head_bottom = AVATAR_SIZE / 2 + profile["bottom"] * CIRCLE_R
         self._alive = True
+        self._semicircle_visible = False
 
         self.has_pending = False
         self.pinned = False
@@ -225,7 +226,10 @@ class FaceWindow(QWidget):
     def _apply_flags(self):
         """Separate from the taskbar; above or below normal windows according to widget.json."""
         layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | layer)
+        # Wayland parents a tool window to whichever normal window is in front. A plain window stays put
+        # when that other window is minimized.
+        kind = Qt.Tool if global_pointer() else Qt.Window
+        self.setWindowFlags(Qt.FramelessWindowHint | kind | layer)
 
     def restack(self):
         """After a change of the setting: new flags ask the window to be shown again."""
@@ -234,6 +238,9 @@ class FaceWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        handle = self.windowHandle()
+        if handle is not None and not global_pointer():
+            handle.setTransientParent(None)
         if not always_on_top():
             send_behind_windows(int(self.winId()))
         self.apply_desktops()
@@ -252,39 +259,55 @@ class FaceWindow(QWidget):
             desktops.apply(self.bubble)
 
     def _set_semicircle(self, semicircle: dict):
-        """Receive semicircle state from Faces.
+        """Park this face on the arc, or send it home when the arc is gone.
 
-        semicircle is a dict bot_id → {"angle": float, "visible": bool, "y_off": float}.
-        When a bot is visible in the semicircle, its face shows a reduced-size indicator.
-        When invisible, the face returns to normal.
+        The face being dragged is left where the pointer holds it.
         """
-        bid = self.agent_id
-        if bid not in semicircle:
-            self._semicircle_visible = False
-            self.update()
+        info = semicircle.get(self.agent_id) if semicircle else None
+        if self._drag_origin is not None and info:
             return
-        info = semicircle[bid]
-        if info["visible"]:
-            self._semicircle_visible = True
-            self._semicircle_angle = info["angle"]
-            self._semicircle_yoff = info["y_off"]
-            self.update()
-        else:
-            self._semicircle_visible = False
-            self.update()
+        if not info or not info.get("visible"):
+            waiting = info is not None
+            if waiting:
+                self._semicircle_visible = True
+                self.pinned = False
+                if self.bubble.isVisible():
+                    self.bubble.place("")
+                self.hide()
+                return
+            if self._semicircle_visible or getattr(self, "_arc_guest", False):
+                self._semicircle_visible = False
+                if getattr(self, "_arc_guest", False):
+                    self.hide()
+                    return
+                self.setFixedSize(AVATAR_SIZE, AVATAR_SIZE)
+                self._move_icon(*self._home)
+                self.show()
+            return
+        self._semicircle_visible = True
+        self.pinned = False
+        if self.bubble.isVisible():
+            self.bubble.place("")
+        size = int(info["size"])
+        if self.width() != size:
+            self.setFixedSize(size, size)
+        self._move_icon(info["x"] - size / 2, info["y"] - size / 2)
+        if not self.isVisible():
+            self.show()
+        self.update()
 
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.drawPixmap(0, 0, self._pixmap)
+        painter.drawPixmap(0, 0, self.width(), self.height(), self._pixmap)
         if self.has_pending:
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(DOT_COLOR))
-            painter.drawEllipse(AVATAR_SIZE - DOT_SIZE - 2, 0, DOT_SIZE, DOT_SIZE)
+            painter.drawEllipse(self.width() - DOT_SIZE - 2, 0, DOT_SIZE, DOT_SIZE)
         if self.unsent():
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(WARN_COLOR))
-            painter.drawEllipse(AVATAR_SIZE - DOT_SIZE - 2, AVATAR_SIZE - DOT_SIZE - 2, DOT_SIZE, DOT_SIZE)
+            painter.drawEllipse(self.width() - DOT_SIZE - 2, self.height() - DOT_SIZE - 2, DOT_SIZE, DOT_SIZE)
 
     def unsent(self) -> bool:
         """A message of yours is waiting for OpenBot, or was refused and you have not looked yet."""
@@ -391,6 +414,8 @@ class FaceWindow(QWidget):
             700.0 if raw_y < y else -700.0 if raw_y > y else 0.0,
         )
         self._move_icon(x, y)
+        if self.faces is not None:
+            self.faces.offer_semicircle(x + self.width() / 2, y + self.height() / 2)
         now = time.monotonic()
         if self._drag_sample and now - self._drag_sample[0] >= 0.03:
             t, sx, sy = self._drag_sample
@@ -412,6 +437,10 @@ class FaceWindow(QWidget):
         self._drag_origin = None
         if click and event.modifiers() & Qt.ShiftModifier:
             self.toggle_muted()
+        elif click and getattr(self, "_arc_guest", False) and self.faces is not None:
+            self.faces.adopt_arc_guest(self.agent_id)
+        elif click and self._semicircle_visible:
+            pass
         elif click:
             self.react("click")
             self.open_input()
@@ -419,6 +448,8 @@ class FaceWindow(QWidget):
             QTimer.singleShot(600, self._happy_off)
         else:
             self._happy_off()
+            if self.faces is not None and self.faces.drop_arc(self):
+                return
         if self._wall_kick != (0.0, 0.0):
             self._dvx, self._dvy = self._wall_kick
         if abs(self._dvx) > 500 or abs(self._dvy) > 500:
@@ -456,7 +487,7 @@ class FaceWindow(QWidget):
 
     def _settle(self):
         """Back to the remembered spot if it is on a screen again, else onto the nearest screen."""
-        if not self._alive or self._drag_origin is not None or self._coasting:
+        if not self._alive or self._drag_origin is not None or self._coasting or self._semicircle_visible:
             return
         x, y = self._home
         if not screens.fits(x, y, AVATAR_SIZE):
@@ -465,11 +496,24 @@ class FaceWindow(QWidget):
             self._move_icon(x, y)
 
     def _remember_spot(self):
+        if self._semicircle_visible:
+            return
         self._home = self.spot()
         if self.faces is not None:
             self.faces.remember(self.agent_id, self.x(), self.y())
 
     # ── Face ────────────────────────────────────────────────────
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        if self._semicircle_visible and self.faces is not None:
+            self.faces.semicircle_pointer_here()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        # Wayland cannot see the pointer in the gaps, so leaving a small face starts the hide.
+        if self._semicircle_visible and self.isVisible() and self.faces is not None:
+            self.faces.semicircle_pointer_left()
 
     def _pointer(self) -> tuple:
         pos = QCursor.pos()
@@ -507,6 +551,8 @@ class FaceWindow(QWidget):
 
     def _check_hover(self):
         """Pointing at the face shows the bubble, also when the pointer was already there and did not move."""
+        if self._semicircle_visible:
+            return
         if not global_pointer():
             hovered = self.underMouse()
         else:

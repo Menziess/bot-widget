@@ -322,6 +322,33 @@ class GrokAvatarFallback(unittest.TestCase):
         self.assertEqual(faces.avatar, {"shape": "blob", "color": "black"})
         self.assertEqual(len(saved), 1, "nothing new to save")
 
+    def test_semicircle_hangs_under_the_top_middle(self):
+        """Should put every face on the lower half of the circle, under the top edge."""
+        from botwidget.qt_ui.faces import Faces
+        faces = Faces.__new__(Faces)
+        faces.faces = {"a": None, "b": None, "c": None}
+        faces._hotspot = lambda: (800.0, 0.0)
+        pos = faces._semicircle_positions()
+        self.assertEqual(set(pos), {"a", "b", "c"})
+        for sx, sy in pos.values():
+            self.assertGreater(sy, 0)
+            self.assertLessEqual((sx - 800) ** 2 + sy ** 2, 120 ** 2 + 1)
+
+    def test_arc_bots_leave_the_centre_one_at_a_time_and_return_last_first(self):
+        """Should hold later bots until the one before them has started, and reverse that on the way back."""
+        from botwidget.qt_ui.faces import ARC_MOVE_S, ARC_STEP_S, arc_drop, arc_progress
+        self.assertEqual(arc_drop(True, False, 2), "off")
+        self.assertEqual(arc_drop(True, False, 1), "snap")
+        self.assertEqual(arc_drop(False, True, 1), "on")
+        self.assertEqual(arc_drop(False, False, 2), "out")
+        self.assertEqual(arc_progress(0, 0), 0.0)
+        self.assertGreater(arc_progress(ARC_MOVE_S * 0.5, 0), 0)
+        self.assertEqual(arc_progress(ARC_STEP_S * 0.5, 1), 0.0)
+        self.assertEqual(arc_progress(ARC_STEP_S + ARC_MOVE_S, 1), 1.0)
+        # The way back hands rank 0 to the last arrival, so that one moves first.
+        self.assertEqual(arc_progress(0.01, 0) > 0, True)
+        self.assertEqual(arc_progress(0.01, 2), 0.0)
+
 
 class GrokAvatar(unittest.TestCase):
     """The face of a Grok Bot bot comes from Grok Bot's own roster, not from a seed."""

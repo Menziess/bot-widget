@@ -1202,6 +1202,14 @@ class BubbleWindow(QWidget):
     def _show_at(self, tx, ty):
         self._vx = self._vy = 0.0
         self.move(int(tx), int(ty))
+        # Follow the face, not whichever window happens to be in front.
+        from botwidget.qt_ui.face import global_pointer
+        if not global_pointer():
+            self.winId()
+            parent = self.face.windowHandle()
+            handle = self.windowHandle()
+            if parent is not None and handle is not None:
+                handle.setTransientParent(parent)
         self.show()
         desktops.apply(self)
 
