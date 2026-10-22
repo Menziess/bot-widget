@@ -451,6 +451,13 @@ class FaceWindow(QWidget):
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         return (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2
 
+    def _pointer_is_busy(self) -> bool:
+        """The pointer drags another face, or already has the bubble of another face open: pointing at this one
+        as well, because the faces overlap, asks for nothing."""
+        others = [face for face in getattr(self.faces, "faces", {}).values() if face is not self]
+        return any(face._drag_origin is not None or face._coasting or (face._pointer_on_head() and face.bubble.isVisible())
+                   for face in others)
+
     def _check_hover(self):
         """Pointing at the face shows the bubble, also when the pointer was already there and did not move."""
         if not global_pointer():
@@ -466,7 +473,7 @@ class FaceWindow(QWidget):
             return
         self._keep_bubble_here()
         if (not self.bubble.isVisible() and self._drag_origin is None and not self.pinned and not self._coasting
-                and now >= self._hover_blocked_until and now >= self._hover_retry):
+                and now >= self._hover_blocked_until and now >= self._hover_retry and not self._pointer_is_busy()):
             self._hover_retry = now + HOVER_RETRY_S
             self._depth = 1
             self._sync_bubble(self._latest(), force=True)

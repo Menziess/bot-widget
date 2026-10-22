@@ -2299,6 +2299,52 @@ class BubbleHover(unittest.TestCase):
         self.window._sync_bubble(newer)
         self.assertTrue(self.window.bubble.isVisible())
 
+    def test_dragging_a_face_over_another_does_not_open_the_bubble_of_that_one(self):
+        other = self.second_face()
+        self.hover()
+        mine = self.window.bubble
+        self.assertTrue(mine.isVisible())
+        self.window._drag_origin = [self.window.spot()]
+        self.window.move(other.x(), other.y())
+        self.where["at"] = (other.x() + 34, other.y() + 34)
+        other._check_hover()
+        self.assertFalse(other.bubble.isVisible(), "the pointer is dragging a face, it is not pointing at this one")
+        self.window._drag_origin = None
+        self.window.move(other.x() + 400, other.y())
+        self.where["at"] = (5000, 5000)
+        other._check_hover()
+        other.bubble._tick()
+        self.assertFalse(other.bubble.isVisible())
+
+    def test_two_faces_on_top_of_each_other_do_not_take_the_bubble_from_one_another(self):
+        other = self.second_face()
+        other.move(self.window.x(), self.window.y())
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        owners = set()
+        for _ in range(6):
+            for face in (self.window, other):
+                face._hover_retry = 0.0
+                face._check_hover()
+                for bubble in (self.window.bubble, other.bubble):
+                    bubble._slide.stop()
+                    bubble._growth_done()
+            owners.add((self.window.bubble.isVisible(), other.bubble.isVisible()))
+        self.assertEqual(len(owners), 1, "one of them keeps it")
+        self.assertEqual(sum(next(iter(owners))), 1)
+
+    def test_turning_off_the_bot_whose_bubble_holds_the_page_moves_the_page_to_another_bot(self):
+        from unittest import mock
+        from botwidget.qt_ui.faces import Faces
+        other = self.second_face()
+        registry = self.window.faces
+        registry.menu_state = self.settings_state
+        registry._open = mock.Mock()
+        registry._save = mock.Mock()
+        self.window.open_menu("bots")
+        Faces.toggle(registry, "t", False)
+        self.assertEqual(other._menu_page, "bots")
+        self.assertTrue(other.bubble.isVisible() or other.bubble._growth is not None)
+
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest

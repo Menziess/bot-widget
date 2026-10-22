@@ -182,7 +182,12 @@ class Faces(QObject):
         if on and agent_id not in self.faces and agent_id in bots:
             self._open(bots[agent_id], len(self.faces))
         if not on and agent_id in self.faces:
-            self.faces.pop(agent_id).close_face()
+            gone = self.faces.pop(agent_id)
+            page = gone._menu_page
+            gone.close_face()
+            if page and self.faces:
+                # The page was in the bubble of the face that went: it carries on in the bubble of another.
+                next(iter(self.faces.values())).open_menu(page)
         self._save()
 
     def close_bubbles_except(self, agent_id: str):

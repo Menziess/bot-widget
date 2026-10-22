@@ -43,6 +43,8 @@ botwidget
 - A question or approval from the bot shows in the cloud with a button per answer, and typing in the field answers the open question
 - Shift+click a face to mute its thinking, a cross for a mouth shows it, and the choice is kept
 - Only one bubble is open at a time when you point at or click a face
+- Dragging a face over another one does not open the bubble of that one, and two faces on top of each other do not fight over the bubble
+- Turning off the bot whose bubble holds a page moves the page to the bubble of another bot
 - Typing, sending, picking a command or attaching a file keeps the bubble open for a few seconds, also when the pointer is away
 - A field that was typed in keeps the bubble open, also when you emptied it again, until you send, press Escape or click the face
 - With Show on all desktops off, a bubble only opens on the desktop of its face; elsewhere you only hear the sound, and the bubble opens when you go there
