@@ -85,6 +85,15 @@ HOVER_RETRY_S = 0.5
 REOPEN_AFTER_S = 3.0
 
 
+def global_pointer() -> bool:
+    """Whether the platform tells us where the pointer is anywhere on screen.
+
+    A Wayland client only hears about its own windows: until one of them has the pointer, QCursor.pos()
+    keeps its last value or stays at 0,0, which reads as a pointer parked on the face.
+    """
+    return QGuiApplication.platformName() != "wayland"
+
+
 def ticker(parent, ms: int, step) -> QTimer:
     """Repeating timer that stops as soon as step() returns False."""
     timer = QTimer(parent)
@@ -413,6 +422,8 @@ class FaceWindow(QWidget):
 
     def pointer_near(self, bubble) -> bool:
         """Mouse within GAZE_NEAR of the head, or over the bubble?"""
+        if not global_pointer():
+            return self.underMouse() or (bubble.isVisible() and bubble.underMouse())
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         if (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2:
@@ -422,15 +433,20 @@ class FaceWindow(QWidget):
             QPoint(px, py))
 
     def _pointer_on_head(self) -> bool:
+        if not global_pointer():
+            return self.underMouse()
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         return (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2
 
     def _check_hover(self):
         """Pointing at the face shows the bubble, also when the pointer was already there and did not move."""
-        px, py = self._pointer()
-        cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
-        hovered = (px - cx) ** 2 + (py - cy) ** 2 <= ON_FACE ** 2
+        if not global_pointer():
+            hovered = self.underMouse()
+        else:
+            px, py = self._pointer()
+            cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
+            hovered = (px - cx) ** 2 + (py - cy) ** 2 <= ON_FACE ** 2
         self._hovered = hovered
         now = time.monotonic()
         if not hovered:

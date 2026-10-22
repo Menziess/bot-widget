@@ -1767,6 +1767,30 @@ class BubbleHover(unittest.TestCase):
             bubble._tick()
         self.assertFalse(bubble.isVisible(), "gone once the pointer has been away past the delay")
 
+    def test_on_wayland_only_our_own_windows_count_as_the_pointer_being_there(self):
+        from unittest import mock
+        bubble = self.open_settings()
+        # A Wayland client that has not had the pointer keeps QCursor.pos() where it was, or at 0,0,
+        # which used to read as a pointer parked on the face and held every bubble open.
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False):
+            self.assertFalse(self.window.pointer_near(bubble), "0,0 is not the pointer")
+            self.assertFalse(self.window._pointer_on_head())
+            with mock.patch.object(type(self.window), "underMouse", return_value=True):
+                self.assertTrue(self.window.pointer_near(bubble), "the pointer is on the face")
+                self.assertTrue(self.window._pointer_on_head())
+            with mock.patch.object(type(bubble), "underMouse", return_value=True):
+                self.assertTrue(self.window.pointer_near(bubble), "the pointer is on the bubble")
+
+    def test_on_wayland_a_bubble_closes_when_the_pointer_never_came_near_it(self):
+        from unittest import mock
+        bubble = self.open_settings()
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=time.monotonic() + 60):
+            bubble._tick()
+        self.assertFalse(bubble.isVisible(), "a stuck cursor must not keep it open")
+
     def temporary_transfers(self):
         from botwidget import attachments
         folder = tempfile.mkdtemp()
