@@ -43,6 +43,8 @@ botwidget
 - Shift+click a face to mute its thinking, a cross for a mouth shows it, and the choice is kept
 - Only one bubble is open at a time when you point at or click a face
 - Typing, sending, picking a command or attaching a file keeps the bubble open for a few seconds, also when the pointer is away
+- A field that was typed in keeps the bubble open, also when you emptied it again, until you send, press Escape or click the face
+- With Show on all desktops off, a bubble only opens on the desktop of its face; elsewhere you only hear the sound, and the bubble opens when you go there
 - A bubble that opens by itself (another bot answers) never covers the one you are busy with: it takes another side, or waits out of sight and comes back once yours is gone
 - Shift+Enter starts a new line in the field, and the field grows with its lines
 - Paste a file or a picture in the field to send it along, it shows as a chip that you can remove, and the message gets a list of the files under the shared folder of OpenBot

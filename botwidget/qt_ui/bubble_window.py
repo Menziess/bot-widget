@@ -542,7 +542,7 @@ class BubbleWindow(QWidget):
         self._slash = SlashList(self)
         self._slash.chosen.connect(self._run_command)
         self._entry.textChanged.connect(self._update_commands)
-        self._entry.textChanged.connect(lambda: self.keep_for(USER_KEEP_S))
+        self._entry.textChanged.connect(self._edited)
         self._entry.moved.connect(self._slash.move_selection)
         self._entry.completed.connect(lambda: self._entry.setText(self._slash.current()))
         self._entry.chosen.connect(lambda: self._run_command(self._slash.current()))
@@ -557,6 +557,7 @@ class BubbleWindow(QWidget):
         self._control_widgets = []
         self._controls_key = None
         self._kept_until = 0.0
+        self._dirty = False
         self._opened = 0.0
         self._spot = (0, 0, 0, 0)
         self._yielding = False
@@ -580,7 +581,12 @@ class BubbleWindow(QWidget):
 
     # ── Input ───────────────────────────────────────────────────
 
+    def _edited(self):
+        self.keep_for(USER_KEEP_S)
+        self._dirty = True
+
     def _send(self):
+        self._dirty = False
         self.keep_for(USER_KEEP_S)
         text, files = self._entry.text().strip(), self._attachments
         if text or files:
@@ -732,8 +738,9 @@ class BubbleWindow(QWidget):
         return self._input and self._entry.hasFocus() and bool(self._entry.text())
 
     def holding(self) -> bool:
-        """Typing, or words selected to copy: the bubble stays for as long as that lasts."""
-        return self.typing() or (self._doc.hasFocus() and self._doc.textCursor().hasSelection())
+        """Typing, or words selected to copy: the bubble stays for as long as that lasts. A field that was typed in
+        stays dirty, also when it is empty again, until it is sent or the bubble is closed."""
+        return self.typing() or (self._input and self._dirty) or (self._doc.hasFocus() and self._doc.textCursor().hasSelection())
 
     def enterEvent(self, event):
         """Mouse over the bubble: it stays."""
@@ -794,6 +801,8 @@ class BubbleWindow(QWidget):
 
     def _must_yield(self) -> bool:
         """Every place covers another bubble: the one the user is busy with wins, else the older one."""
+        if not desktops.face_here(self.face):
+            return True  # the face is on another desktop: its sound is enough until you go there
         mine = self.user_owned()
         return any(o.user_owned() and not mine or o.user_owned() == mine and o._opened <= self._opened
                    for o in self._covering(*self._spot))
@@ -1170,8 +1179,6 @@ class BubbleWindow(QWidget):
         self.move(int(tx), int(ty))
         self.show()
         desktops.apply(self)
-        # Living on one desktop, it must not open on the one the face is not on.
-        desktops.bring_here(self)
 
     def _final_size(self) -> tuple:
         """The window size once it has grown to its size."""
@@ -1195,7 +1202,7 @@ class BubbleWindow(QWidget):
         awaiting = bool(self._wait_since) and now - self._wait_since < BUBBLE_WAIT_MAX
         if self._input and self._entry.hasFocus():
             self._had_focus = True
-        elif (self._had_focus and self._input and not self._entry.text() and not awaiting
+        elif (self._had_focus and self._input and not self._entry.text() and not awaiting and not self._dirty
               and QApplication.activeWindow() not in (self, self.face)):
             # Clicked into another window with nothing typed: the bubble goes, pinned or not.
             # Clicking on its own words or on the face is not leaving.
@@ -1250,6 +1257,7 @@ class BubbleWindow(QWidget):
         self.kind = kind
         if kind == "":
             self._yielding = False
+            self._dirty = False
             self._slide.stop()
             self._growth = None
             self.setWindowOpacity(1.0)

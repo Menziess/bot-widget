@@ -2270,6 +2270,21 @@ class BubbleHover(unittest.TestCase):
             Faces.menu_command(faces, "connect/grokbot", "connections")
             self.assertEqual((opened.call_count, faces.wanted), (1, set()), "a found one has nothing to open")
 
+    def test_a_field_that_was_typed_in_and_emptied_again_does_not_close_the_bubble_by_itself(self):
+        self.window.pin()
+        self.finish_growth()
+        bubble = self.window.bubble
+        bubble.type_text("a")
+        bubble._entry.clear()
+        bubble._kept_until = 0.0
+        self.where["at"] = (5000, 5000)
+        bubble._was_near = True
+        bubble._entry.clearFocus()
+        bubble._tick()
+        self.assertTrue(bubble.kind, "dirty: it stays until Escape or a click on the face")
+        bubble.place("")
+        self.assertFalse(bubble._dirty)
+
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
@@ -2667,15 +2682,19 @@ class Hotkey(unittest.TestCase):
             window.bring_here()
         self.assertEqual(moved, [window], "a closed bubble opens on the right desktop by itself")
 
-    def test_a_bubble_that_opens_checks_which_desktop_it_is_on(self):
+    def test_a_bubble_waits_out_of_sight_while_its_face_is_on_another_desktop_and_opens_when_you_get_there(self):
         from unittest import mock
         from botwidget.qt_ui import bubble_window, face as face_module
         window = face_module.FaceWindow("t", "Test", spot=(300, 400))
         self.addCleanup(window.close_face)
         window._poll_timer.stop()
-        with mock.patch.object(bubble_window.desktops, "bring_here") as bring:
-            window.bubble.show_blocks(face_module.conversation_blocks([{"role": "bot", "text": "Hoi"}], "T"), "say")
-        bring.assert_called_with(window.bubble)
+        blocks = face_module.conversation_blocks([{"role": "bot", "text": "Hoi"}], "T")
+        with mock.patch.object(bubble_window.desktops, "face_here", return_value=False):
+            window.bubble.show_blocks(blocks, "say")
+            window.bubble._tick()
+            self.assertFalse(window.bubble.isVisible())
+        window.bubble._tick()
+        self.assertTrue(window.bubble.isVisible(), "you went to the desktop of the face")
 
     def test_the_key_brings_a_face_from_another_desktop_and_opens_it_instead_of_closing(self):
         from types import SimpleNamespace

@@ -28,3 +28,8 @@ def bring_here(window) -> bool:
     move_to_active_space(int(window.winId()))
     QTimer.singleShot(500, lambda: apply(window))  # it stays on this desktop from now on
     return True
+
+
+def face_here(face) -> bool:
+    """Is the face on the desktop you are looking at? A face that lives on one desktop has bubbles only there."""
+    return not _real() or all_desktops() or on_active_space(int(face.winId()))
