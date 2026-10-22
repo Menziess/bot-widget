@@ -433,6 +433,10 @@ class FaceWindow(QWidget):
         return bubble.isVisible() and bubble.frameGeometry().adjusted(-margin, -margin, margin, margin).contains(
             QPoint(px, py))
 
+    def pointer_known(self) -> bool:
+        """Whether the platform says where the pointer is outside our own windows."""
+        return global_pointer()
+
     def _pointer_on_head(self) -> bool:
         if not global_pointer():
             return self.underMouse()

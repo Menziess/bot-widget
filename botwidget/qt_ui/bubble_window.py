@@ -119,6 +119,9 @@ TAIL_LENGTH = 7
 THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the balls on their arc
 
 USER_KEEP_S = 3.0  # what the user does with a bubble keeps it open this long, pointer or not
+# A leave is all a Wayland client hears about the pointer; the gap between the face and the bubble is
+# no window of ours, so the pointer gets this long to cross it before the bubble believes it left.
+CROSS_GAP_S = 0.6
 
 
 def pasted_files(source) -> list:
@@ -486,6 +489,7 @@ class BubbleWindow(QWidget):
         self._built = None
         self._chrome_key = self._chrome_pix = None
         self._was_near = False
+        self._near_at = 0.0
         self._had_focus = False
         self._wait_since = 0.0
         self._growth = None
@@ -1188,10 +1192,13 @@ class BubbleWindow(QWidget):
         if self.face.pointer_near(self) or self.holding() or awaiting or now < self._kept_until:
             self.changed = now
             self._was_near = self._was_near or not awaiting
+            self._near_at = now
         elif self._was_near and not self.face.pinned:
-            # The pointer was here and left: gone at once.
-            self.place("")
-            return
+            # The pointer was here and left. On a platform that only reports the pointer over our own
+            # windows, that leave may be the pointer crossing the gap to the face: it gets a moment.
+            if self.face.pointer_known() or now - self._near_at >= CROSS_GAP_S:
+                self.place("")
+                return
         elif self.changed and now - self.changed > reading_seconds(self.full_text) and not self.face.pinned:
             # Nobody pointed at it and nothing new came: it goes away after a while.
             self.place("")
@@ -1221,6 +1228,7 @@ class BubbleWindow(QWidget):
             self._growth = None
             self.setWindowOpacity(1.0)
             self._was_near = False
+            self._near_at = 0.0
             self._had_focus = False
             self._physics.stop()
             self._physics_on = False

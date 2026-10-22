@@ -1830,6 +1830,34 @@ class BubbleHover(unittest.TestCase):
             with mock.patch.object(type(bubble), "underMouse", return_value=True):
                 self.assertTrue(self.window.pointer_near(bubble), "the pointer is on the bubble")
 
+    def test_on_wayland_the_gap_between_face_and_bubble_is_a_moment_and_not_a_leave(self):
+        from contextlib import ExitStack
+        from unittest import mock
+        from botwidget.qt_ui import bubble_window
+        bubble = self.open_settings()
+        bubble._kept_until = 0.0
+        start = time.monotonic()
+
+        def tick(at: float, over: bool):
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False))
+                stack.enter_context(mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=at))
+                if over:
+                    stack.enter_context(mock.patch.object(type(bubble), "underMouse", return_value=True))
+                bubble._tick()
+
+        tick(start, over=True)
+        self.assertTrue(bubble.isVisible(), "the pointer was on it")
+        tick(start + 0.2, over=False)
+        self.assertTrue(bubble.isVisible(), "off the window: that may be the gap on the way to the face")
+        tick(start + 0.5, over=False)
+        self.assertTrue(bubble.isVisible(), "still within the crossing")
+        tick(start + 0.55, over=True)
+        tick(start + 0.95, over=False)
+        self.assertTrue(bubble.isVisible(), "back on the bubble: the moment starts over")
+        tick(start + 1.3, over=False)
+        self.assertFalse(bubble.isVisible(), "away for longer than a crossing: gone")
+
     def test_on_wayland_a_bubble_closes_when_the_pointer_never_came_near_it(self):
         from unittest import mock
         bubble = self.open_settings()
