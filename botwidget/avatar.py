@@ -88,11 +88,11 @@ GROK_BLOB = (1.036, 1.036, 1.037, 1.037, 1.038, 1.039, 1.04, 1.042, 1.043, 1.044
              1.032, 1.034, 1.035)
 GROK_SHAPES = {"blob": GROK_BLOB}
 # Grok Bot's blob is a glossy ball, not a face: two highlights and no eyes. Both marks are traced
-# from Grok Bot's own blob art (bot-blob-face@2x.png): their middle seen from the middle of the
-# ball, their length and thickness, and how far they lean. The big mark first, the small one above
-# it and to the right.
-GROK_HIGHLIGHTS = ((0.11, -0.33, 0.52, 0.20, 54.0),
-                   (0.56, -0.56, 0.42, 0.17, 54.0))
+# from Grok Bot's own blob art (bot-blob-face@2x.png). The big one is a pill in the upper left; the
+# small one is a thin crescent that follows the rim, higher and further right. Radii, angles and
+# offsets are in head radii, angles in degrees from 3 o'clock going down.
+GROK_HIGHLIGHT = (0.11, -0.33, 0.52, 0.20, 54.0)
+GROK_CRESCENT = (0.88, 0.74, -62.0, -22.0)
 
 
 def silhouette_radii(shape: str) -> tuple:
@@ -247,6 +247,26 @@ def _mouth(cx: float, cy: float, fill: str, opacity: float) -> str:
             f' stroke-width="2.6" stroke-linecap="round" opacity="{opacity}"/>')
 
 
+def _crescent(cx: float, cy: float, radius: float, shape: tuple, fill: str) -> str:
+    """A thin mark along the rim of a ball: an arc of the outer circle, back along the inner one.
+
+    shape is (outer, inner, start, end) in radii and degrees, so the mark narrows to a point at both
+    ends the way Grok Bot's own small highlight does.
+    """
+    outer, inner, start, end = shape
+
+    def at(r: float, deg: float) -> tuple[float, float]:
+        a = math.radians(deg)
+        return cx + math.cos(a) * r * radius, cy + math.sin(a) * r * radius
+
+    large = 1 if abs(end - start) > 180 else 0
+    o0, o1, i1, i0 = at(outer, start), at(outer, end), at(inner, end), at(inner, start)
+    return (f'<path d="M{o0[0]:.2f} {o0[1]:.2f} A{outer * radius:.2f} {outer * radius:.2f} 0 {large} 1 '
+            f'{o1[0]:.2f} {o1[1]:.2f} L{i1[0]:.2f} {i1[1]:.2f} '
+            f'A{inner * radius:.2f} {inner * radius:.2f} 0 {large} 0 {i0[0]:.2f} {i0[1]:.2f} Z" '
+            f'fill="{fill}"/>')
+
+
 def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float = 0,
              seed: str = "", hue: float | None = None, lift: float = 0.0,
              happy: float = 0.0, lean: float = 0.0, squash: tuple = (1.0, 1.0),
@@ -266,9 +286,10 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
     ball = profile["shape"] in GROK_SHAPES
     eyes = []
     if ball:
-        for hx, hy, hw, hh, htilt in GROK_HIGHLIGHTS:
-            eyes.append(_eye(centre + hx * CIRCLE_R, centre + hy * CIRCLE_R, hw * CIRCLE_R,
-                             hh * CIRCLE_R, htilt, 0.0, EYE_FILL, 1.0))
+        hx, hy, hw, hh, htilt = GROK_HIGHLIGHT
+        eyes.append(_eye(centre + hx * CIRCLE_R, centre + hy * CIRCLE_R, hw * CIRCLE_R,
+                         hh * CIRCLE_R, htilt, 0.0, EYE_FILL, 1.0))
+        eyes.append(_crescent(centre, centre, CIRCLE_R, GROK_CRESCENT, EYE_FILL))
     else:
         for i, (w, h, tilt, open_) in enumerate(spec[1:]):
             side = -1 if i == 0 else 1

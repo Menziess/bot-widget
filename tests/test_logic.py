@@ -417,12 +417,14 @@ class MutedFace(unittest.TestCase):
         self.assertIn(" L", face_svg(seed="x", muted=True))
 
     def test_a_grok_ball_has_two_highlights_and_no_eyes(self):
-        from botwidget.avatar import GROK_HIGHLIGHTS, face_svg
+        from botwidget.avatar import GROK_CRESCENT, face_svg
         ball = face_svg(seed="General", avatar={"shape": "blob", "color": "black"})
-        self.assertEqual(ball.count('fill="none" stroke='), len(GROK_HIGHLIGHTS), "the highlights only")
-        self.assertGreater(GROK_HIGHLIGHTS[1][2], 0, "the second mark is smaller than the first")
-        self.assertLess(GROK_HIGHLIGHTS[1][2], GROK_HIGHLIGHTS[0][2], "and sits above it")
-        self.assertNotIn(" L", ball, "no cross for a mouth")
+        self.assertEqual(ball.count('fill="none" stroke='), 1, "the big mark, and no eyes")
+        self.assertEqual(ball.count(" A"), 2, "the small mark is a crescent of two arcs")
+        self.assertLess(abs(GROK_CRESCENT[3] - GROK_CRESCENT[2]), 90, "a short arc, not a ring")
+        self.assertLess(GROK_CRESCENT[1], GROK_CRESCENT[0], "with an inner radius")
+        self.assertNotIn('stroke-width="2.6"', ball, "no cross for a mouth")
+        self.assertEqual(face_svg(seed="x").count(" A"), 0, "no crescent on other faces")
         self.assertEqual(face_svg(seed="x").count('fill="none" stroke='), 4, "others keep two eyes")
 
     def test_the_cross_stays_inside_even_the_flattest_head(self):
