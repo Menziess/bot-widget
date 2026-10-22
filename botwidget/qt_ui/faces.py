@@ -74,6 +74,9 @@ class Faces(QObject):
         self._mouse_check_timer = QTimer(self)
         self._mouse_check_timer.setInterval(16)
         self._mouse_check_timer.timeout.connect(self._check_mouse_position)
+        self._semicircle_hide_timer = QTimer(self)
+        self._semicircle_hide_timer.setInterval(500)
+        self._semicircle_hide_timer.timeout.connect(self._semicircle_hide)
         self.grok_probed.connect(self._take_grok_avatar)
         threading.Thread(target=self._probe_grok, daemon=True).start()
         self._probed = 0.0
@@ -376,14 +379,33 @@ class Faces(QObject):
         cx, cy = screen.width() / 2, 0  # top-centre
         px, py = QCursor.pos()
         # check if mouse is within SEMICIRCLE_RADIUS of top-centre
-        if (px - cx) ** 2 + (py - cy) ** 2 <= SEMICIRCLE_RADIUS ** 2:
+        dist_sq = (px - cx) ** 2 + (py - cy) ** 2
+        within_radius = dist_sq <= SEMICIRCLE_RADIUS ** 2
+        if within_radius:
             if self._semicircle_phase == "idle":
                 self.show_semicircle()
+            # if already showing: keep visible; don't hide just because we're
+            # between bots – only hide when the mouse has truly left the radius.
+            self._semicircle_hide_timer.stop()
         else:
+            # mouse left the radius: start grace period; if still outside after 500ms,
+            # hide the semicircle.
             if self._semicircle_phase != "idle":
-                self.hide_semicircle()
+                self._semicircle_hide_timer.start()
+            else:
+                self._semicircle_hide_timer.stop()
 
-    def _semicircle_positions(self) -> dict:
+    
+    def _semicircle_hide(self):
+        """Hide the semicircle after a grace period if the mouse is still outside."""
+        self._semicircle_hide_timer.stop()
+        if self._semicircle_phase != "idle":
+            # only hide if we're not already idle (i.e. the mouse really left)
+            self._semicircle_phase = "idle"
+            self._semicircle_timer.stop()
+            self._emit_semicircle()
+
+def _semicircle_positions(self) -> dict:
         """Return a dict bot_id → (sx, sy) screen coords for the semicircle."""
         import math
         screen = QGuiApplication.primaryScreen().geometry()

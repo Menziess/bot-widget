@@ -79,6 +79,7 @@ FOCUS_DWELL_S = 0.25
 QUEUE_HOLD_S = 30.0
 MENU_KEEP_S = 2.5  # a menu page stays this long after it opened, pointer or not
 BUBBLE_HOVER_MARGIN = 24  # the pointer counts as on the bubble this far outside it
+THINK_CLOUD_HOVER_MARGIN = 60  # larger area to reveal thought text via hover
 HOVER_RETRY_S = 0.5
 # After you closed the bubble on purpose it stays closed this long; if the pointer is still on the face it comes back.
 REOPEN_AFTER_S = 3.0
@@ -474,7 +475,7 @@ class FaceWindow(QWidget):
         pos = QCursor.pos()
         return pos.x(), pos.y()
 
-    def pointer_near(self, bubble) -> bool:
+    def pointer_near(self, bubble, margin: int = BUBBLE_HOVER_MARGIN) -> bool:
         """Mouse within GAZE_NEAR of the head, or over the bubble?"""
         if not global_pointer():
             return self.underMouse() or (bubble.isVisible() and bubble.underMouse())
@@ -482,7 +483,7 @@ class FaceWindow(QWidget):
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         if (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2:
             return True
-        margin = BUBBLE_HOVER_MARGIN
+        margin = margin  # use the passed margin
         return bubble.isVisible() and bubble.frameGeometry().adjusted(-margin, -margin, margin, margin).contains(
             QPoint(px, py))
 
@@ -874,7 +875,7 @@ class FaceWindow(QWidget):
             if force or text != self._shown_text:
                 self._shown_text = text
                 # Show the activity line only while the pointer hovers the thinking cloud.
-                if not self.pointer_near(self.bubble):
+                if not self.pointer_near(self.bubble, THINK_CLOUD_HOVER_MARGIN):
                     # pointer is not over the bubble: only show the dots part of the text.
                     self._shown_text = plain_block("dots")
                 self.bubble.show_blocks(blocks, "think", input=True)
