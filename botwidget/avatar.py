@@ -156,13 +156,8 @@ GROK_BLOB = (1.036, 1.036, 1.037, 1.037, 1.038, 1.039, 1.04, 1.042, 1.043, 1.044
              0.99, 0.993, 0.997, 1.0, 1.003, 1.006, 1.01, 1.013, 1.017, 1.02, 1.024, 1.027, 1.029,
              1.032, 1.034, 1.035)
 GROK_SHAPES = {"blob": GROK_BLOB}
-# Grok Bot's blob is a glossy ball, not a face: two highlights and no eyes. Both marks are traced
-# from Grok Bot's own blob art (bot-blob-face@2x.png). The big one is a pill in the upper left; the
-# small one is a thin crescent that rides the rim, higher and further right. Radii, angles and
-# offsets are in head radii, angles in degrees from 3 o'clock going down.
-GROK_HIGHLIGHT = (0.11, -0.33, 0.52, 0.20, 54.0)
-GROK_CRESCENT = (0.96, 0.83, -60.0, -24.0)
-
+# The blob wears Grok Bot's two pill eyes like every other shape: in Grok Bot's art and avatar engine
+# the "sphere" body has the same two eye capsules, filled with the background colour (light on black).
 
 def grok_drawn(shape) -> bool:
     """Can the widget draw this Grok Bot avatar shape the way Grok Bot does?"""
@@ -236,7 +231,10 @@ def avatar_profile(seed: str, hue: float | None, avatar: dict | None = None) -> 
     names = list(EXPRESSIONS)
     expression = names[stable_index(f"{seed}:expression", len(names))]
     tilt = (stable_index(f"{seed}:tilt", 25) - 12) * 0.8
-    if isinstance(avatar, dict) and grok_drawn(avatar.get("shape")):
+    # OpenBot and Grok Bot share some shape names (squircle, capsule): only a Grok Bot avatar gets
+    # Grok Bot's mark.
+    grok = isinstance(avatar, dict) and grok_drawn(avatar.get("shape"))
+    if grok:
         shape = avatar["shape"]
         tilt = 0.0  # the mark is already drawn the way Grok Bot draws it; a tilt would skew it
     if isinstance(avatar, dict) and avatar.get("color") in GROK_HEX:
@@ -245,13 +243,13 @@ def avatar_profile(seed: str, hue: float | None, avatar: dict | None = None) -> 
         colour = AVATAR_HEX[AUTO_COLORS[stable_index(f"{seed}:color", len(AUTO_COLORS))]]
     else:
         colour = AVATAR_HEX[HUE_COLORS.get(int(hue), "gris")]
-    if shape in GROK_MARKS and shape not in GROK_SHAPES:
+    if grok and shape not in GROK_SHAPES:
         top, bottom = mark_extent(shape)
     else:
         radii = silhouette_radii(shape)
         top, bottom = radii[48], radii[16]
     return {"shape": shape, "expression": expression, "hex": colour, "tilt": tilt,
-            "top": top, "bottom": bottom}
+            "top": top, "bottom": bottom, "grok": grok}
 
 
 def silhouette_path(radii, radius: float, cx: float, cy: float) -> str:
@@ -355,26 +353,6 @@ def _mouth(cx: float, cy: float, fill: str, opacity: float) -> str:
             f' stroke-width="2.6" stroke-linecap="round" opacity="{opacity}"/>')
 
 
-def _crescent(cx: float, cy: float, radius: float, shape: tuple, fill: str) -> str:
-    """A thin mark along the rim of a ball: an arc of the outer circle, back along the inner one.
-
-    shape is (outer, inner, start, end) in radii and degrees, so the mark narrows to a point at both
-    ends the way Grok Bot's own small highlight does.
-    """
-    outer, inner, start, end = shape
-
-    def at(r: float, deg: float) -> tuple[float, float]:
-        a = math.radians(deg)
-        return cx + math.cos(a) * r * radius, cy + math.sin(a) * r * radius
-
-    large = 1 if abs(end - start) > 180 else 0
-    o0, o1, i1, i0 = at(outer, start), at(outer, end), at(inner, end), at(inner, start)
-    return (f'<path d="M{o0[0]:.2f} {o0[1]:.2f} A{outer * radius:.2f} {outer * radius:.2f} 0 {large} 1 '
-            f'{o1[0]:.2f} {o1[1]:.2f} L{i1[0]:.2f} {i1[1]:.2f} '
-            f'A{inner * radius:.2f} {inner * radius:.2f} 0 {large} 0 {i0[0]:.2f} {i0[1]:.2f} Z" '
-            f'fill="{fill}"/>')
-
-
 def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float = 0,
              seed: str = "", hue: float | None = None, lift: float = 0.0,
              happy: float = 0.0, lean: float = 0.0, squash: tuple = (1.0, 1.0),
@@ -385,49 +363,42 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
     moment (the hop). lean tilts the head extra, squash stretches or flattens it.
     happy 0 is the normal eye shape, 1 the happy one (^^): the eyes morph into each
     other, so a half value is a real transition. A muted bot has a cross for a mouth.
-    A Grok Bot ball has neither: two highlights on the surface, like Grok Bot draws it.
+    A Grok Bot shape, the blob too, has Grok Bot's own eyes where its art puts them.
     """
     profile = avatar_profile(seed, hue, avatar)
     spec = EXPRESSIONS[profile["expression"]]
     centre = AVATAR_SIZE / 2
     apart = math.sin(math.radians(spec[0])) * CIRCLE_R
-    ball = profile["shape"] in GROK_SHAPES
-    mark = None if ball else GROK_MARKS.get(profile["shape"])
+    mark = GROK_MARKS.get(profile["shape"]) if profile["grok"] else None
     eyes = []
-    if ball:
-        hx, hy, hw, hh, htilt = GROK_HIGHLIGHT
-        eyes.append(_eye(centre + hx * CIRCLE_R, centre + hy * CIRCLE_R, hw * CIRCLE_R,
-                         hh * CIRCLE_R, htilt, 0.0, EYE_FILL, 1.0))
-        eyes.append(_crescent(centre, centre, CIRCLE_R, GROK_CRESCENT, EYE_FILL))
-    else:
-        # A Grok Bot mark keeps Grok Bot's own eyes where it puts them; they move, blink and smile
-        # like every other face.
-        # Its art is the head turned to GROK_REST, so the eyes move from there.
-        rx, ry = POSES["idle"][:2]
-        seats = ([(centre + x * CIRCLE_R - rx, centre + y * CIRCLE_R - ry, w, h, tilt, 1)
-                  for x, y, w, h, tilt in mark[1]] if mark else
-                 [(centre + (-1 if i == 0 else 1) * apart, centre, w, h, tilt, open_)
-                  for i, (w, h, tilt, open_) in enumerate(spec[1:])])
-        apart_px = math.hypot(seats[1][0] - seats[0][0], seats[1][1] - seats[0][1])
-        for i, (sx, sy, w, h, tilt, open_) in enumerate(seats):
-            ex = sx + (converge if i == 0 else -converge) + dx
-            ey = sy + dy
-            ew = max(2.0, w * CIRCLE_R)
-            eh = max(2.0, eye_length(h * CIRCLE_R * open_, ew, scale))
-            widest = max(2.0, max(seat[2] for seat in seats) * CIRCLE_R) * (2 * HAPPY_SPAN + 1)
-            arc = min(1.0, HAPPY_ROOM * apart_px / widest)
-            if not mark:  # Grok Bot's eyes are flat on the face, without a shadow
-                eyes.append(_eye(ex, ey + 1.3, ew, eh, tilt, happy, "#000", 0.14, arc))
-            eyes.append(_eye(ex, ey, ew, eh, tilt, happy, EYE_FILL, 1.0, arc))
-        if muted:
-            mx = sum(seat[0] for seat in seats) / len(seats) - centre
-            my = sum(seat[1] for seat in seats) / len(seats) - centre
-            drop = min(MOUTH_DROP, 0.6 * (profile["bottom"] - my / CIRCLE_R)) * CIRCLE_R
-            eyes.append(_mouth(centre + mx + dx, centre + my + dy + drop + 1.3, "#000", 0.14))
-            eyes.append(_mouth(centre + mx + dx, centre + my + dy + drop, EYE_FILL, 1.0))
-    if mark:
+    # A Grok Bot mark keeps Grok Bot's own eyes where it puts them; they move, blink and smile
+    # like every other face.
+    # Its art is the head turned to GROK_REST, so the eyes move from there.
+    rx, ry = POSES["idle"][:2]
+    seats = ([(centre + x * CIRCLE_R - rx, centre + y * CIRCLE_R - ry, w, h, tilt, 1)
+              for x, y, w, h, tilt in mark[1]] if mark else
+             [(centre + (-1 if i == 0 else 1) * apart, centre, w, h, tilt, open_)
+              for i, (w, h, tilt, open_) in enumerate(spec[1:])])
+    apart_px = math.hypot(seats[1][0] - seats[0][0], seats[1][1] - seats[0][1])
+    for i, (sx, sy, w, h, tilt, open_) in enumerate(seats):
+        ex = sx + (converge if i == 0 else -converge) + dx
+        ey = sy + dy
+        ew = max(2.0, w * CIRCLE_R)
+        eh = max(2.0, eye_length(h * CIRCLE_R * open_, ew, scale))
+        widest = max(2.0, max(seat[2] for seat in seats) * CIRCLE_R) * (2 * HAPPY_SPAN + 1)
+        arc = min(1.0, HAPPY_ROOM * apart_px / widest)
+        if not mark:  # Grok Bot's eyes are flat on the face, without a shadow
+            eyes.append(_eye(ex, ey + 1.3, ew, eh, tilt, happy, "#000", 0.14, arc))
+        eyes.append(_eye(ex, ey, ew, eh, tilt, happy, EYE_FILL, 1.0, arc))
+    if muted:
+        mx = sum(seat[0] for seat in seats) / len(seats) - centre
+        my = sum(seat[1] for seat in seats) / len(seats) - centre
+        drop = min(MOUTH_DROP, 0.6 * (profile["bottom"] - my / CIRCLE_R)) * CIRCLE_R
+        eyes.append(_mouth(centre + mx + dx, centre + my + dy + drop + 1.3, "#000", 0.14))
+        eyes.append(_mouth(centre + mx + dx, centre + my + dy + drop, EYE_FILL, 1.0))
+    if mark and profile["shape"] not in GROK_SHAPES:
         body = mark_path(profile["shape"], CIRCLE_R, centre, centre)
-    else:
+    else:  # the blob keeps the outline traced from Grok Bot's app art
         body = silhouette_path(silhouette_radii(profile["shape"]), CIRCLE_R, centre, centre)
     head = (f'<path d="{body}" fill="{profile["hex"]}"/>'
             f'<path d="{body}" fill="url(#sh)"/><path d="{body}" fill="url(#hl)"/>')
@@ -439,8 +410,7 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{AVATAR_SIZE}" height="{AVATAR_SIZE}">'
         + depth_defs(profile["hex"])
         + f'<g transform="{pose}">{head}'
-        + (f'{"".join(eyes)}' if ball else
-           f'<g transform="translate({-dx * PARALLAX:.2f} {-dy * PARALLAX:.2f})">{"".join(eyes)}</g>')
+        + f'<g transform="translate({-dx * PARALLAX:.2f} {-dy * PARALLAX:.2f})">{"".join(eyes)}</g>'
         + "</g></svg>"
     )
 

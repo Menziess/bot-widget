@@ -242,12 +242,22 @@ class GrokMarks(unittest.TestCase):
         self.assertEqual(avatar.face_svg(seed="grok:Admin", avatar=shape, muted=True).count('stroke-width="2.6"'), 2,
                          "a muted mark gets the cross too")
 
-    def test_the_blob_stays_the_glossy_ball(self):
-        svg = avatar.face_svg(seed="grok:General", avatar={"shape": "blob", "color": "black"})
-        self.assertEqual(svg.count('stroke-linecap="round"'), 1, "one highlight and no eyes")
-        self.assertEqual(avatar.avatar_profile("grok:General", None, {"shape": "blob"})["top"], avatar.GROK_BLOB[48])
+    def test_the_blob_has_grok_bots_two_pill_eyes_on_its_own_outline(self):
+        blob = {"shape": "blob", "color": "black"}
+        svg = avatar.face_svg(seed="grok:General", avatar=blob)
+        self.assertEqual(svg.count('stroke-linecap="round"'), 2, "two flat eyes, no highlights")
+        self.assertIn(f'stroke="{avatar.EYE_FILL}"', svg, "light eyes on the black ball")
+        self.assertNotIn(" A", svg, "no crescent any more")
+        self.assertEqual(avatar.avatar_profile("grok:General", None, blob)["top"], avatar.GROK_BLOB[48])
+        self.assertNotEqual(avatar.face_svg(seed="grok:General", avatar=blob, scale=0.0), svg, "it blinks")
+        self.assertNotEqual(avatar.face_svg(seed="grok:General", avatar=blob, happy=1.0), svg, "it smiles")
+        self.assertNotEqual(avatar.face_svg(seed="grok:General", avatar=blob, dx=-4), svg, "it looks around")
 
     def test_openbot_faces_are_untouched(self):
+        for seed in (f"seed-{i}" for i in range(40)):
+            profile = avatar.avatar_profile(seed, None)
+            self.assertFalse(profile["grok"], "a shared shape name is not a Grok Bot mark")
+            self.assertEqual(avatar.face_svg(seed=seed).count('stroke-linecap="round"'), 4, seed)
         for seed in ("a", "b", "robo"):
             self.assertIn(avatar.avatar_profile(seed, None)["shape"], avatar.SUPPORTED_SHAPES)
             self.assertIn(avatar.avatar_profile(seed, 215)["shape"], avatar.SUPPORTED_SHAPES)
@@ -506,15 +516,10 @@ class MutedFace(unittest.TestCase):
         self.assertNotIn(" L", face_svg(seed="x"))
         self.assertIn(" L", face_svg(seed="x", muted=True))
 
-    def test_a_grok_ball_has_two_highlights_and_no_eyes(self):
-        from botwidget.avatar import GROK_CRESCENT, face_svg
+    def test_a_grok_blob_has_eyes_and_no_mouth_unless_muted(self):
+        from botwidget.avatar import face_svg
         ball = face_svg(seed="General", avatar={"shape": "blob", "color": "black"})
-        self.assertEqual(ball.count('fill="none" stroke='), 1, "the big mark, and no eyes")
-        self.assertEqual(ball.count(" A"), 2, "the small mark is a crescent of two arcs")
-        self.assertLess(abs(GROK_CRESCENT[3] - GROK_CRESCENT[2]), 90, "a short arc, not a ring")
-        self.assertLess(GROK_CRESCENT[1], GROK_CRESCENT[0], "with an inner radius")
-        self.assertGreaterEqual(GROK_CRESCENT[0], 0.9, "riding the rim, not floating inside it")
-        self.assertLessEqual(GROK_CRESCENT[0], 1.0, "and still on the ball")
+        self.assertEqual(ball.count('fill="none" stroke='), 2, "Grok Bot's two eyes")
         self.assertNotIn('stroke-width="2.6"', ball, "no cross for a mouth")
         self.assertEqual(face_svg(seed="x").count(" A"), 0, "no crescent on other faces")
         self.assertEqual(face_svg(seed="x").count('fill="none" stroke='), 4, "others keep two eyes")
