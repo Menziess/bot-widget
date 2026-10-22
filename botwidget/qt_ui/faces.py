@@ -22,7 +22,9 @@ from botwidget.config import (
     auto_update,
     automation_ready,
     check_updates,
+    muted_bots,
     save_widget_config,
+    set_muted,
     widget_config,
 )
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
@@ -159,6 +161,13 @@ class Faces(QObject):
             self.faces.pop(agent_id).close_face()
         self._save()
 
+    def close_bubbles_except(self, agent_id: str):
+        """The bubble of one face is open: the others close, so that only one is up at a time."""
+        for other_id, face in self.faces.items():
+            if other_id != agent_id and face.bubble.isVisible():
+                face.pinned = False
+                face.bubble.place("")
+
     def menu_state(self) -> dict:
         """What the menu pages show: the settings as they are now, the bots, and what was found."""
         config = widget_config()
@@ -172,7 +181,8 @@ class Faces(QObject):
             "always_on_top": always_on_top(), "can_pick_desktops": CAN_PICK_DESKTOPS,
             "all_desktops": all_desktops(), "login": startup.is_enabled(), "check_updates": check_updates(),
             "can_install_updates": can_install_update(), "auto_update": auto_update(),
-            "bots": [{"id": bot["id"], "name": bot["name"], "on": bot["id"] in self.faces} for bot in bots],
+            "bots": [{"id": bot["id"], "name": bot["name"], "on": bot["id"] in self.faces,
+                      "muted": bot["id"] in muted_bots()} for bot in bots],
             "openbot": openbot_installed(), "automation_ready": automation_ready(),
             "gbot": gbot_installed(), "grok": self.grok_line(),
         }
@@ -198,6 +208,11 @@ class Faces(QObject):
             self.TOGGLES[name](self, not state[name])
         elif kind == "bot":
             self.toggle(name, name not in self.faces)
+        elif kind == "mute":
+            if name in self.faces:
+                self.faces[name].toggle_muted()
+            else:
+                set_muted(name, name not in muted_bots())
         elif kind == "open" and name in self.LINKS:
             QDesktopServices.openUrl(QUrl(self.LINKS[name]))
         elif kind == "action" and name == "update":

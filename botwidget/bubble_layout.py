@@ -7,6 +7,8 @@ from botwidget.theme import (
     BUBBLE_CODE_FONT,
     BUBBLE_MAX_W,
     CODE_INDENT,
+    CONTROL_BUTTON_PAD,
+    CONTROL_SWITCH_W,
     DOTS_W,
     MEET_SLACK,
     PAD_BODY,
@@ -109,6 +111,12 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
                          "width": DOTS_W, "phase": 0.0})
             widest = max(widest, DOTS_W)
             continue
+        if kind == "control":
+            label_w = width([(block["label"], "")], 15)
+            laid.append({**block, "words": [], "xs": [], "ws": [], "head": False,
+                         "width": label_w + (CONTROL_SWITCH_W if block["control"] == "toggle" else CONTROL_BUTTON_PAD)})
+            widest = max(widest, laid[-1]["width"] + block.get("indent", 0))
+            continue
         if kind == "more":
             laid.append({"kind": "more", "size": 15, "indent": 0, "prefix": "", "grey": False,
                          "head": False, "words": [], "xs": [], "ws": [], "width": 12})
@@ -133,5 +141,6 @@ def bubble_panels(measure, blocks: list, max_w: int = BUBBLE_MAX_W) -> list:
         lines, widest = md_layout(measure, panel["blocks"], content_w)
         if not lines:
             continue
-        panels.append({"role": panel["role"], "copy": panel.get("copy", ""), "lines": lines, "text_w": widest})
+        panels.append({"role": panel["role"], "copy": panel.get("copy", ""), "queued": panel.get("queued", ""),
+                       "back": panel.get("back", ""), "lines": lines, "text_w": widest})
     return panels

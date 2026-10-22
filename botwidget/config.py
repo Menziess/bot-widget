@@ -66,7 +66,7 @@ CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
 SETTING_KEYS = ("sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied",
-                "local_command")
+                "local_command", "muted_bots")
 
 
 # With quiet hours on, the sound stays off from this hour until the other, around midnight.
@@ -95,6 +95,17 @@ def check_updates() -> bool:
 def auto_update() -> bool:
     """By default stage updates ourselves and install them at the next start."""
     return widget_config().get("auto_update") is not False
+
+
+def muted_bots() -> list:
+    """The bots whose thinking is silenced, by id; they stay so until you unmute them."""
+    muted = widget_config().get("muted_bots")
+    return [item for item in muted if isinstance(item, str)] if isinstance(muted, list) else []
+
+
+def set_muted(agent_id: str, muted: bool):
+    others = [item for item in muted_bots() if item != agent_id]
+    save_widget_config(muted_bots=others + [agent_id] if muted else others)
 
 
 def widget_config() -> dict:

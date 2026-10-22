@@ -5,6 +5,7 @@ import hashlib
 import math
 import threading
 import time
+import uuid
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter
@@ -32,15 +33,21 @@ from botwidget.config import (
     WORK_POLL_INTERVAL,
     always_on_top,
     automation_ready,
+    muted_bots,
+    set_muted,
 )
 from botwidget.delivery import Outbox
 from botwidget.markdown import (
-    activity_line,
     block_text,
+    code_block,
+    control_block,
     conversation_blocks,
+    md_blocks,
     plain_block,
     role_panel,
     status_block,
+    text_block,
+    thought_blocks,
 )
 from botwidget.openbot import (
     AUTOMATION_OFF,
@@ -51,12 +58,13 @@ from botwidget.openbot import (
     latest_chat,
     openbot_installed,
 )
-from botwidget import menu_pages
+from botwidget import attachments, menu_pages
 from botwidget.qt_ui import desktops, screens
 from botwidget.qt_ui.bubble_window import BubbleWindow
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
 from botwidget.system.current import activate_app, send_behind_windows
+from botwidget.theme import BUBBLE_FONT
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
@@ -67,6 +75,10 @@ AUTOMATION_NOTE = ("OpenBot's local API is off for {name}. In OpenBot open {name
                    '"Local scripts"; messages wait here until then.')
 WELCOME_S = 9.0
 FOCUS_DWELL_S = 0.25
+# After a queued message went out, the next one waits at most this long for the bot to start on it.
+QUEUE_HOLD_S = 30.0
+MENU_KEEP_S = 2.5  # a menu page stays this long after it opened, pointer or not
+BUBBLE_HOVER_MARGIN = 24  # the pointer counts as on the bubble this far outside it
 HOVER_RETRY_S = 0.5
 # After you closed the bubble on purpose it stays closed this long; if the pointer is still on the face it comes back.
 REOPEN_AFTER_S = 3.0
@@ -88,6 +100,7 @@ def ticker(parent, ms: int, step) -> QTimer:
 class FaceWindow(QWidget):
     # Result of the POST from the sending thread back to the window.
     message_done = Signal(str, bool, bool, str)
+    attention_done = Signal(bool, str)  # the answer to a question or approval went through, or why not
 
     def __init__(self, agent_id: str, name: str,
                  spot=None, slot: int = 0, thread_id: str | None = None, faces=None,
@@ -108,6 +121,16 @@ class FaceWindow(QWidget):
         self.pinned = False
         self._local = []
         self._outbox = Outbox()
+        # Messages typed while the bot works: they wait here, can be edited, and go out one per finished turn.
+        self._muted = agent_id in muted_bots()
+        self._attention = {}
+        self._answers = {}
+        self._answering = set()
+        self._attention_note = ""
+        self.attention_done.connect(self._on_attention_done)
+        self._queue = []
+        self._queue_hold = False
+        self._queue_hold_until = 0.0
         self._sending = False
         self._send_status = ""
         self._refused = False
@@ -127,6 +150,7 @@ class FaceWindow(QWidget):
         self._cycle_left = 0.0
         self._pose = "idle"
         self._last_bot = None
+        self._answer_pending = False
         self._happy_on = False
         self._hovered = False
         self._hover_since = 0.0
@@ -154,6 +178,7 @@ class FaceWindow(QWidget):
 
         self.bubble = BubbleWindow(self)
         self.bubble.older.connect(self.show_older)
+        self.bubble.edit_queued.connect(self._edit_queued)
         self.bubble.command.connect(self._menu_command)
 
         if spot:
@@ -318,7 +343,9 @@ class FaceWindow(QWidget):
         # Clear the drag state first: _sync_bubble skips the bubble while a drag is running.
         self._press_pos = None
         self._drag_origin = None
-        if click:
+        if click and event.modifiers() & Qt.ShiftModifier:
+            self.toggle_muted()
+        elif click:
             self.open_input()
             # The happy eyes stay a moment; then the cycle picks up again.
             QTimer.singleShot(600, self._happy_off)
@@ -385,7 +412,9 @@ class FaceWindow(QWidget):
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         if (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2:
             return True
-        return bubble.isVisible() and bubble.frameGeometry().contains(QPoint(px, py))
+        margin = BUBBLE_HOVER_MARGIN
+        return bubble.isVisible() and bubble.frameGeometry().adjusted(-margin, -margin, margin, margin).contains(
+            QPoint(px, py))
 
     def _pointer_on_head(self) -> bool:
         px, py = self._pointer()
@@ -407,11 +436,12 @@ class FaceWindow(QWidget):
             self._hover_retry = now + HOVER_RETRY_S
             self._depth = 1
             self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+            self._claim_bubble()
             self._hover_since = now if self.bubble.isVisible() else 0.0
         elif self._hover_since and now - self._hover_since >= FOCUS_DWELL_S and self._drag_origin is None:
             # Typing starts at once, but only when the pointer stays: passing over the face is not asking.
             self._hover_since = 0.0
-            if self.bubble.isVisible():
+            if self.bubble.isVisible() and self.bubble.takes_input() and self.bubble.kind == "say":
                 activate_app()
                 self.bubble.focus_entry()
 
@@ -436,7 +466,7 @@ class FaceWindow(QWidget):
         v = self.anim.value
         svg = face_svg(v["dx"], v["dy"], max(v["scale"], 0.05), v["converge"], self._seed, self._hue,
                        v["lift"], min(max(v["happy"], 0.0), 1.0), lean=v["lean"],
-                       squash=(v["sx"], v["sy"]))
+                       squash=(v["sx"], v["sy"]), muted=self._muted)
         self._set_pixmap(svg_pixmap(svg))
 
     def _aim(self, dt_ms: float):
@@ -505,8 +535,14 @@ class FaceWindow(QWidget):
         if not self.bubble.isVisible():
             self._depth = 1
             self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+        self._claim_bubble()
         activate_app()
         self.bubble.focus_entry()
+
+    def _claim_bubble(self):
+        """One bubble at a time: when this face shows one on your say-so, the bubbles of the others close."""
+        if self.faces is not None and self.bubble.isVisible():
+            self.faces.close_bubbles_except(self.agent_id)
 
     def toggle_pin(self):
         if self.pinned:
@@ -522,6 +558,7 @@ class FaceWindow(QWidget):
         self._refused = False
         self.update()
         self._sync_bubble(latest_chat(thread_id=self.thread_id))
+        self._claim_bubble()
         self.bubble.focus_entry()
 
     def unpin(self):
@@ -565,13 +602,15 @@ class FaceWindow(QWidget):
         if not self._alive:
             return
         data = api_get(f"/v1/agents/{self.agent_id}/pending")
+        changed = False
         if isinstance(data, dict):
             has_pending = bool(data.get("prompts") or data.get("approvals")
                                or data.get("browserTakeovers"))
             if has_pending != self.has_pending:
                 self.has_pending = has_pending
                 self._update_notification()
-        self._sync_bubble(latest_chat(thread_id=self.thread_id))
+            changed = self._set_attention(data)
+        self._sync_bubble(latest_chat(thread_id=self.thread_id), force=changed)
         self._poll_timer.start((WORK_POLL_INTERVAL if self._working else POLL_INTERVAL) * 1000)
 
     def _waiting_note(self, error: str = "") -> str:
@@ -588,6 +627,8 @@ class FaceWindow(QWidget):
                        if m["until"] > now and not (m["role"] == "user" and m["text"] in stored)]
         # What was just typed shows at once, before OpenBot has confirmed it.
         waiting = [{"role": "user", "text": item["text"]} for item in self._outbox.items]
+        waiting += [{"role": "user", "text": attachments.label_with(item["text"], item["files"]), "queued": item["id"]}
+                    for item in self._queue]
         return messages + [{"role": m["role"], "text": m["text"]} for m in self._local] + waiting
 
     def welcome(self):
@@ -605,7 +646,9 @@ class FaceWindow(QWidget):
 
     def _sync_bubble(self, chat: dict, force: bool = False):
         """Cloud during a running turn, the conversation as long as the bubble is pinned or fresh."""
-        self._working = bool(chat.get("activity"))
+        self._working = bool(chat.get("activity")) or self._has_attention()
+        self.bubble.set_queueing(self._working, len(self._queue), answering=self._open_question() is not None)
+        self._next_queued()
         stored = chat.get("messages") or []
         bots = [msg["text"] for msg in stored if msg.get("role") == "bot" and msg.get("text")]
         last = bots[-1] if bots else ""
@@ -613,6 +656,10 @@ class FaceWindow(QWidget):
             self._last_bot = last  # conversation that was already there: no beep
         elif last and last != self._last_bot:
             self._last_bot = last
+            self._answer_pending = True
+        if self._answer_pending and not self._working:
+            # Not on every step the bot says while it works: once, when the turn is over.
+            self._answer_pending = False
             if not self.visible_to_user():
                 play_sound()
         if self._drag_origin is not None or time.monotonic() < self._welcome_until:
@@ -635,19 +682,29 @@ class FaceWindow(QWidget):
             self._conversation = newest
             self._depth = 1
         if self._working and not self.pinned:
-            # What you just asked, three pulsing dots and one line about what the bot is doing.
-            asked = [m for m in messages if m.get("role") == "user"][-1:]
-            blocks = conversation_blocks(asked, self.bot_name) + [role_panel("bot"), plain_block("dots")]
-            activity = activity_line(chat.get("activity") or "")
-            if activity:
-                blocks.append(status_block(activity))
+            if self._muted and not self._has_attention():
+                # Thinking is silenced: no cloud, until the face is clicked again.
+                self._shown_text = ""
+                if self.bubble.kind == "think":
+                    self.bubble.place("")
+                return
+            # The thought, what needs an answer, what waits in line, and last the pulsing dots: the cloud
+            # follows the end of the text, so that is where the dots belong.
+            blocks = [role_panel("bot")] + thought_blocks(chat.get("activity") or "")
+            blocks += self._attention_blocks()
             if self._send_status:
                 blocks.append(status_block(self._send_status))
+            if self._queue:
+                blocks.append(status_block("Queued, click one to edit it"))
+                waiting = [{"role": "user", "text": attachments.label_with(item["text"], item["files"]),
+                            "queued": item["id"]} for item in self._queue]
+                blocks += conversation_blocks(waiting, self.bot_name, limit=len(waiting), max_chars=10 ** 9)
+            blocks += [role_panel("bot"), plain_block("dots")]
             # Like an answer: only new things to think about bring the bubble back by themselves.
             text = block_text(blocks)
             if force or text != self._shown_text:
                 self._shown_text = text
-                self.bubble.show_blocks(blocks, "think")
+                self.bubble.show_blocks(blocks, "think", input=True)
             return
         blocks = self._chat_blocks(messages, greet=force or self.pinned)
         text = block_text(blocks)
@@ -667,11 +724,24 @@ class FaceWindow(QWidget):
         """A page of the menu in the bubble: right-click, or /settings, /bots or /connections typed."""
         if self.faces is None:
             return
+        again = page == self._menu_page and self.bubble.isVisible()
         self._menu_page = page
-        self.bubble.show_blocks(menu_pages.page_blocks(page, self.faces.menu_state()), "say", from_top=True)
+        # A page smaller than the one before may leave the pointer outside the bubble.
+        self.bubble.keep_for(MENU_KEEP_S)
+        self.bubble.show_blocks(menu_pages.page_blocks(page, self.faces.menu_state()), "say", keep_scroll=again)
+        self._claim_bubble()
 
     def _menu_command(self, command: str):
+        kind, _, rest = command.partition("/")
+        if kind in ("answer", "approve"):
+            self._attention_command(kind, rest)
+            return
         if self.faces is None or self._menu_page is None:
+            return
+        if command == "page/chat":
+            # The arrow on the main menu: back to the conversation, or the thinking cloud while the bot works.
+            self._menu_page = None
+            self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
             return
         page = self.faces.menu_command(command, self._menu_page)
         if page and self._menu_page is not None:
@@ -698,6 +768,7 @@ class FaceWindow(QWidget):
             return blocks
         if self._working or (self._outbox.items and not self._send_status):
             blocks += [role_panel("bot"), plain_block("dots")]
+        blocks += self._attention_blocks()
         # Learn at once that sending is not possible yet.
         status = self._send_status or ("" if automation_ready() else self._waiting_note())
         if status:
@@ -710,19 +781,181 @@ class FaceWindow(QWidget):
 
     # ── Sending messages ────────────────────────────────────────
 
-    def on_user_message(self, text: str):
+    def on_user_message(self, text: str, files: list = ()):
         """Send a message from the bubble; it only counts as sent once the POST succeeded."""
-        page = menu_pages.SLASH.get(text.strip().lower())
+        files = list(files)
+        page = None if files else menu_pages.SLASH.get(text.strip().lower())
         if page:
             self.open_menu(page)
             return
         text = text[:500]
+        open_question = None if files else self._open_question()
+        if open_question:
+            self._give_answer(*open_question, [text])
+            return
+        if self._working:
+            self._queue.append({"text": text, "files": files, "id": uuid.uuid4().hex[:8]})
+            self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+            self._poll_timer.start(300)
+            return
+        text = attachments.message_with(text, files)
         day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
         cid = hashlib.sha256(f"{self.agent_id}\n{text}\n{day}".encode()).hexdigest()[:32]
         self._outbox.add(text, cid)
         self._pump_outbox()
         self._sync_bubble(latest_chat(thread_id=self.thread_id))
         self._poll_timer.start(300)
+
+    def _next_queued(self):
+        """The turn is over: the oldest queued message goes out, and the next waits for that turn to finish."""
+        if self._working:
+            self._queue_hold = False
+        elif self._queue_hold and time.monotonic() > self._queue_hold_until:
+            self._queue_hold = False
+        if self._working or self._queue_hold or not self._queue or self._sending or self._outbox.items:
+            return
+        item = self._queue.pop(0)
+        self._queue_hold, self._queue_hold_until = True, time.monotonic() + QUEUE_HOLD_S
+        self.on_user_message(item["text"], files=item["files"])
+
+    def _edit_queued(self, queued_id: str):
+        """Click on a queued message: it leaves the queue and is back in the field to change."""
+        item = next((i for i in self._queue if i["id"] == queued_id), None)
+        if item is None:
+            return
+        self._queue.remove(item)
+        self._sync_bubble(self._chat or latest_chat(thread_id=self.thread_id), force=True)
+        self.bubble.edit_text(item["text"], item["files"])
+        activate_app()
+        self.bubble.focus_entry()
+
+    # ── Mute ────────────────────────────────────────────────────
+
+    def toggle_muted(self):
+        """Shift+click on a face, thinking or not: its thinking goes quiet, with a cross for a mouth,
+        and stays quiet until you do it again, also after a restart."""
+        self._muted = not self._muted
+        set_muted(self.agent_id, self._muted)
+        self._render()
+        self._sync_bubble(self._chat or latest_chat(thread_id=self.thread_id), force=True)
+
+    # ── Questions and approvals ─────────────────────────────────
+
+    def _has_attention(self) -> bool:
+        return bool(self._attention.get("prompts") or self._attention.get("approvals")
+                    or self._attention.get("browserTakeovers"))
+
+    def _set_attention(self, data: dict) -> bool:
+        """Remember what waits for you; True when that is something else than before."""
+        known = {item.get("requestId") for kind in ("prompts", "approvals", "browserTakeovers")
+                 for item in data.get(kind) or []}
+        changed = known != {item.get("requestId") for kind in ("prompts", "approvals", "browserTakeovers")
+                            for item in self._attention.get(kind) or []}
+        self._attention = data
+        self._answers = {rid: answers for rid, answers in self._answers.items() if rid in known}
+        self._answering &= known
+        if changed:
+            self._attention_note = ""
+        return changed
+
+    def _answerable(self) -> list:
+        """Questions this bubble can answer; the ones with a secret need OpenBot itself."""
+        return [prompt for prompt in self._attention.get("prompts") or []
+                if prompt.get("questions") and not prompt.get("requiresOpenBot")
+                and prompt["requestId"] not in self._answering]
+
+    def _open_question(self) -> tuple | None:
+        """The first question nobody answered yet, as (request id, question id)."""
+        for prompt in self._answerable():
+            done = self._answers.get(prompt["requestId"], {})
+            for question in prompt["questions"]:
+                if question["id"] not in done:
+                    return prompt["requestId"], question["id"]
+        return None
+
+    def _attention_blocks(self) -> list:
+        """What the bot waits for: its questions with a button per option, and approvals to accept or decline."""
+        blocks = []
+        for prompt in self._attention.get("prompts") or []:
+            if prompt["requestId"] in self._answering:
+                continue
+            if prompt.get("requiresOpenBot") or not prompt.get("questions"):
+                blocks += [role_panel("bot"), status_block("A question for you: open OpenBot to answer it.")]
+                continue
+            chosen = self._answers.get(prompt["requestId"], {})
+            for question in prompt["questions"]:
+                blocks.append(role_panel("bot"))
+                if question.get("header"):
+                    blocks.append(text_block(BUBBLE_FONT, 0, "", False, [(question["header"], "b")]))
+                blocks += md_blocks(question.get("question") or "")
+                for index, option in enumerate(question.get("options") or []):
+                    mark = "✓ " if option["label"] in chosen.get(question["id"], []) else ""
+                    blocks.append(control_block(
+                        "button", mark + option["label"], f"answer/{prompt['requestId']}/{question['id']}/{index}"))
+                if not question.get("options"):
+                    blocks.append(status_block("Type your answer below."))
+        for approval in self._attention.get("approvals") or []:
+            if approval["requestId"] in self._answering:
+                continue
+            title = {"command": "Run a command?", "file-change": "Change files?",
+                     "permissions": "Give permissions?"}.get(approval.get("kind"), "Allow this?")
+            blocks += [role_panel("bot"), text_block(BUBBLE_FONT, 0, "", False, [(title, "b")])]
+            for field in ("reason", "grantRoot", "cwd"):
+                if approval.get(field):
+                    blocks.append(status_block(approval[field]))
+            if approval.get("command"):
+                blocks.append(code_block([approval["command"]]))
+            blocks += [control_block("button", "Accept", f"approve/{approval['requestId']}/accept"),
+                       control_block("button", "Decline", f"approve/{approval['requestId']}/decline")]
+        if self._attention.get("browserTakeovers"):
+            blocks += [role_panel("bot"), status_block("The browser needs you: open OpenBot to take over.")]
+        if self._attention_note:
+            blocks.append(status_block(self._attention_note))
+        return blocks
+
+    def _attention_command(self, kind: str, rest: str):
+        if kind == "approve":
+            request_id, _, decision = rest.rpartition("/")
+            if any(a["requestId"] == request_id for a in self._attention.get("approvals") or []):
+                self._send_attention(request_id, f"approvals/{request_id}/respond", {"decision": decision})
+            return
+        head, _, index = rest.rpartition("/")
+        request_id, _, question_id = head.partition("/")
+        prompt = next((p for p in self._answerable() if p["requestId"] == request_id), None)
+        question = next((q for q in prompt["questions"] if q["id"] == question_id), None) if prompt else None
+        options = (question or {}).get("options") or []
+        if index.isdigit() and int(index) < len(options):
+            self._give_answer(request_id, question_id, [options[int(index)]["label"]])
+
+    def _give_answer(self, request_id: str, question_id: str, values: list):
+        """One question answered; with all of them answered the answer goes to OpenBot."""
+        prompt = next((p for p in self._answerable() if p["requestId"] == request_id), None)
+        if prompt is None:
+            return
+        answers = self._answers.setdefault(request_id, {})
+        answers[question_id] = values
+        if all(question["id"] in answers for question in prompt["questions"]):
+            self._send_attention(request_id, f"prompts/{request_id}/answer", {"answers": answers})
+        else:
+            self._sync_bubble(self._chat, force=True)
+
+    def _send_attention(self, request_id: str, route: str, body: dict):
+        self._answering.add(request_id)
+        self._sync_bubble(self._chat, force=True)
+        threading.Thread(target=self._post_attention, daemon=True,
+                         args=(f"/v1/agents/{self.agent_id}/{route}", body)).start()
+
+    def _post_attention(self, path: str, body: dict):
+        result = api_post(path, body)
+        if self._alive:
+            self.attention_done.emit(result.ok, "" if result.ok else result.error)
+
+    def _on_attention_done(self, ok: bool, error: str):
+        if not ok:
+            self._attention_note = f"That did not go through: {error}."
+            self._answering.clear()
+            self._answers.clear()
+        self._poll_timer.start(200)
 
     # ── Sending ─────────────────────────────────────────────────
 

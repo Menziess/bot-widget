@@ -15,6 +15,9 @@ from botwidget.config import DB_FILE, HEADERS_FILE, OPENBOT_DIR, api_url, read_f
 AUTOMATION_OFF = "automation off"
 # A UTF-8 byte-order mark is not content; a body of only that is empty.
 BOM = b"\xef\xbb\xbf"
+# A bot answers 403 until its own setting "Local scripts" is on; new bots start with it off.
+LOCAL_SCRIPTS_HINT = 'In OpenBot open this bot\'s settings and turn on "Local scripts"'
+ERROR_DETAIL_CHARS = 200
 
 
 class ApiResult(NamedTuple):
@@ -61,6 +64,16 @@ def api_get(path: str) -> dict | list | None:
         return None
 
 
+def _error_detail(err: urllib.error.HTTPError) -> str:
+    """What OpenBot said about a refusal, when it said it in JSON as {"error": "..."}."""
+    try:
+        answer = json.loads(err.read().decode())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return ""
+    detail = answer.get("error") if isinstance(answer, dict) else None
+    return detail.strip().rstrip(".")[:ERROR_DETAIL_CHARS] if isinstance(detail, str) else ""
+
+
 def api_post(path: str, body: dict) -> ApiResult:
     """POST JSON to the local API and say why it failed, not only that it did."""
     token = read_auth_token()
@@ -73,8 +86,11 @@ def api_post(path: str, body: dict) -> ApiResult:
         with urllib.request.urlopen(req, timeout=10) as resp:
             body, status = resp.read(), resp.status
     except urllib.error.HTTPError as err:
+        detail = _error_detail(err)
         err.close()
-        return ApiResult(None, err.code, f"HTTP {err.code}")
+        if err.code == 403:
+            detail = f"{detail or 'this bot does not allow local scripts'}. {LOCAL_SCRIPTS_HINT}"
+        return ApiResult(None, err.code, detail or f"HTTP {err.code}")
     except (urllib.error.URLError, OSError) as err:
         return ApiResult(None, None, str(err))
     if not body.strip().removeprefix(BOM).strip():
@@ -188,6 +204,7 @@ def _chat_text(raw: str) -> str:
 
 # The bubble scrolls, so this only guards against a runaway message; a cut shows as an ellipsis.
 MESSAGE_CHARS = 4000
+ACTIVITY_MAX_CHARS = 4000
 
 
 def _clip(text: str) -> str:
@@ -247,7 +264,7 @@ def latest_chat(thread_id: str, limit: int = 20) -> dict:
     messages.reverse()
     activity = ""
     if live:
-        line = _chat_text(live[0]).split("\n", 1)[0][:200]
+        line = _chat_text(live[0]).strip()[:ACTIVITY_MAX_CHARS]
         if line and ("bearer " in line.lower() or "authorization" in line.lower()):
             line = "working…"
         activity = line

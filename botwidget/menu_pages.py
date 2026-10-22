@@ -5,12 +5,15 @@ produces that style, so no message from a bot can make a row of its own.
 """
 
 from botwidget.config import QUIET_FROM, QUIET_TO
-from botwidget.markdown import plain_block, text_block
+from botwidget.markdown import control_block, plain_block, role_panel, text_block
 from botwidget.theme import BUBBLE_FONT
 
 PAGES = ("settings", "bots", "connections")
 # What typing it in the field opens; "/" alone is the home page.
 SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections", "/": "home", "/menu": "home"}
+# What the dropdown offers when a message starts with a slash: the command and what it opens.
+COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
+            ("/connections", "what was found"), ("/menu", "main menu"))
 
 
 def _row(*chunks) -> dict:
@@ -26,15 +29,21 @@ def _heading(title: str) -> dict:
 
 
 def _toggle(label: str, command: str, on: bool) -> dict:
-    return _row(_command(f"{'☑' if on else '☐'} {label}", command))
+    return control_block("toggle", label, command, bool(on))
 
 
-def _back() -> dict:
-    return _row(_command("‹ Menu", "page/home"))
+def _button(label: str, command: str) -> dict:
+    return control_block("button", label, command)
+
+
+def _back() -> list:
+    """The arrow on top of a page: the way back to the menu, as scrolling past the top is the way to older messages."""
+    return [role_panel("more", back="page/home"), plain_block("more"), role_panel("bot")]
 
 
 def home() -> list:
     return [
+        role_panel("more", back="page/chat"), plain_block("more"), role_panel("bot"),
         _heading("Looking for settings?"), plain_block("gap"),
         _row(_command("/settings", "page/settings"), (" sound, updates, more", "dim")),
         _row(_command("/bots", "page/bots"), (" which bots show", "dim")),
@@ -43,16 +52,16 @@ def home() -> list:
 
 
 def settings(state: dict) -> list:
-    blocks = [_back(), _heading("Settings"), plain_block("gap")]
+    blocks = _back() + [_heading("Settings"), plain_block("gap")]
     if state.get("staged_update"):
-        blocks.append(_row(_command(f"Restart to update to v{state['staged_update']}", "action/update")))
+        blocks.append(_button(f"Restart to update to v{state['staged_update']}", "action/update"))
     elif state.get("update"):
-        blocks.append(_row(_command(f"Update available: v{state['update']} ↗", "open/download")))
+        blocks.append(_button(f"Update available: v{state['update']} ↗", "open/download"))
     blocks.append(_row((f"Running the {state['channel']} version, v{state['version']}", "dim")))
     if state.get("hotkey"):
         blocks.append(_row((f"Open the chat from any app with {state['hotkey']}", "dim")))
     if state.get("switch_label"):
-        blocks.append(_row(_command(state["switch_label"], "action/switch")))
+        blocks.append(_button(state["switch_label"], "action/switch"))
     blocks.append(plain_block("gap"))
     blocks += [
         _toggle("Sound on a new answer", "toggle/sound", state["sound"]),
@@ -67,21 +76,23 @@ def settings(state: dict) -> list:
     ]
     if state.get("can_install_updates"):
         blocks.append(_toggle("Install updates automatically", "toggle/auto_update", state["auto_update"]))
-    blocks += [plain_block("gap"), _row(_command("Quit Bot Widget", "action/quit"))]
+    blocks += [plain_block("gap"), _button("Quit Bot Widget", "action/quit")]
     return blocks
 
 
 def bots(state: dict) -> list:
-    blocks = [_back(), _heading("Bots"), plain_block("gap")]
+    blocks = _back() + [_heading("Bots"), _row(("Shift+click a bot's face to mute or unmute its thinking.", "dim")),
+                        plain_block("gap")]
     for bot in state["bots"]:
         blocks.append(_toggle(bot["name"], f"bot/{bot['id']}", bot["on"]))
+        blocks.append({**_toggle("Thinking muted", f"mute/{bot['id']}", bot.get("muted", False)), "indent": 44})
     if not state["bots"]:
         blocks.append(_row(("No bots found yet", "dim")))
     return blocks
 
 
 def connections(state: dict) -> list:
-    blocks = [_back(), _heading("Connections"), plain_block("gap")]
+    blocks = _back() + [_heading("Connections"), plain_block("gap")]
     if state["openbot"]:
         blocks.append(_row(("OpenBot", "b"), (" detected", "dim")))
         if state["automation_ready"]:
@@ -90,12 +101,12 @@ def connections(state: dict) -> list:
             blocks.append(_row(("The local API is off: in OpenBot open the bot's settings and turn on "
                                 "\"Local scripts\".", "dim")))
     else:
-        blocks.append(_row(_command("OpenBot not found · get it ↗", "open/openbot")))
+        blocks.append(_button("OpenBot not found · get it ↗", "open/openbot"))
     blocks.append(plain_block("gap"))
     if state["gbot"]:
         blocks.append(_row(("Grok Bot", "b"), (f" {state['grok']}", "dim")))
     else:
-        blocks.append(_row(_command("Grok Bot not found · get it ↗", "open/grokbot")))
+        blocks.append(_button("Grok Bot not found · get it ↗", "open/grokbot"))
     return blocks
 
 

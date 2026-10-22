@@ -91,7 +91,8 @@ EXPRESSIONS = {
     "fier": (17, (0.3, 0.15, 18, 1), (0.3, 0.15, -18, 1)),
     "timide": (14, (0.17, 0.3, 0, 1), (0.17, 0.3, -0, 1)),
     "blase": (16, (0.3, 0.12, 0, 1), (0.3, 0.12, -0, 1)),
-    "somnolent": (16, (0.2, 0.42, 0, 0.42), (0.2, 0.42, -0, 0.42)),
+    # OpenBot draws these half closed (opening 0.42); here they stay open, as small dots they hardly look like eyes.
+    "somnolent": (16, (0.2, 0.42, 0, 1), (0.2, 0.42, -0, 1)),
 }
 HUE_COLORS = {0: "rouge", 30: "orange", 55: "ambre", 100: "vert", 150: "vert",
               185: "turquoise", 215: "bleu", 245: "violet", 280: "violet", 320: "rose"}
@@ -201,15 +202,28 @@ def _eye(ex: float, ey: float, ew: float, eh: float, tilt: float, happy: float,
             f' opacity="{opacity}"{turn}/>')
 
 
+MOUTH_SIZE = 3.2  # half the width of the cross
+MOUTH_DROP = 0.5  # below the eyes, in head radii, at most
+
+
+def _mouth(cx: float, cy: float, fill: str, opacity: float) -> str:
+    """A cross: the bot is muted."""
+    s = MOUTH_SIZE
+    return (f'<path d="M{cx - s:.2f} {cy - s:.2f} L{cx + s:.2f} {cy + s:.2f}'
+            f' M{cx - s:.2f} {cy + s:.2f} L{cx + s:.2f} {cy - s:.2f}" fill="none" stroke="{fill}"'
+            f' stroke-width="2.6" stroke-linecap="round" opacity="{opacity}"/>')
+
+
 def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float = 0,
              seed: str = "", hue: float | None = None, lift: float = 0.0,
-             happy: float = 0.0, lean: float = 0.0, squash: tuple = (1.0, 1.0)) -> str:
+             happy: float = 0.0, lean: float = 0.0, squash: tuple = (1.0, 1.0),
+             muted: bool = False) -> str:
     """This bot's own silhouette and colour, with its two eyes.
 
     dx/dy move the eyes fully and the head partly; lift raises the whole face for a
     moment (the hop). lean tilts the head extra, squash stretches or flattens it.
     happy 0 is the normal eye shape, 1 the happy one (^^): the eyes morph into each
-    other, so a half value is a real transition.
+    other, so a half value is a real transition. A muted bot has a cross for a mouth.
     """
     profile = avatar_profile(seed, hue)
     spec = EXPRESSIONS[profile["expression"]]
@@ -224,6 +238,10 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
         eh = max(2.0, h * CIRCLE_R * scale * open_)
         eyes.append(_eye(ex, ey + 1.3, ew, eh, tilt, happy, "#000", 0.14))
         eyes.append(_eye(ex, ey, ew, eh, tilt, happy, EYE_FILL, 1.0))
+    if muted:
+        drop = min(MOUTH_DROP, 0.6 * profile["bottom"]) * CIRCLE_R
+        eyes.append(_mouth(centre + dx, centre + dy + drop + 1.3, "#000", 0.14))
+        eyes.append(_mouth(centre + dx, centre + dy + drop, EYE_FILL, 1.0))
     body = silhouette_path(SILHOUETTES[profile["shape"]], CIRCLE_R, centre, centre)
     head = (f'<path d="{body}" fill="{profile["hex"]}"/>'
             f'<path d="{body}" fill="url(#sh)"/><path d="{body}" fill="url(#hl)"/>')

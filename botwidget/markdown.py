@@ -148,6 +148,12 @@ def text_block(size: int, indent: int, prefix: str, grey: bool, chunks: list) ->
             "grey": grey, "head": False, "chunks": chunks}
 
 
+def control_block(control: str, label: str, command: str, on: bool | None = None) -> dict:
+    """A real form element in the bubble: a "toggle" with a state, or a "button". The window draws the widget."""
+    return {"kind": "control", "control": control, "label": label, "command": command, "on": on,
+            "size": 15, "indent": 0, "prefix": "", "grey": False, "chunks": []}
+
+
 def plain_block(kind: str) -> dict:
     return {"kind": kind, "size": 0, "indent": 0, "prefix": "", "grey": False, "chunks": []}
 
@@ -157,13 +163,12 @@ def status_block(text: str) -> dict:
     return text_block(BUBBLE_FONT, 0, "", True, [(text, "i")])
 
 
-ACTIVITY_CHARS = 42
-
-
-def activity_line(text: str) -> str:
-    """One short line of what the bot is doing; never more than that."""
-    line = " ".join((text or "").split("\n", 1)[0].split())
-    return line if len(line) <= ACTIVITY_CHARS else line[:ACTIVITY_CHARS - 1].rstrip() + "…"
+def thought_blocks(text: str) -> list:
+    """What the bot is thinking: its markdown, in the muted ink of a thought."""
+    blocks = md_blocks(text.strip()) if text and text.strip() else []
+    for block in blocks:
+        block["grey"] = True
+    return blocks
 
 
 def code_block(lines: list) -> dict:
@@ -177,6 +182,10 @@ def block_text(blocks: list) -> str:
     for block in blocks:
         if block.get("kind") == "code":
             out.append(" ".join(block.get("lines") or []))
+            continue
+        if block.get("kind") == "control":
+            on = block.get("on")
+            out.append(f"{'' if on is None else ('☑ ' if on else '☐ ')}{block['label']}")
             continue
         if block.get("kind") != "text":
             continue
@@ -200,10 +209,12 @@ def plain_text(markdown: str) -> str:
     return "\n".join(out).strip("\n")
 
 
-def role_panel(role: str, copy: str = "") -> dict:
-    """Start of a new panel: user is dark, bot sits on the white bubble. copy is the text its button copies."""
-    return {"kind": "panel", "role": role, "copy": copy, "size": 0, "indent": 0,
-            "prefix": "", "grey": False, "chunks": []}
+def role_panel(role: str, copy: str = "", queued: str = "", back: str = "") -> dict:
+    """Start of a new panel: user is dark, bot sits on the white bubble. copy is the text its button copies;
+    queued is the id of a message that has not been sent yet and can still be edited; back is the command
+    an arrow panel runs, where it otherwise loads the message before."""
+    return {"kind": "panel", "role": role, "copy": copy, "queued": queued, "back": back, "size": 0,
+            "indent": 0, "prefix": "", "grey": False, "chunks": []}
 
 
 def conversation_blocks(messages: list, bot_name: str, limit: int = 6,
@@ -215,14 +226,14 @@ def conversation_blocks(messages: list, bot_name: str, limit: int = 6,
         if not text:
             continue
         user = msg.get("role") == "user"
-        turns.append(("user" if user else "bot", "You" if user else bot_name, text))
+        turns.append(("user" if user else "bot", "You" if user else bot_name, text, msg.get("queued", "")))
         total += len(text)
         if len(turns) >= limit or total >= max_chars:
             break
     turns.reverse()
     blocks = []
-    for role, label, text in turns:
-        blocks.append(role_panel(role, text))
+    for role, label, text, queued in turns:
+        blocks.append(role_panel(role, text, queued))
         if len(turns) > 1:
             blocks.append(text_block(11, 0, "", True, [(label, "b")]))
         blocks.extend(md_blocks(text))
@@ -234,7 +245,8 @@ def split_panels(blocks: list) -> list:
     panels = []
     for block in blocks:
         if block.get("kind") == "panel":
-            panels.append({"role": block.get("role", "bot"), "copy": block.get("copy", ""), "blocks": []})
+            panels.append({"role": block.get("role", "bot"), "copy": block.get("copy", ""),
+                           "queued": block.get("queued", ""), "back": block.get("back", ""), "blocks": []})
             continue
         if not panels:
             panels.append({"role": "bot", "blocks": []})

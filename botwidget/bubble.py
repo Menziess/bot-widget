@@ -2,8 +2,8 @@
 
 import math
 
-from botwidget.avatar import SILHOUETTES
 from botwidget.theme import (
+    CONTROL_H,
     BUBBLE_LINGER,
     BUBBLE_LINGER_MAX,
     BUBBLE_PER_WORD,
@@ -53,6 +53,8 @@ def line_height(block: dict) -> int:
     """Line height in the bubble: text, blank line, rule, dots or code line."""
     if block["kind"] == "more":
         return MORE_H
+    if block["kind"] == "control":
+        return CONTROL_H
     if block["kind"] == "gap":
         return 10
     if block["kind"] == "rule":
@@ -120,7 +122,11 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
             if line["kind"] == "dots":
                 out.append(dots_svg(ox + PAD_PANEL_X, tops[n] + 16, line.get("phase", 0.0), ink))
             elif line["kind"] == "more":
-                out.append(more_svg(ox + box_w / 2, tops[n] + MORE_H / 2))
+                if line.get("loading"):
+                    # The arrow turns into the dots while the message before is on its way.
+                    out.append(dots_svg(ox + box_w / 2 - DOTS_GAP, tops[n] + MORE_H / 2 + 3, line.get("phase", 0.0), ink))
+                else:
+                    out.append(more_svg(ox + box_w / 2, tops[n] + MORE_H / 2))
             elif line["kind"] == "rule":
                 out.append(f'<rect x="{ox + PAD_PANEL_X}" y="{tops[n] + 6}"'
                            f' width="{box_w - 2 * PAD_PANEL_X}" height="1" fill="{hair}"/>')
@@ -227,57 +233,64 @@ def bubble_body_svg(body_w: int, body_h: int, tip: float | None = None, side: st
 
 
 # ── Thinking cloud ──────────────────────────────────────────────────
-# The lobed profile of the avatars' "nuage" face, stretched over the body area, with three
-# shrinking circles toward the head. The same canvas size as the speech bubble.
-CLOUD_INSET = 6.0
-# How far the notches between the lobes cut in, and how far the lobes stick out (at most:
-# the canvas margin is PAD_SVG).
-CLOUD_DIP = 6.0
-CLOUD_LOBE = 0.16
-CLOUD_LOBE_MAX = 14.0
-# The base under the lobes is a squircle, so the text in the corners stays inside the cloud.
-CLOUD_SQUIRCLE = 0.7
-# (radius, distance from the centre to the edge of the area)
-CLOUD_TRAIL = ((5.0, 10.0), (3.2, 17.0), (2.0, 20.0))
+# A rounded rectangle around the text with a round puff on every stretch of its edge: as many
+# puffs as the edge has room for, so the cloud grows with any text and never has to stretch.
+CLOUD_PUFF_W = 24.0  # about how wide one puff is along the edge
+CLOUD_PUFF_ROUND = 0.62  # the puff's radius as a share of its width; 0.5 is a half circle
+CLOUD_CORNER = 24.0
+# The balls between the cloud and the face lie on an arc: (radius, how far along the arc, 0 to 1). The arc
+# leaves the cloud at CLOUD_ARC_FROM, ends CLOUD_ARC_TO out from its edge (the canvas margin is PAD_SVG)
+# and bows CLOUD_ARC_BOW sideways halfway.
+CLOUD_TRAIL = ((5.2, 0.0), (3.5, 0.5), (2.2, 1.0))
+CLOUD_ARC_FROM = 8.0
+CLOUD_ARC_TO = 15.0
+CLOUD_ARC_BOW = 10.0
 
 
-def _smooth_closed(pts: list) -> str:
-    """A closed Catmull-Rom path through the points, the same tension as the faces."""
-    tension = 1 / 6
-    n = len(pts)
-    out = [f"M{pts[0][0]:.2f} {pts[0][1]:.2f}"]
-    for i in range(n):
-        a, o, s, c = pts[(i - 1) % n], pts[i], pts[(i + 1) % n], pts[(i + 2) % n]
-        ctl1 = (o[0] + (s[0] - a[0]) * tension, o[1] + (s[1] - a[1]) * tension)
-        ctl2 = (s[0] - (c[0] - o[0]) * tension, s[1] - (c[1] - o[1]) * tension)
-        out.append(f"C{ctl1[0]:.2f} {ctl1[1]:.2f} {ctl2[0]:.2f} {ctl2[1]:.2f} "
-                   f"{s[0]:.2f} {s[1]:.2f}")
-    return "".join(out) + "Z"
+def _edge_point(w: float, h: float, corner: float, distance: float) -> tuple:
+    """The point `distance` along the rounded rectangle's edge, clockwise from the end of its top-left corner."""
+    run_x, run_y, quarter = w - 2 * corner, h - 2 * corner, math.pi * corner / 2
+    for part, length in (("top", run_x), ("tr", quarter), ("right", run_y), ("br", quarter),
+                         ("bottom", run_x), ("bl", quarter), ("left", run_y), ("tl", quarter)):
+        if distance <= length or part == "tl":
+            break
+        distance -= length
+    if part in ("top", "right", "bottom", "left"):
+        return {"top": (corner + distance, 0.0), "right": (w, corner + distance),
+                "bottom": (w - corner - distance, h), "left": (0.0, h - corner - distance)}[part]
+    centre, start = {"tr": ((w - corner, corner), -math.pi / 2), "br": ((w - corner, h - corner), 0.0),
+                     "bl": ((corner, h - corner), math.pi / 2), "tl": ((corner, corner), math.pi)}[part]
+    angle = start + distance / corner
+    return centre[0] + corner * math.cos(angle), centre[1] + corner * math.sin(angle)
 
 
 def _cloud_parts(body_w: int, body_h: int, tip: float | None, side: str,
                  grow: float = 0.0):
     """The cloud outline and the circles of the trail toward the head."""
-    x0, y0 = PAD_SVG + CLOUD_INSET, PAD_SVG + CLOUD_INSET
-    w, h = body_w - 2 * CLOUD_INSET, body_h - 2 * CLOUD_INSET
-    cx, cy = x0 + w / 2, y0 + h / 2
-    lobes = SILHOUETTES["nuage"]
-    low, high = min(lobes), max(lobes)
-    depth = min(CLOUD_LOBE_MAX, h * CLOUD_LOBE)
-    pts = []
-    for i, r in enumerate(lobes):
-        angle = i / len(lobes) * math.tau
-        # Stretch the profile: the puffs become puffs, the notches stay notches.
-        spread = min(1.0, max(0.0, ((r - low) / (high - low) - 0.35) / 0.45))
-        radius_x = w / 2 - CLOUD_DIP + grow + spread * depth
-        radius_y = h / 2 - CLOUD_DIP + grow + spread * depth
-        cos_a, sin_a = math.cos(angle), math.sin(angle)
-        pts.append((cx + math.copysign(abs(cos_a) ** CLOUD_SQUIRCLE, cos_a) * radius_x,
-                    cy + math.copysign(abs(sin_a) ** CLOUD_SQUIRCLE, sin_a) * radius_y))
+    corner = min(CLOUD_CORNER, body_w / 2, body_h / 2)
+    perimeter = 2 * (body_w - 2 * corner) + 2 * (body_h - 2 * corner) + 2 * math.pi * corner
+    puffs = max(8, round(perimeter / CLOUD_PUFF_W))
+    chord = perimeter / puffs
+    radius = chord * CLOUD_PUFF_ROUND + grow
+    ox, oy = PAD_SVG - grow, PAD_SVG - grow
+    scale_x, scale_y = (body_w + 2 * grow) / body_w, (body_h + 2 * grow) / body_h
+    points = []
+    for i in range(puffs):
+        x, y = _edge_point(body_w, body_h, corner, i * perimeter / puffs)
+        points.append((ox + x * scale_x, oy + y * scale_y))
+    path = f"M{points[0][0]:.2f} {points[0][1]:.2f}" + "".join(
+        f"A{radius:.2f} {radius:.2f} 0 0 1 {x:.2f} {y:.2f}" for x, y in points[1:] + points[:1]) + "Z"
     tip = _bubble_tip(side, body_w, body_h, tip)
     edge, sign = _tail_edge(side, body_w, body_h)
-    trail = [(*_at(side, tip, edge + sign * dist), radius + grow) for radius, dist in CLOUD_TRAIL]
-    return _smooth_closed(pts), trail
+    # A quadratic curve whose middle bows sideways by CLOUD_ARC_BOW.
+    start, end = edge + sign * CLOUD_ARC_FROM, edge + sign * CLOUD_ARC_TO
+    mid_across, mid_along = (start + end) / 2, tip + 2 * CLOUD_ARC_BOW
+    trail = []
+    for r, t in CLOUD_TRAIL:
+        across = (1 - t) ** 2 * start + 2 * (1 - t) * t * mid_across + t ** 2 * end
+        along = (1 - t) ** 2 * tip + 2 * (1 - t) * t * mid_along + t ** 2 * tip
+        trail.append((*_at(side, along, across), r + grow))
+    return path, trail
 
 
 def _circles_svg(circles: list, extra: str) -> str:

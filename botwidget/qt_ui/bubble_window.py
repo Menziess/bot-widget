@@ -4,12 +4,28 @@ Two shapes: the thinking cloud (kind "think") and the speech bubble (kind "say"
 and "hint"). A speech bubble can get an input field and a row of links.
 """
 
+import html
+import os
+import sys
 import time
 
-from PySide6.QtCore import QEasingCurve, QRect, Qt, QTimer, QUrl, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QPainter
-from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QScrollArea, QTextBrowser, QWidget
+from PySide6.QtCore import (
+    QAbstractAnimation,
+    QBuffer,
+    QByteArray,
+    QEasingCurve,
+    QIODevice,
+    QRect,
+    Qt,
+    QTimer,
+    QUrl,
+    QVariantAnimation,
+    Signal,
+)
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QImage, QPainter, QTextOption
+from PySide6.QtWidgets import QApplication, QLabel, QPlainTextEdit, QScrollArea, QTextBrowser, QWidget
 
+from botwidget import attachments, menu_pages
 from botwidget.avatar import AVATAR_SIZE, CIRCLE_R
 from botwidget.bubble import (
     bubble_body_svg,
@@ -19,6 +35,7 @@ from botwidget.bubble import (
     cloud_body_svg,
     cloud_shadow_svg,
     content_height,
+    line_height,
     panel_pad,
     panel_rects,
     reading_seconds,
@@ -26,6 +43,7 @@ from botwidget.bubble import (
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, screens
+from botwidget.qt_ui.controls import ActionButton, SlashList, Switch
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document, selected_text
@@ -38,7 +56,9 @@ from botwidget.theme import (
     DOTS_CYCLE_S,
     DOTS_GAP,
     DOTS_MS,
+    MORE_HIT_HALF_W,
     PAD_BODY,
+    PAD_PANEL_X,
     PAD_SVG,
     SAND_ACCENT,
     SAND_BUBBLE,
@@ -59,14 +79,19 @@ QScrollBar::handle:vertical {{ background: transparent; border-radius: 3px; min-
 QScrollArea:hover QScrollBar::handle:vertical {{ background: rgba(28, 28, 28, 115); }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; border: none; height: 0; }}
-QLineEdit {{
+QPlainTextEdit {{
     background: #ffffff; color: {SAND_INK}; border: 1px solid rgba(28, 28, 28, 31);
-    border-radius: 8px; padding: 4px 8px;
+    border-radius: 8px; padding: 8px;
 }}
-QLineEdit:focus {{ border-color: rgba(22, 128, 243, 140); }}
+QPlainTextEdit:focus {{ border-color: rgba(22, 128, 243, 140); }}
 QLabel#links {{ color: {SAND_ACCENT}; }}
 """
 ENTRY_H = 34
+ENTRY_MAX_LINES = 5
+ATTACH_H = 26
+COMMANDS_GAP = 4
+FOLLOW_SLACK = 6  # a thought counts as read to its end when it is scrolled this close to the bottom
+ENTRY_PAD = 18  # the field's padding and border, above and below its lines
 ENTRY_GAP = 8
 LINKS_H = 26
 MIN_INTERACTIVE_W = 240
@@ -74,19 +99,128 @@ SCROLLBAR_W = 6
 NOTICE_MS = 1600
 GROW_MS = 240
 OLDER_PAUSE_S = 0.3
+# Wheel events closer together than this are one flick; a new flick is needed to load the message before.
+WHEEL_FLICK_GAP_S = 0.25
+BOUNCE_PX = 10
+BOUNCE_MS = 320
+# While the message before loads, the arrow is dots and the text hangs this far down; no scrolling meanwhile.
+OLDER_LOAD_MS = 700
+# A menu page that opens smaller than the one before can leave the pointer outside it: it stays this long.
+MENU_KEEP_S = 2.5
+LOAD_PUSH_PX = 14
+# How far a flick must pull past the top, in wheel units (a mouse notch is 120), to load the message before:
+# a flick that starts at the top needs little; one that ran into the top first bounces and needs a new pull.
+LOAD_PULL = 40
+LOAD_PULL_AFTER_BOUNCE = 360
+LOAD_PUSH_MS = 160
 # Where a bubble starts when it grows out of nothing: the text width and the white height.
 SEED_W, SEED_H = 36, 22
 TAIL_LENGTH = 7
+THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the balls on their arc
 
 
-class BubbleEntry(QLineEdit):
+def pasted_files(source) -> list:
+    """Files and pictures on the clipboard, copied under the shared folder; none when it holds only text."""
+    paths = []
+    if source.hasUrls():
+        for url in source.urls():
+            if url.isLocalFile() and os.path.isfile(url.toLocalFile()):
+                paths.append(attachments.store_file(url.toLocalFile()))
+    if not paths and source.hasImage():
+        image = source.imageData()
+        if isinstance(image, QImage) and not image.isNull():
+            data = QByteArray()
+            buffer = QBuffer(data)
+            buffer.open(QIODevice.WriteOnly)
+            image.save(buffer, "PNG")
+            paths.append(attachments.store_bytes("image.png", bytes(data)))
+    return paths
+
+
+class BubbleEntry(QPlainTextEdit):
+    """The input field: Enter sends, Shift+Enter starts a new line, files and pictures can be pasted,
+    and the field grows with its lines."""
+
+    returnPressed = Signal()
     dismissed = Signal()
+    resized = Signal()
+    attached = Signal(list)  # paths of pasted files and pictures
+    moved = Signal(int)  # up or down in the list of slash commands
+    completed = Signal()  # Tab: the command that is selected goes into the field
+    chosen = Signal()  # Return: the command that is selected runs
+    closed = Signal()  # Escape: only the list of commands goes away
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.commands_open = False
+        self.document().setDocumentMargin(0)
+        self.setTabChangesFocus(True)
+        self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.document().documentLayout().documentSizeChanged.connect(self._document_resized)
+
+    def _document_resized(self, _size):
+        # A scrollbar only once the lines no longer fit: before that it would flash up for the moment
+        # a new line has wrapped and the field has not grown yet.
+        lines = round(self.document().size().height())
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if lines > ENTRY_MAX_LINES else Qt.ScrollBarAlwaysOff)
+        self.resized.emit()
+
+    def canInsertFromMimeData(self, source) -> bool:
+        return source.hasUrls() or source.hasImage() or super().canInsertFromMimeData(source)
+
+    def insertFromMimeData(self, source):
+        paths = pasted_files(source)
+        if paths:
+            self.attached.emit(paths)
+        elif source.hasText():
+            super().insertFromMimeData(source)
+
+    def focusNextPrevChild(self, forward: bool) -> bool:
+        # Tab never gets to keyPressEvent in a field that lets it move the focus.
+        if self.commands_open and forward:
+            self.completed.emit()
+            return True
+        return super().focusNextPrevChild(forward)
+
+    def text(self) -> str:
+        return self.toPlainText()
+
+    def setText(self, text: str):
+        self.setPlainText(text)
+
+    def wanted_height(self) -> int:
+        lines = max(1, min(ENTRY_MAX_LINES, round(self.document().size().height())))
+        return max(ENTRY_H, lines * self.fontMetrics().lineSpacing() + ENTRY_PAD)
 
     def keyPressEvent(self, event):
-        """Escape closes the bubble without sending anything."""
+        """Escape closes the bubble without sending anything; with the list of commands open it closes that."""
+        if self.commands_open and not event.modifiers() & Qt.ShiftModifier:
+            handled = {Qt.Key_Up: lambda: self.moved.emit(-1), Qt.Key_Down: lambda: self.moved.emit(1),
+                       Qt.Key_Tab: self.completed.emit, Qt.Key_Escape: self.closed.emit}
+            if event.key() in handled:
+                handled[event.key()]()
+                return
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                self.chosen.emit()
+                return
         if event.key() == Qt.Key_Escape:
             self.clear()
             self.dismissed.emit()
+            return
+        if (sys.platform == "darwin" and event.key() == Qt.Key_Backspace
+                and event.modifiers() == Qt.ControlModifier):
+            # Cmd+Backspace: the line up to the cursor, as in any other Mac text field; Qt does not do it itself.
+            cursor = self.textCursor()
+            if not cursor.hasSelection():
+                cursor.movePosition(cursor.MoveOperation.StartOfLine, cursor.MoveMode.KeepAnchor)
+                if not cursor.hasSelection():
+                    cursor.movePosition(cursor.MoveOperation.PreviousCharacter, cursor.MoveMode.KeepAnchor)
+            cursor.removeSelectedText()
+            return
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not event.modifiers() & Qt.ShiftModifier:
+            self.returnPressed.emit()
             return
         super().keyPressEvent(event)
 
@@ -113,6 +247,10 @@ class CopyNotice(QWidget):
         self.raise_()
         self._fade.stop()
         self._fade.start()
+
+    def dismiss(self):
+        self._fade.stop()
+        self.hide()
 
     def _set_level(self, level):
         self.level = float(level)
@@ -145,30 +283,103 @@ class Growth:
 
 
 class OlderScroll(QScrollArea):
-    """Scrolling up when already at the top asks for the message before."""
+    """Scrolling up past the top bounces; only a new flick after that asks for the message before."""
 
     older = Signal()
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._last_wheel = 0.0
+        self._bounced = False
+        self._pulled = 0
+        self._started_at_top = True
+        self._bounce = QVariantAnimation(self)
+        self._bounce.setDuration(BOUNCE_MS)
+        self._bounce.setEasingCurve(QEasingCurve.InOutSine)
+        for at, level in ((0.0, 0.0), (0.3, 1.0), (1.0, 0.0)):
+            self._bounce.setKeyValueAt(at, level)
+        self._bounce.valueChanged.connect(self._push)
+        self.loading = False
+        self._pull = QVariantAnimation(self)
+        self._pull.setDuration(LOAD_PUSH_MS)
+        self._pull.setStartValue(0.0)
+        self._pull.setEndValue(float(LOAD_PUSH_PX) / BOUNCE_PX)
+        self._pull.setEasingCurve(QEasingCurve.OutCubic)
+        self._pull.valueChanged.connect(self._push)
+        self._pull.finished.connect(self._pulled_back)
+        self._after_release = None
+
+    def _push(self, level):
+        if self.verticalScrollBar().value() <= 0 and self.widget():
+            self.widget().move(0, round(float(level) * BOUNCE_PX))
+
+    def set_loading(self, loading: bool):
+        """While loading, the text hangs a little lower and every scroll event is ignored."""
+        self.loading = loading
+        self._after_release = None
+        self._bounce.stop()
+        self._pull.stop()
+        self._pull.setDirection(QAbstractAnimation.Forward)
+        if loading:
+            self._pull.start()
+        elif self.widget():
+            self.widget().move(0, 0)
+
+    def release(self, done):
+        """The text comes smoothly back up, and only then does done run: no jump when the message slides in."""
+        self._bounce.stop()
+        self._after_release = done
+        self._pull.stop()
+        self._pull.setDirection(QAbstractAnimation.Backward)
+        self._pull.start()
+
+    def _pulled_back(self):
+        if self._pull.direction() != QAbstractAnimation.Backward or self._after_release is None:
+            return
+        done, self._after_release = self._after_release, None
+        self.set_loading(False)
+        done()
+
     def wheelEvent(self, event):
         bar = self.verticalScrollBar()
-        if event.angleDelta().y() > 0 and bar.value() <= bar.minimum():
-            self.older.emit()
+        now = time.monotonic()
+        if self.loading:
+            self._last_wheel = now
             event.accept()
             return
+        new_flick = now - self._last_wheel > WHEEL_FLICK_GAP_S
+        self._last_wheel = now
+        if new_flick:
+            self._bounced, self._pulled = False, 0
+            self._started_at_top = bar.value() <= bar.minimum()
+        delta = event.angleDelta().y()
+        if delta > 0 and bar.value() <= bar.minimum():
+            # The momentum after a lifted finger only bounces; the pull of a finger on the pad or a wheel loads.
+            if event.phase() != Qt.ScrollMomentum:
+                self._pulled += delta
+            if self._pulled >= (LOAD_PULL if self._started_at_top else LOAD_PULL_AFTER_BOUNCE):
+                self._pulled = 0
+                self.older.emit()
+            elif not self._started_at_top and not self._bounced:
+                self._bounced = True
+                self._bounce.start()
+            event.accept()
+            return
+        self._pulled = 0
         super().wheelEvent(event)
 
 
 class BubbleText(QTextBrowser):
     """The words in the bubble as real text: a click copies the message, a drag selects and copies."""
 
-    clicked = Signal(float, bool)  # where in the text, and whether shift was held
+    clicked = Signal(float, float, bool)  # where in the text, and whether shift was held
     command = Signal(str)  # a menu row was clicked
     selected = Signal(str, float)  # the selected words, and where the pointer was let go
     SLOP = 4
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.message_at = lambda y: None
+        self.message_at = lambda x, y: None
         self._press = None
         self._shift = False
         self._dragging = False
@@ -198,7 +409,7 @@ class BubbleText(QTextBrowser):
         """A hand over a message (a click copies it), the text cursor while selecting."""
         if self._dragging:
             shape = Qt.IBeamCursor
-        elif self.anchorAt(pos) or self.message_at(pos.y()) is not None:
+        elif self.anchorAt(pos) or self.message_at(pos.x(), pos.y()) is not None:
             shape = Qt.PointingHandCursor
         else:
             shape = Qt.ArrowCursor
@@ -243,13 +454,14 @@ class BubbleText(QTextBrowser):
                 cursor = self.textCursor()
                 cursor.clearSelection()
                 self.setTextCursor(cursor)
-                self.clicked.emit(pos.y(), self._shift)
+                self.clicked.emit(pos.x(), pos.y(), self._shift)
         self._press, self._dragging = None, False
         self._cursor_for(pos)
 
 class BubbleWindow(QWidget):
     older = Signal()
     command = Signal(str)
+    edit_queued = Signal(str)  # the id of a queued message that was clicked
 
     def __init__(self, face):
         super().__init__()
@@ -275,7 +487,6 @@ class BubbleWindow(QWidget):
         self._had_focus = False
         self._wait_since = 0.0
         self._growth = None
-        self._from_top = False
         self._older_until = 0.0
         self._tip = None
         self._vx = self._vy = 0.0
@@ -283,6 +494,10 @@ class BubbleWindow(QWidget):
         self._dots_on = False
         self._dots_phase = 0.0
         self._dots_lines = []
+        self._loading_lines = []
+        self._load_timer = QTimer(self)
+        self._load_timer.setSingleShot(True)
+        self._load_timer.timeout.connect(self._load_older)
 
         self._chrome = QLabel(self)
         self._text = QLabel()
@@ -303,9 +518,31 @@ class BubbleWindow(QWidget):
         self._link_row.setOpenExternalLinks(True)
         self._link_row.setTextFormat(Qt.RichText)
         self._notice = CopyNotice(self._scroll.viewport())
+        self._notice_from_end = 0
+        self._scroll.verticalScrollBar().valueChanged.connect(self._move_notice)
         self._entry = BubbleEntry(self)
         self._entry.setPlaceholderText("Send a message…")
         self._entry.returnPressed.connect(self._send)
+        self._entry.resized.connect(self._entry_resized)
+        self._entry.attached.connect(self._attach)
+        self._slash = SlashList(self)
+        self._slash.chosen.connect(self._run_command)
+        self._entry.textChanged.connect(self._update_commands)
+        self._entry.moved.connect(self._slash.move_selection)
+        self._entry.completed.connect(lambda: self._entry.setText(self._slash.current()))
+        self._entry.chosen.connect(lambda: self._run_command(self._slash.current()))
+        self._entry.closed.connect(lambda: self._show_commands([]))
+        self._attachments = []
+        self._attachment_row = QLabel(self)
+        self._attachment_row.setTextFormat(Qt.RichText)
+        self._attachment_row.setObjectName("attachments")
+        self._attachment_row.linkActivated.connect(self._unattach)
+        self._attachment_row.hide()
+        self._control_widgets = []
+        self._controls_key = None
+        self._kept_until = 0.0
+        self._scroll_target = 0
+        self._follow = False
         self._entry.dismissed.connect(face.unpin)
 
         self._physics = QTimer(self)
@@ -325,26 +562,74 @@ class BubbleWindow(QWidget):
     # ── Input ───────────────────────────────────────────────────
 
     def _send(self):
-        text = self._entry.text().strip()
-        if text:
+        text, files = self._entry.text().strip(), self._attachments
+        if text or files:
             self._entry.clear()
-            self.face.on_user_message(text)
+            self._attachments = []
+            self._show_attachments()
+            self.face.on_user_message(text, files=files)
 
-    def _message_at(self, y: float) -> dict | None:
-        """The panel a click at this height in the text does something with: a message to copy, or the arrow."""
-        if self.kind != "say" or not self._geom:
+    def _update_commands(self):
+        """A message that starts with a slash gets the commands that fit it, in a list above the field."""
+        text = self._entry.text().strip().lower()
+        fitting = [row for row in menu_pages.COMMANDS if row[0].startswith(text)] \
+            if text.startswith("/") and " " not in text else []
+        self._show_commands(fitting)
+
+    def _show_commands(self, rows: list):
+        """The list sits in the bubble right above the field, which makes room for it."""
+        before = len(self._slash.rows)
+        self._entry.commands_open = bool(rows) and self._input
+        self._slash.show_rows(rows if self._input else [])
+        if len(self._slash.rows) != before:
+            self._entry_resized()
+
+    def _commands_h(self) -> int:
+        return self._slash.height_for(len(self._slash.rows)) + COMMANDS_GAP if self._slash.rows else 0
+
+    def _run_command(self, command: str):
+        self._entry.clear()
+        self.face.on_user_message(command)
+
+    def _attach(self, paths: list):
+        self._attachments += paths
+        self._show_attachments()
+
+    def _unattach(self, link: str):
+        index = int(link)
+        if 0 <= index < len(self._attachments):
+            del self._attachments[index]
+            self._show_attachments()
+
+    def _show_attachments(self):
+        self._attachment_row.setText("   ".join(
+            f'📎 {html.escape(path.name)} <a href="{i}" style="color:{SAND_ACCENT}">✕</a>'
+            for i, path in enumerate(self._attachments)))
+        self._attachment_row.setVisible(bool(self._attachments))
+        self._entry_resized()
+
+    def _message_at(self, x: float, y: float) -> dict | None:
+        """The panel a click at this spot in the text does something with: a message to copy, or the arrow."""
+        if self.kind not in ("say", "think") or not self._geom:
             return None
         content_y = y + self._doc.y()
         for (top, height), panel in zip(panel_rects(self._geom[0]), self._geom[0]):
-            if top <= content_y < top + height and (panel.get("copy") or panel["role"] == "more"):
+            if not top <= content_y < top + height:
+                continue
+            if panel["role"] == "more":
+                if abs(x - self._shown_w(self._geom[1]) / 2) <= MORE_HIT_HALF_W:
+                    return panel
+            elif panel.get("queued") or (panel.get("copy") and self.kind == "say"):
                 return panel
         return None
 
-    def _on_click(self, y: float, shift: bool):
+    def _on_click(self, x: float, y: float, shift: bool):
         """Click on the arrow loads the message before; on a message it copies it, shift+click as markdown."""
-        panel = self._message_at(y)
+        panel = self._message_at(x, y)
         if panel and panel["role"] == "more":
             self._wheel_older()
+        elif panel and panel.get("queued"):
+            self.edit_queued.emit(panel["queued"])
         elif panel and shift:
             self._copied_to_clipboard(panel["copy"], "Copied markdown", y)
         elif panel:
@@ -358,11 +643,29 @@ class BubbleWindow(QWidget):
         QApplication.clipboard().setText(text)
         self.changed = time.monotonic()
         content_y, scrolled = y + self._doc.y(), self._scroll.verticalScrollBar().value()
-        for (top, height), panel in zip(panel_rects(self._geom[0]), self._geom[0]):
+        rects = panel_rects(self._geom[0])
+        for index, ((top, height), panel) in enumerate(zip(rects, self._geom[0])):
             if top <= content_y < top + height:
-                rect = QRect(0, top - scrolled, self._shown_w(self._geom[1]), height)
-                self._notice.show_over(rect, notice, panel["role"] == "user")
+                # Counted from the end: an older message loaded above does not move it.
+                self._notice_from_end = len(rects) - index
+                self._notice.show_over(self._notice_rect(), notice, panel["role"] == "user")
                 return
+
+    def _notice_rect(self) -> QRect:
+        """The part of the copied message that is in view: the notice is read in the middle of the bubble."""
+        rects = panel_rects(self._geom[0])
+        index = len(rects) - self._notice_from_end
+        if not 0 <= index < len(rects):
+            return QRect()
+        top, height = rects[index]
+        scrolled, view = self._scroll.verticalScrollBar().value(), self._scroll.viewport().height()
+        shown_top, shown_bottom = max(0, top - scrolled), min(view, top - scrolled + height)
+        return QRect(0, shown_top, self._shown_w(self._geom[1]), max(0, shown_bottom - shown_top))
+
+    def _move_notice(self):
+        """The notice stays on its message when the bubble scrolls."""
+        if self._notice_from_end and self._notice.isVisible():
+            self._notice.setGeometry(self._notice_rect())
 
     def focus_entry(self):
         if self._input:
@@ -410,9 +713,46 @@ class BubbleWindow(QWidget):
             panels = bubble_panels(measure, blocks, width)
         return panels
 
+    def _entry_h(self) -> int:
+        return self._entry.wanted_height()
+
+    def _entry_resized(self):
+        """The field gained or lost a line: the bubble grows or shrinks with it, the tail keeps pointing."""
+        if self._geom is not None and self._input and self._growth is None:
+            self._layout_children(self._paint_chrome())
+
+    def keep_for(self, seconds: float):
+        """The bubble stays for this long whether or not the pointer is on it."""
+        self._kept_until = time.monotonic() + seconds
+
+    def takes_input(self) -> bool:
+        return self._input
+
+    def edit_text(self, text: str, files: list = ()):
+        """A message back in the field: in front of what was already typed."""
+        self._attachments += list(files)
+        self._show_attachments()
+        draft = self._entry.text()
+        self._entry.setText(text + ("\n" + draft if draft else ""))
+        cursor = self._entry.textCursor()
+        cursor.setPosition(len(text))
+        self._entry.setTextCursor(cursor)
+
+    def set_queueing(self, queueing: bool, waiting: int = 0, answering: bool = False):
+        """While the bot works, what is typed waits in line instead of going out at once; with a question
+        open, it is the answer."""
+        if answering:
+            self._entry.setPlaceholderText("Type your answer…")
+        elif not queueing:
+            self._entry.setPlaceholderText("Send a message…")
+        else:
+            self._entry.setPlaceholderText(f"Queue a message… ({waiting} waiting)" if waiting else "Queue a message…")
+
     def _extras(self) -> int:
         """Height below the text for the link row and the input field."""
-        return (LINKS_H if self._links else 0) + (ENTRY_H + ENTRY_GAP if self._input else 0)
+        attached = ATTACH_H if self._attachments else 0
+        return (LINKS_H if self._links else 0) + (
+            attached + self._commands_h() + self._entry_h() + ENTRY_GAP if self._input else 0)
 
     def _body_h(self, inner: int) -> int:
         """Height of the white area; never taller than the ceiling."""
@@ -466,33 +806,91 @@ class BubbleWindow(QWidget):
             self._link_row.setGeometry(x, below + 4, box_w, LINKS_H - 4)
             below += LINKS_H
         if self._input:
-            self._entry.setGeometry(x, below + ENTRY_GAP, box_w, ENTRY_H)
+            if self._attachments:
+                self._attachment_row.setGeometry(x, below + ENTRY_GAP, box_w, ATTACH_H)
+                below += ATTACH_H
+            if self._slash.rows:
+                self._slash.setGeometry(x, below + ENTRY_GAP, box_w, self._commands_h() - COMMANDS_GAP)
+                below += self._commands_h()
+            self._entry.setGeometry(x, below + ENTRY_GAP, box_w, self._entry_h())
         self._link_row.setVisible(bool(self._links))
         # Not while the bubble is still tiny: a field alone looks odd.
-        self._entry.setVisible(self._input and (self._growth is None or self._growth.progress >= 0.35))
-
+        # Not while the bubble is still tiny, but never taken away from a field that is already there:
+        # hiding it would drop the cursor at every new thought.
+        self._entry.setVisible(self._input and (self._growth is None or self._growth.progress >= 0.35
+                                                or self._entry.isVisible()))
+        self._move_notice()
+        self._place_controls()
 
     def _set_text(self):
         """The shapes behind the text; the words themselves are the text document."""
         panels, box_w, inner = self._geom
         pix = svg_pixmap(bubble_deco_svg(panels, box_w))
         self._text.setPixmap(pix)
-        self._text.resize(pix.deviceIndependentSize().toSize())
+        size = pix.deviceIndependentSize().toSize()
+        if size != self._text.size():
+            # Resizing puts the text back in the corner of the scroll area, which would undo a bounce.
+            self._text.resize(size)
         # One panel padding lower: the shapes keep the text of the first panel at that spot.
         top = panel_pad(panels[0])
         self._doc.setGeometry(0, top, box_w, max(1, inner - top))
         self._doc.setVisible(self.kind != "")
+        self._place_controls()
+
+    def _place_controls(self):
+        """Real switches and buttons over the lines the menu page reserved for them."""
+        if self._geom is None:
+            return
+        panels, box_w, _inner = self._geom
+        shown_w = self._shown_w(box_w)
+        wanted = []
+        for (top, _height), panel in zip(panel_rects(panels), panels):
+            y = top + panel_pad(panel)
+            for line in panel["lines"]:
+                if line["kind"] == "control":
+                    wanted.append((line, QRect(PAD_PANEL_X + line["indent"], y, shown_w - 2 * PAD_PANEL_X,
+                                               line_height(line))))
+                y += line_height(line)
+        key = tuple((line["control"], line["label"], line["command"], line["on"]) for line, _rect in wanted)
+        if key != self._controls_key:
+            for widget in self._control_widgets:
+                widget.hide()
+                widget.deleteLater()
+            self._control_widgets = [self._make_control(line) for line, _rect in wanted]
+            self._controls_key = key
+        for widget, (line, rect) in zip(self._control_widgets, wanted):
+            if line["control"] == "button":
+                rect.setWidth(min(rect.width(), widget.sizeHint().width()))
+                rect.setHeight(rect.height() - 4)
+                rect.moveTop(rect.top() + 2)
+            widget.setGeometry(rect)
+            widget.raise_()
+            widget.show()
+
+    def _make_control(self, line: dict):
+        if line["control"] == "toggle":
+            widget = Switch(line["label"], bool(line["on"]), self._text)
+        else:
+            widget = ActionButton(line["label"], self._text)
+        widget.clicked.connect(lambda _checked=False, command=line["command"]: self.command.emit(command))
+        return widget
 
     def _set_doc(self):
         panels, box_w, _inner = self._geom
         fill_document(self._doc.document(), panels, box_w)
 
     def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
-                    older: bool = False, from_top: bool = False):
-        """Put blocks in the bubble; newest at the bottom, or read from the top (a menu page).
-        With older, a message was added above."""
-        key = (kind, block_text(blocks), input, tuple(links or []), self._ceiling(), from_top)
-        self._from_top = from_top
+                    older: bool = False, keep_scroll: bool = False):
+        """Put blocks in the bubble, read from the top. With older, a message was added above;
+        with keep_scroll the same page is shown again, where it was. A thought is followed down as it
+        grows, until you scroll up in it."""
+        bar = self._scroll.verticalScrollBar()
+        # While the cloud is still growing the bar says little about where you are: keep what was.
+        self._follow = kind == "think" and (self.kind != "think" or not self.isVisible()
+                                            or (self._follow and self._growth is not None)
+                                            or bar.value() >= bar.maximum() - FOLLOW_SLACK)
+        self._scroll_target = bar.value() if keep_scroll or (kind == "think" and not self._follow) else 0
+        key = (kind, block_text(blocks), input, tuple(links or []), self._ceiling())
         visible = self.isVisible()
         if key == self._built and not self._dots_lines:
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
@@ -507,7 +905,7 @@ class BubbleWindow(QWidget):
         old_inner = self._geom[2] if self._geom else 0
         self._slide.stop()
         self._growth = None
-        self._built = key
+        content_changed, self._built = key != self._built, key
         self._was_near = False
         self._links = links or []
         self._input = input
@@ -519,6 +917,11 @@ class BubbleWindow(QWidget):
         restyle = kind != self.kind
         self.kind = kind
         self._geom = self._parts()
+        if self._scroll.loading:
+            if content_changed and not older:
+                self._cancel_loading()
+            else:
+                self._mark_loading()
         if self._dots_lines and not self._dots_on:
             self._dots_on = True
             self._dots.start()
@@ -532,20 +935,58 @@ class BubbleWindow(QWidget):
         self._layout_children(pix)
         self._set_text()
         self._set_doc()
+        if older:
+            self._move_notice()
+        else:
+            self._notice_from_end = 0
+            self._notice.dismiss()
         if restyle or not visible:
             self.place(kind)
         if self._growth is not None:
             self._growth.older = older and visible
             self._slide.start()
             return
-        self._scroll_to_bottom()
-        QTimer.singleShot(0, self._scroll_to_bottom)
+        self._scroll_to_top()
+        QTimer.singleShot(0, self._scroll_to_top)
 
     def _wheel_older(self):
         now = time.monotonic()
-        if self._growth is None and now >= self._older_until and self.kind == "say":
+        back = next((panel["back"] for panel in self._geom[0] if panel.get("back")), "") if self._geom else ""
+        if back:
+            # On a menu page the arrow, and scrolling past the top, go back.
+            if self._growth is None and now >= self._older_until:
+                self._older_until = now + OLDER_PAUSE_S
+                self.command.emit(back)
+            return
+        if self._growth is None and now >= self._older_until and self.kind == "say" and not self._scroll.loading:
             self._older_until = now + OLDER_PAUSE_S
-            self.older.emit()
+            self._scroll.set_loading(True)
+            self._mark_loading()
+            self._set_text()
+            self._load_timer.start(OLDER_LOAD_MS)
+
+    def _mark_loading(self):
+        """The arrow becomes pulsing dots."""
+        self._loading_lines = [line for panel in self._geom[0] for line in panel["lines"] if line["kind"] == "more"]
+        for line in self._loading_lines:
+            line["loading"] = True
+        if not self._dots_on:
+            self._dots_on = True
+            self._dots.start()
+
+    def _load_older(self):
+        self._load_timer.stop()
+        if self._scroll.loading:
+            self._scroll.release(self._older_arrived)
+
+    def _older_arrived(self):
+        self._loading_lines = []
+        self.older.emit()
+
+    def _cancel_loading(self):
+        self._load_timer.stop()
+        self._loading_lines = []
+        self._scroll.set_loading(False)
 
     def _growth_step(self, progress):
         """The bubble grows to its size: upward from the face, the older message sliding in from the top."""
@@ -562,7 +1003,7 @@ class BubbleWindow(QWidget):
         self.move(int(tx), int(ty))
         bar = self._scroll.verticalScrollBar()
         bar.setValue(min(bar.maximum(), round(growth.added * (1 - progress))) if getattr(growth, "older", False)
-                     else 0 if self._from_top else bar.maximum())
+                     else self._scroll_value())
         if growth.opening:
             self.setWindowOpacity(min(1.0, progress * 3))
 
@@ -574,25 +1015,28 @@ class BubbleWindow(QWidget):
         self.setWindowOpacity(1.0)
         if self.kind:
             self._layout_children(self._paint_chrome())
-            bar = self._scroll.verticalScrollBar()
-            bar.setValue(0 if older or self._from_top else bar.maximum())
+            self._scroll.verticalScrollBar().setValue(self._scroll_value())
+            # The range of the scroll bar follows the new size a moment later.
+            QTimer.singleShot(0, self._scroll_to_top)
 
-    def _scroll_to_bottom(self):
-        bar = self._scroll.verticalScrollBar()
-        bar.setValue(0 if self._from_top else bar.maximum())
+    def _scroll_value(self) -> int:
+        """Where the text sits: at the top of a message, or at the end of a thought that is being followed."""
+        return self._scroll.verticalScrollBar().maximum() if self._follow else self._scroll_target
+
+    def _scroll_to_top(self):
+        self._scroll.verticalScrollBar().setValue(self._scroll_value())
 
     def _tick_dots(self):
         """Make the thinking dots pulse for as long as the bot is thinking."""
-        if not self._dots_lines:
+        if not self._dots_lines and not self._loading_lines:
             self._dots_on = False
             self._dots.stop()
             return
         self._dots_phase = (self._dots_phase + DOTS_MS / 1000 / DOTS_CYCLE_S) % 1.0
-        for line in self._dots_lines:
+        for line in self._dots_lines + self._loading_lines:
             line["phase"] = self._dots_phase
         if self._geom:
             self._set_text()
-            self._scroll_to_bottom()
 
     # ── Position and movement ───────────────────────────────────
 
@@ -600,7 +1044,7 @@ class BubbleWindow(QWidget):
         """Where the window goes, and how its tail points. size is the window size it is about to get.
 
         Above the face if it fits there, else to the right of it, else to the left, and below only
-        when that is the one place left. A bubble is judged by the size it will grow to, so it does
+        when that is the one place left; the thinking cloud goes beside the face first, then above. A bubble is judged by the size it will grow to, so it does
         not swing to another side while it is still growing.
         """
         fx, fy = self.face.spot()
@@ -608,22 +1052,23 @@ class BubbleWindow(QWidget):
         final_w, final_h = self._final_size()
         gx, gy, gw, gh = screens.rect_at(fx + AVATAR_SIZE // 2, fy + AVATAR_SIZE // 2)
         cx, cy = fx + AVATAR_SIZE / 2, fy + AVATAR_SIZE / 2
-        reach = CIRCLE_R + 4 + TAIL_LENGTH  # from the middle of the face to where the white area may begin
+        # A thought keeps more distance: the balls between it and the face need the room.
+        keep = THINK_GAP if self.kind == "think" else 0
+        reach = CIRCLE_R + 4 + TAIL_LENGTH + keep  # from the middle of the face to where the white area may begin
         body_h = bh - PAD_SVG - TAIL_ROOM
         final_body_h = final_h - PAD_SVG - TAIL_ROOM
         right = cx + reach
         left = cx - reach
-        if fy - final_h + 6 + self.face.head_top >= gy + 4:
-            side = "above"
-        elif right - PAD_SVG + final_w <= gx + gw - 4 and final_body_h <= gh - 8:
-            side = "right"
-        elif left - (final_w - PAD_SVG) >= gx + 4 and final_body_h <= gh - 8:
-            side = "left"
-        else:
-            side = "below"
+        fits = {"above": fy - final_h + 6 + self.face.head_top >= gy + 4,
+                "right": right - PAD_SVG + final_w <= gx + gw - 4 and final_body_h <= gh - 8,
+                "left": left - (final_w - PAD_SVG) >= gx + 4 and final_body_h <= gh - 8}
+        # A thought drifts up beside the head; only speech sits above it.
+        order = ("right", "left", "above") if self.kind == "think" else ("above", "right", "left")
+        side = next((place for place in order if fits[place]), "below")
         if side in ("above", "below"):
             tx = round(fx + (AVATAR_SIZE - bw) / 2)
-            ty = fy - bh + 6 + self.face.head_top if side == "above" else fy + self.face.head_bottom - 8
+            ty = (fy - bh + 6 + self.face.head_top - keep if side == "above"
+                  else fy + self.face.head_bottom - 8 + keep)
         else:
             tx = round(right - PAD_SVG if side == "right" else left - (bw - PAD_SVG))
             ty = round(cy - PAD_SVG - body_h / 2)
@@ -660,7 +1105,7 @@ class BubbleWindow(QWidget):
             self.face.unpin()
             self.place("")
             return
-        if self.face.pointer_near(self) or self.holding() or awaiting:
+        if self.face.pointer_near(self) or self.holding() or awaiting or now < self._kept_until:
             self.changed = now
             self._was_near = self._was_near or not awaiting
         elif self._was_near and not self.face.pinned:

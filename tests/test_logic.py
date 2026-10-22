@@ -317,7 +317,7 @@ class Detection(unittest.TestCase):
 
 
 class Thinking(unittest.TestCase):
-    """Should move the dots in short smooth steps and keep the activity to one short line."""
+    """Should move the dots in short smooth steps and show the whole activity."""
 
     def test_the_dots_tick_short_enough_to_look_fluid(self):
         self.assertLessEqual(theme.DOTS_MS, 40, "a short timer, not a slideshow")
@@ -333,12 +333,63 @@ class Thinking(unittest.TestCase):
         crest = abs(radius(0.30) - radius(0.25))
         self.assertLess(crest, climb, "a smooth crest, not a corner")
 
-    def test_the_activity_line_is_one_short_line(self):
-        self.assertEqual(markdown.activity_line("  reading   the file\nand more "), "reading the file")
-        self.assertEqual(markdown.activity_line(""), "")
-        long = markdown.activity_line("working on it " * 20)
-        self.assertLessEqual(len(long), markdown.ACTIVITY_CHARS)
-        self.assertTrue(long.endswith("…"))
+    def test_a_thought_is_rendered_markdown_in_the_muted_ink_and_never_cut_off(self):
+        thought = "Checking `_check_hover` first.\n\n" + "A long thought. " * 100
+        blocks = markdown.thought_blocks(thought)
+        text = markdown.block_text(blocks)
+        self.assertIn("_check_hover", text)
+        self.assertNotIn("`", text, "the code span is rendered, not shown raw")
+        self.assertIn("A long thought.", text[-30:], "all of it")
+        self.assertTrue(all(block["grey"] for block in blocks if block["kind"] == "text"))
+        self.assertEqual(markdown.thought_blocks(""), [])
+
+
+class RefusedMessages(unittest.TestCase):
+    """Should say why OpenBot refused a message, and what to do about a bot that has local scripts off."""
+
+    def refused(self, code, body):
+        import urllib.error
+        from unittest import mock
+        from botwidget import openbot
+        error = urllib.error.HTTPError("http://x/v1", code, "no", {}, io.BytesIO(body))
+        with mock.patch.object(openbot.urllib.request, "urlopen", side_effect=error), \
+                mock.patch.object(openbot, "api_url", return_value="http://x"), \
+                mock.patch.object(openbot, "read_auth_token", return_value="t"):
+            return openbot.api_post("/v1/agents/a/messages", {"text": "hoi"})
+
+    def test_a_bot_with_local_scripts_off_says_what_to_turn_on(self):
+        result = self.refused(403, b'{"error":"This agent does not allow local scripts."}')
+        self.assertEqual(result.status, 403)
+        self.assertIn("This agent does not allow local scripts", result.error)
+        self.assertIn('turn on "Local scripts"', result.error)
+        self.assertFalse(result.retryable)
+
+    def test_a_403_without_a_reason_still_names_local_scripts(self):
+        self.assertIn('turn on "Local scripts"', self.refused(403, b"").error)
+
+    def test_other_refusals_keep_what_openbot_said_or_the_status(self):
+        self.assertEqual(self.refused(400, b'{"error":"text too long."}').error, "text too long")
+        self.assertEqual(self.refused(404, b"not json").error, "HTTP 404")
+
+
+class MutedFace(unittest.TestCase):
+    """Should draw a muted bot with a cross for a mouth, and sleepy bots with their eyes open."""
+
+    def test_a_muted_face_has_a_cross_the_others_do_not(self):
+        from botwidget.avatar import face_svg
+        self.assertNotIn(" L", face_svg(seed="x"))
+        self.assertIn(" L", face_svg(seed="x", muted=True))
+
+    def test_the_cross_stays_inside_even_the_flattest_head(self):
+        from botwidget.avatar import AVATAR_SIZE, CIRCLE_R, MOUTH_DROP, MOUTH_SIZE, SILHOUETTES
+        for name, radii in SILHOUETTES.items():
+            drop = min(MOUTH_DROP, 0.6 * radii[16]) * CIRCLE_R
+            self.assertLess(drop + MOUTH_SIZE + 1.3, radii[16] * CIRCLE_R, name)
+
+    def test_the_sleepy_expression_keeps_its_eyes_open(self):
+        from botwidget.avatar import EXPRESSIONS
+        for eye in EXPRESSIONS["somnolent"][1:]:
+            self.assertEqual(eye[3], 1)
 
 
 class Clouds(unittest.TestCase):
@@ -371,10 +422,21 @@ class Clouds(unittest.TestCase):
         self.assertEqual(svg.count("<circle"), len(bubble.CLOUD_TRAIL),
                          "only the trail toward the head is circles")
 
-    def test_the_cloud_follows_the_nuage_profile(self):
-        svg = bubble.cloud_body_svg(200, 100)
-        self.assertEqual(svg, bubble.cloud_body_svg(200, 100), "the shape does not wobble")
-        self.assertGreater(svg.count("C"), 40, "a smooth curve through the 64 lobes")
+    def test_the_balls_between_cloud_and_face_follow_an_arc_inside_the_canvas(self):
+        for side in bubble.SIDES:
+            _path, trail = bubble._cloud_parts(200, 100, 60, side)
+            width, height = 200 + 2 * bubble.PAD_SVG, 100 + bubble.PAD_SVG + bubble.TAIL_ROOM
+            for cx, cy, r in trail:
+                self.assertGreaterEqual(min(cx, cy) - r, 0, side)
+                self.assertLessEqual(max(cx + r - width, cy + r - height), 0, side)
+            (x1, y1, _), (x2, y2, _), (x3, y3, _) = trail
+            bend = abs((x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1))
+            self.assertGreater(bend, 20, f"{side}: not on a straight line")
+
+    def test_a_bigger_cloud_has_more_puffs_and_the_same_text_always_the_same_cloud(self):
+        small, large = bubble.cloud_body_svg(120, 60), bubble.cloud_body_svg(320, 160)
+        self.assertEqual(small, bubble.cloud_body_svg(120, 60), "the shape does not wobble")
+        self.assertGreater(large.count("A"), small.count("A"), "the puffs follow the size, they do not stretch")
 
     def test_shadow_matches_the_body_shape(self):
         shadow = bubble.cloud_shadow_svg(200, 100)
@@ -536,7 +598,7 @@ class BubbleScroll(unittest.TestCase):
         self.app.processEvents()
         bar = window.bubble._scroll.verticalScrollBar()
         self.assertGreater(bar.maximum(), 0)
-        self.assertEqual(bar.value(), bar.maximum())
+        self.assertEqual(bar.value(), 0, "a new message is read from its top")
 
 
 class BubbleWidth(unittest.TestCase):
@@ -610,6 +672,17 @@ class BubbleHover(unittest.TestCase):
         self.addCleanup(self.window.close_face)
         self.where = {"at": (5000, 5000)}
         self.window._pointer = lambda: self.where["at"]
+        # What a test saves (a muted bot) must not end up in the real widget.json.
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        old_path = config.CONFIG_PATH
+        self.addCleanup(setattr, config, "CONFIG_PATH", old_path)
+        config.CONFIG_PATH = os.path.join(folder, "widget.json")
+        # Whether a window is active depends on what the earlier tests left behind; no test is about that.
+        old_activate = self.face.activate_app
+        self.addCleanup(setattr, self.face, "activate_app", old_activate)
+        self.face.activate_app = lambda: None
+        self.window.bubble.focus_entry = lambda: None
 
     def hover(self):
         self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
@@ -790,12 +863,27 @@ class BubbleHover(unittest.TestCase):
         from PySide6.QtCore import Qt
         self.hover()
         self.assertEqual(self.window._depth, 1)
-        x, y = self.message_point(0, down=8)
+        _x, y = self.message_point(0, down=4)
+        x = self.window.bubble._shown_w(self.window.bubble._geom[1]) // 2
         self.assertEqual(self.window.bubble._geom[0][0]["role"], "more")
+        self.send_mouse("move", 40, y)
+        self.assertEqual(self.window.bubble._doc.viewport().cursor().shape(), Qt.ArrowCursor, "beside the arrow")
+        self.click_at(40, y)
+        self.assertEqual(self.window._depth, 1)
         self.send_mouse("move", x, y)
         self.assertEqual(self.window.bubble._doc.viewport().cursor().shape(), Qt.PointingHandCursor)
         self.click_at(x, y)
+        self.assertEqual(self.window._depth, 1, "it loads first")
+        self.load_older()
         self.assertEqual(self.window._depth, 2)
+
+    def load_older(self):
+        import time
+        bubble = self.window.bubble
+        bubble._load_older()
+        deadline = time.monotonic() + 3
+        while bubble._scroll.loading and time.monotonic() < deadline:
+            self.app.processEvents()
 
     def click_at(self, x, y):
         from PySide6.QtCore import Qt
@@ -849,6 +937,16 @@ class BubbleHover(unittest.TestCase):
         bubble = self.window.bubble
         top, height = panel_rects(bubble._geom[0])[1]
         self.assertEqual((bubble._notice.y(), bubble._notice.height()), (top - bubble._scroll.verticalScrollBar().value(), height))
+
+    def test_the_notice_of_a_message_taller_than_the_bubble_stays_inside_the_bubble(self):
+        self.MESSAGES = [{"role": "bot", "text": "Een lange regel. " * 200}]
+        self.hover()
+        bubble = self.window.bubble
+        view = bubble._scroll.viewport().height()
+        self.assertGreater(bubble._doc.height(), view, "taller than what is in view")
+        self.click(0)
+        self.assertGreaterEqual(bubble._notice.y(), 0)
+        self.assertLessEqual(bubble._notice.y() + bubble._notice.height(), view)
 
     def test_a_selection_over_wrapped_lines_copies_as_one_line(self):
         from PySide6.QtCore import Qt
@@ -915,6 +1013,19 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_new_answer_sounds_when_the_face_is_out_of_view(self):
         self.assertEqual(self.answer_sounds(visible=False), 1)
+
+    def test_nothing_sounds_while_the_bot_is_still_working_and_one_beep_when_it_is_done(self):
+        from unittest import mock
+        self.window.visible_to_user = lambda: False
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
+        with mock.patch.object(self.face, "play_sound") as sound:
+            step = self.MESSAGES + [{"role": "bot", "text": "Ik lees het bestand."}]
+            self.window._sync_bubble({"messages": step, "activity": "reading"})
+            self.assertEqual(sound.call_count, 0)
+            self.window._sync_bubble({"messages": step + [{"role": "bot", "text": "Klaar."}], "activity": ""})
+            self.assertEqual(sound.call_count, 1)
+            self.window._sync_bubble({"messages": step + [{"role": "bot", "text": "Klaar."}], "activity": ""})
+            self.assertEqual(sound.call_count, 1)
 
     def test_a_window_that_is_not_shown_is_not_in_view(self):
         self.assertFalse(self.window.visible_to_user())
@@ -1185,6 +1296,22 @@ class BubbleHover(unittest.TestCase):
         self.assertLess(tx + self.window.bubble.width(), self.window.x() + 34 + 20, "left of the face")
         self.assertLessEqual(abs(ty + pos - (self.window.y() + 34)), 1)
 
+    def think_side(self, face_at, screen):
+        self.screen(screen)
+        self.window._move_icon(*face_at)
+        self.window._remember_spot()
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading"}, force=True)
+        self.finish_growth()
+        self.assertEqual(self.window.bubble.kind, "think")
+        return self.window.bubble._goal()[2][1]
+
+    def test_the_thinking_cloud_goes_beside_the_face_even_with_room_above(self):
+        self.assertEqual(self.think_side((700, 500), (0, 0, 1600, 900)), "right")
+
+    def test_the_thinking_cloud_goes_to_the_left_when_the_right_is_full_and_above_only_when_neither_fits(self):
+        self.assertEqual(self.think_side((1500, 500), (0, 0, 1600, 900)), "left")
+        self.assertEqual(self.think_side((100, 500), (0, 0, 230, 900)), "above")
+
     def test_below_the_face_only_when_nothing_else_fits(self):
         _tx, _ty, (_pos, side) = self.side_for((150, 40), self.LONG, (0, 0, 420, 900))
         self.assertEqual(side, "below")
@@ -1270,9 +1397,808 @@ class BubbleHover(unittest.TestCase):
             QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, 120), Qt.NoButton, Qt.NoModifier,
             Qt.NoScrollPhase, False))
         up()
+        self.load_older()
         self.assertEqual(self.window._depth, 2)
         up()
+        self.load_older()
         self.assertEqual(self.window._depth, 2, "no flood of messages from one flick")
+
+    def wheel_up(self, bubble, phase=None, delta=120):
+        from PySide6.QtCore import QPoint, QPointF, Qt
+        from PySide6.QtGui import QWheelEvent
+        from PySide6.QtWidgets import QApplication
+        QApplication.sendEvent(bubble._scroll.viewport(), QWheelEvent(
+            QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, delta), Qt.NoButton, Qt.NoModifier,
+            Qt.NoScrollPhase if phase is None else phase, False))
+
+    def test_the_momentum_after_a_lifted_finger_never_loads_but_a_light_pull_at_the_top_does(self):
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        self.MESSAGES = [{"role": "user", "text": "Klaar?"}, {"role": "bot", "text": "Ja."}]
+        self.hover()
+        bubble = self.window.bubble
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=100.0):
+            for _ in range(10):
+                self.wheel_up(bubble, Qt.ScrollMomentum)
+        self.assertFalse(bubble._scroll.loading)
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=101.0):
+            self.wheel_up(bubble, Qt.ScrollUpdate, delta=15)
+            self.assertFalse(bubble._scroll.loading, "not pulled far enough yet")
+            self.wheel_up(bubble, Qt.ScrollUpdate, delta=30)
+        self.assertTrue(bubble._scroll.loading, "a light pull from the top is enough")
+
+    def test_the_pulsing_dots_do_not_pull_the_text_back_to_the_top_while_you_scroll(self):
+        self.MESSAGES = [{"role": "user", "text": "Klaar?"}, {"role": "bot", "text": "Een lange regel. " * 200}]
+        from botwidget.markdown import conversation_blocks, plain_block, role_panel
+        bubble = self.window.bubble
+        blocks = conversation_blocks(self.MESSAGES, "Test") + [role_panel("bot"), plain_block("dots")]
+        bubble.show_blocks(blocks, "say", input=True)
+        self.finish_growth()
+        self.assertTrue(bubble._dots_lines)
+        bar = bubble._scroll.verticalScrollBar()
+        bar.setValue(40)
+        bubble._tick_dots()
+        self.assertEqual(bar.value(), 40)
+
+    def test_scrolling_up_pauses_at_the_top_of_the_message_and_a_new_flick_loads_the_one_before(self):
+        from unittest import mock
+        self.MESSAGES = [{"role": "user", "text": "Klaar?"}, {"role": "bot", "text": "Een lange regel. " * 200}]
+        self.hover()
+        bubble = self.window.bubble
+        bar = bubble._scroll.verticalScrollBar()
+        bar.setValue(30)
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=100.0):
+            self.wheel_up(bubble)
+        bar.setValue(0)
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=100.05):
+            self.wheel_up(bubble)
+            self.assertEqual(self.window._depth, 1, "the same flick only bounces at the top")
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=101.0):
+            self.wheel_up(bubble)
+            self.load_older()
+            self.assertEqual(self.window._depth, 2, "a new flick asks for the message before")
+
+    def test_while_the_message_before_loads_the_arrow_is_dots_the_text_hangs_lower_and_scrolling_is_ignored(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up(bubble)
+        self.assertTrue(bubble._scroll.loading)
+        self.assertTrue(all(line.get("loading") for line in bubble._loading_lines) and bubble._loading_lines)
+        self.assertIn("<circle", __import__("botwidget.bubble", fromlist=["x"]).bubble_deco_svg(*bubble._geom[:2]),
+                      "dots where the arrow was")
+        bubble._scroll._pull.setCurrentTime(bubble._scroll._pull.duration())
+        self.assertGreater(bubble._scroll.widget().y(), 0, "the text hangs a little lower")
+        self.wheel_up(bubble)
+        self.wheel_up(bubble)
+        self.assertEqual(self.window._depth, 1, "scroll events do nothing while loading")
+        self.load_older()
+        self.assertFalse(bubble._scroll.loading)
+        self.assertEqual(self.window._depth, 2)
+        self.assertEqual(bubble._scroll.widget().y(), 0)
+
+    def test_a_new_message_ends_the_loading_of_the_message_before(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up(bubble)
+        self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Nog iets."}], "activity": ""})
+        self.assertFalse(bubble._scroll.loading)
+        self.load_older()
+        self.assertEqual(self.window._depth, 1)
+
+    def test_a_flick_that_runs_into_the_top_bounces_once(self):
+        from unittest import mock
+        self.MESSAGES = [{"role": "user", "text": "Klaar?"}, {"role": "bot", "text": "Een lange regel. " * 200}]
+        self.hover()
+        bubble = self.window.bubble
+        bubble._scroll.verticalScrollBar().setValue(30)
+        with mock.patch.object(bubble._scroll._bounce, "start") as bounce:
+            for step in range(8):
+                with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=100.0 + step * 0.1):
+                    self.wheel_up(bubble)
+                    bubble._scroll.verticalScrollBar().setValue(0)
+        self.assertEqual(bounce.call_count, 1)
+
+    def test_a_copied_notice_stays_on_its_message_when_an_older_one_loads_above(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.click(1)
+        self.window.show_older()
+        self.finish_growth()
+        from botwidget.bubble import panel_rects
+        top, height = panel_rects(bubble._geom[0])[-1]
+        top -= bubble._scroll.verticalScrollBar().value()
+        view = bubble._scroll.viewport().height()
+        self.assertEqual((bubble._notice.y(), bubble._notice.height()), (top, min(view, top + height) - top))
+
+    def test_a_new_message_takes_the_notice_away(self):
+        self.hover()
+        self.click(1)
+        self.assertTrue(self.window.bubble._notice.isVisible())
+        self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Nog iets."}], "activity": ""})
+        self.assertFalse(self.window.bubble._notice.isVisible())
+
+    def test_cmd_backspace_deletes_the_line_before_the_cursor(self):
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from botwidget.qt_ui import bubble_window
+        self.hover()
+        entry = self.window.bubble._entry
+        entry.setText("Eerste zin.\nTweede zin die weg moet")
+        cursor = entry.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        entry.setTextCursor(cursor)
+        with mock.patch.object(bubble_window.sys, "platform", "darwin"):
+            QTest.keyClick(entry, Qt.Key_Backspace, Qt.ControlModifier)
+            self.assertEqual(entry.text(), "Eerste zin.\n")
+            QTest.keyClick(entry, Qt.Key_Backspace, Qt.ControlModifier)
+            self.assertEqual(entry.text(), "Eerste zin.", "at the start of a line it takes the line break")
+
+    def test_the_notice_moves_along_with_its_message_when_the_bubble_scrolls(self):
+        self.MESSAGES = [{"role": "bot", "text": "Ja.\n\n" + "Een lange regel. " * 200}]
+        self.hover()
+        bubble = self.window.bubble
+        bar = bubble._scroll.verticalScrollBar()
+        self.click(0)
+        before = (bubble._notice.y(), bubble._notice.height())
+        bar.setValue(bar.value() + 10)
+        self.assertEqual(bubble._notice.y(), max(0, before[0] - 10) if before[0] > 0 else 0)
+        bar.setValue(bar.maximum())
+        self.assertLessEqual(bubble._notice.y() + bubble._notice.height(), bubble._scroll.viewport().height())
+
+    def test_shift_enter_starts_a_new_line_and_enter_sends(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.hover()
+        bubble = self.window.bubble
+        sent = []
+        self.window.on_user_message = lambda text, files=(): sent.append(text)
+        QTest.keyClicks(bubble._entry, "eerste")
+        QTest.keyClick(bubble._entry, Qt.Key_Return, Qt.ShiftModifier)
+        QTest.keyClicks(bubble._entry, "tweede")
+        self.assertEqual(bubble._entry.text(), "eerste\ntweede")
+        self.assertEqual(sent, [])
+        QTest.keyClick(bubble._entry, Qt.Key_Return)
+        self.assertEqual(sent, ["eerste\ntweede"])
+
+    def test_the_field_and_the_bubble_grow_with_its_lines(self):
+        self.hover()
+        bubble = self.window.bubble
+        height, field = bubble.height(), bubble._entry.height()
+        bubble._entry.setText("een\ntwee\ndrie")
+        self.app.processEvents()
+        self.assertGreater(bubble._entry.height(), field)
+        self.assertEqual(bubble.height() - height, bubble._entry.height() - field, "the bubble makes room for it")
+        bubble._entry.clear()
+        self.app.processEvents()
+        self.assertEqual(bubble._entry.height(), field)
+
+    def test_the_field_shows_a_scrollbar_only_when_its_lines_no_longer_fit(self):
+        from PySide6.QtCore import Qt
+        self.hover()
+        entry = self.window.bubble._entry
+        entry.setText("x" * 70)
+        self.app.processEvents()
+        self.assertEqual(entry.verticalScrollBarPolicy(), Qt.ScrollBarAlwaysOff, "a wrapped long word grows the field")
+        entry.setText("\n".join(["regel"] * 8))
+        self.app.processEvents()
+        self.assertEqual(entry.verticalScrollBarPolicy(), Qt.ScrollBarAsNeeded)
+        entry.clear()
+        self.app.processEvents()
+        self.assertEqual(entry.verticalScrollBarPolicy(), Qt.ScrollBarAlwaysOff)
+
+    def test_the_thinking_cloud_has_the_field_so_you_can_write_ahead(self):
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading"}, force=True)
+        self.finish_growth()
+        bubble = self.window.bubble
+        self.assertEqual(bubble.kind, "think")
+        self.assertTrue(bubble._entry.isVisibleTo(bubble))
+        self.assertEqual(bubble._entry.placeholderText(), "Queue a message…")
+
+    def start_working(self):
+        self.state = {"activity": "reading"}
+        self.face.latest_chat = lambda thread_id, limit=8: {"messages": self.MESSAGES, "activity": self.state["activity"]}
+        self.window._pump_outbox = lambda: None
+        self.window._sync_bubble(self.face.latest_chat("t"), force=True)
+
+    def type_while_working(self, text):
+        self.start_working()
+        self.window.on_user_message(text)
+
+    def test_a_message_typed_while_the_bot_works_waits_in_the_queue_and_shows_in_the_cloud(self):
+        self.type_while_working("Daarna dit")
+        self.assertEqual([item["text"] for item in self.window._queue], ["Daarna dit"])
+        self.assertEqual(self.window._outbox.items, [], "not sent yet")
+        self.assertIn("Daarna dit", self.window.bubble.full_text)
+        self.assertIn("Queued", self.window.bubble.full_text)
+
+    def test_the_queue_goes_out_one_message_per_finished_turn(self):
+        self.start_working()
+        self.window.on_user_message("Eerste")
+        self.window.on_user_message("Tweede")
+        texts = lambda items: [i["text"] for i in items]
+        self.window._sync_bubble(self.face.latest_chat("t"))
+        self.assertEqual(self.window._outbox.items, [], "the turn is still running")
+        self.state["activity"] = ""
+        self.window._sync_bubble(self.face.latest_chat("t"))
+        self.assertEqual((texts(self.window._outbox.items), texts(self.window._queue)), (["Eerste"], ["Tweede"]))
+        self.window._outbox.items.clear()
+        self.window._sync_bubble(self.face.latest_chat("t"))
+        self.assertEqual(texts(self.window._queue), ["Tweede"], "waits until the bot has started on the first")
+        self.state["activity"] = "reading"
+        self.window._sync_bubble(self.face.latest_chat("t"))
+        self.state["activity"] = ""
+        self.window._sync_bubble(self.face.latest_chat("t"))
+        self.assertEqual(self.window._queue, [])
+        self.assertEqual(texts(self.window._outbox.items), ["Tweede"])
+
+    def test_clicking_a_queued_message_puts_it_back_in_the_field_to_edit(self):
+        self.type_while_working("Pas mij aan")
+        bubble = self.window.bubble
+        self.finish_growth()
+        self.window.bubble.focus_entry = lambda: None
+        old = self.face.activate_app
+        self.addCleanup(setattr, self.face, "activate_app", old)
+        self.face.activate_app = lambda: None
+        queued = next(panel for panel in bubble._geom[0] if panel.get("queued"))
+        bubble.edit_queued.emit(queued["queued"])
+        self.assertEqual(self.window._queue, [])
+        self.assertEqual(bubble._entry.text(), "Pas mij aan")
+        self.assertNotIn("Queued", bubble.full_text)
+
+    def test_the_arrow_cursor_turns_into_a_hand_over_a_queued_message_in_the_cloud(self):
+        self.type_while_working("Pas mij aan")
+        self.finish_growth()
+        bubble = self.window.bubble
+        index = next(i for i, panel in enumerate(bubble._geom[0]) if panel.get("queued"))
+        from botwidget.bubble import panel_rects
+        top, height = panel_rects(bubble._geom[0])[index]
+        self.assertIsNotNone(bubble._message_at(40, top + height / 2))
+        self.assertIsNone(bubble._message_at(40, 3), "the thought itself is not clickable")
+
+    def test_the_field_stays_put_when_a_new_thought_makes_the_cloud_grow(self):
+        self.start_working()
+        self.finish_growth()
+        bubble = self.window.bubble
+        self.assertTrue(bubble._entry.isVisibleTo(bubble))
+        self.state["activity"] = "A much longer thought. " * 15
+        self.window._sync_bubble(self.face.latest_chat("t"))
+        self.assertIsNotNone(bubble._growth, "the cloud is growing again")
+        self.assertEqual(bubble._growth.progress, 0.0)
+        self.assertTrue(bubble._entry.isVisibleTo(bubble), "hiding the field would take the cursor away")
+
+    def test_the_text_does_not_twitch_back_while_it_hangs_lower_during_loading(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up(bubble)
+        self.assertTrue(bubble._scroll.loading)
+        bubble._scroll._pull.setCurrentTime(bubble._scroll._pull.duration())
+        hanging = bubble._scroll.widget().y()
+        self.assertGreater(hanging, 0)
+        for _ in range(5):
+            bubble._tick_dots()
+            self.assertEqual(bubble._scroll.widget().y(), hanging)
+
+    def test_the_text_is_back_in_place_before_the_older_message_slides_in(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up(bubble)
+        bubble._scroll._pull.setCurrentTime(bubble._scroll._pull.duration())
+        self.assertGreater(bubble._scroll.widget().y(), 0)
+        seen = []
+        bubble.older.connect(lambda: seen.append(bubble._scroll.widget().y()))
+        self.load_older()
+        self.assertEqual(seen, [0], "no jump when the message slides in")
+
+    def settings_state(self):
+        return {"sound": True, "quiet_hours": False, "always_on_top": True, "all_desktops": False, "login": False,
+                "check_updates": True, "auto_update": False, "channel": "local", "version": "0.2.0",
+                "can_pick_desktops": True, "can_install_updates": False, "hotkey": "", "switch_label": None,
+                "update": "", "staged_update": "", "bots": []}
+
+    def open_settings(self):
+        from botwidget import menu_pages
+        self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
+                                               "menu_command": lambda _self, command, page: page,
+                                               "close_bubbles_except": lambda _self, _id: None})()
+        self.window.open_menu("settings")
+        self.finish_growth()
+        self.app.processEvents()
+        return self.window.bubble
+
+    def test_the_settings_are_real_switches_and_buttons_in_their_rows(self):
+        from botwidget.qt_ui.controls import ActionButton, Switch
+        bubble = self.open_settings()
+        switches = [w for w in bubble._control_widgets if isinstance(w, Switch)]
+        buttons = [w for w in bubble._control_widgets if isinstance(w, ActionButton)]
+        self.assertEqual(len(switches), 6)
+        self.assertEqual([w.text() for w in buttons], ["Quit Bot Widget"])
+        self.assertEqual([w.isChecked() for w in switches], [True, False, True, False, False, True])
+        rows = [w.geometry().top() for w in switches]
+        self.assertEqual(rows, sorted(rows), "in the order of the page")
+        self.assertEqual(len(set(rows)), len(rows), "each in a row of its own")
+
+    def test_clicking_a_switch_runs_its_command(self):
+        from botwidget.qt_ui.controls import Switch
+        bubble = self.open_settings()
+        sent = []
+        bubble.command.connect(sent.append)
+        next(w for w in bubble._control_widgets if isinstance(w, Switch)).click()
+        self.assertEqual(sent, ["toggle/sound"])
+
+    def test_the_main_menu_has_the_arrow_too_and_it_leads_back_to_the_conversation(self):
+        self.hover()
+        self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
+                                               "menu_command": lambda _self, command, page: page,
+                                               "close_bubbles_except": lambda _self, _id: None})()
+        self.window.open_menu("home")
+        bubble = self.window.bubble
+        self.assertEqual(bubble._geom[0][0]["back"], "page/chat")
+        bubble.command.emit("page/chat")
+        self.finish_growth()
+        self.assertIsNone(self.window._menu_page)
+        self.assertIn("Ja.", bubble.full_text, "the conversation again")
+
+    def test_from_the_main_menu_the_arrow_leads_to_the_thinking_cloud_while_the_bot_works(self):
+        self.start_working()
+        self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
+                                               "menu_command": lambda _self, command, page: page,
+                                               "close_bubbles_except": lambda _self, _id: None})()
+        self.window.open_menu("home")
+        self.window.bubble.command.emit("page/chat")
+        self.assertEqual(self.window.bubble.kind, "think")
+
+    def test_a_page_has_the_arrow_up_instead_of_a_menu_link_and_it_goes_back(self):
+        bubble = self.open_settings()
+        self.assertNotIn("Menu", bubble.full_text)
+        self.assertEqual(bubble._geom[0][0]["role"], "more")
+        sent = []
+        bubble.command.connect(sent.append)
+        _x, y = self.message_point(0, down=4)
+        self.click_at(bubble._shown_w(bubble._geom[1]) // 2, y)
+        self.assertEqual(sent, ["page/home"])
+
+    def test_scrolling_past_the_top_of_a_page_goes_back_too(self):
+        bubble = self.open_settings()
+        sent = []
+        bubble.command.connect(sent.append)
+        self.wheel_up(bubble)
+        self.assertEqual(sent, ["page/home"])
+
+    def test_a_page_stays_a_while_when_the_pointer_is_outside_it_and_a_margin_counts_as_on_it(self):
+        from unittest import mock
+        bubble = self.open_settings()
+        self.where["at"] = (-5000, -5000)
+        bubble._tick()
+        self.assertTrue(bubble.isVisible(), "the page just opened")
+        near = bubble.frameGeometry().right() + 10
+        self.where["at"] = (near, bubble.frameGeometry().center().y())
+        self.assertTrue(self.window.pointer_near(bubble), "a margin around the bubble")
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=time.monotonic() + 60):
+            self.where["at"] = (-5000, -5000)
+            bubble._tick()
+        self.assertFalse(bubble.isVisible(), "gone once the pointer has been away past the delay")
+
+    def temporary_transfers(self):
+        from botwidget import attachments
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        old = attachments.TRANSFERS
+        self.addCleanup(setattr, attachments, "TRANSFERS", old)
+        attachments.TRANSFERS = __import__("pathlib").Path(folder) / "Transfers"
+        return folder
+
+    def test_a_pasted_file_is_copied_under_the_shared_folder_and_shows_as_a_chip(self):
+        from PySide6.QtCore import QMimeData, QUrl
+        folder = self.temporary_transfers()
+        original = os.path.join(folder, "notitie.txt")
+        with open(original, "w") as handle:
+            handle.write("hoi")
+        self.hover()
+        bubble = self.window.bubble
+        data = QMimeData()
+        data.setUrls([QUrl.fromLocalFile(original)])
+        height = bubble.height()
+        bubble._entry.insertFromMimeData(data)
+        self.assertEqual(bubble._entry.text(), "", "the path is not typed into the field")
+        self.assertEqual([p.name for p in bubble._attachments], ["notitie.txt"])
+        self.assertTrue(str(bubble._attachments[0]).startswith(os.path.join(folder, "Transfers")))
+        self.assertTrue(bubble._attachments[0].read_text() == "hoi")
+        self.assertTrue(bubble._attachment_row.isVisibleTo(bubble))
+        self.assertIn("notitie.txt", bubble._attachment_row.text())
+        self.assertGreater(bubble.height(), height, "the bubble makes room for the chip")
+
+    def test_a_pasted_picture_becomes_a_png(self):
+        from PySide6.QtCore import QMimeData
+        from PySide6.QtGui import QColor, QImage
+        self.temporary_transfers()
+        self.hover()
+        bubble = self.window.bubble
+        image = QImage(4, 4, QImage.Format_RGB32)
+        image.fill(QColor("red"))
+        data = QMimeData()
+        data.setImageData(image)
+        bubble._entry.insertFromMimeData(data)
+        self.assertEqual([p.name for p in bubble._attachments], ["image.png"])
+        self.assertFalse(QImage(str(bubble._attachments[0])).isNull())
+
+    def test_pasting_plain_text_still_types_it(self):
+        from PySide6.QtCore import QMimeData
+        self.hover()
+        entry = self.window.bubble._entry
+        data = QMimeData()
+        data.setText("gewoon tekst")
+        entry.insertFromMimeData(data)
+        self.assertEqual(entry.text(), "gewoon tekst")
+        self.assertEqual(self.window.bubble._attachments, [])
+
+    def test_a_chip_can_be_removed_and_a_message_goes_out_with_the_list_of_its_files(self):
+        from pathlib import Path
+        self.temporary_transfers()
+        self.hover()
+        bubble = self.window.bubble
+        bubble._attach([Path("/x/een.png"), Path("/x/twee.pdf")])
+        bubble._unattach("0")
+        self.assertEqual([p.name for p in bubble._attachments], ["twee.pdf"])
+        bubble._entry.setText("Kijk even")
+        self.window._pump_outbox = lambda: None
+        bubble._send()
+        self.assertEqual(bubble._attachments, [])
+        self.assertFalse(bubble._attachment_row.isVisibleTo(bubble))
+        self.assertEqual(self.window._outbox.items[0]["text"],
+                         "Kijk even\n\nAttached local files:\n- twee.pdf: /x/twee.pdf")
+
+    def test_a_file_alone_is_a_message_and_a_queued_one_keeps_its_file_for_editing(self):
+        from pathlib import Path
+        self.hover()
+        bubble = self.window.bubble
+        self.start_working()
+        bubble._attach([Path("/x/een.png")])
+        bubble._send()
+        self.assertEqual(self.window._outbox.items, [], "queued while the bot works")
+        item = self.window._queue[0]
+        self.assertEqual((item["text"], [p.name for p in item["files"]]), ("", ["een.png"]))
+        self.assertIn("een.png", bubble.full_text)
+        self.window.bubble.focus_entry = lambda: None
+        self.window._edit_queued(item["id"])
+        self.assertEqual([p.name for p in bubble._attachments], ["een.png"])
+        self.assertEqual(self.window._queue, [])
+
+    def click_face(self, shift=False):
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication
+        point = QPointF(5, 5)
+        self.window._press_pos = (point.x(), point.y())
+        QApplication.sendEvent(self.window, QMouseEvent(QEvent.MouseButtonRelease, point, point, Qt.LeftButton,
+                                                        Qt.NoButton, Qt.ShiftModifier if shift else Qt.NoModifier))
+
+    def test_shift_clicking_a_thinking_face_mutes_its_thinking_and_shift_clicking_again_brings_it_back(self):
+        self.start_working()
+        self.assertEqual(self.window.bubble.kind, "think")
+        self.click_face(shift=True)
+        self.assertTrue(self.window._muted)
+        self.assertFalse(self.window.bubble.isVisible(), "no cloud while muted")
+        self.window._sync_bubble(self.face.latest_chat("t"))
+        self.assertFalse(self.window.bubble.isVisible(), "and it does not come back by itself")
+        self.click_face(shift=True)
+        self.assertFalse(self.window._muted)
+        self.assertEqual(self.window.bubble.kind, "think")
+
+    def test_a_plain_click_never_mutes_not_even_while_thinking(self):
+        focus = []
+        self.window.bubble.focus_entry = lambda: focus.append(1)
+        self.start_working()
+        self.click_face()
+        self.assertFalse(self.window._muted)
+        self.assertEqual(focus, [1], "it opens the field as ever")
+
+    def test_the_mute_is_kept_and_a_new_window_for_the_same_bot_starts_muted(self):
+        self.window.toggle_muted()
+        self.assertEqual(config.muted_bots(), ["t"])
+        again = self.face.FaceWindow("t", "Test", spot=(500, 400))
+        self.addCleanup(again.close_face)
+        again._poll_timer.stop()
+        self.assertTrue(again._muted)
+        self.assertIn(" L", __import__("botwidget.avatar", fromlist=["x"]).face_svg(seed="t", muted=again._muted))
+        self.window.toggle_muted()
+        self.assertEqual(config.muted_bots(), [])
+
+    def test_shift_click_mutes_or_unmutes_at_any_moment(self):
+        self.click_face(shift=True)
+        self.assertTrue(self.window._muted, "also when the bot is idle")
+        self.click_face(shift=True)
+        self.assertFalse(self.window._muted)
+
+    def test_the_bots_page_says_how_to_mute(self):
+        from botwidget import menu_pages
+        self.assertIn("Shift+click", markdown.block_text(menu_pages.bots(self.settings_state())))
+
+    def test_the_bots_page_has_a_mute_switch_per_bot_that_works_for_a_bot_without_a_face(self):
+        from botwidget.qt_ui.faces import Faces
+        faces = Faces.__new__(Faces)
+        faces.faces = {}
+        self.assertEqual(faces.menu_command("mute/zz", "bots"), "bots")
+        self.assertEqual(config.muted_bots(), ["zz"])
+        faces.menu_command("mute/zz", "bots")
+        self.assertEqual(config.muted_bots(), [])
+
+    def test_a_click_on_a_face_that_is_not_thinking_still_opens_the_chat(self):
+        focus = []
+        self.window.bubble.focus_entry = lambda: focus.append(1)
+        self.click_face()
+        self.assertFalse(self.window._muted)
+        self.assertEqual(focus, [1])
+
+    def attention(self, **extra):
+        return {"prompts": [], "approvals": [], "browserTakeovers": [], **extra}
+
+    QUESTION = {"requestId": "r1", "requiresOpenBot": False, "questions": [
+        {"id": "q1", "header": "Kleur", "question": "Welke **kleur** wil je?",
+         "options": [{"label": "Rood", "description": ""}, {"label": "Blauw", "description": ""}]}]}
+
+    def posts(self):
+        calls = []
+
+        def post(path, body):
+            calls.append((path, body))
+            return self.face.ApiResult({"ok": True}, 200, "")
+        old = self.face.api_post
+        self.addCleanup(setattr, self.face, "api_post", old)
+        self.face.api_post = post
+        return calls
+
+    def wait_for(self, calls):
+        for _ in range(300):
+            if calls:
+                return
+            time.sleep(0.01)
+            self.app.processEvents()
+
+    def test_a_question_from_the_bot_shows_with_a_button_per_option_even_when_thinking_is_muted(self):
+        self.start_working()
+        self.window._muted = True
+        self.window._set_attention(self.attention(prompts=[self.QUESTION]))
+        self.window._sync_bubble(self.face.latest_chat("t"), force=True)
+        bubble = self.window.bubble
+        self.assertEqual(bubble.kind, "think")
+        self.assertIn("Welke kleur wil je?", bubble.full_text)
+        self.assertEqual([w.text() for w in bubble._control_widgets], ["Rood", "Blauw"])
+        self.assertEqual(bubble._entry.placeholderText(), "Type your answer…")
+
+    def test_a_question_alone_makes_the_bot_count_as_working_and_shows_the_cloud(self):
+        self.window._set_attention(self.attention(prompts=[self.QUESTION]))
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""}, force=True)
+        self.assertEqual(self.window.bubble.kind, "think")
+
+    def test_clicking_an_option_answers_the_question(self):
+        calls = self.posts()
+        self.start_working()
+        self.window._set_attention(self.attention(prompts=[self.QUESTION]))
+        self.window._sync_bubble(self.face.latest_chat("t"), force=True)
+        self.window.bubble._control_widgets[1].click()
+        self.wait_for(calls)
+        self.assertEqual(calls, [("/v1/agents/t/prompts/r1/answer", {"answers": {"q1": ["Blauw"]}})])
+        self.assertNotIn("Welke kleur", self.window.bubble.full_text, "gone while the answer goes out")
+
+    def test_typing_in_the_field_answers_the_open_question_in_your_own_words(self):
+        calls = self.posts()
+        self.start_working()
+        self.window._set_attention(self.attention(prompts=[self.QUESTION]))
+        self.window.on_user_message("Paars")
+        self.wait_for(calls)
+        self.assertEqual(calls, [("/v1/agents/t/prompts/r1/answer", {"answers": {"q1": ["Paars"]}})])
+        self.assertEqual(self.window._queue, [], "an answer, not a message in the queue")
+
+    def test_a_prompt_with_several_questions_goes_out_once_all_are_answered(self):
+        calls = self.posts()
+        prompt = {"requestId": "r2", "requiresOpenBot": False, "questions": [
+            {"id": "a", "header": "", "question": "Eerste?", "options": [{"label": "Ja"}, {"label": "Nee"}]},
+            {"id": "b", "header": "", "question": "Tweede?", "options": [{"label": "Oke"}]}]}
+        self.start_working()
+        self.window._set_attention(self.attention(prompts=[prompt]))
+        self.window._menu_command("answer/r2/a/1")
+        self.assertEqual(calls, [])
+        self.assertIn("✓ Nee", self.window.bubble.full_text)
+        self.window._menu_command("answer/r2/b/0")
+        self.wait_for(calls)
+        self.assertEqual(calls[0][1], {"answers": {"a": ["Nee"], "b": ["Oke"]}})
+
+    def test_an_approval_has_accept_and_decline_buttons(self):
+        calls = self.posts()
+        approval = {"requestId": "p1", "kind": "command", "command": "rm -rf build", "cwd": "/tmp/x",
+                    "reason": "Clean up", "grantRoot": None, "permissions": None}
+        self.start_working()
+        self.window._set_attention(self.attention(approvals=[approval]))
+        self.window._sync_bubble(self.face.latest_chat("t"), force=True)
+        bubble = self.window.bubble
+        self.assertIn("Run a command?", bubble.full_text)
+        self.assertIn("rm -rf build", bubble.full_text)
+        self.assertEqual([w.text() for w in bubble._control_widgets], ["Accept", "Decline"])
+        bubble._control_widgets[1].click()
+        self.wait_for(calls)
+        self.assertEqual(calls, [("/v1/agents/t/approvals/p1/respond", {"decision": "decline"})])
+
+    def test_a_question_that_needs_openbot_itself_says_so_and_has_no_buttons(self):
+        prompt = {"requestId": "r3", "requiresOpenBot": True, "questions": []}
+        self.start_working()
+        self.window._set_attention(self.attention(prompts=[prompt]))
+        self.window._sync_bubble(self.face.latest_chat("t"), force=True)
+        self.assertIn("open OpenBot", self.window.bubble.full_text)
+        self.assertEqual(self.window.bubble._control_widgets, [])
+        self.assertIsNone(self.window._open_question())
+
+    def test_a_refused_answer_says_so_and_the_question_comes_back(self):
+        self.window._set_attention(self.attention(prompts=[self.QUESTION]))
+        self.window._answering.add("r1")
+        self.window._answers["r1"] = {"q1": ["Rood"]}
+        self.window._on_attention_done(False, "HTTP 409")
+        self.assertEqual(self.window._answering, set())
+        self.assertIn("HTTP 409", "".join(c for b in self.window._attention_blocks() for c, _s in b.get("chunks", [])))
+
+    LONG_THOUGHT = "A thought that goes on. " * 60
+
+    def think(self, text):
+        self.state["activity"] = text
+        self.window._sync_bubble(self.face.latest_chat("t"))
+        self.finish_growth()
+        self.app.processEvents()
+        return self.window.bubble, self.window.bubble._scroll.verticalScrollBar()
+
+    def test_the_cloud_follows_a_thought_down_as_it_grows(self):
+        self.start_working()
+        bubble, bar = self.think(self.LONG_THOUGHT)
+        self.assertGreater(bar.maximum(), 0)
+        self.assertEqual(bar.value(), bar.maximum(), "at the end of the thought")
+        bubble, bar = self.think(self.LONG_THOUGHT + "And on it goes, a little further. " * 20)
+        self.assertEqual(bar.value(), bar.maximum(), "and still at the end")
+
+    def test_the_cloud_stays_where_you_scrolled_to_in_a_thought(self):
+        self.start_working()
+        bubble, bar = self.think(self.LONG_THOUGHT)
+        bar.setValue(20)
+        bubble, bar = self.think(self.LONG_THOUGHT + "More. " * 40)
+        self.assertEqual(bar.value(), 20)
+        bar.setValue(bar.maximum())
+        bubble, bar = self.think(self.LONG_THOUGHT + "More. " * 80)
+        self.assertEqual(bar.value(), bar.maximum(), "back at the end it follows again")
+
+    def test_the_dots_sit_at_the_end_of_the_cloud(self):
+        self.start_working()
+        bubble, _bar = self.think("reading")
+        panels = bubble._geom[0]
+        self.assertEqual(panels[-1]["lines"][-1]["kind"], "dots")
+        self.assertNotIn("dots", [line["kind"] for line in panels[0]["lines"]])
+
+    def test_a_message_is_still_read_from_its_top(self):
+        self.MESSAGES = [{"role": "bot", "text": "Een lange regel. " * 200}]
+        self.hover()
+        self.assertEqual(self.window.bubble._scroll.verticalScrollBar().value(), 0)
+
+    def stub_faces(self):
+        self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
+                                               "menu_command": lambda _self, command, page: page,
+                                               "close_bubbles_except": lambda _self, _id: None})()
+
+    def test_a_slash_at_the_start_opens_a_list_of_commands_above_the_field(self):
+        self.hover()
+        bubble = self.window.bubble
+        height = bubble.height()
+        bubble._entry.setText("/")
+        self.app.processEvents()
+        self.assertTrue(bubble._slash.isVisibleTo(bubble))
+        self.assertEqual([c for c, _n in bubble._slash.rows], ["/settings", "/bots", "/connections", "/menu"])
+        self.assertLess(bubble._slash.geometry().bottom(), bubble._entry.geometry().top(), "above the field")
+        self.assertGreater(bubble.height(), height, "the bubble makes room for the list")
+        bubble._entry.setText("/b")
+        self.assertEqual([c for c, _n in bubble._slash.rows], ["/bots"])
+        bubble._entry.setText("/zzz")
+        self.assertFalse(bubble._slash.isVisibleTo(bubble))
+        bubble._entry.setText("hallo /bots")
+        self.assertFalse(bubble._slash.isVisibleTo(bubble), "only at the start of the message")
+        bubble._entry.clear()
+        self.app.processEvents()
+        self.assertEqual(bubble.height(), height, "and the room is given back")
+
+    def test_arrows_and_return_pick_a_command_and_it_opens_its_page(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.hover()
+        self.stub_faces()
+        bubble = self.window.bubble
+        bubble._entry.setText("/")
+        QTest.keyClick(bubble._entry, Qt.Key_Down)
+        QTest.keyClick(bubble._entry, Qt.Key_Return)
+        self.assertEqual(self.window._menu_page, "bots")
+        self.assertEqual(bubble._entry.text(), "")
+
+    def test_tab_completes_the_command_without_running_it_and_escape_only_closes_the_list(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.hover()
+        self.stub_faces()
+        bubble = self.window.bubble
+        bubble._entry.setText("/c")
+        QTest.keyClick(bubble._entry, Qt.Key_Tab)
+        self.assertEqual(bubble._entry.text(), "/connections")
+        self.assertIsNone(self.window._menu_page)
+        bubble._entry.setText("/")
+        dismissed = []
+        bubble._entry.dismissed.connect(lambda: dismissed.append(1))
+        QTest.keyClick(bubble._entry, Qt.Key_Escape)
+        self.assertFalse(bubble._slash.isVisibleTo(bubble))
+        self.assertEqual((bubble._entry.text(), dismissed), ("/", []), "the bubble itself stays")
+
+    def test_clicking_a_command_in_the_list_runs_it(self):
+        self.hover()
+        self.stub_faces()
+        bubble = self.window.bubble
+        bubble._entry.setText("/")
+        bubble._slash.chosen.emit("/settings")
+        self.assertEqual(self.window._menu_page, "settings")
+
+    def test_every_command_in_the_list_opens_a_page(self):
+        from botwidget import menu_pages
+        for command, _note in menu_pages.COMMANDS:
+            self.assertIn(command, menu_pages.SLASH)
+
+    def second_face(self):
+        from botwidget.qt_ui.faces import Faces
+        other = self.face.FaceWindow("u", "Other", spot=(900, 400))
+        self.addCleanup(other.close_face)
+        other._poll_timer.stop()
+        other._pointer = lambda: self.where["at"]
+        other.bubble.focus_entry = lambda: None
+        registry = Faces.__new__(Faces)
+        registry.faces = {"t": self.window, "u": other}
+        self.window.faces = other.faces = registry
+        return other
+
+    def test_when_one_bubble_opens_on_hover_the_bubble_of_the_other_face_closes(self):
+        other = self.second_face()
+        self.hover()
+        self.assertTrue(self.window.bubble.isVisible())
+        self.where["at"] = (other.x() + 34, other.y() + 34)
+        other._animate()
+        self.finish_growth()
+        other.bubble._slide.stop()
+        other.bubble._growth_done()
+        self.assertTrue(other.bubble.isVisible())
+        self.assertFalse(self.window.bubble.isVisible(), "one at a time")
+
+    def test_a_pinned_bubble_closes_when_another_face_is_clicked_open(self):
+        other = self.second_face()
+        self.window.pin()
+        self.assertTrue(self.window.bubble.isVisible())
+        other.open_input()
+        self.assertTrue(other.bubble.isVisible())
+        self.assertFalse(self.window.bubble.isVisible())
+        self.assertFalse(self.window.pinned)
+
+    def test_a_face_without_a_bubble_of_its_own_does_not_close_the_others(self):
+        other = self.second_face()
+        self.hover()
+        other.MESSAGES = []
+        other._claim_bubble()
+        self.assertTrue(self.window.bubble.isVisible(), "nothing opened, nothing closes")
+
+    def test_the_field_never_has_a_horizontal_scrollbar(self):
+        from PySide6.QtCore import Qt
+        self.hover()
+        self.assertEqual(self.window.bubble._entry.horizontalScrollBarPolicy(), Qt.ScrollBarAlwaysOff)
+
+    def test_hovering_over_a_thinking_bubble_never_takes_the_keyboard(self):
+        activated = []
+        old = self.face.activate_app
+        self.addCleanup(setattr, self.face, "activate_app", old)
+        self.face.activate_app = lambda: activated.append(1)
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading"}, force=True)
+        self.assertEqual(self.window.bubble.kind, "think")
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.window._animate()
+        self.window._hover_since = 1.0
+        self.window._animate()
+        self.assertEqual(activated, [])
 
     def test_a_new_message_brings_back_only_the_latest(self):
         self.hover()
@@ -1607,7 +2533,12 @@ class MenuPages(unittest.TestCase):
 
     @staticmethod
     def commands(blocks):
-        return [style[4:] for block in blocks for _text, style in block.get("chunks", []) if style.startswith("cmd:")]
+        found = []
+        for block in blocks:
+            found += [style[4:] for _text, style in block.get("chunks", []) if style.startswith("cmd:")]
+            found += [block["command"]] if block.get("kind") == "control" else []
+            found += [block["back"]] if block.get("back") else []
+        return found
 
     @staticmethod
     def text(blocks):
@@ -1616,7 +2547,7 @@ class MenuPages(unittest.TestCase):
     def test_the_home_page_asks_and_offers_the_three_slash_commands(self):
         blocks = menu_pages.home()
         self.assertEqual(self.text(blocks).splitlines()[0], "Looking for settings?")
-        self.assertEqual(self.commands(blocks), ["page/settings", "page/bots", "page/connections"])
+        self.assertEqual(self.commands(blocks), ["page/chat", "page/settings", "page/bots", "page/connections"])
 
     def test_the_settings_page_shows_every_switch_as_it_stands(self):
         text = self.text(menu_pages.settings(self.STATE))
@@ -1642,7 +2573,7 @@ class MenuPages(unittest.TestCase):
 
     def test_the_bots_page_has_a_switch_per_bot(self):
         blocks = menu_pages.bots(self.STATE)
-        self.assertEqual(self.commands(blocks), ["page/home", "bot/a", "bot/b"])
+        self.assertEqual(self.commands(blocks), ["page/home", "bot/a", "mute/a", "bot/b", "mute/b"])
         self.assertIn("☑ Fritsie", self.text(blocks))
         self.assertIn("☐ Robo", self.text(blocks))
         self.assertIn("No bots found yet", self.text(menu_pages.bots({**self.STATE, "bots": []})))
@@ -1717,6 +2648,9 @@ class MenuInBubble(unittest.TestCase):
                 test.calls.append(("bot", agent_id, on))
 
             menu_command = test.faces.Faces.menu_command
+
+            def close_bubbles_except(self, agent_id):
+                pass
 
             def install_update(self):
                 test.calls.append("update")
@@ -1830,13 +2764,6 @@ class MenuInBubble(unittest.TestCase):
             self.app.processEvents()
         self.app.processEvents()
         self.assertEqual(bubble._scroll.verticalScrollBar().value(), 0)
-        self.assertTrue(bubble._from_top)
-
-    def test_the_conversation_still_ends_at_its_bottom_after_a_menu(self):
-        self.window.open_menu("settings")
-        self.window.bubble.place("")
-        self.window._sync_bubble({"messages": [{"role": "bot", "text": "Antwoord."}], "activity": ""}, force=True)
-        self.assertFalse(self.window.bubble._from_top)
 
     def test_opening_the_chat_takes_over_from_the_menu(self):
         self.window.open_menu("settings")
@@ -1847,7 +2774,7 @@ class MenuInBubble(unittest.TestCase):
     def test_the_menu_has_no_input_field_and_no_copying(self):
         self.window.open_menu("settings")
         self.assertFalse(self.window.bubble._entry.isVisibleTo(self.window.bubble))
-        self.assertIsNone(self.window.bubble._message_at(20))
+        self.assertIsNone(self.window.bubble._message_at(0, 20))
 
     def test_without_faces_there_is_no_menu_and_no_error(self):
         bare = self.face.FaceWindow("t2", "Bare", spot=(100, 100))
