@@ -423,6 +423,8 @@ class MutedFace(unittest.TestCase):
         self.assertEqual(ball.count(" A"), 2, "the small mark is a crescent of two arcs")
         self.assertLess(abs(GROK_CRESCENT[3] - GROK_CRESCENT[2]), 90, "a short arc, not a ring")
         self.assertLess(GROK_CRESCENT[1], GROK_CRESCENT[0], "with an inner radius")
+        self.assertGreaterEqual(GROK_CRESCENT[0], 0.9, "riding the rim, not floating inside it")
+        self.assertLessEqual(GROK_CRESCENT[0], 1.0, "and still on the ball")
         self.assertNotIn('stroke-width="2.6"', ball, "no cross for a mouth")
         self.assertEqual(face_svg(seed="x").count(" A"), 0, "no crescent on other faces")
         self.assertEqual(face_svg(seed="x").count('fill="none" stroke='), 4, "others keep two eyes")

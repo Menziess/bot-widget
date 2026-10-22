@@ -89,10 +89,10 @@ GROK_BLOB = (1.036, 1.036, 1.037, 1.037, 1.038, 1.039, 1.04, 1.042, 1.043, 1.044
 GROK_SHAPES = {"blob": GROK_BLOB}
 # Grok Bot's blob is a glossy ball, not a face: two highlights and no eyes. Both marks are traced
 # from Grok Bot's own blob art (bot-blob-face@2x.png). The big one is a pill in the upper left; the
-# small one is a thin crescent that follows the rim, higher and further right. Radii, angles and
+# small one is a thin crescent that rides the rim, higher and further right. Radii, angles and
 # offsets are in head radii, angles in degrees from 3 o'clock going down.
 GROK_HIGHLIGHT = (0.11, -0.33, 0.52, 0.20, 54.0)
-GROK_CRESCENT = (0.88, 0.74, -62.0, -22.0)
+GROK_CRESCENT = (0.96, 0.83, -60.0, -24.0)
 
 
 def silhouette_radii(shape: str) -> tuple:
