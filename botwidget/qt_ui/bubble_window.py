@@ -171,6 +171,14 @@ class BubbleEntry(QPlainTextEdit):
         lines = round(self.document().size().height())
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if lines > ENTRY_MAX_LINES else Qt.ScrollBarAlwaysOff)
         self.resized.emit()
+        # The field grows a moment later: until then the cursor may sit below what is shown.
+        QTimer.singleShot(0, self._show_cursor)
+
+    def _show_cursor(self):
+        if round(self.document().size().height()) <= ENTRY_MAX_LINES:
+            self.verticalScrollBar().setValue(0)
+        else:
+            self.ensureCursorVisible()
 
     def canInsertFromMimeData(self, source) -> bool:
         return source.hasUrls() or source.hasImage() or super().canInsertFromMimeData(source)
@@ -197,7 +205,7 @@ class BubbleEntry(QPlainTextEdit):
 
     def wanted_height(self) -> int:
         lines = max(1, min(ENTRY_MAX_LINES, round(self.document().size().height())))
-        return max(ENTRY_H, lines * self.fontMetrics().lineSpacing() + ENTRY_PAD)
+        return max(ENTRY_H, lines * self.fontMetrics().lineSpacing() + ENTRY_PAD + 2)
 
     def keyPressEvent(self, event):
         """Escape closes the bubble without sending anything; with the list of commands open it closes that."""
@@ -955,7 +963,7 @@ class BubbleWindow(QWidget):
         if key == self._built and not self._dots_lines:
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
             self.changed = time.monotonic()
-            if not visible:
+            if not visible and not self._yielding:
                 self._growth = Growth(SEED_W, SEED_H, opening=True)
                 self.setWindowOpacity(0.0)
                 self.place(kind)
@@ -986,7 +994,7 @@ class BubbleWindow(QWidget):
             self._dots_on = True
             self._dots.start()
         start = start or (SEED_W, SEED_H)
-        if start != (self._geom[1], self._body_h(self._geom[2])):
+        if start != (self._geom[1], self._body_h(self._geom[2])) and not self._yielding:
             added = max(0, self._geom[2] - old_inner) if older and visible else 0
             self._growth = Growth(*start, added=added, opening=not visible)
             if not visible:
@@ -1110,6 +1118,8 @@ class BubbleWindow(QWidget):
         fx, fy = self.face.spot()
         bw, bh = size or (self.width() or 80, self.height() or 48)
         final_w, final_h = self._final_size()
+        if size is None and not self.isVisible():
+            bw, bh = final_w, final_h
         gx, gy, gw, gh = screens.rect_at(fx + AVATAR_SIZE // 2, fy + AVATAR_SIZE // 2)
         cx, cy = fx + AVATAR_SIZE / 2, fy + AVATAR_SIZE / 2
         # A thought keeps more distance: the balls between it and the face need the room.
@@ -1153,7 +1163,7 @@ class BubbleWindow(QWidget):
 
     def _final_size(self) -> tuple:
         """The window size once it has grown to its size."""
-        if self._growth is None or not self._geom:
+        if not self._geom or (self._growth is None and self.isVisible()):
             return self.width() or 80, self.height() or 48
         growth, self._growth = self._growth, None
         try:
@@ -1188,7 +1198,12 @@ class BubbleWindow(QWidget):
             self.hide()
             return
         if was_yielding:
+            # There is room now: it opens the way a new bubble does, not with a jump.
+            self._growth = Growth(SEED_W, SEED_H, opening=True)
+            self.setWindowOpacity(0.0)
             self._show_at(tx, ty)
+            self._slide.start()
+            return
         if self.face.pointer_near(self) or self.holding() or awaiting or now < self._kept_until:
             self.changed = now
             self._was_near = self._was_near or not awaiting
@@ -1219,8 +1234,7 @@ class BubbleWindow(QWidget):
 
     def place(self, kind: str):
         """Show or hide the bubble. The face stays."""
-        if kind and not self.kind:
-            self._opened = time.monotonic()
+        self._opened = (self._opened or time.monotonic()) if kind else 0.0
         self.kind = kind
         if kind == "":
             self._yielding = False
@@ -1247,6 +1261,8 @@ class BubbleWindow(QWidget):
         self._layout_children(pix)
         self._yielding = self._must_yield()
         if self._yielding:
+            self._slide.stop()
+            self._growth = None
             self.hide()
         elif not self.isVisible():
             self._show_at(tx, ty)

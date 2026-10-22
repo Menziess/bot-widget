@@ -2272,6 +2272,8 @@ class BubbleHover(unittest.TestCase):
         from botwidget.qt_ui.face import conversation_blocks
         other = self.second_face()
         other.move(self.window.x(), self.window.y())
+        # A screen so cramped that no side is free.
+        other.bubble._covering = lambda *_spot: [self.window.bubble] if self.window.bubble.isVisible() else []
         self.window.pin()
         self.finish_growth()
         mine = self.window.bubble
@@ -2283,6 +2285,56 @@ class BubbleHover(unittest.TestCase):
         mine.place("")
         other.bubble._tick()
         self.assertTrue(other.bubble.isVisible(), "it returns when the user's bubble is gone")
+
+    def test_a_bubble_that_opens_by_itself_takes_a_free_side_instead_of_covering_the_other(self):
+        from botwidget.qt_ui.face import conversation_blocks
+        other = self.second_face()
+        other.move(self.window.x() + 60, self.window.y())
+        self.window.pin()
+        self.finish_growth()
+        other.bubble.show_blocks(conversation_blocks([{"role": "bot", "text": "Klaar"}], "Other"), "say")
+        self.assertFalse(other.bubble._covering(*other.bubble._spot[:2], other.bubble.width(), other.bubble.height()))
+        states = set()
+        for _ in range(6):
+            other.bubble._tick()
+            states.add((other.bubble.isVisible(), other.bubble._yielding))
+        self.assertEqual(len(states), 1, "it does not flip between shown and waiting")
+
+    def test_a_bubble_that_waits_for_room_stays_out_of_sight_and_does_not_try_to_open_again_and_again(self):
+        from botwidget.qt_ui.face import conversation_blocks
+        other = self.second_face()
+        other.move(self.window.x(), self.window.y())
+        # A screen so cramped that no side is free.
+        other.bubble._covering = lambda *_spot: [self.window.bubble] if self.window.bubble.isVisible() else []
+        self.window.pin()
+        self.finish_growth()
+        blocks = conversation_blocks([{"role": "bot", "text": "Klaar"}], "Other")
+        other.bubble.show_blocks(blocks, "say")
+        for _ in range(3):
+            other.bubble.show_blocks(blocks, "say")
+            other.bubble._tick()
+        self.assertFalse(other.bubble.isVisible())
+        self.assertIsNone(other.bubble._growth, "no opening animation runs out of sight")
+        self.window.unpin()
+        self.window.bubble.place("")
+        other.bubble._tick()
+        self.assertTrue(other.bubble.isVisible())
+        self.assertIsNotNone(other.bubble._growth, "it opens the way a new bubble does")
+
+    def test_the_field_shows_its_cursor_after_a_line_wraps(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui.face import conversation_blocks
+        bubble = self.window.bubble
+        bubble.show_blocks(conversation_blocks([{"role": "bot", "text": "Ja"}], "T"), "say", input=True)
+        self.finish_growth()
+        entry = bubble._entry
+        for _ in range(70):
+            QTest.keyClick(entry, Qt.Key_X)
+            QApplication.processEvents()
+        self.assertLessEqual(entry.cursorRect().bottom(), entry.viewport().height())
+        self.assertEqual(entry.verticalScrollBar().value(), 0)
 
     def test_a_pinned_bubble_closes_when_another_face_is_clicked_open(self):
         other = self.second_face()
