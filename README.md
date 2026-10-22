@@ -79,6 +79,8 @@ The widget can also talk to one bot of Grok Bot. It does that with the `gbot` co
 - When gbot says there is no route, or is not there at all, the widget stops and says so
 - The next message you send tries again
 - /bots switches the Grok face on or off, like the faces of the other bots
+- The Grok face wears the avatar Grok Bot gives the bot: its own shape (blob, hex, cloud, clover, sparkle, house, square and the rest) and colour; it moves and blinks like the other faces
+- Without an answer from Grok Bot the face takes `grokbot_avatars` in widget.json, e.g. `{"General": {"shape": "blob", "color": "black"}}`, and else the avatar Grok Bot gave last time
 
 ## Updates
 

@@ -56,7 +56,7 @@ class Faces(QObject):
         enabled = self._load()
         self.faces = {}
         self.grok = {"connected": False, "bots": [], "note": "not tried yet"}
-        self.avatar = None
+        self.avatar = grokbot.pick_avatar(None, grokbot.target(), self.grok_avatars)
         self.update = None
         self.staged = None
         self.wanted = set()  # connections turned on that were not found: the page is open, the toggle stays on
@@ -92,22 +92,33 @@ class Faces(QObject):
             enabled = []
         pos = data.get("pos")
         self.pos = pos if isinstance(pos, dict) else {}
+        cached = data.get("grok_avatars")
+        self.grok_avatars = cached if isinstance(cached, dict) else {}
         return enabled
 
     def _save(self):
         os.makedirs(APP_DIR, exist_ok=True)
         with open(STATE_PATH, "w") as fh:
-            json.dump({"enabled": list(self.faces), "pos": self.pos}, fh)
+            json.dump({"enabled": list(self.faces), "pos": self.pos, "grok_avatars": getattr(self, "grok_avatars", {})}, fh)
 
     def _probe_grok(self):
         """Ask gbot once; no loop, gbot warns about that itself."""
         self.grok = grok_bot_status()
-        self.avatar = grokbot.avatar_of(self.grok.get("bots"), grokbot.target())
+        self.live_avatar = grokbot.avatar_of(self.grok.get("bots"), grokbot.target())
         self.grok_probed.emit()
 
     def _take_grok_avatar(self):
-        """The roster arrived: the Grok Bot face wears the shape and colour Grok Bot gives that bot."""
-        face = self.faces.get(grokbot.face_id(grokbot.target()))
+        """The roster arrived: the Grok Bot face wears the shape and colour Grok Bot gives that bot.
+
+        What Grok Bot said is kept, so that the face still looks right when it cannot be asked.
+        """
+        target = grokbot.target()
+        live = getattr(self, "live_avatar", None)
+        if live and self.grok_avatars.get(target) != live:
+            self.grok_avatars[target] = live
+            self._save()
+        self.avatar = grokbot.pick_avatar(live, target, self.grok_avatars)
+        face = self.faces.get(grokbot.face_id(target))
         if face is not None and self.avatar:
             face.set_avatar(self.avatar)
 

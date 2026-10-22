@@ -197,7 +197,7 @@ class AvatarProfile(unittest.TestCase):
 
     def test_a_grok_bot_only_takes_what_grok_bot_actually_sends(self):
         seeded = avatar.avatar_profile("grok:General", None)
-        self.assertEqual(avatar.avatar_profile("grok:General", None, {"shape": "cloud"}), seeded,
+        self.assertEqual(avatar.avatar_profile("grok:General", None, {"shape": "zigzag"}), seeded,
                          "a shape the widget cannot draw leaves the seed's face alone")
         self.assertEqual(avatar.avatar_profile("grok:General", None, {"color": "chartreuse"}), seeded,
                          "no colour is invented")
@@ -208,6 +208,94 @@ class AvatarProfile(unittest.TestCase):
     def test_stable_index_matches_fnv1a(self):
         # FNV-1a of "a" is 0xe40c292c; at length 7 that is 4.
         self.assertEqual(avatar.stable_index("a", 7), 0xE40C292C % 7)
+
+
+class GrokMarks(unittest.TestCase):
+    """Should draw every Grok Bot avatar shape as Grok Bot draws it, with the widget's own animation."""
+
+    def test_every_grok_bot_shape_has_a_mark_that_fits_the_face(self):
+        from botwidget.grok_marks import GROK_MARKS
+        for name in ("blob", "hex", "clover", "cloud", "sparkle", "house", "square", "squircle", "star"):
+            self.assertIn(name, GROK_MARKS)
+        for name, (body, eyes) in GROK_MARKS.items():
+            self.assertGreaterEqual(len(body), 20, name)
+            reach = max((x * x + y * y) ** 0.5 for x, y in body)
+            self.assertLessEqual(reach, 1.1501, f"{name} stays on the canvas")
+            self.assertEqual(len(eyes), 2, name)
+            self.assertLess(eyes[0][0], eyes[1][0], f"{name}: the first eye is the left one")
+
+    def test_a_grok_bot_shape_is_drawn_with_its_own_outline_and_eyes(self):
+        profile = avatar.avatar_profile("grok:Builder", None, {"shape": "house", "color": "brown"})
+        self.assertEqual((profile["shape"], profile["hex"], profile["tilt"]), ("house", "#936439", 0.0))
+        self.assertEqual((profile["top"], profile["bottom"]), avatar.mark_extent("house"))
+        svg = avatar.face_svg(seed="grok:Builder", avatar={"shape": "house", "color": "brown"})
+        self.assertIn(avatar.mark_path("house", avatar.CIRCLE_R, avatar.AVATAR_SIZE / 2, avatar.AVATAR_SIZE / 2), svg)
+        self.assertEqual(svg.count('stroke-linecap="round"'), 4, "two eyes, each with its shadow")
+
+    def test_a_grok_bot_mark_blinks_and_follows_like_the_other_faces(self):
+        shape = {"shape": "sparkle", "color": "orange"}
+        rest = avatar.face_svg(seed="grok:Admin", avatar=shape)
+        self.assertNotEqual(avatar.face_svg(dx=4, seed="grok:Admin", avatar=shape), rest)
+        self.assertNotEqual(avatar.face_svg(scale=0.1, seed="grok:Admin", avatar=shape), rest)
+        self.assertEqual(avatar.face_svg(seed="grok:Admin", avatar=shape, muted=True).count('stroke-width="2.6"'), 2,
+                         "a muted mark gets the cross too")
+
+    def test_the_blob_stays_the_glossy_ball(self):
+        svg = avatar.face_svg(seed="grok:General", avatar={"shape": "blob", "color": "black"})
+        self.assertEqual(svg.count('stroke-linecap="round"'), 1, "one highlight and no eyes")
+        self.assertEqual(avatar.avatar_profile("grok:General", None, {"shape": "blob"})["top"], avatar.GROK_BLOB[48])
+
+    def test_openbot_faces_are_untouched(self):
+        for seed in ("a", "b", "robo"):
+            self.assertIn(avatar.avatar_profile(seed, None)["shape"], avatar.SUPPORTED_SHAPES)
+            self.assertIn(avatar.avatar_profile(seed, 215)["shape"], avatar.SUPPORTED_SHAPES)
+
+
+class GrokAvatarFallback(unittest.TestCase):
+    """Should keep the Grok Bot face right when Grok Bot cannot be asked: widget.json, then the last answer."""
+
+    def pick(self, live, cached=None, config=None):
+        from unittest import mock
+        with mock.patch.object(grokbot, "widget_config", return_value=config or {}):
+            return grokbot.pick_avatar(live, "General", cached)
+
+    def test_what_grok_bot_says_now_wins(self):
+        self.assertEqual(self.pick({"shape": "blob", "color": "black"},
+                                   cached={"General": {"shape": "hex"}},
+                                   config={"grokbot_avatars": {"General": {"shape": "cloud"}}}),
+                         {"shape": "blob", "color": "black"})
+
+    def test_without_an_answer_widget_json_names_the_face(self):
+        self.assertEqual(self.pick(None, cached={"General": {"shape": "hex"}},
+                                   config={"grokbot_avatars": {"general": {"shape": "blob", "color": "black"}}}),
+                         {"shape": "blob", "color": "black"})
+
+    def test_then_the_last_answer_by_name(self):
+        self.assertEqual(self.pick(None, cached={"General": {"shape": "blob", "color": "black"}}),
+                         {"shape": "blob", "color": "black"})
+
+    def test_nothing_known_keeps_the_seed_face_and_junk_is_ignored(self):
+        self.assertIsNone(self.pick(None))
+        self.assertIsNone(self.pick(None, cached={"General": "blob"}, config={"grokbot_avatars": ["x"]}))
+        self.assertEqual(self.pick({"shape": " hex ", "color": "", "extra": 1}), {"shape": "hex"})
+
+    def test_the_faces_keep_what_grok_bot_said_for_the_next_start(self):
+        from unittest import mock
+
+        from botwidget.qt_ui.faces import Faces
+        faces = Faces.__new__(Faces)
+        faces.faces, faces.grok_avatars = {}, {}
+        faces.live_avatar = {"shape": "blob", "color": "black"}
+        saved = []
+        faces._save = lambda: saved.append(dict(faces.grok_avatars))
+        with mock.patch.object(grokbot, "widget_config", return_value={}):
+            faces._take_grok_avatar()
+            self.assertEqual(faces.avatar, {"shape": "blob", "color": "black"})
+            self.assertEqual(saved, [{"General": {"shape": "blob", "color": "black"}}])
+            faces.live_avatar = None  # no route this time: the face keeps the last answer
+            faces._take_grok_avatar()
+        self.assertEqual(faces.avatar, {"shape": "blob", "color": "black"})
+        self.assertEqual(len(saved), 1, "nothing new to save")
 
 
 class GrokAvatar(unittest.TestCase):

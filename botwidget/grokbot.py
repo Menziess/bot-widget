@@ -46,6 +46,36 @@ def avatar_of(bots, target: str) -> dict | None:
     return None
 
 
+def _clean_avatar(value) -> dict | None:
+    """Only the shape and colour of an avatar, both as non-empty strings."""
+    if not isinstance(value, dict):
+        return None
+    avatar = {key: value[key].strip() for key in ("shape", "color")
+              if isinstance(value.get(key), str) and value[key].strip()}
+    return avatar or None
+
+
+def _by_name(mapping, target: str) -> dict | None:
+    if not isinstance(mapping, dict):
+        return None
+    wanted = (target or "").strip().lower()
+    for name, value in mapping.items():
+        if isinstance(name, str) and name.strip().lower() == wanted:
+            return _clean_avatar(value)
+    return None
+
+
+def configured_avatar(target: str) -> dict | None:
+    """The avatar widget.json names for this bot under grokbot_avatars, e.g.
+    {"General": {"shape": "blob", "color": "black"}}: for when Grok Bot cannot be asked."""
+    return _by_name(widget_config().get("grokbot_avatars"), target)
+
+
+def pick_avatar(live, target: str, cached=None) -> dict | None:
+    """The face a Grok Bot bot wears: what Grok Bot says now, else widget.json, else what Grok
+    Bot said last time (cached by name); None keeps the face the widget derives from its seed."""
+    return _clean_avatar(live) or configured_avatar(target) or _by_name(cached, target)
+
 
 def is_grok(agent_id: str) -> bool:
     """Is this the id of a Grok Bot face?"""

@@ -3,6 +3,8 @@
 import colorsys
 import math
 
+from botwidget.grok_marks import GROK_MARKS
+
 # The face fits a circle of diameter 58 in a 68 px window; two long vertical eyes sit in the middle.
 AVATAR_SIZE = 68
 CIRCLE_R = 29.0
@@ -95,6 +97,23 @@ GROK_HIGHLIGHT = (0.11, -0.33, 0.52, 0.20, 54.0)
 GROK_CRESCENT = (0.96, 0.83, -60.0, -24.0)
 
 
+def grok_drawn(shape) -> bool:
+    """Can the widget draw this Grok Bot avatar shape the way Grok Bot does?"""
+    return isinstance(shape, str) and (shape in GROK_SHAPES or shape in GROK_MARKS)
+
+
+def mark_extent(shape: str) -> tuple:
+    """How far a Grok Bot mark reaches above and below the centre, in head radii."""
+    ys = [y for _, y in GROK_MARKS[shape][0]]
+    return -min(ys), max(ys)
+
+
+def mark_path(shape: str, radius: float, cx: float, cy: float) -> str:
+    """The outline of a Grok Bot mark, as the polygon Grok Bot draws it."""
+    return "M" + "L".join(f"{cx + x * radius:.2f} {cy + y * radius:.2f}"
+                          for x, y in GROK_MARKS[shape][0]) + "Z"
+
+
 def silhouette_radii(shape: str) -> tuple:
     """The 64 radii of a face shape: Grok Bot's own art when it names one, ours otherwise."""
     return GROK_SHAPES.get(shape) or SILHOUETTES[shape]
@@ -150,18 +169,22 @@ def avatar_profile(seed: str, hue: float | None, avatar: dict | None = None) -> 
     names = list(EXPRESSIONS)
     expression = names[stable_index(f"{seed}:expression", len(names))]
     tilt = (stable_index(f"{seed}:tilt", 25) - 12) * 0.8
-    if isinstance(avatar, dict) and avatar.get("shape") in GROK_SHAPES:
+    if isinstance(avatar, dict) and grok_drawn(avatar.get("shape")):
         shape = avatar["shape"]
-        tilt = 0.0  # the blob is already drawn the way Grok Bot draws it; a tilt would skew it
+        tilt = 0.0  # the mark is already drawn the way Grok Bot draws it; a tilt would skew it
     if isinstance(avatar, dict) and avatar.get("color") in GROK_HEX:
         colour = GROK_HEX[avatar["color"]]
     elif hue is None:
         colour = AVATAR_HEX[AUTO_COLORS[stable_index(f"{seed}:color", len(AUTO_COLORS))]]
     else:
         colour = AVATAR_HEX[HUE_COLORS.get(int(hue), "gris")]
-    radii = silhouette_radii(shape)
+    if shape in GROK_MARKS and shape not in GROK_SHAPES:
+        top, bottom = mark_extent(shape)
+    else:
+        radii = silhouette_radii(shape)
+        top, bottom = radii[48], radii[16]
     return {"shape": shape, "expression": expression, "hex": colour, "tilt": tilt,
-            "top": radii[48], "bottom": radii[16]}
+            "top": top, "bottom": bottom}
 
 
 def silhouette_path(radii, radius: float, cx: float, cy: float) -> str:
@@ -284,6 +307,7 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
     centre = AVATAR_SIZE / 2
     apart = math.sin(math.radians(spec[0])) * CIRCLE_R
     ball = profile["shape"] in GROK_SHAPES
+    mark = None if ball else GROK_MARKS.get(profile["shape"])
     eyes = []
     if ball:
         hx, hy, hw, hh, htilt = GROK_HIGHLIGHT
@@ -291,19 +315,29 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
                          hh * CIRCLE_R, htilt, 0.0, EYE_FILL, 1.0))
         eyes.append(_crescent(centre, centre, CIRCLE_R, GROK_CRESCENT, EYE_FILL))
     else:
-        for i, (w, h, tilt, open_) in enumerate(spec[1:]):
-            side = -1 if i == 0 else 1
-            ex = centre + side * apart + (converge if i == 0 else -converge) + dx
-            ey = centre + dy
+        # A Grok Bot mark keeps Grok Bot's own eyes where it puts them; they move, blink and smile
+        # like every other face.
+        seats = ([(centre + x * CIRCLE_R, centre + y * CIRCLE_R, w, h, tilt, 1)
+                  for x, y, w, h, tilt in mark[1]] if mark else
+                 [(centre + (-1 if i == 0 else 1) * apart, centre, w, h, tilt, open_)
+                  for i, (w, h, tilt, open_) in enumerate(spec[1:])])
+        for i, (sx, sy, w, h, tilt, open_) in enumerate(seats):
+            ex = sx + (converge if i == 0 else -converge) + dx
+            ey = sy + dy
             ew = max(2.0, w * CIRCLE_R)
             eh = max(2.0, h * CIRCLE_R * scale * open_)
             eyes.append(_eye(ex, ey + 1.3, ew, eh, tilt, happy, "#000", 0.14))
             eyes.append(_eye(ex, ey, ew, eh, tilt, happy, EYE_FILL, 1.0))
         if muted:
-            drop = min(MOUTH_DROP, 0.6 * profile["bottom"]) * CIRCLE_R
-            eyes.append(_mouth(centre + dx, centre + dy + drop + 1.3, "#000", 0.14))
-            eyes.append(_mouth(centre + dx, centre + dy + drop, EYE_FILL, 1.0))
-    body = silhouette_path(silhouette_radii(profile["shape"]), CIRCLE_R, centre, centre)
+            mx = sum(seat[0] for seat in seats) / len(seats) - centre
+            my = sum(seat[1] for seat in seats) / len(seats) - centre
+            drop = min(MOUTH_DROP, 0.6 * (profile["bottom"] - my / CIRCLE_R)) * CIRCLE_R
+            eyes.append(_mouth(centre + mx + dx, centre + my + dy + drop + 1.3, "#000", 0.14))
+            eyes.append(_mouth(centre + mx + dx, centre + my + dy + drop, EYE_FILL, 1.0))
+    if mark:
+        body = mark_path(profile["shape"], CIRCLE_R, centre, centre)
+    else:
+        body = silhouette_path(silhouette_radii(profile["shape"]), CIRCLE_R, centre, centre)
     head = (f'<path d="{body}" fill="{profile["hex"]}"/>'
             f'<path d="{body}" fill="url(#sh)"/><path d="{body}" fill="url(#hl)"/>')
     sx, sy = squash
