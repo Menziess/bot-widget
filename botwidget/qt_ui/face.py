@@ -873,6 +873,10 @@ class FaceWindow(QWidget):
             text = block_text(blocks)
             if force or text != self._shown_text:
                 self._shown_text = text
+                # Show the activity line only while the pointer hovers the thinking cloud.
+                if not self.pointer_near(self.bubble):
+                    # pointer is not over the bubble: only show the dots part of the text.
+                    self._shown_text = plain_block("dots")
                 self.bubble.show_blocks(blocks, "think", input=True)
             return
         blocks = self._chat_blocks(messages, greet=force or self.pinned)
