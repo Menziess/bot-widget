@@ -2,6 +2,7 @@
 
 import math
 
+from botwidget.avatar import SILHOUETTES
 from botwidget.theme import (
     CONTROL_H,
     BUBBLE_LINGER,
@@ -234,9 +235,11 @@ def bubble_body_svg(body_w: int, body_h: int, tip: float | None = None, side: st
 
 # ── Thinking cloud ──────────────────────────────────────────────────
 # A rounded rectangle around the text with a round puff on every stretch of its edge: as many
-# puffs as the edge has room for, so the cloud grows with any text and never has to stretch.
-CLOUD_PUFF_W = 24.0  # about how wide one puff is along the edge
-CLOUD_PUFF_ROUND = 0.62  # the puff's radius as a share of its width; 0.5 is a half circle
+# puffs as the edge has room for, so the cloud grows with any text and never has to stretch. The
+# puffs follow the lobes of the avatars' "nuage" face, so the cloud reads as that cloud.
+CLOUD_PUFF_W = 60.0  # about how wide one puff is along the edge
+CLOUD_PUFF_ROUND = 0.68  # the puff's radius as a share of its width; 0.5 is a half circle
+CLOUD_PUFF_SMALL = 0.72  # the smallest lobe, as a share of the biggest
 CLOUD_CORNER = 24.0
 # The balls between the cloud and the face lie on an arc: (radius, how far along the arc, 0 to 1). The arc
 # leaves the cloud at CLOUD_ARC_FROM, ends CLOUD_ARC_TO out from its edge (the canvas margin is PAD_SVG)
@@ -269,17 +272,22 @@ def _cloud_parts(body_w: int, body_h: int, tip: float | None, side: str,
     """The cloud outline and the circles of the trail toward the head."""
     corner = min(CLOUD_CORNER, body_w / 2, body_h / 2)
     perimeter = 2 * (body_w - 2 * corner) + 2 * (body_h - 2 * corner) + 2 * math.pi * corner
-    puffs = max(8, round(perimeter / CLOUD_PUFF_W))
+    puffs = max(6, round(perimeter / CLOUD_PUFF_W))
     chord = perimeter / puffs
-    radius = chord * CLOUD_PUFF_ROUND + grow
     ox, oy = PAD_SVG - grow, PAD_SVG - grow
     scale_x, scale_y = (body_w + 2 * grow) / body_w, (body_h + 2 * grow) / body_h
-    points = []
+    lobes = SILHOUETTES["nuage"]
+    low, high = min(lobes), max(lobes)
+    points, radii = [], []
     for i in range(puffs):
         x, y = _edge_point(body_w, body_h, corner, i * perimeter / puffs)
         points.append((ox + x * scale_x, oy + y * scale_y))
+        spread = (lobes[i * len(lobes) // puffs] - low) / (high - low)
+        radii.append(chord * CLOUD_PUFF_ROUND * (CLOUD_PUFF_SMALL + (1 - CLOUD_PUFF_SMALL) * spread)
+                     + grow)
     path = f"M{points[0][0]:.2f} {points[0][1]:.2f}" + "".join(
-        f"A{radius:.2f} {radius:.2f} 0 0 1 {x:.2f} {y:.2f}" for x, y in points[1:] + points[:1]) + "Z"
+        f"A{radius:.2f} {radius:.2f} 0 0 1 {x:.2f} {y:.2f}"
+        for radius, (x, y) in zip(radii[1:] + radii[:1], points[1:] + points[:1])) + "Z"
     tip = _bubble_tip(side, body_w, body_h, tip)
     edge, sign = _tail_edge(side, body_w, body_h)
     # A quadratic curve whose middle bows sideways by CLOUD_ARC_BOW.
