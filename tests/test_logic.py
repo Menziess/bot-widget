@@ -416,6 +416,13 @@ class MutedFace(unittest.TestCase):
         self.assertNotIn(" L", face_svg(seed="x"))
         self.assertIn(" L", face_svg(seed="x", muted=True))
 
+    def test_a_grok_ball_has_one_highlight_and_no_eyes(self):
+        from botwidget.avatar import face_svg
+        ball = face_svg(seed="General", avatar={"shape": "blob", "color": "black"})
+        self.assertEqual(ball.count('fill="none" stroke='), 1, "one highlight only")
+        self.assertNotIn(" L", ball, "no cross for a mouth")
+        self.assertEqual(face_svg(seed="x").count('fill="none" stroke='), 4, "others keep two eyes")
+
     def test_the_cross_stays_inside_even_the_flattest_head(self):
         from botwidget.avatar import AVATAR_SIZE, CIRCLE_R, MOUTH_DROP, MOUTH_SIZE, SILHOUETTES
         for name, radii in SILHOUETTES.items():

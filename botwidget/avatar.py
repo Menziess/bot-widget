@@ -87,6 +87,10 @@ GROK_BLOB = (1.036, 1.036, 1.037, 1.037, 1.038, 1.039, 1.04, 1.042, 1.043, 1.044
              0.99, 0.993, 0.997, 1.0, 1.003, 1.006, 1.01, 1.013, 1.017, 1.02, 1.024, 1.027, 1.029,
              1.032, 1.034, 1.035)
 GROK_SHAPES = {"blob": GROK_BLOB}
+# Grok Bot's blob is a glossy ball, not a face: one highlight and no eyes. The mark is traced from
+# Grok Bot's own blob art (bot-blob-face@2x.png), from the larger of its two upper marks: its middle
+# seen from the middle of the ball, its length and thickness, and how far it leans.
+GROK_HIGHLIGHT = (0.11, -0.33, 0.52, 0.20, 54.0)
 
 
 def silhouette_radii(shape: str) -> tuple:
@@ -251,24 +255,31 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
     moment (the hop). lean tilts the head extra, squash stretches or flattens it.
     happy 0 is the normal eye shape, 1 the happy one (^^): the eyes morph into each
     other, so a half value is a real transition. A muted bot has a cross for a mouth.
+    A Grok Bot ball has neither: one highlight on the surface, like Grok Bot draws it.
     """
     profile = avatar_profile(seed, hue, avatar)
     spec = EXPRESSIONS[profile["expression"]]
     centre = AVATAR_SIZE / 2
     apart = math.sin(math.radians(spec[0])) * CIRCLE_R
+    ball = profile["shape"] in GROK_SHAPES
     eyes = []
-    for i, (w, h, tilt, open_) in enumerate(spec[1:]):
-        side = -1 if i == 0 else 1
-        ex = centre + side * apart + (converge if i == 0 else -converge) + dx
-        ey = centre + dy
-        ew = max(2.0, w * CIRCLE_R)
-        eh = max(2.0, h * CIRCLE_R * scale * open_)
-        eyes.append(_eye(ex, ey + 1.3, ew, eh, tilt, happy, "#000", 0.14))
-        eyes.append(_eye(ex, ey, ew, eh, tilt, happy, EYE_FILL, 1.0))
-    if muted:
-        drop = min(MOUTH_DROP, 0.6 * profile["bottom"]) * CIRCLE_R
-        eyes.append(_mouth(centre + dx, centre + dy + drop + 1.3, "#000", 0.14))
-        eyes.append(_mouth(centre + dx, centre + dy + drop, EYE_FILL, 1.0))
+    if ball:
+        hx, hy, hw, hh, htilt = GROK_HIGHLIGHT
+        eyes.append(_eye(centre + hx * CIRCLE_R, centre + hy * CIRCLE_R, hw * CIRCLE_R,
+                         hh * CIRCLE_R, htilt, 0.0, EYE_FILL, 1.0))
+    else:
+        for i, (w, h, tilt, open_) in enumerate(spec[1:]):
+            side = -1 if i == 0 else 1
+            ex = centre + side * apart + (converge if i == 0 else -converge) + dx
+            ey = centre + dy
+            ew = max(2.0, w * CIRCLE_R)
+            eh = max(2.0, h * CIRCLE_R * scale * open_)
+            eyes.append(_eye(ex, ey + 1.3, ew, eh, tilt, happy, "#000", 0.14))
+            eyes.append(_eye(ex, ey, ew, eh, tilt, happy, EYE_FILL, 1.0))
+        if muted:
+            drop = min(MOUTH_DROP, 0.6 * profile["bottom"]) * CIRCLE_R
+            eyes.append(_mouth(centre + dx, centre + dy + drop + 1.3, "#000", 0.14))
+            eyes.append(_mouth(centre + dx, centre + dy + drop, EYE_FILL, 1.0))
     body = silhouette_path(silhouette_radii(profile["shape"]), CIRCLE_R, centre, centre)
     head = (f'<path d="{body}" fill="{profile["hex"]}"/>'
             f'<path d="{body}" fill="url(#sh)"/><path d="{body}" fill="url(#hl)"/>')
@@ -280,8 +291,9 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{AVATAR_SIZE}" height="{AVATAR_SIZE}">'
         + depth_defs(profile["hex"])
         + f'<g transform="{pose}">{head}'
-        + f'<g transform="translate({-dx * PARALLAX:.2f} {-dy * PARALLAX:.2f})">{"".join(eyes)}</g></g>'
-        + "</svg>"
+        + (f'{"".join(eyes)}' if ball else
+           f'<g transform="translate({-dx * PARALLAX:.2f} {-dy * PARALLAX:.2f})">{"".join(eyes)}</g>')
+        + "</g></svg>"
     )
 
 
