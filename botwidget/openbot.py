@@ -93,7 +93,10 @@ def api_post(path: str, body: dict) -> ApiResult:
         return ApiResult(None, err.code, detail or f"HTTP {err.code}")
     except (urllib.error.URLError, OSError) as err:
         return ApiResult(None, None, str(err))
-    if not body.replace(BOM, b"").strip():
+    stripped = body.strip()
+    while stripped.startswith(BOM):
+        stripped = stripped[len(BOM):].strip()
+    if not stripped:
         # Nothing but whitespace and byte-order marks will not turn into JSON, however many marks
         # the store puts in front; trying again only repeats it.
         return ApiResult(None, status, "empty answer", retry=False)
