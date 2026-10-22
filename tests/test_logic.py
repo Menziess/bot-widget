@@ -416,10 +416,12 @@ class MutedFace(unittest.TestCase):
         self.assertNotIn(" L", face_svg(seed="x"))
         self.assertIn(" L", face_svg(seed="x", muted=True))
 
-    def test_a_grok_ball_has_one_highlight_and_no_eyes(self):
-        from botwidget.avatar import face_svg
+    def test_a_grok_ball_has_two_highlights_and_no_eyes(self):
+        from botwidget.avatar import GROK_HIGHLIGHTS, face_svg
         ball = face_svg(seed="General", avatar={"shape": "blob", "color": "black"})
-        self.assertEqual(ball.count('fill="none" stroke='), 1, "one highlight only")
+        self.assertEqual(ball.count('fill="none" stroke='), len(GROK_HIGHLIGHTS), "the highlights only")
+        self.assertGreater(GROK_HIGHLIGHTS[1][2], 0, "the second mark is smaller than the first")
+        self.assertLess(GROK_HIGHLIGHTS[1][2], GROK_HIGHLIGHTS[0][2], "and sits above it")
         self.assertNotIn(" L", ball, "no cross for a mouth")
         self.assertEqual(face_svg(seed="x").count('fill="none" stroke='), 4, "others keep two eyes")
 

@@ -87,10 +87,12 @@ GROK_BLOB = (1.036, 1.036, 1.037, 1.037, 1.038, 1.039, 1.04, 1.042, 1.043, 1.044
              0.99, 0.993, 0.997, 1.0, 1.003, 1.006, 1.01, 1.013, 1.017, 1.02, 1.024, 1.027, 1.029,
              1.032, 1.034, 1.035)
 GROK_SHAPES = {"blob": GROK_BLOB}
-# Grok Bot's blob is a glossy ball, not a face: one highlight and no eyes. The mark is traced from
-# Grok Bot's own blob art (bot-blob-face@2x.png), from the larger of its two upper marks: its middle
-# seen from the middle of the ball, its length and thickness, and how far it leans.
-GROK_HIGHLIGHT = (0.11, -0.33, 0.52, 0.20, 54.0)
+# Grok Bot's blob is a glossy ball, not a face: two highlights and no eyes. Both marks are traced
+# from Grok Bot's own blob art (bot-blob-face@2x.png): their middle seen from the middle of the
+# ball, their length and thickness, and how far they lean. The big mark first, the small one above
+# it and to the right.
+GROK_HIGHLIGHTS = ((0.11, -0.33, 0.52, 0.20, 54.0),
+                   (0.56, -0.56, 0.42, 0.17, 54.0))
 
 
 def silhouette_radii(shape: str) -> tuple:
@@ -249,13 +251,13 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
              seed: str = "", hue: float | None = None, lift: float = 0.0,
              happy: float = 0.0, lean: float = 0.0, squash: tuple = (1.0, 1.0),
              muted: bool = False, avatar: dict | None = None) -> str:
-    """This bot's own silhouette and colour, with its two eyes.
+    """This bot’s own silhouette and colour, with its two eyes.
 
     dx/dy move the eyes fully and the head partly; lift raises the whole face for a
     moment (the hop). lean tilts the head extra, squash stretches or flattens it.
     happy 0 is the normal eye shape, 1 the happy one (^^): the eyes morph into each
     other, so a half value is a real transition. A muted bot has a cross for a mouth.
-    A Grok Bot ball has neither: one highlight on the surface, like Grok Bot draws it.
+    A Grok Bot ball has neither: two highlights on the surface, like Grok Bot draws it.
     """
     profile = avatar_profile(seed, hue, avatar)
     spec = EXPRESSIONS[profile["expression"]]
@@ -264,9 +266,9 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
     ball = profile["shape"] in GROK_SHAPES
     eyes = []
     if ball:
-        hx, hy, hw, hh, htilt = GROK_HIGHLIGHT
-        eyes.append(_eye(centre + hx * CIRCLE_R, centre + hy * CIRCLE_R, hw * CIRCLE_R,
-                         hh * CIRCLE_R, htilt, 0.0, EYE_FILL, 1.0))
+        for hx, hy, hw, hh, htilt in GROK_HIGHLIGHTS:
+            eyes.append(_eye(centre + hx * CIRCLE_R, centre + hy * CIRCLE_R, hw * CIRCLE_R,
+                             hh * CIRCLE_R, htilt, 0.0, EYE_FILL, 1.0))
     else:
         for i, (w, h, tilt, open_) in enumerate(spec[1:]):
             side = -1 if i == 0 else 1
