@@ -118,6 +118,8 @@ SEED_W, SEED_H = 36, 22
 TAIL_LENGTH = 7
 THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the balls on their arc
 
+USER_KEEP_S = 3.0  # what the user does with a bubble keeps it open this long, pointer or not
+
 
 def pasted_files(source) -> list:
     """Files and pictures on the clipboard, copied under the shared folder; none when it holds only text."""
@@ -528,6 +530,7 @@ class BubbleWindow(QWidget):
         self._slash = SlashList(self)
         self._slash.chosen.connect(self._run_command)
         self._entry.textChanged.connect(self._update_commands)
+        self._entry.textChanged.connect(lambda: self.keep_for(USER_KEEP_S))
         self._entry.moved.connect(self._slash.move_selection)
         self._entry.completed.connect(lambda: self._entry.setText(self._slash.current()))
         self._entry.chosen.connect(lambda: self._run_command(self._slash.current()))
@@ -542,6 +545,9 @@ class BubbleWindow(QWidget):
         self._control_widgets = []
         self._controls_key = None
         self._kept_until = 0.0
+        self._opened = 0.0
+        self._spot = (0, 0, 0, 0)
+        self._yielding = False
         self._scroll_target = 0
         self._follow = False
         self._entry.dismissed.connect(face.unpin)
@@ -563,6 +569,7 @@ class BubbleWindow(QWidget):
     # ── Input ───────────────────────────────────────────────────
 
     def _send(self):
+        self.keep_for(USER_KEEP_S)
         text, files = self._entry.text().strip(), self._attachments
         if text or files:
             self._entry.clear()
@@ -602,6 +609,7 @@ class BubbleWindow(QWidget):
         return self._slash.height_for(len(self._slash.rows)) + COMMANDS_GAP if self._slash.rows else 0
 
     def _run_command(self, command: str):
+        self.keep_for(USER_KEEP_S)
         # What was typed after the slash is the command itself; a message that was already there stays.
         if not self._commands_forced:
             self._entry.clear()
@@ -610,6 +618,7 @@ class BubbleWindow(QWidget):
         self.face.on_user_message(command)
 
     def _attach(self, paths: list):
+        self.keep_for(USER_KEEP_S)
         self._attachments += paths
         self._show_attachments()
 
@@ -741,7 +750,29 @@ class BubbleWindow(QWidget):
 
     def keep_for(self, seconds: float):
         """The bubble stays for this long whether or not the pointer is on it."""
-        self._kept_until = time.monotonic() + seconds
+        self._kept_until = max(self._kept_until, time.monotonic() + seconds)
+
+    def user_owned(self) -> bool:
+        """The user is busy with this bubble: a bubble that opened by itself gives way to it."""
+        return (self.face.pinned or self.holding() or time.monotonic() < self._kept_until
+                or self.face.pointer_near(self))
+
+    def _others(self) -> list:
+        faces = getattr(self.face.faces, "faces", {})
+        return [face.bubble for face in faces.values() if face.bubble is not self and face.bubble.isVisible()]
+
+    def _body_rect(self, x, y, w, h) -> QRect:
+        return QRect(round(x + PAD_SVG), round(y + PAD_SVG), max(1, w - 2 * PAD_SVG), max(1, h - PAD_SVG - TAIL_ROOM))
+
+    def _covering(self, x, y, w, h) -> list:
+        rect = self._body_rect(x, y, w, h)
+        return [o for o in self._others() if rect.intersects(self._body_rect(o.x(), o.y(), o.width(), o.height()))]
+
+    def _must_yield(self) -> bool:
+        """Every place covers another bubble: the one the user is busy with wins, else the older one."""
+        mine = self.user_owned()
+        return any(o.user_owned() and not mine or o.user_owned() == mine and o._opened <= self._opened
+                   for o in self._covering(*self._spot))
 
     def takes_input(self) -> bool:
         return self._input
@@ -1087,19 +1118,34 @@ class BubbleWindow(QWidget):
         fits = {"above": fy - final_h + 6 + self.face.head_top >= gy + 4,
                 "right": right - PAD_SVG + final_w <= gx + gw - 4 and final_body_h <= gh - 8,
                 "left": left - (final_w - PAD_SVG) >= gx + 4 and final_body_h <= gh - 8}
+
+        def spot(side):
+            if side in ("above", "below"):
+                tx = round(fx + (AVATAR_SIZE - bw) / 2)
+                ty = (fy - bh + 6 + self.face.head_top - keep if side == "above"
+                      else fy + self.face.head_bottom - 8 + keep)
+            else:
+                tx = round(right - PAD_SVG if side == "right" else left - (bw - PAD_SVG))
+                ty = round(cy - PAD_SVG - body_h / 2)
+            return max(gx + 4, min(tx, gx + gw - bw - 4)), max(gy + 4, min(ty, gy + gh - bh - 4))
+
         # A thought drifts up beside the head; only speech sits above it.
         order = ("right", "left", "above") if self.kind == "think" else ("above", "right", "left")
-        side = next((place for place in order if fits[place]), "below")
-        if side in ("above", "below"):
-            tx = round(fx + (AVATAR_SIZE - bw) / 2)
-            ty = (fy - bh + 6 + self.face.head_top - keep if side == "above"
-                  else fy + self.face.head_bottom - 8 + keep)
-        else:
-            tx = round(right - PAD_SVG if side == "right" else left - (bw - PAD_SVG))
-            ty = round(cy - PAD_SVG - body_h / 2)
-        tx = max(gx + 4, min(tx, gx + gw - bw - 4))
-        ty = max(gy + 4, min(ty, gy + gh - bh - 4))
+        sides = [place for place in order if fits[place]] or ["below"]
+        # Another bubble in the way: the first side that is free; if none is, the preferred one, and one of the two yields.
+        side = next((place for place in (*sides, *(["below"] if "below" not in sides else []))
+                     if not self._covering(*spot(place), final_w, final_h)), sides[0])
+        tx, ty = spot(side)
+        self._spot = (tx, ty, final_w, final_h)
         return tx, ty, (round(cx - tx) if side in ("above", "below") else round(cy - ty), side)
+
+    def _show_at(self, tx, ty):
+        self._vx = self._vy = 0.0
+        self.move(int(tx), int(ty))
+        self.show()
+        desktops.apply(self)
+        # Living on one desktop, it must not open on the one the face is not on.
+        desktops.bring_here(self)
 
     def _final_size(self) -> tuple:
         """The window size once it has grown to its size."""
@@ -1130,6 +1176,15 @@ class BubbleWindow(QWidget):
             self.face.unpin()
             self.place("")
             return
+        tx, ty, tip = self._goal()
+        was_yielding, self._yielding = self._yielding, self._must_yield()
+        if self._yielding:
+            # Out of the way of a bubble the user is busy with: it comes back when that one is gone.
+            self.changed = now
+            self.hide()
+            return
+        if was_yielding:
+            self._show_at(tx, ty)
         if self.face.pointer_near(self) or self.holding() or awaiting or now < self._kept_until:
             self.changed = now
             self._was_near = self._was_near or not awaiting
@@ -1141,7 +1196,6 @@ class BubbleWindow(QWidget):
             # Nobody pointed at it and nothing new came: it goes away after a while.
             self.place("")
             return
-        tx, ty, tip = self._goal()
         if tip != self._tip:
             self._tip = tip
             self._layout_children(self._paint_chrome())
@@ -1158,8 +1212,11 @@ class BubbleWindow(QWidget):
 
     def place(self, kind: str):
         """Show or hide the bubble. The face stays."""
+        if kind and not self.kind:
+            self._opened = time.monotonic()
         self.kind = kind
         if kind == "":
+            self._yielding = False
             self._slide.stop()
             self._growth = None
             self.setWindowOpacity(1.0)
@@ -1180,13 +1237,11 @@ class BubbleWindow(QWidget):
             pix = self._paint_chrome()
             tx, ty, _tip = self._goal()
         self._layout_children(pix)
-        if not self.isVisible():
-            self._vx = self._vy = 0.0
-            self.move(int(tx), int(ty))
-            self.show()
-            desktops.apply(self)
-            # Living on one desktop, it must not open on the one the face is not on.
-            desktops.bring_here(self)
+        self._yielding = self._must_yield()
+        if self._yielding:
+            self.hide()
+        elif not self.isVisible():
+            self._show_at(tx, ty)
         if not self._physics_on:
             self._physics_on = True
             self._physics.start()

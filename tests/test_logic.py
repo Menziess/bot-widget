@@ -2178,6 +2178,36 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(other.bubble.isVisible())
         self.assertFalse(self.window.bubble.isVisible(), "one at a time")
 
+    def test_a_short_message_sent_with_the_pointer_away_keeps_the_bubble_open_for_a_while(self):
+        self.window.pin()
+        self.finish_growth()
+        bubble = self.window.bubble
+        self.window.unpin()
+        self.where["at"] = (5000, 5000)
+        bubble._was_near = True
+        bubble.type_text("ok")
+        bubble._entry.clearFocus()
+        bubble._kept_until = 0.0
+        bubble._send()
+        bubble._tick()
+        self.assertTrue(bubble.kind, "a message that was just sent keeps it for a moment")
+
+    def test_a_bubble_that_opens_by_itself_steps_aside_for_the_one_the_user_is_busy_with_and_returns(self):
+        from botwidget.qt_ui.face import conversation_blocks
+        other = self.second_face()
+        other.move(self.window.x(), self.window.y())
+        self.window.pin()
+        self.finish_growth()
+        mine = self.window.bubble
+        other.bubble.show_blocks(conversation_blocks([{"role": "bot", "text": "Klaar"}], "Other"), "say")
+        self.assertTrue(mine.isVisible())
+        self.assertTrue(other.bubble._yielding, "no room beside it: the user's bubble wins")
+        self.assertFalse(other.bubble.isVisible())
+        self.window.unpin()
+        mine.place("")
+        other.bubble._tick()
+        self.assertTrue(other.bubble.isVisible(), "it returns when the user's bubble is gone")
+
     def test_a_pinned_bubble_closes_when_another_face_is_clicked_open(self):
         other = self.second_face()
         self.window.pin()

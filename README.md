@@ -42,6 +42,8 @@ botwidget
 - A question or approval from the bot shows in the cloud with a button per answer, and typing in the field answers the open question
 - Shift+click a face to mute its thinking, a cross for a mouth shows it, and the choice is kept
 - Only one bubble is open at a time when you point at or click a face
+- Typing, sending, picking a command or attaching a file keeps the bubble open for a few seconds, also when the pointer is away
+- A bubble that opens by itself (another bot answers) never covers the one you are busy with: it takes another side, or waits out of sight and comes back once yours is gone
 - Shift+Enter starts a new line in the field, and the field grows with its lines
 - Paste a file or a picture in the field to send it along, it shows as a chip that you can remove, and the message gets a list of the files under the shared folder of OpenBot
 - Drag the face to move it, it bounces off screen edges

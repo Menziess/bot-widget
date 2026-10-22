@@ -60,7 +60,7 @@ from botwidget.openbot import (
 )
 from botwidget import attachments, grokbot, menu_pages
 from botwidget.qt_ui import desktops, screens
-from botwidget.qt_ui.bubble_window import BubbleWindow
+from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
 from botwidget.system.current import activate_app, send_behind_windows
@@ -866,6 +866,7 @@ class FaceWindow(QWidget):
     def on_user_message(self, text: str, files: list = ()):
         """Send a message from the bubble; it only counts as sent once the POST succeeded."""
         files = list(files)
+        self.bubble.keep_for(USER_KEEP_S)
         page = None if files else menu_pages.SLASH.get(text.strip().lower())
         if page:
             self.open_menu(page)
