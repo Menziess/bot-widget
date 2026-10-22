@@ -7,8 +7,8 @@ import threading
 import time
 
 from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QGuiApplication
-from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QPainter
+from PySide6.QtWidgets import QApplication, QWidget
 
 from botwidget import __version__, channel, checkout, grokbot, startup, updates
 from botwidget.config import (
@@ -30,7 +30,13 @@ from botwidget.config import (
 )
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
 from botwidget.qt_ui.face import FaceWindow
-from botwidget.system.current import CAN_PICK_DESKTOPS, HOTKEY_LABEL, activate_app, can_install_update
+from botwidget.system.current import (
+    CAN_PICK_DESKTOPS,
+    HOTKEY_LABEL,
+    activate_app,
+    can_install_update,
+    send_behind_windows,
+)
 
 
 UPDATE_TICK_MS = 10 * 60 * 1000
@@ -39,9 +45,19 @@ CHECKOUT_RECHECK_S = 15 * 60  # code in a checkout changes more often than relea
 # Semicircle constants
 SEMICIRCLE_RADIUS = 120   # pixels from top-centre
 SEMICIRCLE_SLOT_SIZE = 48  # bot diameter in the semicircle
+ARC_CATCH_X = SEMICIRCLE_RADIUS + 160  # how far the mouse may be from the middle
+ARC_CATCH_Y = SEMICIRCLE_RADIUS + 80   # how far it may be below the top edge
 SEMICIRCLE_GAP = 16        # gap between bot slots
 ARC_STEP_S = 0.12          # pause before the next bot leaves the centre
 ARC_MOVE_S = 0.26          # one bot's trip
+
+
+def arc_drag_size(inside: bool, guest: bool, enabled: int, full: int,
+                  small: int = SEMICIRCLE_SLOT_SIZE) -> int:
+    """A face dragged into the arc shrinks, so it is obvious it is leaving the desktop."""
+    if guest or (inside and enabled > 1):
+        return small
+    return full
 
 
 def arc_drop(inside: bool, guest: bool, enabled: int) -> str:
@@ -73,6 +89,74 @@ def _all_bots() -> list:
     return bots
 
 
+class ArcCatcher(QWidget):
+    """Sits in the top middle. On XWayland the pointer is only known over our own windows."""
+
+    def __init__(self, faces):
+        super().__init__()
+        self.faces = faces
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
+                            | Qt.WindowDoesNotAcceptFocus)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self._drag = None
+
+    def _face_at(self, gx, gy):
+        """The bot under this screen point. A guest wins when it sits on a desktop face."""
+        hit = None
+        for face in list(self.faces.faces.values()) + list(self.faces._arc_guests.values()):
+            if not face.isVisible():
+                continue
+            if face.x() <= gx <= face.x() + face.width() and face.y() <= gy <= face.y() + face.height():
+                hit = face
+        return hit
+
+    def mousePressEvent(self, event):
+        # This window covers the arc, so a press on a small bot arrives here.
+        if event.button() == Qt.LeftButton:
+            point = event.globalPosition()
+            self._drag = self._face_at(point.x(), point.y())
+        if self._drag is not None:
+            self._drag.mousePressEvent(event)
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag is not None:
+            self._drag.mouseMoveEvent(event)
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        face = self._drag
+        self._drag = None
+        if face is not None:
+            face.mouseReleaseEvent(event)
+            return
+        super().mouseReleaseEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        handle = self.windowHandle()
+        if handle is not None:
+            handle.setTransientParent(None)
+        self.faces.raise_bubbles()
+
+    def enterEvent(self, event):
+        super().enterEvent(event)
+        self.faces.show_semicircle()
+        self.faces._semicircle_hide_timer.stop()
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self.faces.semicircle_pointer_left()
+
+    def paintEvent(self, _event):
+        # A fully clear window gets no pointer events. One invisible pixel of paint is enough.
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 1))
+
+
 class Faces(QObject):
     grok_probed = Signal()  # the roster came back, so the Grok Bot face can take its own avatar
 
@@ -98,10 +182,13 @@ class Faces(QObject):
         self._semicircle_timer.setInterval(16)
         self._semicircle_timer.setTimerType(Qt.PreciseTimer)
         self._semicircle_timer.timeout.connect(self._semicircle_tick)
-        self._mouse_check_timer = QTimer(self)
-        self._mouse_check_timer.setInterval(16)
-        self._mouse_check_timer.timeout.connect(self._check_mouse_position)
-        self._mouse_check_timer.start()
+        self._catcher = ArcCatcher(self)
+        self._place_catcher()
+        self._catcher.show()
+        self.raise_bubbles()
+        app = QGuiApplication.instance()
+        if app is not None:
+            app.primaryScreenChanged.connect(self._place_catcher)
         self._semicircle_hide_timer = QTimer(self)
         self._semicircle_hide_timer.setInterval(500)
         self._semicircle_hide_timer.timeout.connect(self._semicircle_hide)
@@ -343,6 +430,15 @@ class Faces(QObject):
         cx, cy = self._hotspot()
         return (px - cx) ** 2 + (py - cy) ** 2 <= SEMICIRCLE_RADIUS ** 2
 
+    def _pointer_over_arc(self, px, py) -> bool:
+        """The pointer opens the arc from the whole top-middle, not only the 120px dome."""
+        cx, cy = self._hotspot()
+        return abs(px - cx) <= ARC_CATCH_X and cy <= py <= cy + ARC_CATCH_Y
+
+    def _place_catcher(self, *_args):
+        cx, cy = self._hotspot()
+        self._catcher.setGeometry(int(cx - ARC_CATCH_X), int(cy), ARC_CATCH_X * 2, ARC_CATCH_Y)
+
     def _semicircle_tick(self):
         """Move one bot at a time between the centre and its slot."""
         if self._semicircle_phase == "idle":
@@ -381,10 +477,13 @@ class Faces(QObject):
                           bot.get("hue"), bot.get("seed"), avatar)
         face._arc_guest = True
         face._poll_timer.stop()
+        # The catcher stays above ordinary windows. A guest on the bottom layer can never be grabbed.
+        face.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
+                            | Qt.WindowDoesNotAcceptFocus)
         self._arc_guests[bot["id"]] = face
 
     def show_semicircle(self):
-        """Faces and hidden bots leave the top centre one by one and sit on the arc."""
+        """Hidden bots leave the top centre one by one and sit on the arc. Desktop faces stay put."""
         if self._semicircle_phase == "hiding":
             cx, cy = self._hotspot()
             for i, bid in enumerate(self._arc_order):
@@ -401,15 +500,12 @@ class Faces(QObject):
             return
         if self._semicircle_phase != "idle":
             return
-        for face in self.faces.values():
-            face.pinned = False
-            face.bubble.place("")
         bots = {bot["id"]: bot for bot in _all_bots()}
         hidden = [bot for bot in bots.values() if bot["id"] not in self.faces]
         for bot in hidden:
             if bot["id"] not in self._arc_guests:
                 self._spawn_guest(bot)
-        self._arc_order = list(self.faces) + [bot["id"] for bot in hidden]
+        self._arc_order = [bot["id"] for bot in hidden]
         pos = self._semicircle_positions(self._arc_order)
         cx, cy = self._hotspot()
         self._semicircle = {}
@@ -505,6 +601,14 @@ class Faces(QObject):
         bot = bots.get(bid)
         if bot and bid not in self._arc_guests:
             self._spawn_guest(bot)
+        if bid not in self._semicircle:
+            self._arc_order.append(bid)
+            sx, sy = self._semicircle_positions(self._arc_order)[bid]
+            self._semicircle[bid] = {
+                "x": sx, "y": sy, "slot_x": sx, "slot_y": sy,
+                "from_x": sx, "from_y": sy, "to_x": sx, "to_y": sy,
+                "rank": None, "visible": True, "size": SEMICIRCLE_SLOT_SIZE,
+            }
         self._emit_semicircle()
 
     def _enable_outside(self, face):
@@ -540,31 +644,61 @@ class Faces(QObject):
             guest.close_face()
         self.toggle(agent_id, True)
 
+    def raise_bubbles(self):
+        """Open bubbles stay above the faces. Faces rise only while they should cover other windows.
+
+        A raise on a 'stay behind' face pulls it back over Finder. Arc guests still rise:
+        they only exist while the semicircle is open.
+        """
+        on_top = always_on_top()
+        guests = getattr(self, "_arc_guests", {})
+        for face in list(getattr(self, "faces", {}).values()) + list(guests.values()):
+            if not face.isVisible():
+                pass
+            elif on_top or getattr(face, "_arc_guest", False):
+                face.raise_()
+            else:
+                face.lower()
+                send_behind_windows(int(face.winId()))
+            bubble = getattr(face, "bubble", None)
+            if bubble is not None and bubble.isVisible():
+                bubble.raise_()
+        for face in guests.values():
+            if face.isVisible():
+                face.raise_()
+
+    def _drag_in_progress(self) -> bool:
+        held = list(getattr(self, "faces", {}).values()) + list(getattr(self, "_arc_guests", {}).values())
+        return any(getattr(face, "_drag_origin", None) is not None for face in held)
+
     def offer_semicircle(self, px, py):
         """A face was dragged here. On Wayland this is the only pointer we can see."""
         if self._in_hotspot(px, py):
             self.show_semicircle()
             self._semicircle_hide_timer.stop()
+        elif self._drag_in_progress():
+            # Leaving the dome is the drag out. Closing now would destroy the bot under the pointer.
+            self._semicircle_hide_timer.stop()
+        elif self._semicircle_phase != "idle" and not self._semicircle_hide_timer.isActive():
+            self._semicircle_hide_timer.start()
 
     def semicircle_pointer_here(self):
         self._semicircle_hide_timer.stop()
 
+    def drag_let_go(self):
+        """The arc stays up while a bot is dragged out, and may close once the mouse lets go."""
+        if self._semicircle_phase == "idle" or self._drag_in_progress():
+            return
+        self.semicircle_pointer_left()
+
     def semicircle_pointer_left(self):
+        if self._drag_in_progress() or self._catcher.underMouse():
+            return
+        here = list(self._arc_guests.values())
+        if any(face.underMouse() for face in here if face.isVisible()):
+            return
         if self._semicircle_phase != "idle" and not self._semicircle_hide_timer.isActive():
             self._semicircle_hide_timer.start()
-
-    def _check_mouse_position(self):
-        """Top-centre hotspot. The pointer is read even when a window cannot see it on its own."""
-        from PySide6.QtGui import QCursor
-        pos = QCursor.pos()
-        if self._in_hotspot(pos.x(), pos.y()):
-            self.show_semicircle()
-            self._semicircle_hide_timer.stop()
-        elif self._semicircle_phase != "idle":
-            if not self._semicircle_hide_timer.isActive():
-                self._semicircle_hide_timer.start()
-        else:
-            self._semicircle_hide_timer.stop()
 
     def _semicircle_hide(self):
         """The pointer stayed away: start the upward slide."""

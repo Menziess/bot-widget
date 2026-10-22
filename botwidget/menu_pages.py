@@ -1,4 +1,4 @@
-"""The pages of the menu that opens in the bubble: home, /settings, /bots and /connections.
+"""The pages of the menu that opens in the bubble: home, /settings, /bots, /connections and /refresh.
 
 Pure blocks, no toolkit. A clickable row is a piece with the style "cmd:<command>"; markdown never
 produces that style, so no message from a bot can make a row of its own.
@@ -12,7 +12,8 @@ PAGES = ("settings", "bots", "connections")
 # What typing it in the field opens; "/" alone is the home page.
 SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"}
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
-COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"), ("/connections", "what was found"))
+COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
+            ("/connections", "what was found"), ("/refresh", "reload this bot"))
 
 
 def _row(*chunks) -> dict:

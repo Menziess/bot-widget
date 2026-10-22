@@ -169,6 +169,7 @@ class FaceWindow(QWidget):
         self.motion = Motion(seed=f"{agent_id}:{time.time_ns()}:{random.random()}")
         self._faces = ("neutral", "neutral")  # the face the eyes come from and go to
         self._asked = False  # a message went out: the next answer is its reply
+        self._think_quiet = False  # the cloud closed itself: a new thought does not open it again
         self._last_bot = None
         self._answer_pending = False
         self._happy_on = False
@@ -245,6 +246,8 @@ class FaceWindow(QWidget):
         if not always_on_top():
             send_behind_windows(int(self.winId()))
         self.apply_desktops()
+        if self.faces is not None:
+            self.faces.raise_bubbles()
 
     def bring_here(self) -> bool:
         """The face, and the bubble if it is open, to the desktop you are on; True when the face moved."""
@@ -274,6 +277,9 @@ class FaceWindow(QWidget):
                 self.pinned = False
                 if self.bubble.isVisible():
                     self.bubble.place("")
+                # Leave the desktop spot before hiding, so the old picture does not stay behind.
+                size = int(info["size"])
+                self._move_icon(info["x"] - size / 2, info["y"] - size / 2)
                 self.hide()
                 return
             if self._semicircle_visible or getattr(self, "_arc_guest", False):
@@ -295,6 +301,8 @@ class FaceWindow(QWidget):
         self._move_icon(info["x"] - size / 2, info["y"] - size / 2)
         if not self.isVisible():
             self.show()
+        if always_on_top() or getattr(self, "_arc_guest", False):
+            self.raise_()
         self.update()
 
     def paintEvent(self, _event):
@@ -382,7 +390,10 @@ class FaceWindow(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton:
-            self.open_commands()
+            self._menu_page = None
+            self.pinned = False
+            self.bubble.keep_for(MENU_KEEP_S)
+            self.bubble.show_command_menu()
             return
         if event.button() != Qt.LeftButton:
             return
@@ -390,6 +401,8 @@ class FaceWindow(QWidget):
         point = event.globalPosition()
         self._press_pos = (point.x(), point.y())
         self._drag_origin = [self.spot()]
+        self._drag_box = self.width()
+        self.raise_()
         self._drag_sample = (time.monotonic(), *self.spot())
         self._dvx = self._dvy = 0.0
         self._wall_kick = (0.0, 0.0)
@@ -416,7 +429,20 @@ class FaceWindow(QWidget):
         )
         self._move_icon(x, y)
         if self.faces is not None:
-            self.faces.offer_semicircle(x + self.width() / 2, y + self.height() / 2)
+            from botwidget.qt_ui.faces import arc_drag_size
+            box = getattr(self, "_drag_box", AVATAR_SIZE)
+            cx = x + box / 2
+            cy = y + box / 2
+            size = arc_drag_size(self.faces._in_hotspot(cx, cy), getattr(self, "_arc_guest", False),
+                                 len(self.faces.faces), AVATAR_SIZE)
+            if size < AVATAR_SIZE and self.bubble.isVisible():
+                self.pinned = False
+                self.bubble.place("")
+            if self.width() != size:
+                self.setFixedSize(size, size)
+            self._move_icon(cx - size / 2, cy - size / 2)
+            self.faces.raise_bubbles()
+            self.faces.offer_semicircle(cx, cy)
         now = time.monotonic()
         if self._drag_sample and now - self._drag_sample[0] >= 0.03:
             t, sx, sy = self._drag_sample
@@ -450,7 +476,10 @@ class FaceWindow(QWidget):
         else:
             self._happy_off()
             if self.faces is not None and self.faces.drop_arc(self):
+                self.faces.drag_let_go()
                 return
+        if self.faces is not None:
+            self.faces.drag_let_go()
         if self._wall_kick != (0.0, 0.0):
             self._dvx, self._dvy = self._wall_kick
         if abs(self._dvx) > 500 or abs(self._dvy) > 500:
@@ -536,6 +565,16 @@ class FaceWindow(QWidget):
         """Whether the platform says where the pointer is outside our own windows."""
         return global_pointer()
 
+    def _show_think(self) -> bool:
+        """Open after you send. Hover brings it back while this turn lasts, not when the bot is idle."""
+        if not (self._working or self._sending or self._outbox.items or self._asked):
+            return False
+        if self._think_expanded():
+            return True
+        if self._think_quiet:
+            return False
+        return True
+
     def _think_expanded(self) -> bool:
         """Thought text and the field, while the pointer is on the bot or its bubble."""
         return self._pointer_on_head() or self.pointer_near(self.bubble)
@@ -559,7 +598,7 @@ class FaceWindow(QWidget):
         if self._semicircle_visible:
             return
         on_bot = self._think_expanded()
-        pending = self._working or self._sending or bool(self._outbox.items)
+        pending = self._show_think()
         if pending and not self.pinned and on_bot != getattr(self, "_think_on_bot", False):
             self._think_on_bot = on_bot
             if self._chat is not None:
@@ -881,8 +920,11 @@ class FaceWindow(QWidget):
         elif last and last != self._last_bot:
             self._last_bot = last
             self._answer_pending = True
-        if self._answer_pending and not self._working:
-            # Not on every step the bot says while it works: once, when the turn is over.
+        visible = self._with_local(stored)
+        if (self._answer_pending and not self._working and visible
+                and visible[-1].get("role") == "bot"):
+            # The reply is in. A pause while the question is still the latest line is not the end:
+            # the cloud would otherwise flip to the chat and back.
             self._answer_pending = False
             self.react("reply" if self._asked else "new_message")
             self._asked = False
@@ -907,7 +949,7 @@ class FaceWindow(QWidget):
             # Something new came in: the latest message alone again, the older ones a scroll away.
             self._conversation = newest
             self._depth = 1
-        pending = self._working or self._sending or bool(self._outbox.items)
+        pending = self._show_think()
         if pending and not self.pinned:
             if self._muted and not self._has_attention():
                 # Thinking is silenced: no cloud, until the face is clicked again.
@@ -939,6 +981,9 @@ class FaceWindow(QWidget):
                 self._shown_text = text
                 self.bubble.show_blocks(blocks, "think", input=expanded)
             return
+        if self._working or self._sending or self._outbox.items or self._asked:
+            # The cloud closed itself. The chat stays away until this turn is over.
+            return
         blocks = self._chat_blocks(messages, greet=force or self.pinned)
         text = block_text(blocks)
         older, self._loading_older = self._loading_older, False
@@ -957,6 +1002,13 @@ class FaceWindow(QWidget):
             self.bubble.show_blocks(blocks, "say", input=True, older=older)
         elif not blocks and self.bubble.kind:
             self.bubble.place("")
+
+    def refresh(self):
+        """Reload this bot's chat now. The other faces keep their own timer."""
+        self._menu_page = None
+        if self.grok:
+            self.grok.request_fetch()
+        self._poll_timer.start(0)
 
     def open_commands(self):
         """Right-click, or the arrow on a page: the list of commands opens above the field, the same as typing a
@@ -1041,6 +1093,10 @@ class FaceWindow(QWidget):
         if page:
             self.open_menu(page)
             return
+        if not files and text.strip().lower() == "/refresh":
+            self.refresh()
+            return
+        self._think_quiet = False
         text = text[:500]
         open_question = None if files else self._open_question()
         if open_question:

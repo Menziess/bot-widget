@@ -334,6 +334,15 @@ class GrokAvatarFallback(unittest.TestCase):
             self.assertGreater(sy, 0)
             self.assertLessEqual((sx - 800) ** 2 + sy ** 2, 120 ** 2 + 1)
 
+    def test_the_pointer_opens_the_arc_from_the_top_middle(self):
+        """Should open for a pointer in the top middle, past the small dome a dragged bot has to enter."""
+        from botwidget.qt_ui.faces import Faces
+        faces = Faces.__new__(Faces)
+        faces._hotspot = lambda: (800.0, 0.0)
+        self.assertTrue(faces._pointer_over_arc(800, 150))
+        self.assertFalse(faces._in_hotspot(800, 150))
+        self.assertFalse(faces._pointer_over_arc(800, 400))
+
     def test_arc_bots_leave_the_centre_one_at_a_time_and_return_last_first(self):
         """Should hold later bots until the one before them has started, and reverse that on the way back."""
         from botwidget.qt_ui.faces import ARC_MOVE_S, ARC_STEP_S, arc_drop, arc_progress
@@ -341,6 +350,10 @@ class GrokAvatarFallback(unittest.TestCase):
         self.assertEqual(arc_drop(True, False, 1), "snap")
         self.assertEqual(arc_drop(False, True, 1), "on")
         self.assertEqual(arc_drop(False, False, 2), "out")
+        from botwidget.qt_ui.faces import arc_drag_size
+        self.assertEqual(arc_drag_size(True, False, 2, 68), 48)
+        self.assertEqual(arc_drag_size(False, False, 2, 68), 68)
+        self.assertEqual(arc_drag_size(True, False, 1, 68), 68, "the last face stays full")
         self.assertEqual(arc_progress(0, 0), 0.0)
         self.assertGreater(arc_progress(ARC_MOVE_S * 0.5, 0), 0)
         self.assertEqual(arc_progress(ARC_STEP_S * 0.5, 1), 0.0)
@@ -396,6 +409,26 @@ class BubbleLayout(unittest.TestCase):
         self.assertGreater(long_, short)
         self.assertEqual(huge, BUBBLE_LINGER_MAX)
         self.assertEqual(bubble.reading_seconds(""), BUBBLE_LINGER)
+
+    def test_the_opening_shadow_starts_clear(self):
+        """Should not draw the shadow on the first sliver, where the blur is a black bar."""
+        from botwidget.theme import SHADOW_ALPHA
+        self.assertEqual(bubble.opening_shadow_alpha(0.0, True), 0.0)
+        self.assertEqual(bubble.opening_shadow_alpha(1.0, True), SHADOW_ALPHA)
+        self.assertEqual(bubble.opening_shadow_alpha(0.0, False), SHADOW_ALPHA)
+
+    def test_the_blur_leaves_the_margin_clear(self):
+        """Should keep the area outside the shadow transparent, not black."""
+        from PySide6.QtGui import QColor, QImage, QPixmap
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui.render import blurred
+        QApplication.instance() or QApplication([])
+        image = QImage(24, 24, QImage.Format_ARGB32)
+        image.fill(Qt.transparent)
+        image.setPixelColor(12, 12, QColor(0, 0, 0, 90))
+        out = blurred(QPixmap.fromImage(image), 2).toImage()
+        self.assertEqual(out.pixelColor(0, 0).alpha(), 0)
 
     def test_the_arrow_for_earlier_messages_sits_close_and_never_under_a_dark_panel(self):
         from botwidget.bubble import panel_rects
@@ -1260,6 +1293,19 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(bubble.kind, "think")
         self.assertFalse(bubble._input)
         self.assertNotIn("reading", bubble.full_text)
+        # The send already finished and the bot is not thinking yet: the cloud stays.
+        self.window._outbox.items.clear()
+        self.window._sending = False
+        self.window._asked = True
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
+        self.assertEqual(bubble.kind, "think")
+        # A pause while the question is still the latest line keeps the cloud.
+        asked = self.MESSAGES + [{"role": "user", "text": "Hallo"}]
+        self.window._sync_bubble({"messages": asked, "activity": "reading"})
+        self.window._sync_bubble({"messages": asked, "activity": ""})
+        self.assertEqual(bubble.kind, "think")
+        self.window._sync_bubble({"messages": asked + [{"role": "bot", "text": "Klaar."}], "activity": ""})
+        self.assertNotEqual(bubble.kind, "think")
         bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) - 1
         bubble._tick()
         self.assertEqual(bubble.kind, "")
@@ -1277,6 +1323,8 @@ class BubbleHover(unittest.TestCase):
         bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) - 1
         bubble._tick()
         self.assertEqual(bubble.kind, "")
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"})
+        self.assertEqual(bubble.kind, "", "a new thought does not bring the chat bubble")
 
     def test_a_bot_that_never_answers_does_not_keep_the_bubble_forever(self):
         import time
@@ -1939,7 +1987,8 @@ class BubbleHover(unittest.TestCase):
         from botwidget import menu_pages
         self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
                                                "menu_command": lambda _self, command, page: page,
-                                               "close_bubbles_except": lambda _self, _id: None})()
+                                               "close_bubbles_except": lambda _self, _id: None,
+                                               "raise_bubbles": lambda _self: None})()
         self.window.open_menu("settings")
         self.finish_growth()
         self.app.processEvents()
@@ -1971,7 +2020,7 @@ class BubbleHover(unittest.TestCase):
         bubble.command.emit("page/commands")
         self.finish_growth()
         self.assertIsNone(self.window._menu_page)
-        self.assertEqual(bubble._entry.text(), "/")
+        self.assertEqual(bubble._entry.text(), "")
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
         self.assertIn("Ja.", bubble.full_text, "above the conversation")
 
@@ -2366,7 +2415,8 @@ class BubbleHover(unittest.TestCase):
     def stub_faces(self):
         self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
                                                "menu_command": lambda _self, command, page: page,
-                                               "close_bubbles_except": lambda _self, _id: None})()
+                                               "close_bubbles_except": lambda _self, _id: None,
+                                               "raise_bubbles": lambda _self: None})()
 
     def test_a_slash_at_the_start_opens_a_list_of_commands_above_the_field(self):
         self.hover()
@@ -2375,7 +2425,8 @@ class BubbleHover(unittest.TestCase):
         bubble._entry.setText("/")
         self.app.processEvents()
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
-        self.assertEqual([c for c, _n in bubble._slash.rows], ["/settings", "/bots", "/connections"])
+        self.assertEqual([c for c, _n in bubble._slash.rows],
+                         ["/settings", "/bots", "/connections", "/refresh"])
         self.assertLess(bubble._slash.geometry().bottom(), bubble._entry.geometry().top(), "above the field")
         self.assertGreater(bubble.height(), height, "the bubble makes room for the list")
         bubble._entry.setText("/b")
@@ -2566,7 +2617,10 @@ class BubbleHover(unittest.TestCase):
     def test_every_command_in_the_list_opens_a_page(self):
         from botwidget import menu_pages
         for command, _note in menu_pages.COMMANDS:
+            if command == "/refresh":
+                continue
             self.assertIn(command, menu_pages.SLASH)
+        self.assertNotIn("/refresh", menu_pages.SLASH, "reload, not a menu page")
 
     def second_face(self):
         from botwidget.qt_ui.faces import Faces
@@ -2577,6 +2631,7 @@ class BubbleHover(unittest.TestCase):
         other.bubble.focus_entry = lambda: None
         registry = Faces.__new__(Faces)
         registry.faces = {"t": self.window, "u": other}
+        registry._arc_guests = {}
         self.window.faces = other.faces = registry
         return other
 
@@ -3190,6 +3245,9 @@ class MenuInBubble(unittest.TestCase):
             def close_bubbles_except(self, agent_id):
                 pass
 
+            def raise_bubbles(self):
+                pass
+
             def install_update(self):
                 test.calls.append("update")
 
@@ -3213,10 +3271,23 @@ class MenuInBubble(unittest.TestCase):
         self.right_click()
         bubble = self.window.bubble
         self.assertTrue(bubble.isVisible())
-        self.assertEqual(bubble._entry.text(), "/")
+        self.assertEqual(bubble._entry.text(), "")
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
         self.assertEqual(bubble._slash.rows, list(menu_pages.COMMANDS))
-        self.assertNotIn("Looking for settings", self.text())
+        self.assertEqual(self.text(), "")
+        self.assertFalse(bubble._entry.isVisibleTo(bubble))
+
+    def test_the_command_list_closes_when_the_bubble_goes(self):
+        self.right_click()
+        bubble = self.window.bubble
+        self.assertTrue(bubble._slash.rows)
+        bubble.place("")
+        self.assertEqual(bubble._slash.rows, [])
+        self.right_click()
+        self.window._sync_bubble(self.window._latest(), force=True)
+        self.assertTrue(bubble.isVisible())
+        self.assertTrue(bubble.windowOpacity() == 1.0 or bubble._growth is not None,
+                        "a cancelled open must not leave the bubble invisible")
 
     def test_typing_a_slash_command_opens_its_page_and_sends_nothing(self):
         self.window._pump_outbox = lambda: None
@@ -3225,6 +3296,15 @@ class MenuInBubble(unittest.TestCase):
             self.window.on_user_message(typed)
             self.assertIn(expected, self.text(), typed)
         self.assertEqual(self.window._outbox.items, [], "a slash command is not a message to the bot")
+
+    def test_refresh_reloads_this_bot_and_sends_nothing(self):
+        calls = []
+        self.window._poll_timer.timeout.disconnect()
+        self.window._poll_timer.timeout.connect(lambda: calls.append("polled"))
+        self.window.on_user_message("/refresh")
+        self.app.processEvents()
+        self.assertEqual(calls, ["polled"])
+        self.assertEqual(self.window._outbox.items, [])
 
     def test_a_right_click_never_takes_away_what_you_typed(self):
         self.window.pin()
@@ -3272,7 +3352,7 @@ class MenuInBubble(unittest.TestCase):
         self.window.on_user_message("/settings")
         self.assertIn("Sound on a new answer", self.text())
         self.window.bubble.command.emit("page/commands")
-        self.assertEqual(self.window.bubble._entry.text(), "/")
+        self.assertEqual(self.window.bubble._entry.text(), "")
         self.assertTrue(self.window.bubble._slash.isVisibleTo(self.window.bubble))
 
     def test_a_link_in_the_bubble_runs_its_command(self):

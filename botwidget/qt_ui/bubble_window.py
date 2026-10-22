@@ -30,6 +30,7 @@ from botwidget.avatar import AVATAR_SIZE, CIRCLE_R
 from botwidget.bubble import (
     bubble_body_svg,
     bubble_deco_svg,
+    opening_shadow_alpha,
     bubble_shadow_svg,
     bubble_width,
     cloud_body_svg,
@@ -492,6 +493,7 @@ class BubbleWindow(QWidget):
         self.blocks = []
         self.changed = 0.0
         self._input = False
+        self._list_only = False
         self._links = []
         self._geom = None
         self._built = None
@@ -601,16 +603,31 @@ class BubbleWindow(QWidget):
         self._show_commands(fitting)
 
     def open_command_list(self):
-        """The list of commands, without touching what was typed: an empty field gets the slash, a field with a
-        message keeps it and the list shows all commands."""
+        """The list of commands, without touching what was typed. A slash already in the field filters the list."""
         text = self._entry.text()
-        if not text:
-            self.type_text("/")
-        elif text.startswith("/") and " " not in text:
+        if text.startswith("/") and " " not in text:
             self._update_commands()
-        else:
-            self._commands_forced = True
-            self._show_commands(list(menu_pages.COMMANDS))
+            return
+        self._commands_forced = True
+        self._show_commands(list(menu_pages.COMMANDS))
+
+    def show_command_menu(self):
+        """Right-click: the command list on its own, without the conversation."""
+        self._list_only = True
+        self._input = False
+        self._links = []
+        self.blocks = []
+        self.full_text = ""
+        self.kind = "say"
+        self._commands_forced = True
+        self._slash.show_rows(list(menu_pages.COMMANDS))
+        self._geom = ([], MIN_INTERACTIVE_W, 0)
+        self._built = ("commands",)
+        self._growth = None
+        self.setWindowOpacity(1.0)
+        self.changed = time.monotonic()
+        self._layout_children(self._paint_chrome())
+        self.place("say")
 
     def _show_commands(self, rows: list):
         """The list sits in the bubble right above the field, which makes room for it."""
@@ -637,8 +654,9 @@ class BubbleWindow(QWidget):
 
     def _run_command(self, command: str):
         self.keep_for(USER_KEEP_S)
-        # What was typed after the slash is the command itself; a message that was already there stays.
-        if not self._commands_forced:
+        # A slash being typed is the command. A message that was already there stays, also after a right-click.
+        typed = self._entry.text().strip()
+        if not self._commands_forced or (typed.startswith("/") and " " not in typed):
             self._entry.clear()
         self._show_commands([])
         self._commands_forced = False
@@ -864,6 +882,8 @@ class BubbleWindow(QWidget):
 
     def _extras(self) -> int:
         """Height below the text for the link row and the input field."""
+        if self._list_only:
+            return self._commands_h()
         attached = ATTACH_H if self._attachments else 0
         return (LINKS_H if self._links else 0) + (
             attached + self._commands_h() + self._entry_h() + ENTRY_GAP if self._input else 0)
@@ -898,7 +918,9 @@ class BubbleWindow(QWidget):
         if (self.kind, args) == self._chrome_key:
             return self._chrome_pix
         cloud = self.kind == "think"
-        shadow_svg = cloud_shadow_svg(*args) if cloud else bubble_shadow_svg(*args)
+        opening = self._growth is not None and self._growth.opening
+        alpha = opening_shadow_alpha(self._growth.progress if opening else 1.0, opening)
+        shadow_svg = cloud_shadow_svg(*args, alpha=alpha) if cloud else bubble_shadow_svg(*args, alpha=alpha)
         body_svg = cloud_body_svg(*args) if cloud else bubble_body_svg(*args)
         pix = stacked(blurred(svg_pixmap(shadow_svg), SHADOW_BLUR * 3), svg_pixmap(body_svg))
         self._chrome.setPixmap(pix)
@@ -913,6 +935,12 @@ class BubbleWindow(QWidget):
         self._chrome.setGeometry(0, 0, size.width(), size.height())
         self.resize(size)
         x, y = PAD_SVG + PAD_BODY, PAD_SVG + PAD_BODY
+        if self._list_only:
+            self._scroll.hide()
+            self._entry.hide()
+            self._link_row.hide()
+            self._slash.setGeometry(x, y, box_w, max(1, self._commands_h() - COMMANDS_GAP))
+            return
         view_h = max(1, self._body_h(inner) - 2 * PAD_BODY - self._extras())
         self._scroll.setGeometry(x, y, box_w + SCROLLBAR_W, view_h)
         below = y + view_h
@@ -927,6 +955,7 @@ class BubbleWindow(QWidget):
                 self._slash.setGeometry(x, below + ENTRY_GAP, box_w, self._commands_h() - COMMANDS_GAP)
                 below += self._commands_h()
             self._entry.setGeometry(x, below + ENTRY_GAP, box_w, self._entry_h())
+        self._scroll.show()
         self._link_row.setVisible(bool(self._links))
         # Not while the bubble is still tiny: a field alone looks odd.
         # Not while the bubble is still tiny, but never taken away from a field that is already there:
@@ -1004,6 +1033,7 @@ class BubbleWindow(QWidget):
                                             or (self._follow and self._growth is not None)
                                             or bar.value() >= bar.maximum() - FOLLOW_SLACK)
         self._scroll_target = bar.value() if keep_scroll or (kind == "think" and not self._follow) else 0
+        self._list_only = False
         key = (kind, block_text(blocks), input, tuple(links or []), self._ceiling())
         visible = self.isVisible()
         if key == self._built and not self._dots_lines:
@@ -1017,8 +1047,10 @@ class BubbleWindow(QWidget):
             return
         start = (self._shown_w(self._geom[1]), self._body_h(self._geom[2])) if self._geom and visible else None
         old_inner = self._geom[2] if self._geom else 0
+        # stop() does not finish an animation that has not started, so the bubble would stay invisible.
         self._slide.stop()
         self._growth = None
+        self.setWindowOpacity(1.0)
         content_changed, self._built = key != self._built, key
         self._was_near = False
         self._links = links or []
@@ -1027,7 +1059,10 @@ class BubbleWindow(QWidget):
             f'<a href="{url}" style="color:{SAND_ACCENT}">{label} ↗</a>' for label, url in self._links))
         self.blocks = blocks
         self.full_text = block_text(blocks)
-        self.changed = time.monotonic()
+        # A new thought updates the cloud that is already open. It does not start the open again.
+        same_think = visible and self.kind == "think" and kind == "think"
+        if not same_think:
+            self.changed = time.monotonic()
         restyle = kind != self.kind
         self.kind = kind
         self._geom = self._parts()
@@ -1040,6 +1075,7 @@ class BubbleWindow(QWidget):
             self._dots_on = True
             self._dots.start()
         start = start or (SEED_W, SEED_H)
+        # same_think skips a fresh open. A longer thought still grows the cloud that is already there.
         if start != (self._geom[1], self._body_h(self._geom[2])) and not self._yielding:
             added = max(0, self._geom[2] - old_inner) if older and visible else 0
             self._growth = Growth(*start, added=added, opening=not visible)
@@ -1189,12 +1225,14 @@ class BubbleWindow(QWidget):
                 ty = round(cy - PAD_SVG - body_h / 2)
             return max(gx + 4, min(tx, gx + gw - bw - 4)), max(gy + 4, min(ty, gy + gh - bh - 4))
 
-        # A thought drifts up beside the head; only speech sits above it.
+        # A thought drifts up beside the head. Speech stays above the bot when the screen allows it.
         order = ("right", "left", "above") if self.kind == "think" else ("above", "right", "left")
         sides = [place for place in order if fits[place]] or ["below"]
-        # Another bubble in the way: the first side that is free; if none is, the preferred one, and one of the two yields.
-        side = next((place for place in (*sides, *(["below"] if "below" not in sides else []))
-                     if not self._covering(*spot(place), final_w, final_h)), sides[0])
+        if self.kind != "think" and "above" in sides:
+            side = "above"
+        else:
+            side = next((place for place in (*sides, *(["below"] if "below" not in sides else []))
+                         if not self._covering(*spot(place), final_w, final_h)), sides[0])
         tx, ty = self._clear_spot(*spot(side), final_w, final_h, bounds=(gx, gy, gw, gh))
         self._spot = (tx, ty, final_w, final_h)
         return tx, ty, (round(cx - tx) if side in ("above", "below") else round(cy - ty), side)
@@ -1210,6 +1248,10 @@ class BubbleWindow(QWidget):
         handle = self.windowHandle()
         if handle is not None:
             handle.setTransientParent(None)
+        self.raise_()
+        faces = getattr(self.face, "faces", None)
+        if faces is not None:
+            faces.raise_bubbles()
 
     def _final_size(self) -> tuple:
         """The window size once it has grown to its size."""
@@ -1294,6 +1336,8 @@ class BubbleWindow(QWidget):
     def place(self, kind: str):
         """Show or hide the bubble. The face stays."""
         self._opened = (self._opened or time.monotonic()) if kind else 0.0
+        if self.kind == "think" and kind != "think":
+            self.face._think_quiet = True
         self.kind = kind
         if kind == "":
             self._yielding = False
@@ -1305,7 +1349,10 @@ class BubbleWindow(QWidget):
             self._had_focus = False
             self._physics.stop()
             self._physics_on = False
+            self._commands_forced = False
+            self._show_commands([])
             self.hide()
+            self._list_only = False
             return
         self.changed = time.monotonic()
         if not self._dots_on and self._dots_lines:
@@ -1322,6 +1369,8 @@ class BubbleWindow(QWidget):
         if self._yielding:
             self._slide.stop()
             self._growth = None
+            self._commands_forced = False
+            self._show_commands([])
             self.hide()
         elif not self.isVisible():
             self._show_at(tx, ty)
