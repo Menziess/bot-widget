@@ -35,6 +35,10 @@ from botwidget.system.current import CAN_PICK_DESKTOPS, HOTKEY_LABEL, activate_a
 UPDATE_TICK_MS = 10 * 60 * 1000
 RECHECK_S = 6 * 3600
 CHECKOUT_RECHECK_S = 15 * 60  # code in a checkout changes more often than releases
+# Semicircle constants
+SEMICIRCLE_RADIUS = 120   # pixels from top-centre
+SEMICIRCLE_SLOT_SIZE = 48  # bot diameter in the semicircle
+SEMICIRCLE_GAP = 16        # gap between bot slots
 
 
 def _all_bots() -> list:
@@ -61,6 +65,15 @@ class Faces(QObject):
         self.staged = None
         self.wanted = set()  # connections turned on that were not found: the page is open, the toggle stays on
         self.hotkey_on = False
+        # ── semicircle state ────────────────────────────────────
+        self._semicircle_phase = "idle"  # idle / showing / hiding
+        self._semicircle = {}  # bot_id → {"angle": float, "visible": bool, "y_off": float}
+        self._semicircle_timer = QTimer(self)
+        self._semicircle_timer.setInterval(16)
+        self._semicircle_timer.timeout.connect(self._semicircle_tick)
+        self._mouse_check_timer = QTimer(self)
+        self._mouse_check_timer.setInterval(16)
+        self._mouse_check_timer.timeout.connect(self._check_mouse_position)
         self.grok_probed.connect(self._take_grok_avatar)
         threading.Thread(target=self._probe_grok, daemon=True).start()
         self._probed = 0.0
@@ -286,3 +299,101 @@ class Faces(QObject):
         save_widget_config(always_on_top=on)
         for face in self.faces.values():
             face.restack()
+
+    # ── semicircle ──────────────────────────────────────────────
+    def _semicircle_tick(self):
+        """One timer tick: advance the showing/hiding animation."""
+        if self._semicircle_phase == "idle":
+            self._semicircle_timer.stop()
+            return
+        elif self._semicircle_phase == "showing":
+            # fade in: make more bots visible
+            any_shown = False
+            for bid, info in self._semicircle.items():
+                if not info["visible"]:
+                    info["visible"] = True
+                    any_shown = True
+            if not any_shown:
+                self._semicircle_phase = "visible"
+        elif self._semicircle_phase == "hiding":
+            # fade out: move bots upward
+            any_hidden = False
+            for bid, info in self._semicircle.items():
+                info["y_off"] -= 8  # pixels per tick
+                if info["y_off"] < -SEMICIRCLE_RADIUS:
+                    info["visible"] = False
+                    any_hidden = True
+            if not any_hidden or all(not info["visible"] for info in self._semicircle.values()):
+                self._semicircle_phase = "idle"
+                self._semicircle_timer.stop()
+                # clean up: remove hidden bots from _semicircle
+                self._semicircle = {bid: info for bid, info in self._semicircle.items() if info["visible"]}
+        # repaint all faces with semicircle info
+        self._emit_semicircle()
+
+    def _emit_semicircle(self):
+        """Tell every face about the current semicircle state."""
+        for face in self.faces.values():
+            try:
+                face._set_semicircle(self._semicircle)
+            except Exception:
+                pass
+
+    def show_semicircle(self):
+        """Bring the semicircle of bots down from the top centre."""
+        if self._semicircle_phase != "idle":
+            return
+        self._semicircle_phase = "showing"
+        # build _semicircle from all bots
+        pos = self._semicircle_positions()
+        for i, (bid, face) in enumerate(self.faces.items()):
+            if bid in self._semicircle:
+                continue
+            angle = math.pi / 2 + i * (2 * math.pi / max(len(self.faces), 1)) - math.pi / 4
+            r = SEMICIRCLE_RADIUS
+            sx = pos[bid][0]
+            sy = pos[bid][1]
+            self._semicircle[bid] = {"angle": angle, "visible": True, "y_off": sy}
+        self._semicircle_timer.start()
+
+    def hide_semicircle(self):
+        """Hide the semicircle: bots leave upward one by one."""
+        if self._semicircle_phase == "idle":
+            return
+        if self._semicircle_phase == "showing":
+            # finish showing first, then hide
+            self._semicircle_phase = "hiding"
+            self._semicircle_timer.start()
+            return
+        self._semicircle_phase = "hiding"
+        self._semicircle_timer.start()
+
+    def _check_mouse_position(self):
+        """Check if the mouse is at the top-centre hotspot and show/hide semicircle."""
+        from PySide6.QtGui import QCursor
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen().geometry()
+        cx, cy = screen.width() / 2, 0  # top-centre
+        px, py = QCursor.pos()
+        # check if mouse is within SEMICIRCLE_RADIUS of top-centre
+        if (px - cx) ** 2 + (py - cy) ** 2 <= SEMICIRCLE_RADIUS ** 2:
+            if self._semicircle_phase == "idle":
+                self.show_semicircle()
+        else:
+            if self._semicircle_phase != "idle":
+                self.hide_semicircle()
+
+    def _semicircle_positions(self) -> dict:
+        """Return a dict bot_id → (sx, sy) screen coords for the semicircle."""
+        import math
+        screen = QGuiApplication.primaryScreen().geometry()
+        cx, cy = screen.width() / 2, 0  # top-centre
+        r = SEMICIRCLE_RADIUS
+        step = 2 * math.pi / max(len(self.faces), 1)
+        pos = {}
+        for i, (bid, face) in enumerate(self.faces.items()):
+            angle = math.pi / 2 + i * step - math.pi / 4  # start at 12 o'clock, go clockwise
+            sx = cx + r * math.cos(angle)
+            sy = r * math.sin(angle)  # positive down
+            pos[bid] = (sx, sy)
+        return pos

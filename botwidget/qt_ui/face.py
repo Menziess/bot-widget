@@ -250,6 +250,28 @@ class FaceWindow(QWidget):
         if self.bubble.isVisible():
             desktops.apply(self.bubble)
 
+    def _set_semicircle(self, semicircle: dict):
+        """Receive semicircle state from Faces.
+
+        semicircle is a dict bot_id → {"angle": float, "visible": bool, "y_off": float}.
+        When a bot is visible in the semicircle, its face shows a reduced-size indicator.
+        When invisible, the face returns to normal.
+        """
+        bid = self.agent_id
+        if bid not in semicircle:
+            self._semicircle_visible = False
+            self.update()
+            return
+        info = semicircle[bid]
+        if info["visible"]:
+            self._semicircle_visible = True
+            self._semicircle_angle = info["angle"]
+            self._semicircle_yoff = info["y_off"]
+            self.update()
+        else:
+            self._semicircle_visible = False
+            self.update()
+
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
