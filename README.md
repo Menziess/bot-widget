@@ -90,7 +90,9 @@ The widget updates itself, and you can switch that off. At each start, and every
 - With checking off nothing is requested, with automatic installing off the page only links to the download page
 - The request is anonymous and sends no data about you beyond what any web request carries
 
-Automatic installing needs the packaged app. Installs through uv or pip, and checkouts, only show the link.
+Automatic installing needs the packaged app. Installs through uv or pip only show the link.
+
+A widget that runs from a git checkout (the local version) does not look for releases. With Install updates automatically on it fetches `origin main` at the start and every 15 minutes, and pulls when that is a plain fast-forward. It leaves the checkout alone when you are on another branch, have changes of your own or commits that are not pushed, or when there is no network. The dev mode (`botwidget --dev`) then restarts the widget by itself on the new code.
 
 ## Start at login
 

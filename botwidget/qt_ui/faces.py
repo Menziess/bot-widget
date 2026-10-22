@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication
 
-from botwidget import __version__, channel, grokbot, startup, updates
+from botwidget import __version__, channel, checkout, grokbot, startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -34,6 +34,7 @@ from botwidget.system.current import CAN_PICK_DESKTOPS, HOTKEY_LABEL, activate_a
 
 UPDATE_TICK_MS = 10 * 60 * 1000
 RECHECK_S = 6 * 3600
+CHECKOUT_RECHECK_S = 15 * 60  # code in a checkout changes more often than releases
 
 
 def _all_bots() -> list:
@@ -119,11 +120,15 @@ class Faces(QObject):
         if self.staged:
             if all(face.idle() for face in self.faces.values()):
                 self.install_update()
-        elif time.monotonic() - self._probed > RECHECK_S:
+        elif time.monotonic() - self._probed > (CHECKOUT_RECHECK_S if startup.from_checkout() else RECHECK_S):
             self._start_probe()
 
     def _probe_update(self):
-        """Is there a newer version? If so, and allowed, stage it already."""
+        """Is there a newer version? If so, and allowed, stage it already. A checkout pulls its own code instead."""
+        if startup.from_checkout():
+            if auto_update():
+                checkout.pull(startup.PACKAGE_ROOT)
+            return
         release = updates.newer_release()
         if release is None:
             return
@@ -209,7 +214,7 @@ class Faces(QObject):
             "sound": config.get("sound") is True, "quiet_hours": config.get("quiet_hours") is True,
             "always_on_top": always_on_top(), "can_pick_desktops": CAN_PICK_DESKTOPS,
             "all_desktops": all_desktops(), "login": startup.is_enabled(), "check_updates": check_updates(),
-            "can_install_updates": can_install_update(), "auto_update": auto_update(),
+            "can_install_updates": can_install_update() or startup.from_checkout(), "auto_update": auto_update(),
             "bots": [{"id": bot["id"], "name": bot["name"], "on": bot["id"] in self.faces,
                       "muted": bot["id"] in muted_bots()} for bot in bots],
             "openbot": openbot_installed(), "automation_ready": automation_ready(),

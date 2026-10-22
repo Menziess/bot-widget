@@ -3944,5 +3944,69 @@ class OpenBotAutomation(unittest.TestCase):
         self.assertFalse(config.automation_ready())
 
 
+class CheckoutPull(unittest.TestCase):
+    def git(self, folder, *args):
+        import subprocess
+        subprocess.run(["git", "-C", folder, "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True,
+                       capture_output=True)
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = self.tmp.name
+        self.origin, self.mine, self.other = (os.path.join(root, name) for name in ("origin", "mine", "other"))
+        self.git(root, "init", "-q", "--bare", "-b", "main", self.origin)
+        self.git(root, "clone", "-q", self.origin, self.mine)
+        self.git(root, "clone", "-q", self.origin, self.other)
+        self.commit(self.mine, "a.txt", "one")
+        self.git(self.mine, "push", "-q", "origin", "main")
+        self.git(self.other, "pull", "-q", "origin", "main")
+
+    def commit(self, folder, name, text):
+        with open(os.path.join(folder, name), "w") as fh:
+            fh.write(text)
+        self.git(folder, "add", name)
+        self.git(folder, "commit", "-q", "-m", text)
+
+    def publish(self, text="two"):
+        self.commit(self.other, "a.txt", text)
+        self.git(self.other, "push", "-q", "origin", "main")
+
+    def read(self):
+        with open(os.path.join(self.mine, "a.txt")) as fh:
+            return fh.read()
+
+    def test_new_commits_on_main_are_pulled(self):
+        from botwidget import checkout
+        self.publish()
+        self.assertTrue(checkout.pull(self.mine))
+        self.assertEqual(self.read(), "two")
+        self.assertFalse(checkout.pull(self.mine), "nothing new")
+
+    def test_a_checkout_with_changes_of_its_own_is_left_alone(self):
+        from botwidget import checkout
+        self.publish()
+        with open(os.path.join(self.mine, "a.txt"), "w") as fh:
+            fh.write("mine")
+        self.assertFalse(checkout.pull(self.mine))
+        self.assertEqual(self.read(), "mine")
+
+    def test_another_branch_and_commits_not_pushed_are_left_alone(self):
+        from botwidget import checkout
+        self.publish()
+        self.commit(self.mine, "b.txt", "local")
+        self.assertFalse(checkout.pull(self.mine), "cannot fast-forward")
+        self.git(self.mine, "reset", "-q", "--hard", "HEAD~1")
+        self.git(self.mine, "checkout", "-q", "-b", "feature")
+        self.assertFalse(checkout.pull(self.mine))
+        self.assertEqual(self.read(), "one")
+
+    def test_a_missing_remote_is_silent(self):
+        from botwidget import checkout
+        self.git(self.mine, "remote", "set-url", "origin", os.path.join(self.tmp.name, "nowhere"))
+        self.assertFalse(checkout.pull(self.mine))
+
+
 if __name__ == "__main__":
     unittest.main()
