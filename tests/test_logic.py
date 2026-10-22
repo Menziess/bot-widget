@@ -812,7 +812,10 @@ class BubbleHover(unittest.TestCase):
 
     def setUp(self):
         for name, value in (("latest_chat", lambda thread_id, limit=8: {"messages": self.MESSAGES, "activity": ""}),
-                            ("openbot_installed", lambda: True), ("gbot_installed", lambda: True)):
+                            ("openbot_installed", lambda: True), ("gbot_installed", lambda: True),
+                            # The local API of OpenBot is on, as for a bot that works: whether it is on
+                            # this computer must not add a note that changes the bubble's size.
+                            ("automation_ready", lambda: True)):
             old = getattr(self.face, name)
             self.addCleanup(setattr, self.face, name, old)
             setattr(self.face, name, value)
