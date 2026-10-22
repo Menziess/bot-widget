@@ -120,7 +120,9 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
             acc += h
         for n, line in enumerate(lines):
             if line["kind"] == "dots":
-                out.append(dots_svg(ox + PAD_PANEL_X, tops[n] + 16, line.get("phase", 0.0), ink))
+                # The group is two gaps wide; its middle dot sits in the middle of the cloud.
+                out.append(dots_svg(ox + box_w / 2 - DOTS_GAP, tops[n] + line_height(line) / 2,
+                                    line.get("phase", 0.0), ink))
             elif line["kind"] == "more":
                 if line.get("loading"):
                     # The arrow turns into the dots while the message before is on its way.
@@ -202,7 +204,15 @@ def _bubble_tip(side: str, body_w: int, body_h: int, tip: float | None) -> float
     return PAD_SVG + length / 2 if tip is None else min(max(tip, PAD_SVG + 20), PAD_SVG + length - 20)
 
 
-def bubble_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above") -> str:
+def opening_shadow_alpha(progress: float, opening: bool) -> float:
+    """The blurred shadow is a black bar while the bubble is still a sliver."""
+    if not opening:
+        return SHADOW_ALPHA
+    return SHADOW_ALPHA * min(1.0, max(0.0, progress) * 2)
+
+
+def bubble_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above",
+                      alpha: float | None = None) -> str:
     """The shadow, drawn sharp; the toolkit blurs it itself (SVG filters
     are not supported everywhere).
     """
@@ -212,8 +222,8 @@ def bubble_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: 
     return _bubble_canvas(body_w, body_h, (
         f'<rect x="{x0 - SHADOW_GROW}" y="{y0 - SHADOW_GROW + 2}"'
         f' width="{body_w + 2 * SHADOW_GROW}" height="{body_h + 2 * SHADOW_GROW}"'
-        f' rx="{SAND_RADIUS}" fill="#000" opacity="{SHADOW_ALPHA}"/>'
-        f'<path d="{tail}" fill="#000" opacity="{SHADOW_ALPHA}"/>'))
+        f' rx="{SAND_RADIUS}" fill="#000" opacity="{SHADOW_ALPHA if alpha is None else alpha}"/>'
+        f'<path d="{tail}" fill="#000" opacity="{SHADOW_ALPHA if alpha is None else alpha}"/>'))
 
 
 def bubble_body_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above") -> str:
@@ -297,10 +307,11 @@ def _circles_svg(circles: list, extra: str) -> str:
     return "".join(f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r:.2f}" {extra}/>' for cx, cy, r in circles)
 
 
-def cloud_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above") -> str:
+def cloud_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above",
+                     alpha: float | None = None) -> str:
     """The shadow of the thinking cloud, drawn sharp; the toolkit blurs it."""
     path, trail = _cloud_parts(body_w, body_h, tip, side, grow=SHADOW_GROW)
-    fill = f'fill="#000" opacity="{SHADOW_ALPHA}"'
+    fill = f'fill="#000" opacity="{SHADOW_ALPHA if alpha is None else alpha}"'
     return _bubble_canvas(body_w, body_h, (
         f'<g transform="translate(0 2)"><path d="{path}" {fill}/>'
         + _circles_svg(trail, fill) + "</g>"))

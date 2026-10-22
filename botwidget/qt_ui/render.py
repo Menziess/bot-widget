@@ -5,7 +5,6 @@ import re
 from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QGuiApplication, QImage, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene
 
 
 def _ratio() -> float:
@@ -38,22 +37,16 @@ def svg_pixmap(svg: str) -> QPixmap:
 
 
 def blurred(pixmap: QPixmap, radius: float) -> QPixmap:
-    """Gaussian blur on a copy; radius in logical px."""
-    ratio = pixmap.devicePixelRatio()
-    flat = QPixmap(pixmap)
-    flat.setDevicePixelRatio(1.0)
-    effect = QGraphicsBlurEffect()
-    effect.setBlurRadius(radius * ratio)
-    effect.setBlurHints(QGraphicsBlurEffect.QualityHint)
-    item = QGraphicsPixmapItem(flat)
-    item.setGraphicsEffect(effect)
-    scene = QGraphicsScene()
-    scene.addItem(item)
-    out = QImage(flat.size(), QImage.Format_ARGB32_Premultiplied)
-    out.fill(Qt.transparent)
-    painter = QPainter(out)
-    scene.render(painter, QRectF(out.rect()), QRectF(out.rect()))
-    painter.end()
+    """Soften a copy by scaling it down and back up.
+
+    A scene blur paints its empty margin black, and a pixel loop is too slow while the bubble grows.
+    """
+    ratio = pixmap.devicePixelRatio() or 1.0
+    image = pixmap.toImage().convertToFormat(QImage.Format_ARGB32_Premultiplied)
+    shrink = max(2, round(radius * ratio / 3))
+    small_w, small_h = max(1, image.width() // shrink), max(1, image.height() // shrink)
+    small = image.scaled(small_w, small_h, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+    out = small.scaled(image.width(), image.height(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
     result = QPixmap.fromImage(out)
     result.setDevicePixelRatio(ratio)
     return result
