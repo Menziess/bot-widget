@@ -238,6 +238,26 @@ class Stopped(FakeGbot):
         self.assertIn("send a message to try again", link.note())
         self.assertIn("not running", link.note())
 
+    def test_a_route_that_drops_while_an_answer_is_awaited_keeps_looking(self):
+        self.behaviour(rc=0, stdout=SENT)
+        link = self.link()
+        link.send("Test")
+        self.behaviour(rc=75, stderr="no route")
+        link.poll()
+        self.assertFalse(link.stopped, "the app may just be restarting after the send")
+        self.assertTrue(link.waiting)
+        self.assertIn("still looking", link.note())
+        self.time[0] += link.FAST_S
+        self.assertTrue(link.due(), "it looks again")
+        asked = {"kind": "message", "id": "t0", "role": "user", "content": "Test"}
+        self.steps({"stdout": thread([asked, entry("Ontvangen, ik ben er.")])})
+        self.assertTrue(link.poll())
+        self.assertEqual([(m["role"], m["text"]) for m in link.chat()["messages"]],
+                         [("user", "Test"), ("bot", "Ontvangen, ik ben er.")],
+                         "the answer comes after the question")
+        self.assertFalse(link.waiting)
+        self.assertEqual(link.note(), "")
+
     def test_a_send_without_a_route_still_names_it(self):
         self.behaviour(rc=75, stderr="no route")
         link = self.link()

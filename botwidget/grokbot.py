@@ -215,6 +215,37 @@ def _cursor(data: dict, entries: list, old: str) -> str:
     return cursor or old
 
 
+def _in_thread_order(entries: list, shown: list, kept: list) -> list:
+    """The latest answers with the lines the user sent here, each where the thread has it.
+
+    A line the thread already holds goes before the answers that came after it; a line it does
+    not hold yet goes last.
+    """
+    ids = {m.get("id") for m in shown if m.get("id")}
+    texts = {m["text"]: m for m in shown}
+    waiting = list(kept)
+    ordered = []
+    for entry in entries or []:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("kind") == "message" and entry.get("role") == "user":
+            content = entry.get("content")
+            line = next((m for m in waiting if isinstance(content, str)
+                         and m["text"].removesuffix(GrokLink.UNSURE_MARK) == content.strip()), None)
+            if line is not None:
+                waiting.remove(line)
+                ordered.append(line)
+        elif entry.get("kind") == "send-message":
+            match = [m for m in shown if m.get("id") and m.get("id") == entry.get("id")]
+            if match and match[0]["id"] in ids:
+                ids.discard(match[0]["id"])
+                ordered.append({"role": "bot", "text": match[0]["text"]})
+    if ids or len([m for m in ordered if m["role"] == "bot"]) != len(shown):
+        ordered = [m for m in ordered if m["role"] == "user"]
+        ordered = [{"role": "bot", "text": m["text"]} for m in shown] + ordered
+    return ordered + waiting
+
+
 def _key(message: dict) -> str | None:
     """What makes an answer the same one as before: its id and time. Without an id there is
     no telling, so a second identical answer still shows."""
@@ -226,6 +257,7 @@ def _key(message: dict) -> str | None:
 
 # A read that found no route stops the link; only a message of the user tries again.
 STOPPED_READ = "Grok Bot: connection stopped{why}; send a message to try again."
+NO_ROUTE_WAITING = "Grok Bot is out of reach for a moment; still looking for the answer."
 UNSURE_NOTE = "No answer from gbot; the message may or may not have gone out."
 
 
@@ -367,6 +399,11 @@ class GrokLink:
     def _apply(self, result: Result) -> bool:
         """What came back of the thread: new answers, or the reason there are none."""
         with self._lock:
+            if result.rc == 75 and self.waiting_since is not None:
+                # The route can drop for a moment, e.g. while the app restarts right after a send: an
+                # answer is still on its way, so keep looking until the wait ends instead of stopping.
+                self.status = NO_ROUTE_WAITING
+                return False
             if result.rc in STOPPED:
                 self.stopped = True
                 self.waiting_since = None
@@ -383,7 +420,7 @@ class GrokLink:
                 # A first look, or the thread was cut off: only the latest few answers, as history.
                 shown = parsed[-self.FIRST_SHOW:]
                 kept = self._user_lines_after_the_last_bot()
-                self.messages = [{"role": m["role"], "text": m["text"]} for m in shown] + kept
+                self.messages = _in_thread_order(entries, shown, kept)
                 self.seen = {k for k in map(_key, parsed) if k}
                 added = bool(shown)
             else:
