@@ -2276,20 +2276,34 @@ class BubbleHover(unittest.TestCase):
             Faces.menu_command(faces, "connect/grokbot", "connections")
             self.assertEqual((opened.call_count, faces.wanted), (1, set()), "a found one has nothing to open")
 
-    def test_a_field_that_was_typed_in_and_emptied_again_does_not_close_the_bubble_by_itself(self):
-        self.window.pin()
-        self.finish_growth()
+    def test_words_left_in_the_field_keep_the_bubble_when_the_pointer_leaves(self):
+        self.hover()
+        bubble = self.window.bubble
+        bubble.type_text("nog niet verstuurd")
+        bubble._kept_until = 0.0
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertTrue(bubble.kind, "the words in the field would be lost")
+
+    def test_a_bubble_waiting_on_an_answer_stays_when_the_pointer_leaves(self):
+        from unittest import mock
+        self.hover()
+        bubble = self.window.bubble
+        with mock.patch.object(self.window, "awaiting", lambda: True):
+            bubble._kept_until = 0.0
+            self.where["at"] = (5000, 5000)
+            bubble._tick()
+        self.assertTrue(bubble.kind, "the answer still has to come")
+
+    def test_a_field_emptied_again_lets_the_bubble_go_when_the_pointer_leaves(self):
+        self.hover()
         bubble = self.window.bubble
         bubble.type_text("a")
         bubble._entry.clear()
         bubble._kept_until = 0.0
         self.where["at"] = (5000, 5000)
-        bubble._was_near = True
-        bubble._entry.clearFocus()
         bubble._tick()
-        self.assertTrue(bubble.kind, "dirty: it stays until Escape or a click on the face")
-        bubble.place("")
-        self.assertFalse(bubble._dirty)
+        self.assertEqual(bubble.kind, "", "an empty field is no reason to stay")
 
     def test_the_conversation_as_it_was_at_the_start_does_not_open_the_bubble_but_a_new_message_does(self):
         chat = {"messages": self.MESSAGES, "activity": ""}

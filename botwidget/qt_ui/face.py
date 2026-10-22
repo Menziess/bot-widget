@@ -478,6 +478,7 @@ class FaceWindow(QWidget):
             self._depth = 1
             self._sync_bubble(self._latest(), force=True)
             self._claim_bubble()
+            self.bubble.shown_by_pointer()
             self._hover_since = now if self.bubble.isVisible() else 0.0
         elif self._hover_since and now - self._hover_since >= FOCUS_DWELL_S and self._drag_origin is None:
             # Typing starts at once, but only when the pointer stays: passing over the face is not asking.

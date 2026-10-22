@@ -557,7 +557,6 @@ class BubbleWindow(QWidget):
         self._control_widgets = []
         self._controls_key = None
         self._kept_until = 0.0
-        self._dirty = False
         self._opened = 0.0
         self._spot = (0, 0, 0, 0)
         self._yielding = False
@@ -583,10 +582,8 @@ class BubbleWindow(QWidget):
 
     def _edited(self):
         self.keep_for(USER_KEEP_S)
-        self._dirty = True
 
     def _send(self):
-        self._dirty = False
         self.keep_for(USER_KEEP_S)
         text, files = self._entry.text().strip(), self._attachments
         if text or files:
@@ -733,14 +730,17 @@ class BubbleWindow(QWidget):
         """Is exactly this already showing in the bubble? Then nothing needs to be redrawn."""
         return self.kind == kind and self.full_text == text and self._input == input and self.isVisible()
 
-    def typing(self) -> bool:
-        """Words typed that are not sent yet; an empty field in focus is no reason to stay."""
-        return self._input and self._entry.hasFocus() and bool(self._entry.text())
-
     def holding(self) -> bool:
-        """Typing, or words selected to copy: the bubble stays for as long as that lasts. A field that was typed in
-        stays dirty, also when it is empty again, until it is sent or the bubble is closed."""
-        return self.typing() or (self._input and self._dirty) or (self._doc.hasFocus() and self._doc.textCursor().hasSelection())
+        """Words in the field that are not sent yet, or words selected to copy: the bubble stays for as long as
+        one of those lasts, and leaves with the pointer once the field is empty again."""
+        return (self._input and bool(self._entry.text())) or (
+            self._doc.hasFocus() and self._doc.textCursor().hasSelection())
+
+    def shown_by_pointer(self):
+        """The pointer is on the face, so it has been near: leaving takes the bubble with it, also when it was
+        not yet read to the end."""
+        self._was_near = True
+        self._near_at = time.monotonic()
 
     def enterEvent(self, event):
         """Mouse over the bubble: it stays."""
@@ -1202,7 +1202,7 @@ class BubbleWindow(QWidget):
         awaiting = bool(self._wait_since) and now - self._wait_since < BUBBLE_WAIT_MAX
         if self._input and self._entry.hasFocus():
             self._had_focus = True
-        elif (self._had_focus and self._input and not self._entry.text() and not awaiting and not self._dirty
+        elif (self._had_focus and self._input and not self._entry.text() and not awaiting
               and QApplication.activeWindow() not in (self, self.face)):
             # Clicked into another window with nothing typed: the bubble goes, pinned or not.
             # Clicking on its own words or on the face is not leaving.
@@ -1257,7 +1257,6 @@ class BubbleWindow(QWidget):
         self.kind = kind
         if kind == "":
             self._yielding = False
-            self._dirty = False
             self._slide.stop()
             self._growth = None
             self.setWindowOpacity(1.0)
