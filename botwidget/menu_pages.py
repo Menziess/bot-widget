@@ -81,27 +81,32 @@ def bots(state: dict) -> list:
 
 
 def connections(state: dict) -> list:
-    blocks = _back() + [_heading("Connections"), plain_block("gap")]
-    if state["openbot"]:
-        blocks.append(_row(("OpenBot", "b"), (" detected", "dim")))
-        if state["automation_ready"]:
-            blocks.append(_row(("Local API ready", "dim")))
-        else:
-            blocks.append(_row(("The local API is off: in OpenBot open the bot's settings and turn on "
-                                "\"Local scripts\".", "dim")))
+    blocks = _back() + [_heading("Connections"), _row(("Turning one on that was not found opens its page.", "dim")),
+                        plain_block("gap")]
+    wanted = state.get("wanted", ())
+    openbot = state["openbot"]
+    blocks.append(_toggle("OpenBot", "connect/openbot", openbot or "openbot" in wanted))
+    if openbot and state["automation_ready"]:
+        note = "Detected, local API ready"
+    elif openbot:
+        note = "Detected, but the local API is off: in OpenBot open the bot's settings and turn on \"Local scripts\""
     else:
-        blocks.append(_button("OpenBot not found · get it ↗", "open/openbot"))
+        note = "Waiting for OpenBot to be installed" if "openbot" in wanted else "Not found"
+    blocks.append({**_row((note, "dim")), "indent": 44})
     blocks.append(plain_block("gap"))
-    if state["gbot"]:
+    gbot = state["gbot"]
+    blocks.append(_toggle("Grok Bot", "connect/grokbot", gbot or "grokbot" in wanted))
+    if gbot:
         line = state["grok"]
         if line.startswith("Grok Bot"):
             line = line[len("Grok Bot"):].strip()
         target = state.get("grok_target")
         if target and "talks to" not in line:
             line = f"{line} · talks to {target}"
-        blocks.append(_row(("Grok Bot", "b"), (f" {line}", "dim")))
+        note = f"Detected, {line}" if line else "Detected"
     else:
-        blocks.append(_button("Grok Bot not found · get it ↗", "open/grokbot"))
+        note = "Waiting for Grok Bot to be installed" if "grokbot" in wanted else "Not found"
+    blocks.append({**_row((note, "dim")), "indent": 44})
     return blocks
 
 

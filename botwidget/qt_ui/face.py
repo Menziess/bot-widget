@@ -304,6 +304,12 @@ class FaceWindow(QWidget):
     def _move_icon(self, x, y):
         self.move(int(x), int(y))
 
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape and self.bubble.isVisible():
+            self.unpin()
+            return
+        super().keyPressEvent(event)
+
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton:
             self.open_commands()
@@ -827,6 +833,7 @@ class FaceWindow(QWidget):
         self.bubble.show_blocks(menu_pages.page_blocks(page, self.faces.menu_state()), "say", keep_scroll=again)
         self._claim_bubble()
         self.bubble.activateWindow()
+        self.bubble.setFocus()
 
     def _menu_command(self, command: str):
         kind, _, rest = command.partition("/")

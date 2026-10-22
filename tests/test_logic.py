@@ -2235,6 +2235,41 @@ class BubbleHover(unittest.TestCase):
         QTest.keyClick(bubble._entry, Qt.Key_Escape)
         self.assertEqual(bubble._entry.text(), "een bericht")
 
+    def test_a_page_opened_on_another_face_replaces_the_one_before_and_escape_closes_it(self):
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        other = self.second_face()
+        registry = self.window.faces
+        registry.menu_state = self.settings_state
+        registry.menu_command = lambda command, page: page
+        self.window.open_menu("settings")
+        self.finish_growth()
+        self.assertTrue(self.window.bubble.isVisible())
+        other.open_commands()
+        other.open_menu("settings")
+        other.bubble._slide.stop()
+        other.bubble._growth_done()
+        self.assertFalse(self.window.bubble.isVisible(), "one page at a time")
+        self.assertTrue(other.bubble.isVisible())
+        QTest.keyClick(other, Qt.Key_Escape)
+        self.assertFalse(other.bubble.isVisible(), "Escape works on the face too")
+
+    def test_turning_on_a_connection_that_is_not_found_opens_its_page_and_stays_on_until_turned_off(self):
+        from unittest import mock
+        from botwidget.qt_ui.faces import Faces
+        faces = Faces.__new__(Faces)
+        faces.wanted = set()
+        faces.menu_state = lambda: {"openbot": False, "gbot": True, "wanted": sorted(faces.wanted)}
+        with mock.patch("botwidget.qt_ui.faces.QDesktopServices.openUrl") as opened:
+            Faces.menu_command(faces, "connect/openbot", "connections")
+            self.assertEqual(opened.call_count, 1)
+            self.assertEqual(faces.wanted, {"openbot"})
+            Faces.menu_command(faces, "connect/openbot", "connections")
+            self.assertEqual((opened.call_count, faces.wanted), (1, set()), "off again, nothing opened")
+            Faces.menu_command(faces, "connect/grokbot", "connections")
+            self.assertEqual((opened.call_count, faces.wanted), (1, set()), "a found one has nothing to open")
+
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
@@ -2793,15 +2828,22 @@ class MenuPages(unittest.TestCase):
         self.assertIn("☐ Robo", self.text(blocks))
         self.assertIn("No bots found yet", self.text(menu_pages.bots({**self.STATE, "bots": []})))
 
-    def test_the_connections_page_says_what_was_found_and_what_is_missing(self):
-        text = self.text(menu_pages.connections(self.STATE))
-        self.assertIn("OpenBot detected", text)
+    def test_the_connections_page_has_a_switch_per_connection_that_says_what_was_found(self):
+        blocks = menu_pages.connections(self.STATE)
+        text = self.text(blocks)
+        self.assertEqual(self.commands(blocks), ["page/commands", "connect/openbot", "connect/grokbot"])
+        self.assertIn("☑ OpenBot", text)
         self.assertIn("local API is off", text)
-        self.assertIn("Grok Bot not found", text)
+        self.assertIn("☐ Grok Bot", text)
+        self.assertIn("Not found", text)
         ready = self.text(menu_pages.connections({**self.STATE, "automation_ready": True, "gbot": True}))
-        self.assertIn("Local API ready", ready)
-        self.assertIn("Grok Bot no route", ready)
-        self.assertIn("open/openbot", self.commands(menu_pages.connections({**self.STATE, "openbot": False})))
+        self.assertIn("local API ready", ready)
+        self.assertIn("☑ Grok Bot", ready)
+
+    def test_a_connection_that_was_turned_on_but_not_found_stays_on_and_says_it_waits(self):
+        text = self.text(menu_pages.connections({**self.STATE, "wanted": ["grokbot"]}))
+        self.assertIn("☑ Grok Bot", text)
+        self.assertIn("Waiting for Grok Bot", text)
 
     def test_every_page_leads_back_to_the_commands(self):
         for page in menu_pages.PAGES:
@@ -2899,7 +2941,7 @@ class MenuInBubble(unittest.TestCase):
     def test_typing_a_slash_command_opens_its_page_and_sends_nothing(self):
         self.window._pump_outbox = lambda: None
         for typed, expected in (("/settings", "Sound on a new answer"), ("/bots", "Fritsie"),
-                                ("/connections", "OpenBot detected")):
+                                ("/connections", "☑ OpenBot")):
             self.window.on_user_message(typed)
             self.assertIn(expected, self.text(), typed)
         self.assertEqual(self.window._outbox.items, [], "a slash command is not a message to the bot")

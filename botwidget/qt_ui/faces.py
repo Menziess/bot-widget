@@ -58,6 +58,7 @@ class Faces(QObject):
         self.avatar = None
         self.update = None
         self.staged = None
+        self.wanted = set()  # connections turned on that were not found: the page is open, the toggle stays on
         self.hotkey_on = False
         self.grok_probed.connect(self._take_grok_avatar)
         threading.Thread(target=self._probe_grok, daemon=True).start()
@@ -208,7 +209,7 @@ class Faces(QObject):
                       "muted": bot["id"] in muted_bots()} for bot in bots],
             "openbot": openbot_installed(), "automation_ready": automation_ready(),
             "gbot": gbot_installed(), "grok": self.grok_line(),
-            "grok_target": grokbot.target(),
+            "grok_target": grokbot.target(), "wanted": sorted(self.wanted),
         }
 
     TOGGLES = {
@@ -220,6 +221,7 @@ class Faces(QObject):
         "check_updates": lambda faces, on: save_widget_config(check_updates=on),
         "auto_update": lambda faces, on: save_widget_config(auto_update=on),
     }
+    CONNECTIONS = {"openbot": "openbot", "grokbot": "gbot"}
     LINKS = {"openbot": OPENBOT_URL, "grokbot": GROKBOT_URL, "download": updates.DOWNLOAD_URL}
 
     def menu_command(self, command: str, page: str) -> str | None:
@@ -237,6 +239,13 @@ class Faces(QObject):
                 self.faces[name].toggle_muted()
             else:
                 set_muted(name, name not in muted_bots())
+        elif kind == "connect" and name in self.CONNECTIONS:
+            if not self.menu_state()[self.CONNECTIONS[name]]:
+                if name in self.wanted:
+                    self.wanted.discard(name)
+                else:
+                    self.wanted.add(name)
+                    QDesktopServices.openUrl(QUrl(self.LINKS[name]))
         elif kind == "open" and name in self.LINKS:
             QDesktopServices.openUrl(QUrl(self.LINKS[name]))
         elif kind == "action" and name == "update":

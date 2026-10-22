@@ -53,7 +53,7 @@ botwidget
 - A page (settings, bots, connections) goes away by itself like any bubble, and with Escape
 - The /settings page holds sound, quiet hours, window stacking, desktops, start at login, update checks, switching version, and Quit
 - The /bots page switches the face of each bot on or off, and mutes its thinking
-- The /connections page says which bot apps were found and whether the local API of OpenBot is on
+- The /connections page has a switch per bot app, on when it was found, with whether the local API of OpenBot is on; turning one on that was not found opens its page and the switch stays on while it waits
 - Each page opens in the bubble, with real switches and buttons, and the arrow on top goes back
 - On macOS Control+Option+Space opens the chat from any app, and closes it again
 - The face goes back to where you put it when its screen comes back

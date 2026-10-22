@@ -208,7 +208,8 @@ class BubbleEntry(QPlainTextEdit):
         return max(ENTRY_H, lines * self.fontMetrics().lineSpacing() + ENTRY_PAD + 2)
 
     def keyPressEvent(self, event):
-        """Escape closes the bubble without sending anything; with the list of commands open it closes that."""
+        """Escape closes the bubble without sending anything and keeps what was typed; with the list of commands open it
+        closes that."""
         if self.commands_open and not event.modifiers() & Qt.ShiftModifier:
             handled = {Qt.Key_Up: lambda: self.moved.emit(-1), Qt.Key_Down: lambda: self.moved.emit(1),
                        Qt.Key_Tab: self.completed.emit, Qt.Key_Escape: self.closed.emit}
@@ -219,7 +220,6 @@ class BubbleEntry(QPlainTextEdit):
                 self.chosen.emit()
                 return
         if event.key() == Qt.Key_Escape:
-            self.clear()
             self.dismissed.emit()
             return
         if (sys.platform == "darwin" and event.key() == Qt.Key_Backspace
