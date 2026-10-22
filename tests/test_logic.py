@@ -4307,6 +4307,18 @@ class Sending(unittest.TestCase):
                     self.assertIsNone(box.failed("abc", result.retryable), "the message is dropped")
                     self.assertIsNone(box.current())
 
+    def test_a_200_body_with_leading_bom_and_real_json_is_not_empty(self):
+        # A BOM before real JSON bytes must NOT be treated as empty answer.
+        body = b"\xef\xbb\xbf{\"text\":\"hi\"}"
+        with self.subTest(body=body):
+            with _FlakyApi([200], bodies=[body]):
+                result = openbot.api_post("/v1/agents/me/messages",
+                                          {"text": "hi", "clientMessageId": "abc"})
+                self.assertTrue(result.ok, f"body={body!r} should parse as JSON, got error={result.error!r}")
+                self.assertEqual(result.status, 200)
+                self.assertNotEqual(result.error, "empty answer",
+                                    f"body={body!r} should not be refused as empty answer")
+
     def test_a_200_body_that_is_not_an_object_is_a_refusal(self):
         for body in (b"null", b"[]", b"3", b'"hoi"'):
             with self.subTest(body=body):

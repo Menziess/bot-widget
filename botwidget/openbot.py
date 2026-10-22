@@ -101,7 +101,7 @@ def api_post(path: str, body: dict) -> ApiResult:
         # the store puts in front; trying again only repeats it.
         return ApiResult(None, status, "empty answer", retry=False)
     try:
-        answer = json.loads(body.decode())
+        answer = json.loads(stripped.decode())
     except (UnicodeDecodeError, json.JSONDecodeError):
         # Not JSON at all: the connection worked, so this is a blip, not a refusal.
         return ApiResult(None, status, "unreadable answer", retry=True)
