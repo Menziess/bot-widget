@@ -3,6 +3,7 @@
 The face stays below normal windows, like a desktop widget.
 """
 
+import ctypes
 import glob
 import os
 import shutil
@@ -142,8 +143,98 @@ def data_home() -> str:
 
 
 def send_behind_windows(win_id: int) -> None:
-    # The window manager honours Qt's StaysOnBottomHint.
-    pass
+    """Put one face under ordinary windows.
+
+    Qt.Tool is a utility window. Mutter keeps that layer above Finder, so
+    StaysOnBottomHint never lands there. Offscreen tests must not touch the
+    real display.
+    """
+    if not win_id or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        return
+    lib = _xlib()
+    if lib is None:
+        return
+    lib.behind(int(win_id))
+
+
+class _Xlib:
+    def __init__(self):
+        x11 = ctypes.CDLL("libX11.so.6")
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XDefaultRootWindow.restype = ctypes.c_ulong
+        x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        x11.XInternAtom.restype = ctypes.c_ulong
+        x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        x11.XChangeProperty.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong,
+                                        ctypes.c_ulong, ctypes.c_int, ctypes.c_int,
+                                        ctypes.c_void_p, ctypes.c_int]
+        x11.XSendEvent.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int,
+                                   ctypes.c_long, ctypes.c_void_p]
+        x11.XLowerWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        x11.XFlush.argtypes = [ctypes.c_void_p]
+        self._x11 = x11
+        self._display = x11.XOpenDisplay(None)
+        self._root = x11.XDefaultRootWindow(self._display) if self._display else 0
+        self._atoms = {}
+
+    def _atom(self, name: str) -> int:
+        cached = self._atoms.get(name)
+        if cached is None:
+            cached = self._x11.XInternAtom(self._display, name.encode(), False)
+            self._atoms[name] = cached
+        return cached
+
+    def behind(self, win_id: int) -> None:
+        if not self._display:
+            return
+        normal = ctypes.c_ulong(self._atom("_NET_WM_WINDOW_TYPE_NORMAL"))
+        # format 32 is an array of long on this libX11.
+        self._x11.XChangeProperty(self._display, win_id, self._atom("_NET_WM_WINDOW_TYPE"),
+                                  4, 32, 0, ctypes.byref(normal), 1)
+        self._state(win_id, 0, "_NET_WM_STATE_ABOVE")
+        self._state(win_id, 1, "_NET_WM_STATE_BELOW", "_NET_WM_STATE_SKIP_TASKBAR")
+        self._x11.XLowerWindow(self._display, win_id)
+        self._x11.XFlush(self._display)
+
+    def _state(self, win_id: int, action: int, first: str, second: str = "") -> None:
+        event = _ClientMessage()
+        event.type = 33
+        event.display = self._display
+        event.window = win_id
+        event.message_type = self._atom("_NET_WM_STATE")
+        event.format = 32
+        event.data[0] = action
+        event.data[1] = self._atom(first)
+        event.data[2] = self._atom(second) if second else 0
+        mask = (1 << 20) | (1 << 19)
+        self._x11.XSendEvent(self._display, self._root, False, mask, ctypes.byref(event))
+
+
+class _ClientMessage(ctypes.Structure):
+    _fields_ = [
+        ("type", ctypes.c_int),
+        ("serial", ctypes.c_ulong),
+        ("send_event", ctypes.c_int),
+        ("display", ctypes.c_void_p),
+        ("window", ctypes.c_ulong),
+        ("message_type", ctypes.c_ulong),
+        ("format", ctypes.c_int),
+        ("data", ctypes.c_long * 5),
+    ]
+
+
+_xlib_once = None
+
+
+def _xlib():
+    global _xlib_once
+    if _xlib_once is None:
+        try:
+            _xlib_once = _Xlib()
+        except OSError:
+            _xlib_once = False
+    return _xlib_once or None
 
 
 def _autostart_file() -> str:
