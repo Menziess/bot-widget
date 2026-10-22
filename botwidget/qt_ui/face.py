@@ -588,7 +588,9 @@ class FaceWindow(QWidget):
 
     def _set_pose(self, pose: str):
         dx, dy, scale = POSES[pose]
-        self.anim.aim(dx=dx, dy=dy, scale=scale, converge=0.0, lift=LIFT.get(pose, 0.0))
+        if dx is not None:  # a blink keeps the eyes where they look
+            self.anim.aim(dx=dx, dy=dy)
+        self.anim.aim(scale=scale, converge=0.0, lift=LIFT.get(pose, 0.0))
         if pose == "hop":
             self.anim.kick("sy", 0.8)
         elif self._pose == "hop":

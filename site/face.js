@@ -55,14 +55,13 @@
     return moving;
   };
 
-  // dx, dy, length factor
+  // dx, dy, length factor; a blink (null) keeps the eyes where they look. Generated from avatar.py:
+  // Grok Bot's idle clips, their head turns and blinks.
   var POSES = {
-    rest: [0, 0, 1], idle: [5, -5, 1], look: [0, 2, 1], blink: [0, 0, 0.22],
-    read0: [-2, 1, 1], read1: [2, 1, 1]
+    rest: [0, 0, 1.0], idle: [7.1, -3.7, 1.0], look: [0, 2, 1.0], blink: [null, null, 0.0], read0: [-2, 1, 1.0], read1: [2, 1, 1.0], turn1: [3.1, -7.4, 1.0], turn2: [1.6, -3.1, 1.0], turn3: [7.8, 1.6, 1.0], front: [0.0, 0.0, 1.0], turn5: [-4.4, 0.1, 1.0], turn6: [2.9, 0.5, 1.0], turn7: [-7.1, -3.8, 1.0], turn8: [-7.3, -3.3, 1.0], turn9: [6.3, 4.9, 1.0], turn10: [1.7, 7.8, 1.0], turn11: [6.0, -5.3, 1.0]
   };
-  // pose, duration in ms. Idle stays almost still: a glance up and to the right, an occasional blink.
   var CYCLE = {
-    idle: [["idle", 5200], ["blink", 130], ["idle", 4200], ["blink", 130], ["idle", 100], ["blink", 130], ["idle", 6500]],
+    idle: [["turn1", 590], ["blink", 130], ["turn2", 1240], ["turn3", 110], ["blink", 130], ["turn3", 170], ["blink", 130], ["turn3", 1410], ["idle", 340], ["blink", 130], ["idle", 1620], ["front", 900], ["turn5", 580], ["blink", 130], ["turn5", 10], ["turn6", 870], ["front", 970], ["blink", 130], ["front", 410], ["front", 490], ["turn7", 670], ["blink", 130], ["turn7", 90], ["turn8", 400], ["turn9", 970], ["turn10", 180], ["turn11", 1070], ["blink", 130], ["front", 1920], ["front", 900], ["turn5", 580], ["blink", 130], ["turn5", 10], ["turn6", 870], ["front", 970], ["blink", 130], ["front", 410], ["front", 900], ["turn5", 580], ["blink", 130], ["turn5", 10], ["turn6", 870], ["front", 970], ["blink", 130], ["front", 410]],
     work: [["read0", 280], ["read1", 280], ["read0", 280], ["blink", 120]]
   };
 
@@ -98,18 +97,24 @@
   var HEAD = silhouette();
 
   function lerp(a, b, t) { return a + (b - a) * t; }
+  // A Grok Bot blink presses the pill to a lying one of 0.42 its width.
+  function lid(length, width, scale) {
+    return scale >= 1 ? length * scale : lerp(length, 0.42 * width, 1 - Math.max(0, scale));
+  }
 
   // One eye is a thick line with round ends: a standing or lying pill that grows into a ^ when happy.
-  function eye(ctx, ex, ey, ew, eh, tilt, happy, color, alpha) {
+  function eye(ctx, ex, ey, ew, eh, tilt, happy, color, alpha, arc) {
     var half = Math.max(0.01, Math.abs(eh - ew) / 2), pill, thick;
     if (eh >= ew) { pill = [[ex, ey - half], [ex, ey], [ex, ey + half]]; thick = ew; }
     else { pill = [[ex - half, ey], [ex, ey], [ex + half, ey]]; thick = eh; }
-    var caret = [[ex - ew / 2, ey + eh * 0.10], [ex, ey - eh * 1.05], [ex + ew / 2, ey + eh * 0.10]];
+    // Grok Bot's happy eye: an arc as thick as the eye.
+    var size = ew * arc, top = ey - 0.577 * size, foot = ey + 0.04 * size;
+    var caret = [[ex - 0.615 * size, foot], [ex, 2 * top - foot], [ex + 0.615 * size, foot]];
     var m = pill.map(function (p, i) { return [lerp(p[0], caret[i][0], happy), lerp(p[1], caret[i][1], happy)]; });
     ctx.save();
     ctx.translate(ex, ey); ctx.rotate(tilt * (1 - happy) * DEG); ctx.translate(-ex, -ey);
     ctx.globalAlpha = alpha; ctx.strokeStyle = color; ctx.lineCap = "round";
-    ctx.lineWidth = lerp(thick, Math.max(2.2, ew * 0.26), happy);
+    ctx.lineWidth = lerp(thick, size, happy);
     ctx.beginPath(); ctx.moveTo(m[0][0], m[0][1]); ctx.quadraticCurveTo(m[1][0], m[1][1], m[2][0], m[2][1]);
     ctx.stroke();
     ctx.restore();
@@ -138,9 +143,12 @@
     for (var i = 0; i < 2; i++) {
       var e = BOT.eyes[i], side = i === 0 ? -1 : 1;
       var ex = C + side * apart + (i === 0 ? v.converge : -v.converge) + v.dx, ey = C + v.dy;
-      var ew = Math.max(2, e[0] * R), eh = Math.max(2, e[1] * R * v.scale * e[3]);
-      eye(ctx, ex, ey + 1.3, ew, eh, e[2], v.happy, "#000", 0.14);
-      eye(ctx, ex, ey, ew, eh, e[2], v.happy, EYE_FILL, 1);
+      var ew = Math.max(2, e[0] * R), eh = Math.max(2, lid(e[1] * R * e[3], ew, v.scale));
+      // Grok Bot's two happy arcs take 0.93 of the distance between the eyes, so they never touch.
+      var widest = Math.max(2, Math.max(BOT.eyes[0][0], BOT.eyes[1][0]) * R) * (2 * 0.615 + 1);
+      var arc = Math.min(1, 0.93 * 2 * apart / widest);
+      eye(ctx, ex, ey + 1.3, ew, eh, e[2], v.happy, "#000", 0.14, arc);
+      eye(ctx, ex, ey, ew, eh, e[2], v.happy, EYE_FILL, 1, arc);
     }
     ctx.restore();
   }

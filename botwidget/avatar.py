@@ -8,13 +8,81 @@ from botwidget.grok_marks import GROK_MARKS
 # The face fits a circle of diameter 58 in a 68 px window; two long vertical eyes sit in the middle.
 AVATAR_SIZE = 68
 CIRCLE_R = 29.0
-# dx, dy, length factor. Only shifts; the shape stays the same, except for a blink.
+# ── Motion, after Grok Bot's own avatar engine ─────────────────────
+# Grok Bot animates its avatar with clips of head rotations (pitch, yaw, roll in degrees) and blinks
+# (x.ai, the "Motion Lab" engine behind the GrokBotMark). Its eyes sit on the front of the head, so
+# a turn moves them across the face; GROK_REST is the turn its still art is drawn in: up and right.
+GROK_REST = (-15.9, 33.3)
+# A turn moves the eyes as far as they would go on a ball of the face's size, capped at the same
+# reach the eyes have when they follow the pointer.
+LOOK_MAX = 8.0
+
+
+def grok_look(pitch: float, yaw: float) -> tuple[float, float]:
+    """Where the eyes go, in px from the middle, when the head turns by pitch and yaw degrees."""
+    p, y = math.radians(pitch), math.radians(yaw)
+    dx, dy = CIRCLE_R * math.sin(y) * math.cos(p), CIRCLE_R * math.sin(p)
+    reach = math.hypot(dx, dy)
+    if reach > LOOK_MAX:
+        dx, dy = dx * LOOK_MAX / reach, dy * LOOK_MAX / reach
+    return round(dx, 1), round(dy, 1)
+
+
+# Grok Bot's idle clips: (seconds, (pitch, yaw)) where a turn is reached, and when the eyes blink.
+# Idle_A ends in a full turn of the head, which a flat face cannot show: it turns back to the front.
+GROK_IDLE_CLIPS = {
+    "Idle_B": (4.0, ((0.9, (0, 0)), (1.62, (0.1, -8.7)), (2.49, (1.0, 5.7)), (3.46, (0, 0))),
+               (1.48, 3.46)),
+    "Idle_D": (6.0, ((0.0, GROK_REST), (0.59, (-34.3, 16.9)), (1.96, (-6.2, 3.1)), (3.91, (7.6, 40.4)),
+                     (5.63, GROK_REST)), (0.59, 2.07, 2.37, 4.25)),
+    "Idle_A": (6.0, ((0.49, (0, 0)), (1.38, (-16.1, -32.7)), (1.78, (-13.5, -31.7)), (2.75, (10.4, 13.6)),
+                     (2.93, (22.8, 5.3)), (4.08, (-24.9, 31.8)), (5.75, (0, 0))), (1.16, 4.0)),
+}
+# Grok Bot plays its idle clips from this bag (Idle_B three times); it starts at the still art.
+GROK_IDLE_ORDER = ("Idle_D", "Idle_B", "Idle_A", "Idle_B", "Idle_B")
+# A Grok Bot blink: shut in about 0.1 s, a moment closed, open again by 0.26 s.
+BLINK_MS = 130
+
+
+def _idle_cycle(poses: dict) -> tuple:
+    """The idle clips as (pose, ms) steps: a turn is aimed at from the key before it, blinks in between.
+
+    Every turn gets a pose of its own in poses; a blink keeps the eyes where they look.
+    """
+    steps, names = [], {}
+    for clip in GROK_IDLE_ORDER:
+        duration, keys, blinks = GROK_IDLE_CLIPS[clip]
+        events = []
+        for i, (_t, turn) in enumerate(keys):
+            start = keys[i - 1][0] if i else 0.0
+            look = grok_look(*turn)
+            if look not in names:
+                names[look] = ("idle" if turn == GROK_REST else "front" if look == (0.0, 0.0)
+                               else f"turn{len(names)}")
+                poses[names[look]] = (look[0], look[1], 1.0)
+            events.append((start, names[look]))
+        events += [(t, "blink") for t in blinks]
+        events.sort(key=lambda event: event[0])
+        current = events[0][1]
+        for i, (t, pose) in enumerate(events):
+            end = events[i + 1][0] if i + 1 < len(events) else duration
+            if pose == "blink":
+                steps.append(("blink", BLINK_MS))
+                if end - t > BLINK_MS / 1000:
+                    steps.append((current, round((end - t) * 1000) - BLINK_MS))
+            else:
+                current = pose
+                if end > t:
+                    steps.append((pose, round((end - t) * 1000)))
+    return tuple(steps)
+
+
+# dx, dy, length factor. Only shifts; the shape stays the same, except for a blink. A blink (length
+# 0) leaves the eyes where they look: None keeps dx and dy.
 POSES = {
     "rest": (0, 0, 1.0),
-    # Grok Bot looks up and to the right at rest; that is almost standing still.
-    "idle": (5, -5, 1.0),
     "look": (0, 2, 1.0),
-    "blink": (0, 0, 0.22),
+    "blink": (None, None, 0.0),
     "read0": (-2, 1, 1.0),
     "read1": (2, 1, 1.0),
     "aside": (-6, 1, 1.0),
@@ -23,12 +91,11 @@ POSES = {
 }
 # The hop lifts the whole face for a moment; the eyes look up while it does.
 LIFT = {"hop": 4.0}
-# pose, duration in ms. Idle stays almost still: a glance up and to the right, an occasional blink.
+# pose, duration in ms. Idle is Grok Bot's own idle: its turns and blinks, idle being its still art.
 # The tick is short enough to make a double blink really double.
 FACE_STEP_MS = 110
 FACE = {
-    "idle": (("idle", 5200), ("blink", 130), ("idle", 4200), ("blink", 130), ("idle", 100),
-             ("blink", 130), ("idle", 6500)),
+    "idle": _idle_cycle(POSES),
     "work": (("read0", 280), ("read1", 280), ("read0", 280), ("blink", 120)),
     "ask": (("look", 800), ("blink", 130), ("rest", 90), ("blink", 130),
             ("look", 700), ("rest", 200)),
@@ -239,19 +306,37 @@ def _lerp(a: float, b: float, t: float) -> float:
     return a + (b - a) * t
 
 
+# Grok Bot's eyes, in eye widths: a blink presses the pill to a lying one of 0.42 its width, and a
+# happy eye is an arc as thick as the eye, 1.23 wide, its top 0.58 above the middle.
+LID_SHUT = 0.42
+HAPPY_SPAN, HAPPY_TOP, HAPPY_FOOT = 0.615, 0.577, 0.04
+# Grok Bot's two happy arcs together take 0.93 of the distance between its eyes, so they never touch.
+HAPPY_ROOM = 0.93
+
+
+def eye_length(length: float, width: float, scale: float) -> float:
+    """How long an eye is with its lids at scale: 1 open, 0 shut, the way Grok Bot blinks."""
+    if scale >= 1:
+        return length * scale
+    return _lerp(length, LID_SHUT * width, 1 - max(0.0, scale))
+
+
 def _eye(ex: float, ey: float, ew: float, eh: float, tilt: float, happy: float,
-         fill: str, opacity: float) -> str:
+         fill: str, opacity: float, arc: float = 1.0) -> str:
     """One eye as a thick line with round ends: a standing or lying pill that grows into
-    a ^ at happy 1. Everything stays solid; nothing is faded.
+    Grok Bot's happy arc (^) at happy 1, arc times its size. Everything stays solid; nothing is faded.
     """
     half = max(0.01, abs(eh - ew) / 2)
     if eh >= ew:
         pill, thick = ((ex, ey - half), (ex, ey), (ex, ey + half)), ew
     else:
         pill, thick = ((ex - half, ey), (ex, ey), (ex + half, ey)), eh
-    caret = ((ex - ew / 2, ey + eh * 0.10), (ex, ey - eh * 1.05), (ex + ew / 2, ey + eh * 0.10))
+    size = ew * arc
+    top = ey - HAPPY_TOP * size
+    foot = ey + HAPPY_FOOT * size
+    caret = ((ex - HAPPY_SPAN * size, foot), (ex, 2 * top - foot), (ex + HAPPY_SPAN * size, foot))
     p0, ctrl, p1 = (tuple(_lerp(a, b, happy) for a, b in zip(u, v)) for u, v in zip(pill, caret))
-    width = _lerp(thick, max(2.2, ew * 0.26), happy)
+    width = _lerp(thick, size, happy)
     turn = f' transform="rotate({tilt * (1 - happy):.1f} {ex:.2f} {ey:.2f})"' if tilt else ""
     return (f'<path d="M{p0[0]:.2f} {p0[1]:.2f} Q{ctrl[0]:.2f} {ctrl[1]:.2f} {p1[0]:.2f} {p1[1]:.2f}"'
             f' fill="none" stroke="{fill}" stroke-width="{width:.2f}" stroke-linecap="round"'
@@ -317,17 +402,23 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
     else:
         # A Grok Bot mark keeps Grok Bot's own eyes where it puts them; they move, blink and smile
         # like every other face.
-        seats = ([(centre + x * CIRCLE_R, centre + y * CIRCLE_R, w, h, tilt, 1)
+        # Its art is the head turned to GROK_REST, so the eyes move from there.
+        rx, ry = POSES["idle"][:2]
+        seats = ([(centre + x * CIRCLE_R - rx, centre + y * CIRCLE_R - ry, w, h, tilt, 1)
                   for x, y, w, h, tilt in mark[1]] if mark else
                  [(centre + (-1 if i == 0 else 1) * apart, centre, w, h, tilt, open_)
                   for i, (w, h, tilt, open_) in enumerate(spec[1:])])
+        apart_px = math.hypot(seats[1][0] - seats[0][0], seats[1][1] - seats[0][1])
         for i, (sx, sy, w, h, tilt, open_) in enumerate(seats):
             ex = sx + (converge if i == 0 else -converge) + dx
             ey = sy + dy
             ew = max(2.0, w * CIRCLE_R)
-            eh = max(2.0, h * CIRCLE_R * scale * open_)
-            eyes.append(_eye(ex, ey + 1.3, ew, eh, tilt, happy, "#000", 0.14))
-            eyes.append(_eye(ex, ey, ew, eh, tilt, happy, EYE_FILL, 1.0))
+            eh = max(2.0, eye_length(h * CIRCLE_R * open_, ew, scale))
+            widest = max(2.0, max(seat[2] for seat in seats) * CIRCLE_R) * (2 * HAPPY_SPAN + 1)
+            arc = min(1.0, HAPPY_ROOM * apart_px / widest)
+            if not mark:  # Grok Bot's eyes are flat on the face, without a shadow
+                eyes.append(_eye(ex, ey + 1.3, ew, eh, tilt, happy, "#000", 0.14, arc))
+            eyes.append(_eye(ex, ey, ew, eh, tilt, happy, EYE_FILL, 1.0, arc))
         if muted:
             mx = sum(seat[0] for seat in seats) / len(seats) - centre
             my = sum(seat[1] for seat in seats) / len(seats) - centre

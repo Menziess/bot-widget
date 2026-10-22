@@ -6,8 +6,10 @@ machine without a display.
 
 import io
 import json
+import math
 import os
 import plistlib
+import re
 import shutil
 import sys
 import tempfile
@@ -230,7 +232,7 @@ class GrokMarks(unittest.TestCase):
         self.assertEqual((profile["top"], profile["bottom"]), avatar.mark_extent("house"))
         svg = avatar.face_svg(seed="grok:Builder", avatar={"shape": "house", "color": "brown"})
         self.assertIn(avatar.mark_path("house", avatar.CIRCLE_R, avatar.AVATAR_SIZE / 2, avatar.AVATAR_SIZE / 2), svg)
-        self.assertEqual(svg.count('stroke-linecap="round"'), 4, "two eyes, each with its shadow")
+        self.assertEqual(svg.count('stroke-linecap="round"'), 2, "two eyes, flat like Grok Bot's, no shadow")
 
     def test_a_grok_bot_mark_blinks_and_follows_like_the_other_faces(self):
         shape = {"shape": "sparkle", "color": "orange"}
@@ -639,7 +641,7 @@ class Rendering(unittest.TestCase):
         self.assertGreater(self.aimed((34 + 45, 34))["dx"], 0)
 
     def test_far_away_it_goes_back_to_its_own_cycle(self):
-        self.assertEqual(self.aimed((900, 900))["dx"], avatar.POSES["idle"][0])
+        self.assertEqual(self.aimed((900, 900))["dx"], avatar.POSES[avatar.FACE["idle"][0][0]][0])
 
     def test_a_grok_bot_face_switches_to_the_avatar_grok_bot_sent(self):
         window = self.face.FaceWindow("grok:General", "General", spot=(300, 400),
@@ -3312,16 +3314,63 @@ class FaceEyes(unittest.TestCase):
 
 
 class IdleLook(unittest.TestCase):
-    """Should make idle almost standing still: a glance up and to the right and an occasional blink, like Grok Bot."""
+    """Should idle the way Grok Bot's avatar engine does: its idle clips, their turns and their blinks."""
 
-    def test_idle_cycle_is_dominated_by_the_still_glance(self):
+    def test_idle_plays_grok_bots_idle_clips_with_their_blinks(self):
         total = sum(ms for _pose, ms in avatar.FACE["idle"])
-        still = sum(ms for pose, ms in avatar.FACE["idle"] if pose == "idle")
-        self.assertGreater(still / total, 0.9)
+        clips = sum(avatar.GROK_IDLE_CLIPS[clip][0] for clip in avatar.GROK_IDLE_ORDER)
+        self.assertAlmostEqual(total / 1000, clips, delta=0.2)
+        blinks = sum(len(avatar.GROK_IDLE_CLIPS[clip][2]) for clip in avatar.GROK_IDLE_ORDER)
+        self.assertEqual(sum(1 for pose, _ms in avatar.FACE["idle"] if pose == "blink"), blinks)
+        self.assertEqual(sorted(avatar.GROK_IDLE_ORDER).count("Idle_B"), 3, "Idle_B is in Grok Bot's bag three times")
 
-    def test_the_glance_is_up_and_to_the_right(self):
+    def test_the_still_art_is_up_and_to_the_right_and_part_of_idle(self):
         dx, dy, _scale = avatar.POSES["idle"]
         self.assertTrue(dx > 0 and dy < 0)
+        self.assertIn("idle", {pose for pose, _ms in avatar.FACE["idle"]})
+        self.assertIn("front", {pose for pose, _ms in avatar.FACE["idle"]}, "and it looks straight out too")
+
+    def test_a_turn_never_takes_the_eyes_further_than_following_the_pointer(self):
+        for pose, _ms in avatar.FACE["idle"]:
+            dx, dy, _scale = avatar.POSES[pose]
+            if dx is not None:
+                self.assertLessEqual(math.hypot(dx, dy), avatar.LOOK_MAX + 0.1, pose)
+        self.assertEqual(avatar.grok_look(0, 0), (0.0, 0.0))
+        self.assertLess(avatar.grok_look(0, -8.7)[0], 0, "a turn to the left looks left")
+
+    def test_a_blink_keeps_the_eyes_where_they_look(self):
+        self.assertEqual(avatar.POSES["blink"][:2], (None, None))
+
+
+class GrokEyes(unittest.TestCase):
+    """Should blink and smile with the eyes Grok Bot's engine draws."""
+
+    def test_a_blink_presses_the_pill_to_a_lying_one(self):
+        self.assertEqual(avatar.eye_length(16, 8, 1.0), 16)
+        self.assertAlmostEqual(avatar.eye_length(16, 8, 0.0), avatar.LID_SHUT * 8)
+        self.assertLess(avatar.eye_length(16, 8, 0.0), 8, "shut, the pill lies down")
+        self.assertGreater(avatar.eye_length(16, 8, 0.5), avatar.eye_length(16, 8, 0.0))
+
+    def test_a_happy_eye_is_an_arc_as_thick_as_the_eye(self):
+        svg = avatar.face_svg(seed="grok:Admin", avatar={"shape": "sparkle", "color": "orange"}, happy=1.0)
+        widths = re.findall(r'stroke-width="([\d.]+)"', svg)
+        eyes = avatar.GROK_MARKS["sparkle"][1]
+        widest = max(max(2.0, eye[2] * avatar.CIRCLE_R) for eye in eyes)
+        apart = math.hypot(eyes[1][0] - eyes[0][0], eyes[1][1] - eyes[0][1]) * avatar.CIRCLE_R
+        self.assertEqual(len(widths), 2)
+        for width in map(float, widths):
+            self.assertGreater(width, 0.5 * widest, "thick, not the thin line it was")
+            self.assertLessEqual(width, widest + 0.01)
+            self.assertLessEqual(width * (2 * avatar.HAPPY_SPAN + 1), avatar.HAPPY_ROOM * apart + 0.01,
+                                 "the two arcs never touch")
+
+    def test_at_rest_a_grok_mark_shows_its_eyes_where_grok_bot_draws_them(self):
+        dx, dy, _scale = avatar.POSES["idle"]
+        svg = avatar.face_svg(dx=dx, dy=dy, seed="grok:Builder", avatar={"shape": "house", "color": "brown"})
+        x, y = avatar.GROK_MARKS["house"][1][0][:2]
+        centre = avatar.AVATAR_SIZE / 2
+        self.assertIn(f"rotate({avatar.GROK_MARKS['house'][1][0][4]:.1f} {centre + x * avatar.CIRCLE_R:.2f} "
+                      f"{centre + y * avatar.CIRCLE_R:.2f})", svg)
 
 
 class FaceLook(unittest.TestCase):

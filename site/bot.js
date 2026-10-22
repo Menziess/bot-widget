@@ -68,7 +68,8 @@
 
   function setPose(name) {
     var p = F.POSES[name];
-    anim.aim({ dx: p[0], dy: p[1], scale: p[2], converge: 0, lift: 0 });
+    if (p[0] !== null) anim.aim({ dx: p[0], dy: p[1] });  // a blink keeps the eyes where they look
+    anim.aim({ scale: p[2], converge: 0, lift: 0 });
     pose = name;
   }
 
