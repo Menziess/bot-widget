@@ -24,6 +24,7 @@ botwidget
 - Point at the face to open the bubble, also when the pointer was already there: the latest message, and a field to type in
 - The field is focused once the pointer stays on the face for a moment, press Enter to send
 - Scroll up in the bubble, or click the arrow, to load the earlier messages one at a time
+- Scrolling up past the top of a message bounces once, and only a new pull loads the one before, with dots in place of the arrow while it loads
 - Names only show above the messages when there are several
 - The bubble sits above the face, or to the right of it when there is no room above, then to the left, and below only when nothing else fits
 - The bubble grows out of the face, and closes as soon as the pointer leaves or you click into another window with nothing typed
@@ -36,13 +37,21 @@ botwidget
 - The answer sound is off by default, and when on it only plays while the face is out of view (covered or on another desktop)
 - The eyes follow the pointer when it is near, and look at you when it is over the face
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
+- The cloud shows the thought as markdown, follows the end of it as it grows, and has the field below
+- What you type while the bot works waits in a queue under the thought, a click on one puts it back in the field to edit, and one goes out per finished turn
+- A question or approval from the bot shows in the cloud with a button per answer, and typing in the field answers the open question
+- Shift+click a face to mute its thinking, a cross for a mouth shows it, and the choice is kept
+- Only one bubble is open at a time when you point at or click a face
+- Shift+Enter starts a new line in the field, and the field grows with its lines
+- Paste a file or a picture in the field to send it along, it shows as a chip that you can remove, and the message gets a list of the files under the shared folder of OpenBot
 - Drag the face to move it, it bounces off screen edges
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
-- Right-click the face and the bubble asks "Looking for settings?" with three slash commands, which you can also type in the field
-- /settings holds sound, quiet hours, window stacking, desktops, start at login, update checks, switching version, and Quit
-- /bots switches the face of each bot on or off
-- /connections says which bot apps were found and whether the local API of OpenBot is on
-- Each page opens in the bubble, ‹ Menu goes back
+- Right-click the face, or start the field with a slash, and a list of commands opens above the field
+- Pick a command with the arrows and Return, Tab fills it in, and Escape closes the list
+- The /settings page holds sound, quiet hours, window stacking, desktops, start at login, update checks, switching version, and Quit
+- The /bots page switches the face of each bot on or off, and mutes its thinking
+- The /connections page says which bot apps were found and whether the local API of OpenBot is on
+- Each page opens in the bubble, with real switches and buttons, and the arrow on top goes back
 - On macOS Control+Option+Space opens the chat from any app, and closes it again
 - The face goes back to where you put it when its screen comes back
 - On macOS the face and its bubble are on every desktop. With Settings, Show on all desktops off the face stays on one, and Control+Option+Space on another desktop brings it there, and a window cannot be dragged into a full-screen app's desktop

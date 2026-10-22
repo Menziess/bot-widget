@@ -532,6 +532,7 @@ class BubbleWindow(QWidget):
         self._entry.completed.connect(lambda: self._entry.setText(self._slash.current()))
         self._entry.chosen.connect(lambda: self._run_command(self._slash.current()))
         self._entry.closed.connect(lambda: self._show_commands([]))
+        self._commands_forced = False
         self._attachments = []
         self._attachment_row = QLabel(self)
         self._attachment_row.setTextFormat(Qt.RichText)
@@ -571,10 +572,23 @@ class BubbleWindow(QWidget):
 
     def _update_commands(self):
         """A message that starts with a slash gets the commands that fit it, in a list above the field."""
+        self._commands_forced = False
         text = self._entry.text().strip().lower()
         fitting = [row for row in menu_pages.COMMANDS if row[0].startswith(text)] \
             if text.startswith("/") and " " not in text else []
         self._show_commands(fitting)
+
+    def open_command_list(self):
+        """The list of commands, without touching what was typed: an empty field gets the slash, a field with a
+        message keeps it and the list shows all commands."""
+        text = self._entry.text()
+        if not text:
+            self.type_text("/")
+        elif text.startswith("/") and " " not in text:
+            self._update_commands()
+        else:
+            self._commands_forced = True
+            self._show_commands(list(menu_pages.COMMANDS))
 
     def _show_commands(self, rows: list):
         """The list sits in the bubble right above the field, which makes room for it."""
@@ -588,7 +602,11 @@ class BubbleWindow(QWidget):
         return self._slash.height_for(len(self._slash.rows)) + COMMANDS_GAP if self._slash.rows else 0
 
     def _run_command(self, command: str):
-        self._entry.clear()
+        # What was typed after the slash is the command itself; a message that was already there stays.
+        if not self._commands_forced:
+            self._entry.clear()
+        self._show_commands([])
+        self._commands_forced = False
         self.face.on_user_message(command)
 
     def _attach(self, paths: list):
@@ -727,6 +745,13 @@ class BubbleWindow(QWidget):
 
     def takes_input(self) -> bool:
         return self._input
+
+    def type_text(self, text: str):
+        """Words in the field, as if typed, with the cursor behind them."""
+        self._entry.setText(text)
+        cursor = self._entry.textCursor()
+        cursor.movePosition(cursor.MoveOperation.End)
+        self._entry.setTextCursor(cursor)
 
     def edit_text(self, text: str, files: list = ()):
         """A message back in the field: in front of what was already typed."""

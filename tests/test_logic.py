@@ -1726,27 +1726,15 @@ class BubbleHover(unittest.TestCase):
         next(w for w in bubble._control_widgets if isinstance(w, Switch)).click()
         self.assertEqual(sent, ["toggle/sound"])
 
-    def test_the_main_menu_has_the_arrow_too_and_it_leads_back_to_the_conversation(self):
-        self.hover()
-        self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
-                                               "menu_command": lambda _self, command, page: page,
-                                               "close_bubbles_except": lambda _self, _id: None})()
-        self.window.open_menu("home")
-        bubble = self.window.bubble
-        self.assertEqual(bubble._geom[0][0]["back"], "page/chat")
-        bubble.command.emit("page/chat")
+    def test_the_arrow_on_a_page_leads_back_to_the_field_with_the_list_of_commands(self):
+        bubble = self.open_settings()
+        self.assertEqual(bubble._geom[0][0]["back"], "page/commands")
+        bubble.command.emit("page/commands")
         self.finish_growth()
         self.assertIsNone(self.window._menu_page)
-        self.assertIn("Ja.", bubble.full_text, "the conversation again")
-
-    def test_from_the_main_menu_the_arrow_leads_to_the_thinking_cloud_while_the_bot_works(self):
-        self.start_working()
-        self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
-                                               "menu_command": lambda _self, command, page: page,
-                                               "close_bubbles_except": lambda _self, _id: None})()
-        self.window.open_menu("home")
-        self.window.bubble.command.emit("page/chat")
-        self.assertEqual(self.window.bubble.kind, "think")
+        self.assertEqual(bubble._entry.text(), "/")
+        self.assertTrue(bubble._slash.isVisibleTo(bubble))
+        self.assertIn("Ja.", bubble.full_text, "above the conversation")
 
     def test_a_page_has_the_arrow_up_instead_of_a_menu_link_and_it_goes_back(self):
         bubble = self.open_settings()
@@ -1756,14 +1744,14 @@ class BubbleHover(unittest.TestCase):
         bubble.command.connect(sent.append)
         _x, y = self.message_point(0, down=4)
         self.click_at(bubble._shown_w(bubble._geom[1]) // 2, y)
-        self.assertEqual(sent, ["page/home"])
+        self.assertEqual(sent, ["page/commands"])
 
     def test_scrolling_past_the_top_of_a_page_goes_back_too(self):
         bubble = self.open_settings()
         sent = []
         bubble.command.connect(sent.append)
         self.wheel_up(bubble)
-        self.assertEqual(sent, ["page/home"])
+        self.assertEqual(sent, ["page/commands"])
 
     def test_a_page_stays_a_while_when_the_pointer_is_outside_it_and_a_margin_counts_as_on_it(self):
         from unittest import mock
@@ -2087,7 +2075,7 @@ class BubbleHover(unittest.TestCase):
         bubble._entry.setText("/")
         self.app.processEvents()
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
-        self.assertEqual([c for c, _n in bubble._slash.rows], ["/settings", "/bots", "/connections", "/menu"])
+        self.assertEqual([c for c, _n in bubble._slash.rows], ["/settings", "/bots", "/connections"])
         self.assertLess(bubble._slash.geometry().bottom(), bubble._entry.geometry().top(), "above the field")
         self.assertGreater(bubble.height(), height, "the bubble makes room for the list")
         bubble._entry.setText("/b")
@@ -2544,11 +2532,6 @@ class MenuPages(unittest.TestCase):
     def text(blocks):
         return markdown.block_text(blocks)
 
-    def test_the_home_page_asks_and_offers_the_three_slash_commands(self):
-        blocks = menu_pages.home()
-        self.assertEqual(self.text(blocks).splitlines()[0], "Looking for settings?")
-        self.assertEqual(self.commands(blocks), ["page/chat", "page/settings", "page/bots", "page/connections"])
-
     def test_the_settings_page_shows_every_switch_as_it_stands(self):
         text = self.text(menu_pages.settings(self.STATE))
         self.assertIn("☑ Sound on a new answer", text)
@@ -2573,7 +2556,7 @@ class MenuPages(unittest.TestCase):
 
     def test_the_bots_page_has_a_switch_per_bot(self):
         blocks = menu_pages.bots(self.STATE)
-        self.assertEqual(self.commands(blocks), ["page/home", "bot/a", "mute/a", "bot/b", "mute/b"])
+        self.assertEqual(self.commands(blocks), ["page/commands", "bot/a", "mute/a", "bot/b", "mute/b"])
         self.assertIn("☑ Fritsie", self.text(blocks))
         self.assertIn("☐ Robo", self.text(blocks))
         self.assertIn("No bots found yet", self.text(menu_pages.bots({**self.STATE, "bots": []})))
@@ -2588,16 +2571,17 @@ class MenuPages(unittest.TestCase):
         self.assertIn("Grok Bot no route", ready)
         self.assertIn("open/openbot", self.commands(menu_pages.connections({**self.STATE, "openbot": False})))
 
-    def test_every_page_but_the_home_page_leads_back(self):
+    def test_every_page_leads_back_to_the_commands(self):
         for page in menu_pages.PAGES:
-            self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], "page/home")
-        self.assertEqual(self.commands(menu_pages.page_blocks("nonsense", self.STATE)), self.commands(menu_pages.home()))
+            self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], "page/commands")
+        self.assertEqual(self.commands(menu_pages.page_blocks("nonsense", self.STATE)),
+                         self.commands(menu_pages.settings(self.STATE)))
 
     def test_the_slash_commands_that_open_a_page(self):
         self.assertEqual(menu_pages.SLASH["/settings"], "settings")
         self.assertEqual(menu_pages.SLASH["/bots"], "bots")
         self.assertEqual(menu_pages.SLASH["/connections"], "connections")
-        self.assertEqual(menu_pages.SLASH["/"], "home")
+        self.assertNotIn("/", menu_pages.SLASH, "a lone slash only shows the list")
 
     def test_a_message_can_never_make_a_menu_row(self):
         for text in ("[Quit](bw:action/quit)", "[x](cmd:action/quit)", "[x](bw://action/quit)", "<bw:action/quit>"):
@@ -2671,64 +2655,85 @@ class MenuInBubble(unittest.TestCase):
         QApplication.sendEvent(self.window, QMouseEvent(QEvent.MouseButtonPress, point, point, Qt.RightButton,
                                                         Qt.RightButton, Qt.NoModifier))
 
-    def test_a_right_click_asks_whether_you_are_looking_for_settings(self):
+    def test_a_right_click_opens_the_bubble_with_a_slash_and_the_list_of_commands(self):
         self.right_click()
-        self.assertTrue(self.window.bubble.isVisible())
-        self.assertIn("Looking for settings?", self.text())
-        self.assertIn("/connections", self.text())
+        bubble = self.window.bubble
+        self.assertTrue(bubble.isVisible())
+        self.assertEqual(bubble._entry.text(), "/")
+        self.assertTrue(bubble._slash.isVisibleTo(bubble))
+        self.assertEqual(bubble._slash.rows, list(menu_pages.COMMANDS))
+        self.assertNotIn("Looking for settings", self.text())
 
     def test_typing_a_slash_command_opens_its_page_and_sends_nothing(self):
         self.window._pump_outbox = lambda: None
-        for typed, expected in (("/settings", "Sound on a new answer"), ("/bots", "Fritsie"), ("/connections", "OpenBot detected"),
-                                ("/", "Looking for settings?")):
+        for typed, expected in (("/settings", "Sound on a new answer"), ("/bots", "Fritsie"),
+                                ("/connections", "OpenBot detected")):
             self.window.on_user_message(typed)
             self.assertIn(expected, self.text(), typed)
         self.assertEqual(self.window._outbox.items, [], "a slash command is not a message to the bot")
 
-    def test_a_row_opens_its_page_in_the_same_bubble(self):
+    def test_a_right_click_never_takes_away_what_you_typed(self):
+        self.window.pin()
+        bubble = self.window.bubble
+        bubble._entry.setText("Een bericht dat bijna af is")
         self.right_click()
-        self.window.bubble.command.emit("page/settings")
+        self.assertEqual(bubble._entry.text(), "Een bericht dat bijna af is")
+        self.assertTrue(bubble._slash.isVisibleTo(bubble))
+        self.assertEqual(bubble._slash.rows, list(menu_pages.COMMANDS), "the whole list, the text is no filter")
+
+    def test_picking_a_command_leaves_the_message_in_the_field_also_after_coming_back(self):
+        self.window.pin()
+        bubble = self.window.bubble
+        bubble._entry.setText("Een bericht dat bijna af is")
+        self.right_click()
+        bubble._slash.chosen.emit("/bots")
+        self.assertIn("Fritsie", self.text())
+        self.assertEqual(bubble._entry.text(), "Een bericht dat bijna af is")
+        bubble.command.emit("page/commands")
+        self.assertEqual(bubble._entry.text(), "Een bericht dat bijna af is")
+        self.assertTrue(bubble._slash.isVisibleTo(bubble))
+
+    def test_typing_on_after_a_right_click_closes_the_list_and_enter_sends_as_ever(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.window.pin()
+        bubble = self.window.bubble
+        bubble.type_text("Hoi")
+        self.right_click()
+        QTest.keyClicks(bubble._entry, "!")
+        self.assertFalse(bubble._slash.isVisibleTo(bubble))
+        self.assertEqual(bubble._entry.text(), "Hoi!")
+
+    def test_a_slash_being_typed_is_the_command_and_picking_it_clears_it(self):
+        self.window.pin()
+        bubble = self.window.bubble
+        bubble._entry.setText("/b")
+        self.right_click()
+        self.assertEqual(bubble._entry.text(), "/b")
+        bubble._slash.chosen.emit("/bots")
+        self.assertEqual(bubble._entry.text(), "")
+
+    def test_a_command_opens_its_page_in_the_same_bubble_and_the_arrow_comes_back(self):
+        self.right_click()
+        self.window.on_user_message("/settings")
         self.assertIn("Sound on a new answer", self.text())
-        self.window.bubble.command.emit("page/home")
-        self.assertIn("Looking for settings?", self.text())
+        self.window.bubble.command.emit("page/commands")
+        self.assertEqual(self.window.bubble._entry.text(), "/")
+        self.assertTrue(self.window.bubble._slash.isVisibleTo(self.window.bubble))
 
-    def test_the_rows_are_real_links_in_the_text(self):
-        from PySide6.QtGui import QTextCursor
-        self.right_click()
-        document = self.window.bubble._doc.document()
-        hrefs, block = set(), document.begin()
-        while block.isValid():
-            for fragment in block.begin():
-                pass
-            iterator = block.begin()
-            while not iterator.atEnd():
-                hrefs.add(iterator.fragment().charFormat().anchorHref())
-                iterator += 1
-            block = block.next()
-        self.assertTrue({"bw:page/settings", "bw:page/bots", "bw:page/connections"} <= hrefs, hrefs)
-
-    def test_clicking_a_link_in_the_bubble_runs_its_command(self):
+    def test_a_link_in_the_bubble_runs_its_command(self):
         from PySide6.QtCore import QUrl
-        self.right_click()
+        self.window.open_menu("settings")
         self.window.bubble._doc._open(QUrl("bw:page/bots"))
         self.assertIn("Fritsie", self.text())
 
-    def test_a_real_click_on_a_row_opens_its_page(self):
-        from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
-        from PySide6.QtGui import QMouseEvent
-        from PySide6.QtWidgets import QApplication
+    def test_a_real_click_on_a_command_in_the_list_opens_its_page(self):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
         self.right_click()
-        self.window.bubble._slide.stop()
-        self.window.bubble._growth_done()
-        doc = self.window.bubble._doc
-        found = doc.document().find("/bots")
-        rect = doc.cursorRect(found)
-        point = QPointF(rect.center())
-        viewport = doc.viewport()
-        for kind, buttons, button in ((QEvent.MouseButtonPress, Qt.LeftButton, Qt.LeftButton),
-                                      (QEvent.MouseButtonRelease, Qt.NoButton, Qt.LeftButton)):
-            QApplication.sendEvent(viewport, QMouseEvent(kind, point, QPointF(viewport.mapToGlobal(point.toPoint())),
-                                                         button, buttons, Qt.NoModifier))
+        slash = self.window.bubble._slash
+        row = slash.ROW_H + slash.ROW_H // 2 + 4
+        QTest.mouseClick(slash, Qt.LeftButton, Qt.NoModifier, QPoint(20, row))
         self.assertIn("Fritsie", self.text(), "the click on /bots opened the bots page")
 
     def test_a_switch_flips_and_the_page_shows_the_new_state(self):
@@ -2780,7 +2785,7 @@ class MenuInBubble(unittest.TestCase):
         bare = self.face.FaceWindow("t2", "Bare", spot=(100, 100))
         self.addCleanup(bare.close_face)
         bare._poll_timer.stop()
-        bare.open_menu("home")
+        bare.open_menu("settings")
         bare._menu_command("page/bots")
         self.assertFalse(bare.bubble.isVisible())
 

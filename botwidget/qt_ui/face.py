@@ -291,7 +291,7 @@ class FaceWindow(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton:
-            self.open_menu("home")
+            self.open_commands()
             return
         if event.button() != Qt.LeftButton:
             return
@@ -720,8 +720,16 @@ class FaceWindow(QWidget):
         elif not blocks and self.bubble.kind:
             self.bubble.place("")
 
-    def open_menu(self, page: str = "home"):
-        """A page of the menu in the bubble: right-click, or /settings, /bots or /connections typed."""
+    def open_commands(self):
+        """Right-click, or the arrow on a page: the list of commands opens above the field, the same as typing a
+        slash. What was typed in the field stays."""
+        self._menu_page = None
+        self.pin()
+        self.bubble.open_command_list()
+        activate_app()
+
+    def open_menu(self, page: str = "settings"):
+        """A page of the menu in the bubble: /settings, /bots or /connections typed or picked."""
         if self.faces is None:
             return
         again = page == self._menu_page and self.bubble.isVisible()
@@ -738,10 +746,8 @@ class FaceWindow(QWidget):
             return
         if self.faces is None or self._menu_page is None:
             return
-        if command == "page/chat":
-            # The arrow on the main menu: back to the conversation, or the thinking cloud while the bot works.
-            self._menu_page = None
-            self._sync_bubble(latest_chat(thread_id=self.thread_id), force=True)
+        if command == "page/commands":
+            self.open_commands()
             return
         page = self.faces.menu_command(command, self._menu_page)
         if page and self._menu_page is not None:

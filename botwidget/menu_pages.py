@@ -10,10 +10,9 @@ from botwidget.theme import BUBBLE_FONT
 
 PAGES = ("settings", "bots", "connections")
 # What typing it in the field opens; "/" alone is the home page.
-SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections", "/": "home", "/menu": "home"}
-# What the dropdown offers when a message starts with a slash: the command and what it opens.
-COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
-            ("/connections", "what was found"), ("/menu", "main menu"))
+SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"}
+# What the list offers when a message starts with a slash, which is also what a right-click shows.
+COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"), ("/connections", "what was found"))
 
 
 def _row(*chunks) -> dict:
@@ -38,17 +37,7 @@ def _button(label: str, command: str) -> dict:
 
 def _back() -> list:
     """The arrow on top of a page: the way back to the menu, as scrolling past the top is the way to older messages."""
-    return [role_panel("more", back="page/home"), plain_block("more"), role_panel("bot")]
-
-
-def home() -> list:
-    return [
-        role_panel("more", back="page/chat"), plain_block("more"), role_panel("bot"),
-        _heading("Looking for settings?"), plain_block("gap"),
-        _row(_command("/settings", "page/settings"), (" sound, updates, more", "dim")),
-        _row(_command("/bots", "page/bots"), (" which bots show", "dim")),
-        _row(_command("/connections", "page/connections"), (" what was found", "dim")),
-    ]
+    return [role_panel("more", back="page/commands"), plain_block("more"), role_panel("bot")]
 
 
 def settings(state: dict) -> list:
@@ -111,4 +100,4 @@ def connections(state: dict) -> list:
 
 
 def page_blocks(page: str, state: dict) -> list:
-    return {"settings": settings, "bots": bots, "connections": connections}.get(page, lambda _state: home())(state)
+    return {"settings": settings, "bots": bots, "connections": connections}.get(page, settings)(state)
