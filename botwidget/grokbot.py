@@ -6,6 +6,7 @@ import signal
 import subprocess
 import threading
 import time
+from subprocess import CompletedProcess
 from typing import NamedTuple
 
 from botwidget import openbot
@@ -105,7 +106,7 @@ def _data(stdout: str) -> dict | None:
     return None
 
 
-def _note(done) -> str:
+def _note(done: CompletedProcess) -> str:
     """The first line gbot complained about, in plain words."""
     if done.returncode == 0:
         return ""
