@@ -133,6 +133,7 @@ class FaceWindow(QWidget):
         self.head_bottom = AVATAR_SIZE / 2 + profile["bottom"] * CIRCLE_R
         self._alive = True
         self._semicircle_visible = False
+        self._semicircle_raised = False
 
         self.has_pending = False
         self.pinned = False
@@ -302,7 +303,9 @@ class FaceWindow(QWidget):
         if not self.isVisible():
             self.show()
         if always_on_top() or getattr(self, "_arc_guest", False):
-            self.raise_()
+            if not getattr(self, "_semicircle_raised", False):
+                self._semicircle_raised = True
+                self.raise_()
         self.update()
 
     def paintEvent(self, _event):
@@ -850,7 +853,6 @@ class FaceWindow(QWidget):
                                or data.get("browserTakeovers"))
             if has_pending != self.has_pending:
                 self.has_pending = has_pending
-                self._update_notification()
             changed = self._set_attention(data)
         self._sync_bubble(self._latest(), force=changed)
         self._poll_timer.start((WORK_POLL_INTERVAL if self._working else POLL_INTERVAL) * 1000)
@@ -1079,10 +1081,6 @@ class FaceWindow(QWidget):
         if status:
             blocks.append(status_block(status))
         return blocks
-
-    def _update_notification(self):
-        self.setWindowTitle("Bot Widget 🔔" if self.has_pending else "Bot Widget")
-        self.update()
 
     # ── Sending messages ────────────────────────────────────────
 
