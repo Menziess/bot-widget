@@ -11,8 +11,13 @@ from botwidget.theme import (
     CONTROL_SWITCH_W,
     DOTS_W,
     MEET_SLACK,
+    MIN_CONTENT_W,
+    MIN_TEXT_ROOM,
+    MIN_TEXT_W,
+    MORE_W,
     PAD_BODY,
     PAD_PANEL_X,
+    SMALL_FONT,
 )
 
 
@@ -40,7 +45,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
             out.append((word, style))
         return out
 
-    laid, widest = [], 16
+    laid, widest = [], MIN_TEXT_W
 
     def lay_block(block: dict):
         """A text block to lines; fills laid and widest, with x per word."""
@@ -57,7 +62,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
                 space = False
         if not tokens:
             return
-        room = max(60, max_w - block["indent"])
+        room = max(MIN_TEXT_ROOM, max_w - block["indent"])
         broken = []
         for word, style, lead in tokens:
             if fit(pieces_of([(word, style, lead)], ""), block["size"]) > room:
@@ -106,20 +111,20 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
             continue
         if kind == "dots":
             # Thinking dots: three circles that the widget itself makes pulse.
-            laid.append({"kind": "dots", "size": 15, "indent": 0, "prefix": "",
+            laid.append({"kind": "dots", "size": SMALL_FONT, "indent": 0, "prefix": "",
                          "grey": False, "head": False, "words": [], "xs": [], "ws": [],
                          "width": DOTS_W, "phase": 0.0})
             widest = max(widest, DOTS_W)
             continue
         if kind == "control":
-            label_w = width([(block["label"], "")], 15)
+            label_w = width([(block["label"], "")], SMALL_FONT)
             laid.append({**block, "words": [], "xs": [], "ws": [], "head": False,
                          "width": label_w + (CONTROL_SWITCH_W if block["control"] == "toggle" else CONTROL_BUTTON_PAD)})
             widest = max(widest, laid[-1]["width"] + block.get("indent", 0))
             continue
         if kind == "more":
-            laid.append({"kind": "more", "size": 15, "indent": 0, "prefix": "", "grey": False,
-                         "head": False, "words": [], "xs": [], "ws": [], "width": 12})
+            laid.append({"kind": "more", "size": SMALL_FONT, "indent": 0, "prefix": "", "grey": False,
+                         "head": False, "words": [], "xs": [], "ws": [], "width": MORE_W})
             continue
         if kind == "code":
             for code_line in block["lines"]:
@@ -135,7 +140,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
 
 def bubble_panels(measure, blocks: list, max_w: int = BUBBLE_MAX_W) -> list:
     """Panels with broken lines; the widest text comes with them."""
-    content_w = max(80, max_w - 2 * PAD_BODY - 2 * PAD_PANEL_X)
+    content_w = max(MIN_CONTENT_W, max_w - 2 * PAD_BODY - 2 * PAD_PANEL_X)
     panels = []
     for panel in split_panels(blocks):
         lines, widest = md_layout(measure, panel["blocks"], content_w)

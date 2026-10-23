@@ -77,3 +77,9 @@ LINE_RULE_H = 14
 LINE_DOTS_H = 26
 LINE_CODE_PAD = 12
 LINE_TEXT_PAD = 10
+# Bubble layout constants (bubble_layout.py): sizing for layout calculations and small UI text.
+MIN_TEXT_W = 16
+MIN_TEXT_ROOM = 60
+SMALL_FONT = 15
+MORE_W = 12
+MIN_CONTENT_W = 80
