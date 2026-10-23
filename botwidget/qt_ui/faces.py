@@ -387,6 +387,7 @@ class Faces(QObject):
         if kind == "toggle" and name in self.TOGGLES:
             state = self.menu_state()
             self.TOGGLES[name](self, not state[name])
+            return page  # re-render the page to show the new state
         elif kind == "bot":
             self.toggle(name, name not in self.faces)
         elif kind == "mute":
@@ -394,6 +395,7 @@ class Faces(QObject):
                 self.faces[name].toggle_muted()
             else:
                 set_muted(name, name not in muted_bots())
+            return page
         elif kind == "connect" and name in self.CONNECTIONS:
             if not self.menu_state()[self.CONNECTIONS[name]]:
                 if name in self.wanted:
