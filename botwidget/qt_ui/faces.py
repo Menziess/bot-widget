@@ -149,7 +149,10 @@ class ArcCatcher(QWidget):
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
-        self.faces.semicircle_pointer_left()
+        # Start the debounce timer instead of closing immediately; a dock popup
+        # that briefly covers the catcher would otherwise trigger a flicker loop.
+        if self.faces._semicircle_phase != "idle" and not self.faces._semicircle_hide_timer.isActive():
+            self.faces._semicircle_hide_timer.start()
 
     def paintEvent(self, _event):
         # A fully clear window gets no pointer events. One invisible pixel of paint is enough.
@@ -406,7 +409,7 @@ class Faces(QObject):
             self.switch_channel()
         elif kind == "action" and name == "quit":
             QApplication.quit()
-        return page
+        return None
 
     def _set_all_desktops(self, on: bool):
         save_widget_config(all_desktops=on)

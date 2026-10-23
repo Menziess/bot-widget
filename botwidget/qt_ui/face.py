@@ -1044,7 +1044,7 @@ class FaceWindow(QWidget):
             self.open_commands()
             return
         page = self.faces.menu_command(command, self._menu_page)
-        if page and self._menu_page is not None:
+        if page is not None and page != self._menu_page:
             self.open_menu(page)
 
     def show_older(self):
