@@ -29,7 +29,9 @@ class Outbox:
     def failed(self, cid: str, retryable: bool) -> int | None:
         """Wait in seconds before a retry, or None when the message is dropped."""
         item = next((i for i in self.items if i["cid"] == cid), None)
-        if item is None or not retryable:
+        if item is None:
+            return None
+        if not retryable:
             self.sent(cid)
             return None
         wait = RETRY_S[min(item["tries"], len(RETRY_S) - 1)]
