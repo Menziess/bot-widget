@@ -556,12 +556,19 @@ class FaceWindow(QWidget):
     def pointer_near(self, bubble, margin: int = BUBBLE_HOVER_MARGIN) -> bool:
         """Mouse within GAZE_NEAR of the head, or over the bubble?"""
         if not global_pointer():
-            return self.underMouse() or (bubble.isVisible() and bubble.underMouse())
+            # Wayland: QCursor.pos() still reports the last known position, so we do
+            # the same manual hit test as on X11/macOS to cover the gap between face
+            # and bubble (underMouse() is False there on Wayland).
+            px, py = self._pointer()
+            cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
+            if (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2:
+                return True
+            return bubble.isVisible() and bubble.geometry().adjusted(-margin, -margin, margin, margin).contains(
+                QPoint(px, py))
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         if (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2:
             return True
-        margin = margin  # use the passed margin
         return bubble.isVisible() and bubble.frameGeometry().adjusted(-margin, -margin, margin, margin).contains(
             QPoint(px, py))
 
@@ -585,10 +592,12 @@ class FaceWindow(QWidget):
 
     def _pointer_on_head(self) -> bool:
         if not global_pointer():
-            return self.underMouse()
+            px, py = self._pointer()
+            cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
+            return (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
-        return (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2
+        return (px - cx) ** 2 + (py - cy) ** 2 <= ON_FACE ** 2
 
     def _pointer_is_busy(self) -> bool:
         """The pointer drags another face, or already has the bubble of another face open: pointing at this one
