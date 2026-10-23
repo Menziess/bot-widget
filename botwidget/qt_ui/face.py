@@ -59,7 +59,7 @@ from botwidget.openbot import (
     latest_chat,
     openbot_installed,
 )
-from botwidget import attachments, grokbot, menu_pages
+from botwidget import attachments, grokbot, menu_pages, __version__
 from botwidget.qt_ui import desktops, screens
 from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow
 from botwidget.qt_ui.render import svg_pixmap
