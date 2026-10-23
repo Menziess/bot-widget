@@ -986,6 +986,17 @@ class FaceWindow(QWidget):
             self._conversation = newest
             self._depth = 1
         pending = self._show_think()
+        # Clear _asked so the conversation can appear even when the bot's answer
+        # has the same text as the last one (so _answer_pending never fires).
+        if self._asked and self.grok and self.grok.stopped:
+            self._asked = False
+            pending = False
+        if self._asked and self.hermes and self.hermes.stopped:
+            self._asked = False
+            pending = False
+        if self._asked and not self.grok and not self.hermes and not self._working and not self._sending and not self._outbox.items and not self._queue:
+            self._asked = False
+            pending = False
         if pending and not self.pinned:
             if self._muted and not self._has_attention():
                 # Thinking is silenced: no cloud, until the face is clicked again.
