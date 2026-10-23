@@ -83,3 +83,5 @@ MIN_TEXT_ROOM = 60
 SMALL_FONT = 15
 MORE_W = 12
 MIN_CONTENT_W = 80
+# Tail tip margin: the tail stays this far from the bubble's corners.
+TAIL_TIP_MARGIN = 20

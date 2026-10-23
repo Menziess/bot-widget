@@ -35,6 +35,7 @@ from botwidget.theme import (
     SHADOW_ALPHA,
     SHADOW_GROW,
     TAIL_ROOM,
+    TAIL_TIP_MARGIN,
 )
 
 
@@ -206,7 +207,7 @@ def _bubble_tail(tip: float, edge: float, side: str, grow: float) -> str:
 def _bubble_tip(side: str, body_w: int, body_h: int, tip: float | None) -> float:
     """Where along its edge the tail points: at the face, but never into a corner."""
     length = body_w if side in VERTICAL else body_h
-    return PAD_SVG + length / 2 if tip is None else min(max(tip, PAD_SVG + 20), PAD_SVG + length - 20)
+    return PAD_SVG + length / 2 if tip is None else min(max(tip, PAD_SVG + TAIL_TIP_MARGIN), PAD_SVG + length - TAIL_TIP_MARGIN)
 
 
 def opening_shadow_alpha(progress: float, opening: bool) -> float:
