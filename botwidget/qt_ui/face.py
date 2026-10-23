@@ -227,6 +227,7 @@ class FaceWindow(QWidget):
         self._poll_timer.setSingleShot(True)
         self._poll_timer.timeout.connect(self._poll_pending)
         self._poll_timer.start(300)
+        self._poll_thread = None  # reference to keep the poll thread alive
 
     # ── Drawing ─────────────────────────────────────────────────
 
@@ -871,7 +872,9 @@ class FaceWindow(QWidget):
         if self.grok:
             # Grok Bot is only asked while an answer is awaited or the bubble just opened: no idle timer.
             if self.grok.due() and not self.grok.is_polling:
-                threading.Thread(target=self._poll_grok, daemon=True).start()
+                if self._poll_thread is None or not self._poll_thread.is_alive():
+                    self._poll_thread = threading.Thread(target=self._poll_grok, daemon=True)
+                    self._poll_thread.start()
             self._sync_bubble(self._latest())
             if self.grok.active():
                 self._poll_timer.start(1000)

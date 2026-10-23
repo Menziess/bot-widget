@@ -173,6 +173,7 @@ class HermesLink:
         self.status = ""
         self.stopped = False
         self.waiting_since = None
+        self.last_poll = None
         self.polling = False
         self.want_fetch = False
         # Stays in sight until an answer comes or the waiting ends.
