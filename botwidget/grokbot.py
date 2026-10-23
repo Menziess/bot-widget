@@ -325,6 +325,12 @@ class GrokLink:
         self._lock = threading.Lock()
 
     @property
+    def is_polling(self) -> bool:
+        """Is a poll running right now?"""
+        with self._lock:
+            return self.polling
+
+    @property
     def waiting(self) -> bool:
         """Is the bot still working on an answer?"""
         with self._lock:

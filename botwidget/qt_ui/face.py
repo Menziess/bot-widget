@@ -837,7 +837,7 @@ class FaceWindow(QWidget):
         self._keep_bubble_here()
         if self.grok:
             # Grok Bot is only asked while an answer is awaited or the bubble just opened: no idle timer.
-            if self.grok.due():
+            if self.grok.due() and not self.grok.is_polling:
                 threading.Thread(target=self._poll_grok, daemon=True).start()
             self._sync_bubble(self._latest())
             if self.grok.active():
