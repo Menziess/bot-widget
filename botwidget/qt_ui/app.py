@@ -1,6 +1,7 @@
 """Entry point of the widget."""
 
 import os
+import signal
 import sys
 
 from PySide6.QtCore import QTimer
@@ -22,6 +23,21 @@ def _login_item(args: list):
     print("start at login:", "on" if startup.is_enabled() else "off")
 
 
+def install_quit_signals(app, wake=None):
+    """Ctrl+C and SIGTERM quit. The default handler prints a traceback from the Qt loop."""
+    def stop(_signum, _frame):
+        app.quit()
+
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
+    # Qt sits in C until a Python callback runs, so the signal waits for this timer.
+    if wake is None:
+        wake = QTimer(app)
+        wake.timeout.connect(lambda: None)
+    wake.start(500)
+    return stop
+
+
 def main():
     if "--version" in sys.argv[1:]:
         print(__version__)
@@ -39,6 +55,7 @@ def main():
         sys.exit(0)
     prepare_gui_environment()
     app = QApplication(sys.argv)
+    install_quit_signals(app)
     app.setApplicationName("Bot Widget")
     hide_from_dock()
     # The faces and bubbles are Tool windows; closing one must not stop the app.
@@ -54,4 +71,8 @@ def main():
     first = next(iter(faces.faces.values()), None)
     if first and os.environ.get("BOT_WIDGET_OPEN_CHAT"):
         QTimer.singleShot(800, first.pin)
-    sys.exit(app.exec())
+    try:
+        code = app.exec()
+    except KeyboardInterrupt:
+        code = 0
+    sys.exit(code)
