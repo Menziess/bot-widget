@@ -196,7 +196,7 @@ def list_bots() -> list[dict]:
 def _chat_text(raw: str) -> str:
     try:
         msg = json.loads(raw)
-    except ValueError:
+    except (ValueError, TypeError):
         return ""
     if msg.get("source") == "routine":
         return ""
