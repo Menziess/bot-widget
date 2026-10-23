@@ -232,7 +232,8 @@ class FaceWindow(QWidget):
         """Separate from the taskbar; above or below normal windows according to widget.json."""
         layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
         # Tool: no taskbar button. A normal window shows up as __main__.py.
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | layer)
+        # Changed: no Qt.Tool — each face appears in the taskbar so it can be found with Alt+Tab.
+        self.setWindowFlags(Qt.FramelessWindowHint | layer)
 
     def restack(self):
         """After a change of the setting: new flags ask the window to be shown again."""
@@ -994,6 +995,10 @@ class FaceWindow(QWidget):
                 self.bubble.show_blocks(blocks, "think", input=expanded)
             return
         if self._asked and self.grok and self.grok.stopped:
+            self._asked = False
+        if self._asked and not self.grok and not self._working and not self._sending and not self._outbox.items and not self._queue:
+            # OpenBot stopped answering: no activity, no pending, no queue — clear _asked so the
+            # conversation can reappear instead of staying blocked forever.
             self._asked = False
         if self._working or self._sending or self._outbox.items or self._asked:
             # The cloud closed itself. The chat stays away until this turn is over.
