@@ -1165,6 +1165,18 @@ class FaceWindow(QWidget):
         if not files and text.strip().lower() == "/feedback":
             self.open_feedback()
             return
+        if not files and text.strip().lower() == "/home":
+            # Close any menu page and show the conversation again.
+            self._menu_page = None
+            self.bubble.place("")
+            return
+        if not files and text.strip().lower() == "/pin":
+            # Toggle pin: pinned keeps the bubble open, unpinned lets it close naturally.
+            self.toggle_pin()
+            return
+        if not files and text.strip().lower() == "/settings":
+            self.open_settings()
+            return
         self._think_quiet = False
         text = text[:500]
         open_question = None if files else self._open_question()

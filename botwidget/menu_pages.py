@@ -14,7 +14,7 @@ PAGES = ("settings", "bots", "connections")
 # What typing it in the field opens; "/" alone is the home page.
 SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"}
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
-COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
+COMMANDS = (("/home", "clear the command list"), ("/settings", "sound, updates"), ("/bots", "which bots show"),
             ("/connections", "what was found"), ("/refresh", "reload this bot"),
             ("/feedback", "open a GitHub issue"))
 FEEDBACK_ISSUE = "https://github.com/Menziess/bot-widget/issues/new"
