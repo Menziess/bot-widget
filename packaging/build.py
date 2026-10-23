@@ -106,6 +106,9 @@ def sign_windows(path: str):
 
 def windows():
     folder = os.path.join(DIST, NAME)
+    exe = os.path.join(folder, f"{NAME}.exe")
+    if os.path.isfile(exe):
+        sign_windows(exe)
     iscc = shutil.which("iscc")
     if iscc:
         run(iscc, f"/DVersion={version()}", f"/DSourceDir={folder}", f"/DOutputDir={DIST}",

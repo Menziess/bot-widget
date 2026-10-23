@@ -166,3 +166,14 @@ gh secret set MACOS_CERTIFICATE < certificate.p12.base64
 - Notarization also needs APPLE_ID, APPLE_TEAM_ID and APPLE_APP_PASSWORD
 - Windows needs WINDOWS_CERTIFICATE (a base64 .pfx) and WINDOWS_CERT_PASSWORD
 - Without these secrets the workflow still builds, just unsigned
+
+### Windows Authenticode (SmartScreen)
+
+Unsigned Windows builds show SmartScreen. There is no code bypass; a signed installer earns reputation over time.
+
+1. Buy a **standard** Authenticode code-signing certificate from a public CA (Sectigo, DigiCert, SSL.com, and similar). An **EV** certificate is optional: it can skip SmartScreen sooner, but a standard cert is enough once reputation builds.
+2. Export a password-protected `.pfx`. Do not commit it.
+3. Base64-encode the file and set GitHub Actions secrets on `Menziess/bot-widget`: `WINDOWS_CERTIFICATE` (the base64) and `WINDOWS_CERT_PASSWORD`.
+4. Push a new tag so the release workflow signs both `Bot Widget.exe` and `BotWidget-Windows-Setup.exe`.
+
+Do not invent a certificate or spend money from this repo. Until those secrets exist, Windows downloads stay unsigned: in SmartScreen choose **More info**, then **Run anyway**.
