@@ -983,6 +983,8 @@ class FaceWindow(QWidget):
                 self._shown_text = text
                 self.bubble.show_blocks(blocks, "think", input=expanded)
             return
+        if self._asked and self.grok and self.grok.stopped:
+            self._asked = False
         if self._working or self._sending or self._outbox.items or self._asked:
             # The cloud closed itself. The chat stays away until this turn is over.
             return
