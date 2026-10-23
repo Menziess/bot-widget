@@ -14,6 +14,15 @@ def from_checkout() -> bool:
     return os.path.isdir(os.path.join(PACKAGE_ROOT, ".git"))
 
 
+def install_kind() -> str:
+    """How this copy was installed: packaged, a git checkout, or uv (or pip)."""
+    if getattr(sys, "frozen", False):
+        return "packaged"
+    if from_checkout():
+        return "checkout"
+    return "uv"
+
+
 def launch_command() -> list:
     """The packaged app starts itself; otherwise Python starts the package."""
     if getattr(sys, "frozen", False):

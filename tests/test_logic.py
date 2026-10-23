@@ -2426,7 +2426,7 @@ class BubbleHover(unittest.TestCase):
         self.app.processEvents()
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
         self.assertEqual([c for c, _n in bubble._slash.rows],
-                         ["/settings", "/bots", "/connections", "/refresh"])
+                         ["/settings", "/bots", "/connections", "/refresh", "/feedback"])
         self.assertLess(bubble._slash.geometry().bottom(), bubble._entry.geometry().top(), "above the field")
         self.assertGreater(bubble.height(), height, "the bubble makes room for the list")
         bubble._entry.setText("/b")
@@ -2617,10 +2617,11 @@ class BubbleHover(unittest.TestCase):
     def test_every_command_in_the_list_opens_a_page(self):
         from botwidget import menu_pages
         for command, _note in menu_pages.COMMANDS:
-            if command == "/refresh":
+            if command in ("/refresh", "/feedback"):
                 continue
             self.assertIn(command, menu_pages.SLASH)
         self.assertNotIn("/refresh", menu_pages.SLASH, "reload, not a menu page")
+        self.assertNotIn("/feedback", menu_pages.SLASH, "a browser page, not a menu page")
 
     def second_face(self):
         from botwidget.qt_ui.faces import Faces

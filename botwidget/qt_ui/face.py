@@ -4,6 +4,7 @@ import datetime
 import hashlib
 import math
 import os
+import platform
 import random
 import threading
 import time
@@ -1007,6 +1008,15 @@ class FaceWindow(QWidget):
         elif not blocks and self.bubble.kind:
             self.bubble.place("")
 
+    def open_feedback(self):
+        """Open a prefilled GitHub issue in the browser. The user logs in there."""
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from botwidget.startup import install_kind
+        url = menu_pages.feedback_issue_url(__version__, platform.system(), install_kind())
+        QDesktopServices.openUrl(QUrl(url))
+
     def refresh(self):
         """Reload this bot's chat now. The other faces keep their own timer."""
         self._menu_page = None
@@ -1095,6 +1105,9 @@ class FaceWindow(QWidget):
             return
         if not files and text.strip().lower() == "/refresh":
             self.refresh()
+            return
+        if not files and text.strip().lower() == "/feedback":
+            self.open_feedback()
             return
         self._think_quiet = False
         text = text[:500]

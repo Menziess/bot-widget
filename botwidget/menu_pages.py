@@ -1,8 +1,10 @@
-"""The pages of the menu that opens in the bubble: home, /settings, /bots, /connections and /refresh.
+"""The pages of the menu that opens in the bubble: home, /settings, /bots, /connections, /refresh and /feedback.
 
 Pure blocks, no toolkit. A clickable row is a piece with the style "cmd:<command>"; markdown never
 produces that style, so no message from a bot can make a row of its own.
 """
+
+import urllib.parse
 
 from botwidget.config import QUIET_FROM, QUIET_TO
 from botwidget.markdown import control_block, plain_block, role_panel, text_block
@@ -13,7 +15,15 @@ PAGES = ("settings", "bots", "connections")
 SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"}
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
 COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
-            ("/connections", "what was found"), ("/refresh", "reload this bot"))
+            ("/connections", "what was found"), ("/refresh", "reload this bot"),
+            ("/feedback", "open a GitHub issue"))
+FEEDBACK_ISSUE = "https://github.com/Menziess/bot-widget/issues/new"
+
+
+def feedback_issue_url(version: str, system: str, install: str) -> str:
+    """A new-issue page, filled in. The browser signs the user in; the app has no GitHub token."""
+    body = f"Widget version: {version}\nOS: {system}\nInstall: {install}\n\n"
+    return FEEDBACK_ISSUE + "?" + urllib.parse.urlencode({"title": "Feedback", "body": body})
 
 
 def _row(*chunks) -> dict:
