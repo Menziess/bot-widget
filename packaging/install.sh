@@ -9,12 +9,14 @@ cp -R "$here/app" "$target/app"
 cp "$here/icon.png" "$target/icon.png"
 # Not "botwidget": that is also the command name of a uv or pip install.
 ln -sf "$target/app/Bot Widget" "$HOME/.local/bin/bot-widget"
+# Quoted Exec so the app menu finds the installed app (not the unpacked folder).
+app_path="$target/app/Bot Widget"
 cat > "$HOME/.local/share/applications/botwidget.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=Bot Widget
 Comment=Animated bot face for OpenBot and Grok Bot
-Exec=$target/app/Bot Widget
+Exec="$app_path"
 Icon=$target/icon.png
 Categories=Utility;
 Terminal=false
