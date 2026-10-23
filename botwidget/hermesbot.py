@@ -31,7 +31,10 @@ HERMES_CLI = "hermes"
 
 def is_hermes_installed() -> bool:
     """Check if the hermes CLI is installed and available."""
-    result = subprocess.run([HERMES_CLI, "--version"], capture_output=True)
+    try:
+        result = subprocess.run([HERMES_CLI, "--version"], capture_output=True, timeout=5)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
     return result.returncode == 0
 
 def face_id(target: str = DEFAULT_TARGET) -> str:

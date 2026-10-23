@@ -231,8 +231,9 @@ def _in_thread_order(entries: list, shown: list, kept: list) -> list:
             continue
         if entry.get("kind") == "message" and entry.get("role") == "user":
             content = entry.get("content")
-            line = next((m for m in waiting if isinstance(content, str)
-                         and m["text"].removesuffix(GrokLink.UNSURE_MARK) == content.strip()), None)
+            if not isinstance(content, str):
+                continue
+            line = next((m for m in waiting if m["text"].removesuffix(GrokLink.UNSURE_MARK) == content.strip()), None)
             if line is not None:
                 waiting.remove(line)
                 ordered.append(line)

@@ -46,15 +46,17 @@ class ApiResult(NamedTuple):
 def read_auth_token() -> str:
     """Read Bearer token from the headers file; empty when OpenBot is not installed."""
     line = read_file(HEADERS_FILE).split("\n", 1)[0].strip()
-    # The file may contain "Authorization: Bearer <token>" or just the token
+    # The file may contain "Authorization: Bearer ***" or just the token
     if line.startswith("Authorization:"):
         return line.split("Bearer", 1)[1].strip()
-    return line
+    return line if line else ""
 
 
 def api_get(path: str) -> dict | list | None:
     """GET a JSON response from the local API."""
     token = read_auth_token()
+    if not token:
+        return None
     url = f"{api_url()}{path}"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     try:
@@ -77,6 +79,8 @@ def _error_detail(err: urllib.error.HTTPError) -> str:
 def api_post(path: str, body: dict) -> ApiResult:
     """POST JSON to the local API and say why it failed, not only that it did."""
     token = read_auth_token()
+    if not token:
+        return ApiResult(None, None, "no auth token — OpenBot automation not running")
     url = f"{api_url()}{path}"
     data = json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, method="POST")
@@ -84,7 +88,8 @@ def api_post(path: str, body: dict) -> ApiResult:
     req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            body, status = resp.read(), resp.status
+            status = resp.status
+            raw = resp.read()
     except urllib.error.HTTPError as err:
         detail = _error_detail(err)
         err.close()
@@ -93,7 +98,7 @@ def api_post(path: str, body: dict) -> ApiResult:
         return ApiResult(None, err.code, detail or f"HTTP {err.code}")
     except (urllib.error.URLError, OSError) as err:
         return ApiResult(None, None, str(err))
-    stripped = body.strip()
+    stripped = raw.strip()
     while stripped.startswith(BOM):
         stripped = stripped[len(BOM):].strip()
     if not stripped:
