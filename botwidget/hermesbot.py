@@ -10,6 +10,7 @@ import signal
 import subprocess
 import threading
 import time
+from subprocess import CompletedProcess
 from typing import NamedTuple
 
 from botwidget.config import widget_config
@@ -66,7 +67,7 @@ def _data(stdout: str) -> dict | None:
     return None
 
 
-def _note(done) -> str:
+def _note(done: CompletedProcess) -> str:
     """The first line hermes complained about, in plain words."""
     if done.returncode == 0:
         return ""
@@ -165,6 +166,8 @@ class HermesLink:
     FIRST_SHOW = 5
     TIMEOUT_S = 120
     UNSURE_MARK = " (?)"
+    # How many recent messages to include in a query context.
+    QUERY_HISTORY = 10
 
     def __init__(self, target: str, now=time.monotonic):
         self.target = target
@@ -256,7 +259,7 @@ class HermesLink:
     def _build_query(self) -> str:
         """Build the query string from the conversation history."""
         with self._lock:
-            recent = self.messages[-10:] if self.messages else []
+            recent = self.messages[-self.QUERY_HISTORY:] if self.messages else []
         lines = []
         for m in recent:
             role = "User" if m["role"] == "user" else self.target
