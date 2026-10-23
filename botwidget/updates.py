@@ -140,5 +140,8 @@ def install_staged(current: str = __version__) -> bool:
     if not (found and can_install_update()):
         return False
     _version, path = found
-    os.remove(path + VERIFIED)
+    try:
+        os.remove(path + VERIFIED)
+    except OSError:
+        pass
     return install_update(path)

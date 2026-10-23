@@ -731,9 +731,15 @@ class FaceWindow(QWidget):
     def _send_status_or_note(self) -> str:
         """Send status or bot note (Grok Bot or Hermes Bot)."""
         if self.grok:
-            return self.grok.note()
+            try:
+                return self.grok.note()
+            except Exception:
+                return ""
         if self.hermes:
-            return self.hermes.note()
+            try:
+                return self.hermes.note()
+            except Exception:
+                return ""
         return ""
 
     def _has_grok_or_hermes(self) -> bool:
@@ -883,7 +889,10 @@ class FaceWindow(QWidget):
             # Hermes Bot uses --oneshot mode, no polling needed after send.
             self._sync_bubble(self._latest())
             return
-        data = api_get(f"/v1/agents/{self.agent_id}/pending")
+        try:
+            data = api_get(f"/v1/agents/{self.agent_id}/pending")
+        except Exception:
+            data = None
         changed = False
         if isinstance(data, dict):
             has_pending = bool(data.get("prompts") or data.get("approvals")
@@ -1352,9 +1361,13 @@ class FaceWindow(QWidget):
                          args=(f"/v1/agents/{self.agent_id}/{route}", body)).start()
 
     def _post_attention(self, path: str, body: dict):
-        result = api_post(path, body)
-        if self._alive:
-            self.attention_done.emit(result.ok, "" if result.ok else result.error)
+        try:
+            result = api_post(path, body)
+            if self._alive:
+                self.attention_done.emit(result.ok, "" if result.ok else result.error)
+        except Exception:
+            if self._alive:
+                self.attention_done.emit(False, "the request failed")
 
     def _on_attention_done(self, ok: bool, error: str):
         if not ok:
