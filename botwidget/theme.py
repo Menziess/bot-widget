@@ -71,3 +71,9 @@ TAIL_ROOM = 22
 SHADOW_GROW = 3
 SHADOW_BLUR = 4.0
 SHADOW_ALPHA = 0.30
+# Line heights in the bubble (bubble.py line_height): gap, rule, dots, and per-line padding.
+LINE_GAP_H = 10
+LINE_RULE_H = 14
+LINE_DOTS_H = 26
+LINE_CODE_PAD = 12
+LINE_TEXT_PAD = 10

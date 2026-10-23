@@ -10,6 +10,11 @@ from botwidget.theme import (
     DOTS_GAP,
     DOTS_R,
     GAP_PANEL,
+    LINE_CODE_PAD,
+    LINE_DOTS_H,
+    LINE_GAP_H,
+    LINE_RULE_H,
+    LINE_TEXT_PAD,
     MORE_GAP,
     MORE_GAP_DARK,
     MORE_H,
@@ -56,14 +61,14 @@ def line_height(block: dict) -> int:
     if block["kind"] == "control":
         return CONTROL_H
     if block["kind"] == "gap":
-        return 10
+        return LINE_GAP_H
     if block["kind"] == "rule":
-        return 14
+        return LINE_RULE_H
     if block["kind"] == "dots":
-        return 26
+        return LINE_DOTS_H
     if block.get("code"):
-        return block["size"] + 12
-    return block["size"] + 10
+        return block["size"] + LINE_CODE_PAD
+    return block["size"] + LINE_TEXT_PAD
 
 
 def bubble_height(panels: list) -> int:
