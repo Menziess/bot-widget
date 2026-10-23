@@ -10,7 +10,7 @@ from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QPainter
 from PySide6.QtWidgets import QApplication, QWidget
 
-from botwidget import __version__, channel, checkout, grokbot, startup, updates
+from botwidget import __version__, channel, checkout, grokbot, hermesbot, startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -80,12 +80,15 @@ def arc_progress(elapsed: float, rank: int, step: float = ARC_STEP_S, move: floa
 
 
 def _all_bots() -> list:
-    """Every bot the widget can show a face for: the local ones and Grok Bot."""
+    """Every bot the widget can show a face for: the local ones, Grok Bot, and Hermes Bot."""
     bots = list(list_bots())
     if gbot_installed():
         target = grokbot.target()
         bots.append({"id": grokbot.face_id(target), "name": target, "threadId": None,
                      "hue": None, "seed": grokbot.face_id(target), "status": "ready"})
+    if hermesbot.is_hermes_installed():
+        bots.append({"id": hermesbot.face_id(), "name": "Hermes Bot", "threadId": None,
+                     "hue": None, "seed": hermesbot.face_id(), "status": "ready"})
     return bots
 
 
@@ -317,7 +320,7 @@ class Faces(QObject):
         spot = self.pos.get(bot["id"])
         if not (isinstance(spot, (list, tuple)) and len(spot) == 2):
             spot = None
-        avatar = self.avatar if grokbot.is_grok(bot["id"]) else None
+        avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else None
         face = FaceWindow(bot["id"], bot["name"], spot, slot, bot.get("threadId"), self,
                           bot.get("hue"), bot.get("seed"), avatar)
         self.faces[bot["id"]] = face
@@ -364,7 +367,9 @@ class Faces(QObject):
                       "muted": bot["id"] in muted_bots()} for bot in bots],
             "openbot": openbot_installed(), "automation_ready": automation_ready(),
             "gbot": gbot_installed(), "grok": self.grok_line(),
-            "grok_target": grokbot.target(), "wanted": sorted(self.wanted),
+            "grok_target": grokbot.target(),
+            "hermes": hermesbot.is_hermes_installed(),
+            "wanted": sorted(self.wanted),
         }
 
     TOGGLES = {
@@ -376,8 +381,8 @@ class Faces(QObject):
         "check_updates": lambda faces, on: save_widget_config(check_updates=on),
         "auto_update": lambda faces, on: save_widget_config(auto_update=on),
     }
-    CONNECTIONS = {"openbot": "openbot", "grokbot": "gbot"}
-    LINKS = {"openbot": OPENBOT_URL, "grokbot": GROKBOT_URL, "download": updates.DOWNLOAD_URL}
+    CONNECTIONS = {"openbot": "openbot", "grokbot": "gbot", "hermesbot": "hermes"}
+    LINKS = {"openbot": OPENBOT_URL, "grokbot": GROKBOT_URL, "hermesbot": updates.DOWNLOAD_URL, "download": updates.DOWNLOAD_URL}
 
     def menu_command(self, command: str, page: str) -> str | None:
         """Do what a menu row asks; the page to show next, or None to leave the bubble as it is."""
@@ -477,7 +482,7 @@ class Faces(QObject):
             face._set_semicircle(self._semicircle)
 
     def _spawn_guest(self, bot: dict):
-        avatar = self.avatar if grokbot.is_grok(bot["id"]) else None
+        avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else None
         face = FaceWindow(bot["id"], bot["name"], None, 0, bot.get("threadId"), self,
                           bot.get("hue"), bot.get("seed"), avatar)
         face._arc_guest = True

@@ -59,7 +59,7 @@ from botwidget.openbot import (
     latest_chat,
     openbot_installed,
 )
-from botwidget import attachments, grokbot, menu_pages, __version__
+from botwidget import attachments, grokbot, hermesbot, menu_pages, __version__
 from botwidget.qt_ui import desktops, screens
 from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow
 from botwidget.qt_ui.render import svg_pixmap
@@ -72,6 +72,7 @@ CLICK_SLOP = 5
 RETRY_NOTE = "No connection to OpenBot — retrying…"
 REFUSED_NOTE = "I couldn't send that. OpenBot answered: {why}."
 GROK_REFUSED_NOTE = "I couldn't send that. {why}."
+HERMES_REFUSED_NOTE = "I couldn't send that. {why}."
 # OpenBot only opens its local API once this switch is on, per bot.
 AUTOMATION_NOTE = ("OpenBot's local API is off for {name}. In OpenBot open {name}'s settings and turn on "
                    '"Local scripts"; messages wait here until then.')
@@ -125,6 +126,7 @@ class FaceWindow(QWidget):
         self.thread_id = thread_id or ("openbot-thread-" + agent_id)
         # A Grok Bot face talks to the gbot command instead of the local OpenBot.
         self.grok = grokbot.GrokLink(name) if grokbot.is_grok(agent_id) else None
+        self.hermes = hermesbot.HermesLink(name) if hermesbot.is_hermes(agent_id) else None
         self.faces = faces
         self._hue = hue
         self._seed = seed or agent_id
@@ -725,13 +727,24 @@ class FaceWindow(QWidget):
                 a.value[name] -= 360 * round(off / 360)
         self._show_face(pose["face"])
 
+    def _send_status_or_note(self) -> str:
+        """Send status or bot note (Grok Bot or Hermes Bot)."""
+        if self.grok:
+            return self.grok.note()
+        if self.hermes:
+            return self.hermes.note()
+        return ""
+
+    def _has_grok_or_hermes(self) -> bool:
+        return bool(self.grok or self.hermes)
+
     def _motion_mood(self) -> str:
         """What the face shows while it lasts: a question waits, the bot thinks, there is no route."""
         if self.has_pending:
             return "ask"
         if self._working:
             return "thinking"
-        if self._send_status or (self.grok and getattr(self.grok, "status", "")):
+        if self._send_status or self._send_status_or_note():
             return "offline"
         return "idle"
 
@@ -838,7 +851,7 @@ class FaceWindow(QWidget):
 
     def _latest(self) -> dict:
         """The latest chat of this bot: from Grok Bot or from the local OpenBot."""
-        return self.grok.chat() if self.grok else latest_chat(thread_id=self.thread_id)
+        return self.grok.chat() if self.grok else (self.hermes.chat() if self.hermes else latest_chat(thread_id=self.thread_id))
 
     def _poll_pending(self):
         """Check whether a question or approval is waiting and refresh the bubble.
@@ -856,6 +869,10 @@ class FaceWindow(QWidget):
             self._sync_bubble(self._latest())
             if self.grok.active():
                 self._poll_timer.start(1000)
+            return
+        if self.hermes:
+            # Hermes Bot uses --oneshot mode, no polling needed after send.
+            self._sync_bubble(self._latest())
             return
         data = api_get(f"/v1/agents/{self.agent_id}/pending")
         changed = False
@@ -881,9 +898,13 @@ class FaceWindow(QWidget):
                 self._poll_timer.start(1000)
 
     def _grok_fetch(self):
-        """The bubble opened on a Grok face: look once for what came in."""
+        """The bubble opened: look once for what came in."""
         if self.grok and self._alive:
             self.grok.request_fetch()
+            if not self._poll_timer.isActive():
+                self._poll_timer.start(0)
+        if self.hermes and self._alive:
+            self.hermes.request_fetch()
             if not self._poll_timer.isActive():
                 self._poll_timer.start(0)
 
@@ -891,6 +912,8 @@ class FaceWindow(QWidget):
         """Why a message is waiting: the switch in OpenBot is off, or the link dropped."""
         if self.grok:
             return self.grok.note()
+        if self.hermes:
+            return self.hermes.note()
         if error == AUTOMATION_OFF or not automation_ready():
             return AUTOMATION_NOTE.format(name=self.bot_name)
         return RETRY_NOTE
@@ -981,6 +1004,8 @@ class FaceWindow(QWidget):
                     blocks.append(status_block(self._send_status))
                 elif self.grok and self.grok.note():
                     blocks.append(status_block(self.grok.note()))
+                elif self.hermes and self.hermes.note():
+                    blocks.append(status_block(self.hermes.note()))
                 if self._queue:
                     blocks.append(status_block("Queued, click one to edit it"))
                     waiting = [{"role": "user", "text": attachments.label_with(item["text"], item["files"]),
@@ -996,7 +1021,9 @@ class FaceWindow(QWidget):
             return
         if self._asked and self.grok and self.grok.stopped:
             self._asked = False
-        if self._asked and not self.grok and not self._working and not self._sending and not self._outbox.items and not self._queue:
+        if self._asked and self.hermes and self.hermes.stopped:
+            self._asked = False
+        if self._asked and not self.grok and not self.hermes and not self._working and not self._sending and not self._outbox.items and not self._queue:
             # OpenBot stopped answering: no activity, no pending, no queue — clear _asked so the
             # conversation can reappear instead of staying blocked forever.
             self._asked = False
@@ -1036,6 +1063,8 @@ class FaceWindow(QWidget):
         self._menu_page = None
         if self.grok:
             self.grok.request_fetch()
+        if self.hermes:
+            self.hermes.request_fetch()
         self._poll_timer.start(0)
 
     def open_commands(self):
@@ -1094,7 +1123,7 @@ class FaceWindow(QWidget):
                                          self.bot_name)
         if not blocks:
             # A Grok face says why it stopped even with nothing in the chat yet.
-            note = self.grok.note() if self.grok else ""
+            note = self.grok.note() if self.grok else (self.hermes.note() if self.hermes else "")
             return [status_block(note)] if note else blocks
         if self._working or (self._outbox.items and not self._send_status):
             blocks += [role_panel("bot"), plain_block("dots")]
@@ -1102,6 +1131,8 @@ class FaceWindow(QWidget):
         # Learn at once that sending is not possible yet.
         if self.grok:
             status = self._send_status or self.grok.note()
+        elif self.hermes:
+            status = self._send_status or self.hermes.note()
         else:
             status = self._send_status or ("" if automation_ready() else self._waiting_note())
         if status:
@@ -1137,6 +1168,9 @@ class FaceWindow(QWidget):
         if self.grok:
             # A new message is a fresh attempt: the link that stopped tries again.
             self.grok.resume()
+        if self.hermes:
+            # A new message is a fresh attempt: the link that stopped tries again.
+            self.hermes.resume()
         self.pinned = False
         text = attachments.message_with(text, files)
         day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
@@ -1316,6 +1350,11 @@ class FaceWindow(QWidget):
             if self._alive:
                 self.message_done.emit(cid, ok, False, error)
             return
+        if self.hermes:
+            ok, error = self.hermes.send(text)
+            if self._alive:
+                self.message_done.emit(cid, ok, False, error)
+            return
         if automation_ready():
             result = api_post(f"/v1/agents/{self.agent_id}/messages",
                               {"text": text, "clientMessageId": cid})
@@ -1338,7 +1377,7 @@ class FaceWindow(QWidget):
             self._asked = True
             self.react("sent")
             # Grok Bot keeps the line the user sent itself.
-            if item is not None and not self.grok:
+            if item is not None and not self.grok and not self.hermes:
                 self._local.append({"role": "user", "text": item["text"],
                                     "until": time.monotonic() + 120})
         else:
@@ -1350,7 +1389,7 @@ class FaceWindow(QWidget):
                 self.react("error")
                 if item is not None:
                     self._local.append({"role": "user", "text": item["text"], "until": time.monotonic() + 60})
-                note = GROK_REFUSED_NOTE if self.grok else REFUSED_NOTE
+                note = GROK_REFUSED_NOTE if self.grok else (HERMES_REFUSED_NOTE if self.hermes else REFUSED_NOTE)
                 self._local.append({"role": "bot", "until": time.monotonic() + 60,
                                     "text": note.format(why=error)})
             else:
@@ -1361,7 +1400,7 @@ class FaceWindow(QWidget):
                 QTimer.singleShot(int(wait * 1000), self._pump_outbox)
         self.update()
         self._sync_bubble(self._latest())
-        if self.grok and self.grok.active() and not self._poll_timer.isActive():
+        if (self.grok or self.hermes) and (self.grok and self.grok.active() or self.hermes and self.hermes.active()) and not self._poll_timer.isActive():
             self._poll_timer.start(300)
         if next_ready:
             self._pump_outbox()
