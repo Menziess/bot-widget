@@ -169,14 +169,14 @@ class BubbleEntry(QPlainTextEdit):
     def _document_resized(self, _size):
         # A scrollbar only once the lines no longer fit: before that it would flash up for the moment
         # a new line has wrapped and the field has not grown yet.
-        lines = round(self.document().size().height())
+        lines = max(1, self.document().blockCount())
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if lines > ENTRY_MAX_LINES else Qt.ScrollBarAlwaysOff)
         self.resized.emit()
         # The field grows a moment later: until then the cursor may sit below what is shown.
         QTimer.singleShot(0, self._show_cursor)
 
     def _show_cursor(self):
-        if round(self.document().size().height()) <= ENTRY_MAX_LINES:
+        if self.document().blockCount() <= ENTRY_MAX_LINES:
             self.verticalScrollBar().setValue(0)
         else:
             self.ensureCursorVisible()
@@ -205,7 +205,7 @@ class BubbleEntry(QPlainTextEdit):
         self.setPlainText(text)
 
     def wanted_height(self) -> int:
-        lines = max(1, min(ENTRY_MAX_LINES, round(self.document().size().height())))
+        lines = max(1, min(ENTRY_MAX_LINES, self.document().blockCount()))
         return max(ENTRY_H, lines * self.fontMetrics().lineSpacing() + ENTRY_PAD + 2)
 
     def keyPressEvent(self, event):
