@@ -205,8 +205,11 @@ class BubbleEntry(QPlainTextEdit):
         self.setPlainText(text)
 
     def wanted_height(self) -> int:
-        lines = max(1, min(ENTRY_MAX_LINES, self.document().blockCount()))
-        return max(ENTRY_H, lines * self.fontMetrics().lineSpacing() + ENTRY_PAD + 2)
+        fm = self.fontMetrics()
+        ls = fm.lineSpacing()
+        actual_lines = round(self.document().size().height() / ls) if ls > 0 else 1
+        lines = max(1, min(ENTRY_MAX_LINES, actual_lines))
+        return max(ENTRY_H, lines * ls + ENTRY_PAD + 2)
 
     def keyPressEvent(self, event):
         """Escape closes the bubble without sending anything and keeps what was typed; with the list of commands open it
