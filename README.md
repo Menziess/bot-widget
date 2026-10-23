@@ -10,6 +10,8 @@ One command installs the widget and everything it needs, including the Qt toolki
 uv tool install git+https://github.com/Menziess/bot-widget
 ```
 
+uv is for the command line and for development. On Linux the face stays tied to that terminal, so closing the terminal quits the face. For a start from the app menu, use the Linux tar and `install.sh`. That command is `bot-widget`. To leave the terminal and keep the face: `nohup botwidget >/dev/null 2>&1 &`.
+
 - Instead of uv, `pipx install git+https://github.com/Menziess/bot-widget` works the same way
 - Python 3.10 or newer is the only requirement
 - Linux, macOS and Windows use the same code
@@ -55,7 +57,7 @@ botwidget
 - Paste a file or a picture in the field to send it along, it shows as a chip that you can remove, and the message gets a list of the files under the shared folder of OpenBot
 - Drag the face to move it, it bounces off screen edges
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
-- Right-click the face, or start the field with a slash, and a list of commands opens above the field
+- Right-click the face, or start the field with a slash, and a list of commands opens above the field. /feedback opens a new GitHub issue in the browser, already filled with the version, the system and how it was installed
 - Pick a command with the arrows and Return, Tab fills it in, and Escape closes the list and clears the command you typed (a message that was already there stays)
 - A page (settings, bots, connections) goes away by itself like any bubble, and with Escape
 - The /settings page holds sound, quiet hours, window stacking, desktops, start at login, update checks, switching version, and Quit

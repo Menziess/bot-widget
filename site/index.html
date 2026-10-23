@@ -103,9 +103,10 @@
   </div>
 
   <h2>Prefer the command line?</h2>
-  <p>With <a href="https://docs.astral.sh/uv/">uv</a> installed, one command does it on any system.</p>
+  <p><a href="https://docs.astral.sh/uv/">uv</a> is for the command line and for development. On Linux the face stays tied to that terminal, so closing the terminal quits the face. For a start from the app menu, use the Linux download and <code>install.sh</code>. That command is <code>bot-widget</code>.</p>
   <pre>uv tool install git+https://github.com/Menziess/bot-widget
 botwidget</pre>
+  <p class="hint">To leave the terminal and keep the face: <code>nohup botwidget &gt;/dev/null 2&gt;&amp;1 &amp;</code></p>
 
   <h2>How it works</h2>
   <ul>
