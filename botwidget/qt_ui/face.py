@@ -849,8 +849,14 @@ class FaceWindow(QWidget):
 
     # ── Polling ─────────────────────────────────────────────────
 
+    def _cleanup_local(self):
+        """Remove expired entries from the local conversation buffer."""
+        now = time.monotonic()
+        self._local = [item for item in self._local if item.get("until", 0) > now]
+
     def _latest(self) -> dict:
         """The latest chat of this bot: from Grok Bot or from the local OpenBot."""
+        self._cleanup_local()
         return self.grok.chat() if self.grok else (self.hermes.chat() if self.hermes else latest_chat(thread_id=self.thread_id))
 
     def _poll_pending(self):
