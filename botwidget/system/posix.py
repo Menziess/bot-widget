@@ -31,3 +31,4 @@ def spawn_script(script: str, *args: str) -> None:
         fh.write(script)
     subprocess.Popen(["/bin/sh", path, *args], start_new_session=True,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    os.unlink(path)
