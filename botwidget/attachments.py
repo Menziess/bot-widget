@@ -18,12 +18,15 @@ def _fresh_folder() -> Path:
     return folder
 
 
-def store_file(source: str) -> Path:
+def store_file(source: str) -> Path | None:
     """A copy of a file in its own folder under the shared folder, with its own name."""
-    path = Path(source)
-    target = _fresh_folder() / path.name
-    shutil.copy2(path, target)
-    return target
+    try:
+        path = Path(source)
+        target = _fresh_folder() / path.name
+        shutil.copy2(path, target)
+        return target
+    except (OSError, shutil.Error):
+        return None
 
 
 def store_bytes(name: str, data: bytes) -> Path:

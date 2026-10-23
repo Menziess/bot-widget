@@ -127,11 +127,10 @@ CROSS_GAP_S = 0.6
 
 def pasted_files(source) -> list:
     """Files and pictures on the clipboard, copied under the shared folder; none when it holds only text."""
-    paths = []
-    if source.hasUrls():
-        for url in source.urls():
-            if url.isLocalFile() and os.path.isfile(url.toLocalFile()):
-                paths.append(attachments.store_file(url.toLocalFile()))
+    paths = [p for p in (
+        [attachments.store_file(url.toLocalFile()) for url in source.urls()
+         if url.isLocalFile() and os.path.isfile(url.toLocalFile())]
+        if source.hasUrls() else []) if p is not None]
     if not paths and source.hasImage():
         image = source.imageData()
         if isinstance(image, QImage) and not image.isNull():
