@@ -30,6 +30,7 @@ from botwidget.avatar import AVATAR_SIZE, CIRCLE_R
 from botwidget.bubble import (
     bubble_body_svg,
     bubble_deco_svg,
+    bubble_height_cap,
     opening_shadow_alpha,
     bubble_shadow_svg,
     bubble_width,
@@ -41,9 +42,11 @@ from botwidget.bubble import (
     panel_rects,
     reading_seconds,
 )
+from botwidget.config import always_on_top
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, screens
+from botwidget.system.current import send_behind_windows
 from botwidget.qt_ui.controls import ActionButton, SlashList, Switch
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
@@ -482,7 +485,7 @@ class BubbleWindow(QWidget):
     def __init__(self, face):
         super().__init__()
         self.face = face
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint | Qt.NoDropShadowWindowHint | Qt.WindowDoesNotAcceptFocus)
+        self._apply_flags()
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         # Tool windows hide themselves on macOS as soon as the app is not active; the bubble must
@@ -906,10 +909,28 @@ class BubbleWindow(QWidget):
         return round(self._growth.width + (box_w - self._growth.width) * self._growth.progress)
 
     def _ceiling(self) -> int:
-        """About 40% of the screen; the bubble stays against the head."""
-        fx, fy = self.face.spot()
-        _x, _y, _w, h = screens.rect_at(fx + AVATAR_SIZE // 2, fy + AVATAR_SIZE // 2)
-        return max(200, int(h * 0.4))
+        """Tied to this face: one extra face of chat, then scroll. Width can still grow.
+
+        Input, slash list and chips sit in extras on top of that band so they still fit.
+        """
+        return bubble_height_cap(self.face.height()) + self._extras()
+
+    def _apply_flags(self):
+        """Same stacking as the face: above normal windows only when the bot is always-on-top.
+
+        The bubble can still raise above other bot faces; it must not sit above ordinary apps
+        when its face is behind them.
+        """
+        layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint
+                            | Qt.WindowDoesNotAcceptFocus)
+
+    def restack(self):
+        """After always-on-top changes: new flags need a show if the bubble is already open."""
+        shown = self.isVisible()
+        self._apply_flags()
+        if shown:
+            self.show()
 
     def _paint_chrome(self):
         if self._geom is None:
@@ -1036,7 +1057,7 @@ class BubbleWindow(QWidget):
                                             or bar.value() >= bar.maximum() - FOLLOW_SLACK)
         self._scroll_target = bar.value() if keep_scroll or (kind == "think" and not self._follow) else 0
         self._list_only = False
-        key = (kind, block_text(blocks), input, tuple(links or []), self._ceiling())
+        key = (kind, block_text(blocks), input, tuple(links or []), bubble_height_cap(self.face.height()))
         visible = self.isVisible()
         if key == self._built and not self._dots_lines:
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
@@ -1250,10 +1271,13 @@ class BubbleWindow(QWidget):
         handle = self.windowHandle()
         if handle is not None:
             handle.setTransientParent(None)
-        self.raise_()
+        if not always_on_top():
+            send_behind_windows(int(self.winId()))
         faces = getattr(self.face, "faces", None)
         if faces is not None:
             faces.raise_bubbles()
+        else:
+            self.raise_()
 
     def _final_size(self) -> tuple:
         """The window size once it has grown to its size."""

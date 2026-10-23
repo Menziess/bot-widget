@@ -242,6 +242,7 @@ class FaceWindow(QWidget):
         """After a change of the setting: new flags ask the window to be shown again."""
         self._apply_flags()
         self.show()
+        self.bubble.restack()
 
     def showEvent(self, event):
         super().showEvent(event)

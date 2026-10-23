@@ -467,6 +467,14 @@ class BubbleLayout(unittest.TestCase):
         self.assertGreater(rects[1][0], rects[0][0] + rects[0][1], "a gap between the panels")
         self.assertEqual(rects[-1][0] + rects[-1][1], content_height(panels))
 
+    def test_bubble_height_cap_is_three_face_heights_plus_chrome(self):
+        from botwidget.avatar import AVATAR_SIZE
+        from botwidget.theme import PAD_SVG, TAIL_ROOM
+        self.assertEqual(bubble.bubble_height_cap(AVATAR_SIZE), PAD_SVG + TAIL_ROOM + 3 * AVATAR_SIZE + 16)
+        self.assertEqual(bubble.bubble_height_cap(40), PAD_SVG + TAIL_ROOM + 3 * AVATAR_SIZE + 16)
+        self.assertEqual(bubble.bubble_height_cap(120), PAD_SVG + TAIL_ROOM + 376)
+        self.assertLess(bubble.bubble_height_cap(AVATAR_SIZE), int(1080 * 0.4))
+
     def test_long_text_breaks_within_the_width(self):
         lines, widest = bubble_layout.md_layout(self.measure, "word " * 40, 200)
         self.assertGreater(len(lines), 1)
@@ -2426,7 +2434,7 @@ class BubbleHover(unittest.TestCase):
         self.app.processEvents()
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
         self.assertEqual([c for c, _n in bubble._slash.rows],
-                         ["/settings", "/bots", "/connections", "/refresh", "/feedback"])
+                         ["/home", "/settings", "/bots", "/connections", "/refresh", "/feedback"])
         self.assertLess(bubble._slash.geometry().bottom(), bubble._entry.geometry().top(), "above the field")
         self.assertGreater(bubble.height(), height, "the bubble makes room for the list")
         bubble._entry.setText("/b")
@@ -2446,6 +2454,7 @@ class BubbleHover(unittest.TestCase):
         self.stub_faces()
         bubble = self.window.bubble
         bubble._entry.setText("/")
+        QTest.keyClick(bubble._entry, Qt.Key_Down)
         QTest.keyClick(bubble._entry, Qt.Key_Down)
         QTest.keyClick(bubble._entry, Qt.Key_Return)
         self.assertEqual(self.window._menu_page, "bots")
@@ -2617,7 +2626,7 @@ class BubbleHover(unittest.TestCase):
     def test_every_command_in_the_list_opens_a_page(self):
         from botwidget import menu_pages
         for command, _note in menu_pages.COMMANDS:
-            if command in ("/refresh", "/feedback"):
+            if command in ("/home", "/refresh", "/feedback"):
                 continue
             self.assertIn(command, menu_pages.SLASH)
         self.assertNotIn("/refresh", menu_pages.SLASH, "reload, not a menu page")
@@ -3160,6 +3169,7 @@ class MenuPages(unittest.TestCase):
     def test_the_bots_page_has_a_switch_per_bot(self):
         blocks = menu_pages.bots(self.STATE)
         self.assertEqual(self.commands(blocks), ["page/commands", "bot/a", "mute/a", "bot/b", "mute/b"])
+        self.assertIn("Arrow at the top goes back to commands.", self.text(blocks))
         self.assertIn("☑ Fritsie", self.text(blocks))
         self.assertIn("☐ Robo", self.text(blocks))
         self.assertIn("No bots found yet", self.text(menu_pages.bots({**self.STATE, "bots": []})))
@@ -3367,7 +3377,7 @@ class MenuInBubble(unittest.TestCase):
         from PySide6.QtTest import QTest
         self.right_click()
         slash = self.window.bubble._slash
-        row = slash.ROW_H + slash.ROW_H // 2 + 4
+        row = 2 * slash.ROW_H + slash.ROW_H // 2 + 4
         QTest.mouseClick(slash, Qt.LeftButton, Qt.NoModifier, QPoint(20, row))
         self.assertIn("Fritsie", self.text(), "the click on /bots opened the bots page")
 

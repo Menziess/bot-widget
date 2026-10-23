@@ -45,7 +45,8 @@ class ActionButton(QPushButton):
     """A button for something that happens once: an update, a link, quitting."""
 
     STYLE = (f"QPushButton {{ background: #ffffff; color: {SAND_INK}; border: 1px solid rgba(28, 28, 28, 40);"
-             f" border-radius: 8px; padding: 4px 12px; font-family: '{SAND_SANS}'; font-size: {BUBBLE_FONT}px; }}"
+             f" border-radius: 8px; padding: 8px 14px; min-height: 36px; font-family: '{SAND_SANS}';"
+             f" font-size: {BUBBLE_FONT}px; }}"
              f" QPushButton:hover {{ border-color: {SAND_ACCENT}; color: {SAND_ACCENT}; }}"
              f" QPushButton:pressed {{ background: rgba(11, 109, 211, 20); }}")
 
@@ -59,7 +60,7 @@ class ActionButton(QPushButton):
 class SlashList(QWidget):
     """The commands that fit what is typed after a slash, as a list that opens upward from the field."""
 
-    ROW_H = 30
+    ROW_H = 36
     chosen = Signal(str)
 
     def __init__(self, parent=None):

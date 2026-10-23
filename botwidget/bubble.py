@@ -2,6 +2,7 @@
 
 import math
 
+from botwidget.avatar import AVATAR_SIZE
 from botwidget.theme import (
     CONTROL_H,
     BUBBLE_LINGER,
@@ -85,6 +86,16 @@ def bubble_height(panels: list) -> int:
 def content_height(panels: list) -> int:
     """Height of the panels together, without the margin and the tail."""
     return bubble_height(panels) - PAD_SVG - TAIL_ROOM - 2 * PAD_BODY
+
+
+def bubble_height_cap(face_h: int) -> int:
+    """Max bubble window height: this face plus one extra face of chat, plus chrome.
+
+    Longer copy and menu pages scroll inside that band. Width can still grow.
+    The cap is not a share of the screen, so a bubble cannot dwarf its face.
+    """
+    band = max(AVATAR_SIZE, int(face_h))
+    return PAD_SVG + TAIL_ROOM + 3 * band + 16
 
 
 def panel_rects(panels: list) -> list:

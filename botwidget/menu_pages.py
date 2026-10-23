@@ -38,6 +38,10 @@ def _heading(title: str) -> dict:
     return _row((title, "b"))
 
 
+def _back_hint() -> dict:
+    return _row(("Arrow at the top goes back to commands.", "dim"))
+
+
 def _toggle(label: str, command: str, on: bool) -> dict:
     return control_block("toggle", label, command, bool(on))
 
@@ -52,7 +56,7 @@ def _back() -> list:
 
 
 def settings(state: dict) -> list:
-    blocks = _back() + [_heading("Settings"), plain_block("gap")]
+    blocks = _back() + [_heading("Settings"), _back_hint(), plain_block("gap")]
     if state.get("staged_update"):
         blocks.append(_button(f"Restart to update to v{state['staged_update']}", "action/update"))
     elif state.get("update"):
@@ -81,7 +85,8 @@ def settings(state: dict) -> list:
 
 
 def bots(state: dict) -> list:
-    blocks = _back() + [_heading("Bots"), _row(("Shift+click a bot's face to mute or unmute its thinking.", "dim")),
+    blocks = _back() + [_heading("Bots"), _back_hint(),
+                        _row(("Shift+click a bot's face to mute or unmute its thinking.", "dim")),
                         plain_block("gap")]
     for bot in state["bots"]:
         blocks.append(_toggle(bot["name"], f"bot/{bot['id']}", bot["on"]))
@@ -92,7 +97,8 @@ def bots(state: dict) -> list:
 
 
 def connections(state: dict) -> list:
-    blocks = _back() + [_heading("Connections"), _row(("Turning one on that was not found opens its page.", "dim")),
+    blocks = _back() + [_heading("Connections"), _back_hint(),
+                        _row(("Turning one on that was not found opens its page.", "dim")),
                         plain_block("gap")]
     wanted = state.get("wanted", ())
     openbot = state["openbot"]
