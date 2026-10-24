@@ -209,7 +209,8 @@ class BubbleEntry(QPlainTextEdit):
     def wanted_height(self) -> int:
         fm = self.fontMetrics()
         ls = fm.lineSpacing()
-        lines = max(1, min(ENTRY_MAX_LINES, self.document().blockCount()))
+        actual_lines = round(self.document().size().height() / ls) if ls > 0 else 1
+        lines = max(1, min(ENTRY_MAX_LINES, actual_lines))
         return max(ENTRY_H, lines * ls + ENTRY_PAD + 2)
 
     def keyPressEvent(self, event):
