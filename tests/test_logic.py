@@ -2857,6 +2857,29 @@ class BubbleHover(unittest.TestCase):
     def test_there_is_no_tooltip(self):
         self.assertEqual(self.window.toolTip(), "")
 
+    def test_application_inactive_closes_the_bubble(self):
+        """When the pointer leaves to another app on XWayland, underMouse() can stay True
+        but the app is inactive — the bubble must close after the cross-gap."""
+        import time
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        self.hover()
+        bubble = self.window.bubble
+        self.finish_growth()
+        # global_pointer() is False on this platform (offscreen), so pointer_near()
+        # falls back to underMouse(). Patch underMouse to stay False (pointer not on us),
+        # but report the app as inactive (user switched away).
+        with mock.patch.object(type(bubble), "underMouse", return_value=False), \
+             mock.patch.object(type(self.window), "underMouse", return_value=False), \
+             mock.patch.object(QGuiApplication, "applicationState",
+                               return_value=Qt.ApplicationInactive):
+            # Advance time past CROSS_GAP_S so the leave path should fire
+            bubble._was_near = True
+            bubble._near_at = time.monotonic() - 1.0
+            bubble._tick()
+        self.assertEqual(bubble.kind, "")
+
 
 class LatestChat(unittest.TestCase):
     """Should hand the bubble whole messages, not the first 500 characters of them."""

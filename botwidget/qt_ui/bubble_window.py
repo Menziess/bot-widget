@@ -768,6 +768,13 @@ class BubbleWindow(QWidget):
         """Mouse over the bubble: it stays."""
         self.changed = time.monotonic()
 
+    def leaveEvent(self, event):
+        """Mouse left the bubble: start the same grace period as when the pointer left the face."""
+        if not self.kind:
+            return
+        self._was_near = False
+        self._near_at = time.monotonic()
+
     # ── Content ─────────────────────────────────────────────────
 
     def _parts(self):
