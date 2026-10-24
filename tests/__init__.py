@@ -1,3 +1,4 @@
-# Ensure tests always run in offscreen mode regardless of desktop environment
+# Ensure tests always run in offscreen mode, even when the desktop session
+# already exports QT_QPA_PLATFORM (setdefault would then be a no-op)
 import os
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
