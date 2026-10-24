@@ -561,15 +561,13 @@ class FaceWindow(QWidget):
     def pointer_near(self, bubble, margin: int = BUBBLE_HOVER_MARGIN) -> bool:
         """Mouse within GAZE_NEAR of the head, or over the bubble?"""
         if not global_pointer():
-            # Wayland: QCursor.pos() still reports the last known position, so we do
-            # the same manual hit test as on X11/macOS to cover the gap between face
-            # and bubble (underMouse() is False there on Wayland).
-            px, py = self._pointer()
-            cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
-            if (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2:
+            # Wayland: QCursor.pos() is unreliable (stale), so we only trust
+            # Qt's own hit-testing.  underMouse() on the face window tells us
+            # whether the pointer is hovering the icon, and on the bubble
+            # whether it is hovering the bubble itself.
+            if self.underMouse():
                 return True
-            return bubble.isVisible() and bubble.geometry().adjusted(-margin, -margin, margin, margin).contains(
-                QPoint(px, py))
+            return bubble.isVisible() and bubble.underMouse()
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         if (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2:
@@ -597,9 +595,7 @@ class FaceWindow(QWidget):
 
     def _pointer_on_head(self) -> bool:
         if not global_pointer():
-            px, py = self._pointer()
-            cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
-            return (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2
+            return self.underMouse()
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         return (px - cx) ** 2 + (py - cy) ** 2 <= ON_FACE ** 2
