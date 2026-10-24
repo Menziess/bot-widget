@@ -1010,8 +1010,8 @@ class FaceWindow(QWidget):
             self._asked = False
             pending = False
         if self._asked and not self.grok and not self.hermes and not self._working and not self._sending and not self._outbox.items and not self._queue:
-            self._asked = False
-            pending = False
+            # Do not clear _asked: the dots should stay until an answer arrives.
+            pass
         if pending and not self.pinned:
             if self._muted and not self._has_attention():
                 # Thinking is silenced: no cloud, until the face is clicked again.
@@ -1049,11 +1049,8 @@ class FaceWindow(QWidget):
             self._asked = False
         if self._asked and self.hermes and self.hermes.stopped:
             self._asked = False
-        if self._asked and not self.grok and not self.hermes and not self._working and not self._sending and not self._outbox.items and not self._queue:
-            # OpenBot stopped answering: no activity, no pending, no queue — clear _asked so the
-            # conversation can reappear instead of staying blocked forever.
-            self._asked = False
-        if self._working or self._sending or self._outbox.items or self._asked:
+        # Do not clear _asked here: keep the dots showing until an answer arrives or _answer_pending clears it.
+        if (self._working or self._sending or self._outbox.items or self._asked) and not self.pinned:
             # The cloud closed itself. The chat stays away until this turn is over.
             return
         blocks = self._chat_blocks(messages, greet=force or self.pinned)
