@@ -45,8 +45,8 @@ CHECKOUT_RECHECK_S = 15 * 60  # code in a checkout changes more often than relea
 # Semicircle constants
 SEMICIRCLE_RADIUS = 120   # pixels from top-centre
 SEMICIRCLE_SLOT_SIZE = 48  # bot diameter in the semicircle
-ARC_CATCH_X = SEMICIRCLE_RADIUS + 160  # how far the mouse may be from the middle
-ARC_CATCH_Y = SEMICIRCLE_RADIUS + 80   # how far it may be below the top edge
+ARC_CATCH_X = SEMICIRCLE_RADIUS + 16  # how far the mouse may be from the middle
+ARC_CATCH_Y = SEMICIRCLE_RADIUS + 16   # how far it may be below the top edge
 SEMICIRCLE_GAP = 16        # gap between bot slots
 ARC_STEP_S = 0.12          # pause before the next bot leaves the centre
 ARC_MOVE_S = 0.26          # one bot's trip

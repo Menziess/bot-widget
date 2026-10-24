@@ -335,13 +335,14 @@ class GrokAvatarFallback(unittest.TestCase):
             self.assertLessEqual((sx - 800) ** 2 + sy ** 2, 120 ** 2 + 1)
 
     def test_the_pointer_opens_the_arc_from_the_top_middle(self):
-        """Should open for a pointer in the top middle, past the small dome a dragged bot has to enter."""
+        """Should open for a point on the visible dome, not well below it."""
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
         faces._hotspot = lambda: (800.0, 0.0)
-        self.assertTrue(faces._pointer_over_arc(800, 150))
-        self.assertFalse(faces._in_hotspot(800, 150))
+        self.assertTrue(faces._pointer_over_arc(800, 100))
+        self.assertFalse(faces._pointer_over_arc(800, 150))
         self.assertFalse(faces._pointer_over_arc(800, 400))
+        self.assertFalse(faces._in_hotspot(800, 150))
 
     def test_arc_bots_leave_the_centre_one_at_a_time_and_return_last_first(self):
         """Should hold later bots until the one before them has started, and reverse that on the way back."""
