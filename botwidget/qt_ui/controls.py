@@ -44,11 +44,13 @@ class Switch(QAbstractButton):
 class ActionButton(QPushButton):
     """A button for something that happens once: an update, a link, quitting."""
 
-    STYLE = (f"QPushButton {{ background: #ffffff; color: {SAND_INK}; border: 1px solid rgba(28, 28, 28, 40);"
-             f" border-radius: 8px; padding: 8px 14px; min-height: 36px; font-family: '{SAND_SANS}';"
+    # A soft pill like the track of a switch. No min-height or tall padding: the page reserves one line
+    # (CONTROL_H) for it, and a taller button spilled over the switch below.
+    STYLE = (f"QPushButton {{ background: rgba(28, 28, 28, 14); color: {SAND_INK}; border: none;"
+             f" border-radius: 14px; padding: 0px 14px; min-height: 0px; font-family: '{SAND_SANS}';"
              f" font-size: {BUBBLE_FONT}px; }}"
-             f" QPushButton:hover {{ border-color: {SAND_ACCENT}; color: {SAND_ACCENT}; }}"
-             f" QPushButton:pressed {{ background: rgba(11, 109, 211, 20); }}")
+             f" QPushButton:hover {{ background: rgba(11, 109, 211, 26); color: {SAND_ACCENT}; }}"
+             f" QPushButton:pressed {{ background: rgba(11, 109, 211, 46); }}")
 
     def __init__(self, label: str, parent=None):
         super().__init__(label, parent)

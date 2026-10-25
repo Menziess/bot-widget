@@ -126,6 +126,8 @@ THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the 
 
 USER_KEEP_S = 3.0  # what the user does with a bubble keeps it open this long, pointer or not
 
+# A button of a menu page: the pill sits in the middle of its line.
+BUTTON_H = 28
 
 def mark_before_show(widget) -> None:
     """Called right before a top-level window of ours is mapped; see system before_show."""
@@ -1081,8 +1083,8 @@ class BubbleWindow(QWidget):
         for widget, (line, rect) in zip(self._control_widgets, wanted):
             if line["control"] == "button":
                 rect.setWidth(min(rect.width(), widget.sizeHint().width()))
-                rect.setHeight(rect.height() - 4)
-                rect.moveTop(rect.top() + 2)
+                rect.setHeight(BUTTON_H)
+                rect.moveTop(rect.top() + (line_height(line) - BUTTON_H) // 2)
             widget.setGeometry(rect)
             widget.raise_()
             widget.show()

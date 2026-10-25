@@ -2205,6 +2205,20 @@ class BubbleHover(unittest.TestCase):
             with mock.patch.object(type(bubble), "underMouse", return_value=True):
                 self.assertTrue(self.window.pointer_near(bubble), "the pointer is on the bubble")
 
+    def test_a_page_button_fits_its_line_and_does_not_cover_the_switch_below(self):
+        """The old button had a 36px min-height plus padding: it spilled over the next row."""
+        from botwidget.qt_ui.controls import ActionButton
+        from botwidget.theme import CONTROL_H
+        bubble = self.open_settings()
+        buttons = [w for w in bubble._control_widgets if isinstance(w, ActionButton)]
+        self.assertTrue(buttons)
+        self.assertLessEqual(ActionButton("Switch to stable version").minimumSizeHint().height(), CONTROL_H)
+        for button in buttons:
+            self.assertLessEqual(button.height(), CONTROL_H)
+        rows = sorted((w.y(), w.y() + w.height()) for w in bubble._control_widgets)
+        for (_top, bottom), (next_top, _b) in zip(rows, rows[1:]):
+            self.assertLessEqual(bottom, next_top, "no control overlaps the next one")
+
     def test_a_menu_page_grows_to_its_content_before_it_scrolls(self):
         """Settings is taller than the chat band of a face: it gets the room, up to most of the screen."""
         from botwidget.bubble import MENU_SCREEN_SHARE, bubble_height_cap
