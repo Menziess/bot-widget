@@ -61,7 +61,7 @@ from botwidget.openbot import (
 )
 from botwidget import attachments, grokbot, hermesbot, menu_pages, __version__
 from botwidget.qt_ui import desktops, screens
-from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow, pointer_on_no_window
+from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow, mark_before_show, pointer_on_no_window
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
 from botwidget.system.current import FOCUS_ON_HOVER, activate_app, send_behind_windows
@@ -247,6 +247,11 @@ class FaceWindow(QWidget):
         self._apply_flags()
         self.show()
         self.bubble.restack()
+
+    def setVisible(self, visible: bool):
+        if visible and not self.isVisible():
+            mark_before_show(self)
+        super().setVisible(visible)
 
     def showEvent(self, event):
         super().showEvent(event)

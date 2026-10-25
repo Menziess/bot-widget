@@ -29,6 +29,7 @@ from botwidget.config import (
     widget_config,
 )
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
+from botwidget.qt_ui.bubble_window import mark_before_show
 from botwidget.qt_ui.face import FaceWindow
 from botwidget.system.current import (
     CAN_PICK_DESKTOPS,
@@ -137,6 +138,11 @@ class ArcCatcher(QWidget):
             face.mouseReleaseEvent(event)
             return
         super().mouseReleaseEvent(event)
+
+    def setVisible(self, visible: bool):
+        if visible and not self.isVisible():
+            mark_before_show(self)
+        super().setVisible(visible)
 
     def showEvent(self, event):
         super().showEvent(event)

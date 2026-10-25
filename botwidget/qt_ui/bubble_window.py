@@ -47,7 +47,7 @@ from botwidget.config import always_on_top
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, screens
-from botwidget.system.current import pointer_window, send_behind_windows
+from botwidget.system.current import before_show, pointer_window, send_behind_windows
 from botwidget.qt_ui.controls import ActionButton, SlashList, Switch
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
@@ -124,6 +124,13 @@ TAIL_LENGTH = 7
 THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the balls on their arc
 
 USER_KEEP_S = 3.0  # what the user does with a bubble keeps it open this long, pointer or not
+
+
+def mark_before_show(widget) -> None:
+    """Called right before a top-level window of ours is mapped; see system before_show."""
+    flags = widget.windowFlags()
+    layer = "above" if flags & Qt.WindowStaysOnTopHint else "below" if flags & Qt.WindowStaysOnBottomHint else ""
+    before_show(int(widget.winId()), layer)
 
 
 def pointer_on_no_window() -> bool:
@@ -1312,6 +1319,11 @@ class BubbleWindow(QWidget):
         self.move(int(tx), int(ty))
         self.show()
         desktops.apply(self)
+
+    def setVisible(self, visible: bool):
+        if visible and not self.isVisible():
+            mark_before_show(self)
+        super().setVisible(visible)
 
     def showEvent(self, event):
         super().showEvent(event)

@@ -151,6 +151,10 @@ def move_to_active_space(win_id: int) -> None:
     _send(objc, None)(window, objc.sel_registerName(b"orderFrontRegardless"))
 
 
+def before_show(win_id: int, layer: str = "") -> None:
+    """Only GNOME needs a window marked before it is mapped."""
+
+
 def pointer_window() -> int | None:
     """Only needed under XWayland; here the pointer position is known."""
     return None

@@ -159,6 +159,22 @@ def send_behind_windows(win_id: int) -> None:
     lib.behind(int(win_id))
 
 
+def before_show(win_id: int, layer: str = "") -> None:
+    """Mark a window that is about to be mapped as one without a taskbar entry.
+
+    Every show maps the window anew. GNOME denies it focus and, unless the window skips the taskbar at
+    that moment, shows "Bot Widget is ready". send_behind_windows only adds the skip after the map, too
+    late; a state set on the unmapped window is what the window manager reads. Qt leaves the property
+    alone only when it already holds the layer Qt wants ("above" or "below"), so that goes in too.
+    """
+    if not win_id or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        return
+    lib = _xlib()
+    if lib is None:
+        return
+    lib.skip_taskbar_unmapped(int(win_id), layer)
+
+
 def pointer_window() -> int | None:
     """The top-level X window under the pointer, 0 when it is over no X window at all, None when unknown.
 
@@ -197,6 +213,17 @@ class _Xlib:
         self._display = x11.XOpenDisplay(None)
         self._root = x11.XDefaultRootWindow(self._display) if self._display else 0
         self._atoms = {}
+
+    def skip_taskbar_unmapped(self, win_id: int, layer: str) -> None:
+        if not self._display:
+            return
+        names = ["_NET_WM_STATE_SKIP_PAGER", "_NET_WM_STATE_SKIP_TASKBAR"]
+        if layer:
+            names.append("_NET_WM_STATE_" + layer.upper())
+        atoms = (ctypes.c_ulong * len(names))(*[self._atom(name) for name in names])
+        # format 32 is an array of long on this libX11; mode 0 replaces, which is right for a window not yet mapped.
+        self._x11.XChangeProperty(self._display, win_id, self._atom("_NET_WM_STATE"), 4, 32, 0, atoms, len(names))
+        self._x11.XFlush(self._display)
 
     def pointer_child(self) -> int | None:
         if not self._display:

@@ -31,6 +31,7 @@ play_notification = _os.play_notification
 prepare_gui_environment = _os.prepare_gui_environment
 process_cmdline = _os.process_cmdline
 register_hotkey = _os.register_hotkey
+before_show = _os.before_show
 pointer_window = _os.pointer_window
 send_behind_windows = _os.send_behind_windows
 stable_app_command = _os.stable_app_command

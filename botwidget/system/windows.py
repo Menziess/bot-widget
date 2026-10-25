@@ -56,6 +56,10 @@ def data_home() -> str:
     return os.environ.get("APPDATA") or os.path.expanduser("~")
 
 
+def before_show(win_id: int, layer: str = "") -> None:
+    """Only GNOME needs a window marked before it is mapped."""
+
+
 def pointer_window() -> int | None:
     """Only needed under XWayland; here the pointer position is known."""
     return None

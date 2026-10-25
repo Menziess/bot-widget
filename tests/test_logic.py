@@ -1493,6 +1493,21 @@ class BubbleHover(unittest.TestCase):
         self.click_face()
         self.assertEqual(focus, [1])
 
+    def test_every_show_of_the_bubble_marks_it_before_it_is_mapped(self):
+        """GNOME says "Bot Widget is ready" for a window that is mapped without skip-taskbar."""
+        from unittest import mock
+        bubble = self.window.bubble
+        with mock.patch("botwidget.qt_ui.bubble_window.before_show") as marked:
+            self.hover()
+            self.assertTrue(bubble.isVisible())
+            self.assertEqual(marked.call_count, 1)
+            bubble.place("")
+            bubble.hide()
+            bubble.show()
+            self.assertEqual(marked.call_count, 2, "a second map needs it again")
+            bubble.show()
+            self.assertEqual(marked.call_count, 2, "already shown: nothing to mark")
+
     def test_flying_past_the_face_never_takes_the_keyboard(self):
         focus = []
         self.window.bubble.focus_entry = lambda: focus.append(1)
