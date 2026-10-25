@@ -3627,6 +3627,22 @@ class MenuInBubble(unittest.TestCase):
         window._sync_bubble(window._latest(), force=True)
         self.assertIn("Hoi.", self.text(), "and the chat shows again")
 
+    def test_feedback_says_what_happened_instead_of_an_empty_bubble(self):
+        from unittest import mock
+        from PySide6.QtGui import QDesktopServices
+        bubble = self.window.bubble
+        for opened, expected in ((True, "Opened in your browser"), (False, "Could not open the browser")):
+            self.right_click()
+            with mock.patch.object(QDesktopServices, "openUrl", return_value=opened) as open_url:
+                bubble._run_command("/feedback")
+            self.assertEqual(open_url.call_count, 1)
+            self.assertTrue(bubble.isVisible())
+            self.assertFalse(bubble._list_only)
+            self.assertIn(expected, self.text())
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=time.monotonic() + 60):
+            bubble._tick()
+        self.assertFalse(bubble.isVisible(), "it goes by itself")
+
     def test_a_right_click_never_takes_away_what_you_typed(self):
         self.window.pin()
         bubble = self.window.bubble

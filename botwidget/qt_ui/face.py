@@ -1166,13 +1166,24 @@ class FaceWindow(QWidget):
             self.bubble.place("")
 
     def open_feedback(self):
-        """Open a prefilled GitHub issue in the browser. The user logs in there."""
+        """Open a prefilled GitHub issue in the browser. The user logs in there.
+
+        The bubble says what happens and then how it went, and goes by itself: never an empty bubble.
+        """
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
 
         from botwidget.startup import install_kind
+        self._menu_page = None
+        self.pinned = False
+        self.bubble.keep_for(MENU_KEEP_S)
+        self.bubble.show_blocks([status_block("Opening a GitHub issue in your browser…")], "say")
         url = menu_pages.feedback_issue_url(__version__, platform.system(), install_kind())
-        QDesktopServices.openUrl(QUrl(url))
+        opened = QDesktopServices.openUrl(QUrl(url))
+        note = ("Opened in your browser: describe what happened there." if opened
+                else "Could not open the browser. The issue page is github.com/Menziess/bot-widget/issues.")
+        self.bubble.show_blocks([status_block(note)], "say")
+        self.bubble.shown_by_pointer()
 
     def refresh(self):
         """Reload this bot's chat now. The other faces keep their own timer.
