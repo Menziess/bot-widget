@@ -350,6 +350,13 @@ class Faces(QObject):
                 next(iter(self.faces.values())).open_menu(page)
         self._save()
 
+    def refresh_others(self, agent_id: str):
+        """/refresh reloads every bot, not only the one it was typed into; Grok Bot is asked again too."""
+        for other_id, face in self.faces.items():
+            if other_id != agent_id:
+                face.reload_quietly()
+        threading.Thread(target=self._probe_grok, daemon=True).start()
+
     def close_bubbles_except(self, agent_id: str):
         """The bubble of one face is open: the others close, so that only one is up at a time."""
         for other_id, face in self.faces.items():

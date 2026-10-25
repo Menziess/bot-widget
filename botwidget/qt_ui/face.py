@@ -1194,15 +1194,34 @@ class FaceWindow(QWidget):
         self.bubble.shown_by_pointer()
 
     def refresh(self):
-        """Reload this bot's chat now. The other faces keep their own timer.
-
-        The bubble says it is busy at once, and how it went once the chat is in: never an empty bubble.
-        """
+        """Reload every bot now: this one says it is busy at once and how it went once the chat is in (never an
+        empty bubble); the others reload quietly. A bot that got stuck is reset along the way."""
+        if self.faces is not None and hasattr(self.faces, "refresh_others"):
+            self.faces.refresh_others(self.agent_id)
+        self._reset_state()
         self._menu_page = None
         self._refreshing = True
         self._refresh_note = ""
         self.bubble.keep_for(MENU_KEEP_S)
         self.bubble.show_blocks([status_block("Refreshing…"), role_panel("bot"), plain_block("dots")], "say")
+        if self.grok:
+            self.grok.request_fetch()
+        if self.hermes:
+            self.hermes.request_fetch()
+        self._poll_timer.start(0)
+
+    def _reset_state(self):
+        """What can keep a bubble from opening: a pin nobody can take off, a quiet thought, a hover pause."""
+        self.pinned = False
+        self._think_quiet = False
+        self._hover_blocked_until = 0.0
+        self._hover_retry = 0.0
+
+    def reload_quietly(self):
+        """/refresh typed into another bot: reset and reload this one without opening its bubble."""
+        self._reset_state()
+        if self.bubble.isVisible():
+            self.bubble.place("")
         if self.grok:
             self.grok.request_fetch()
         if self.hermes:

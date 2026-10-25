@@ -16,7 +16,7 @@ SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
 # No /home: the back arrow on a page and a right-click already show this list on its own.
 COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
-            ("/connections", "what was found"), ("/refresh", "reload this bot"),
+            ("/connections", "what was found"), ("/refresh", "reload every bot"),
             ("/feedback", "open a GitHub issue"))
 FEEDBACK_ISSUE = "https://github.com/Menziess/bot-widget/issues/new"
 

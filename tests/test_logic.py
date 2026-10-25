@@ -2435,6 +2435,25 @@ class BubbleHover(unittest.TestCase):
                 self.finish_growth()
             self.assertTrue(bubble.isVisible(), "and hovering opens it again")
 
+    def test_refresh_reloads_every_bot_and_unsticks_them(self):
+        from unittest import mock
+        other = self.second_face()
+        other.pinned = True
+        other._think_quiet = True
+        other._hover_blocked_until = time.monotonic() + 100
+        with mock.patch.object(type(self.window.faces), "_probe_grok") as probe:
+            self.window.on_user_message("/refresh")
+            for _ in range(20):
+                if probe.called:
+                    break
+                time.sleep(0.01)
+        self.assertTrue(probe.called, "Grok Bot is asked again")
+        self.assertTrue(other._poll_timer.isActive(), "the other bot reloads too")
+        self.assertEqual((other.pinned, other._think_quiet, other._hover_blocked_until), (False, False, 0.0))
+        self.assertFalse(other.bubble.isVisible(), "quietly: only the bot it was typed into talks")
+        self.assertTrue(self.window.bubble.isVisible())
+        self.assertIn("Refreshing", self.window.bubble.full_text)
+
     def test_a_see_through_bubble_does_not_push_the_others_aside(self):
         other = self.second_face()
         other._sync_bubble(other._latest(), force=True)
