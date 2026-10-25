@@ -61,7 +61,7 @@ from botwidget.openbot import (
 )
 from botwidget import attachments, grokbot, hermesbot, menu_pages, __version__
 from botwidget.qt_ui import desktops, screens
-from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow, mark_before_show, pointer_on_no_window
+from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window
 from botwidget.qt_ui.native import native_id, set_flags
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
@@ -419,6 +419,9 @@ class FaceWindow(QWidget):
             self._menu_page = None
             self.pinned = False
             self.bubble.keep_for(MENU_KEEP_S)
+            # Asked for on purpose: the others close, it never gives way to one of them.
+            if self.faces is not None:
+                self.faces.close_bubbles_except(self.agent_id)
             self.bubble.show_command_menu()
             return
         if event.button() != Qt.LeftButton:
@@ -611,6 +614,9 @@ class FaceWindow(QWidget):
 
     def pointer_over(self) -> bool:
         """Whether the pointer is over this window, trusting a leave that came after the last enter."""
+        on = pointer_on(self)
+        if on is not None:
+            return on
         if self._left_at is not None and (self._entered_at is None or self._left_at > self._entered_at):
             return False
         if pointer_on_no_window():
@@ -686,7 +692,8 @@ class FaceWindow(QWidget):
                 self._sync_bubble(self._chat, force=True)
                 return
         if not global_pointer():
-            hovered = self.underMouse() and not pointer_on_no_window()
+            on = pointer_on(self)
+            hovered = on if on is not None else self.underMouse() and not pointer_on_no_window()
         else:
             px, py = self._pointer()
             cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2

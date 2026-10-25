@@ -23,7 +23,7 @@ from PySide6.QtCore import (
     QVariantAnimation,
     Signal,
 )
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QImage, QPainter, QTextOption
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QGuiApplication, QImage, QPainter, QTextOption
 from PySide6.QtWidgets import QApplication, QLabel, QPlainTextEdit, QScrollArea, QTextBrowser, QWidget
 
 from botwidget import attachments, menu_pages
@@ -145,6 +145,21 @@ def pointer_on_no_window() -> bool:
     leave event.
     """
     return pointer_window() == 0
+
+
+def pointer_on(widget) -> bool | None:
+    """X: is the pointer on this very window? None where the X server cannot tell.
+
+    The answer of the X server is the top window under the pointer, so it holds when enter/leave events got
+    lost (a bubble that shrank away from under the pointer after the back arrow, a jump onto another app),
+    and a bubble hidden behind another window does not count as pointed at.
+    """
+    if QGuiApplication.platformName() != "xcb":
+        return None
+    child = pointer_window()
+    if child is None:
+        return None
+    return child == native_id(widget)
 
 
 def pasted_files(source) -> list:
@@ -813,6 +828,9 @@ class BubbleWindow(QWidget):
 
     def pointer_over(self) -> bool:
         """Whether the pointer is over the bubble, trusting a leave that came after the last enter."""
+        on = pointer_on(self)
+        if on is not None:
+            return on
         if self._left_at is not None and (self._entered_at is None or self._left_at > self._entered_at):
             return False
         if pointer_on_no_window():

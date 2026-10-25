@@ -38,6 +38,7 @@ from botwidget import (
     theme,
     updates,
 )
+from botwidget.qt_ui.native import native_id
 from botwidget.system import linux, macos, windows
 from botwidget.system.current import process_cmdline
 
@@ -2357,13 +2358,57 @@ class BubbleHover(unittest.TestCase):
                 mock.patch.object(type(self.window), "underMouse", return_value=True), \
                 mock.patch.object(type(bubble), "underMouse", return_value=True):
             bubble.enterEvent(None)
-            with mock.patch("botwidget.qt_ui.bubble_window.pointer_window", return_value=0x600021):
+            with mock.patch("botwidget.qt_ui.bubble_window.pointer_window", return_value=native_id(bubble)), \
+                    mock.patch.object(QGuiApplication, "platformName", return_value="xcb"):
                 bubble._tick()
             self.assertTrue(bubble.isVisible(), "the pointer is on one of our X windows")
             with mock.patch("botwidget.qt_ui.bubble_window.pointer_window", return_value=0), \
                     mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=start + 0.05):
                 bubble._tick()
         self.assertFalse(bubble.isVisible(), "over no X window means over another app")
+
+    def test_on_xwayland_a_bubble_the_pointer_left_without_a_leave_is_not_held_by_a_stuck_enter(self):
+        """The back arrow shrinks the page to the chat: the pointer is suddenly off the bubble, on another X
+        window, and no leave comes. A bubble that thought it was pointed at forever stayed up (also behind
+        other apps) and every other bubble, a right-click menu too, gave way to it."""
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+
+        self.hover()
+        bubble = self.window.bubble
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive), \
+                mock.patch.object(QGuiApplication, "platformName", return_value="xcb"), \
+                mock.patch.object(type(self.window), "underMouse", return_value=True), \
+                mock.patch.object(type(bubble), "underMouse", return_value=True):
+            bubble.enterEvent(None)
+            with mock.patch("botwidget.qt_ui.bubble_window.pointer_window", return_value=native_id(bubble)):
+                self.assertTrue(bubble.pointer_over())
+                bubble._tick()
+            self.assertTrue(bubble.isVisible())
+            with mock.patch("botwidget.qt_ui.bubble_window.pointer_window", return_value=0x5400004):
+                self.assertFalse(bubble.user_owned(), "the pointer is on another app's X window")
+                bubble._kept_until = 0.0
+                bubble._tick()
+        self.assertFalse(bubble.isVisible())
+
+    def test_a_right_click_closes_the_other_bubbles_instead_of_giving_way(self):
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication
+        other = self.second_face()
+        other.move(self.window.x() + 20, self.window.y() + 10)
+        other.pinned = True
+        other._sync_bubble(other._latest(), force=True)
+        other.bubble._slide.stop()
+        other.bubble._growth_done()
+        self.assertTrue(other.bubble.isVisible())
+        point = QPointF(5, 5)
+        QApplication.sendEvent(self.window, QMouseEvent(QEvent.MouseButtonPress, point, point, Qt.RightButton,
+                                                        Qt.RightButton, Qt.NoModifier))
+        self.assertTrue(self.window.bubble.isVisible(), "the menu is up")
+        self.assertFalse(other.bubble.isVisible())
 
     def test_on_wayland_a_bubble_closes_when_the_pointer_never_came_near_it(self):
         from unittest import mock
