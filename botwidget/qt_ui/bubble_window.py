@@ -124,9 +124,6 @@ TAIL_LENGTH = 7
 THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the balls on their arc
 
 USER_KEEP_S = 3.0  # what the user does with a bubble keeps it open this long, pointer or not
-# A leave is all a Wayland client hears about the pointer; the gap between the face and the bubble is
-# no window of ours, so the pointer gets this long to cross it before the bubble believes it left.
-CROSS_GAP_S = 0.6
 
 
 def pasted_files(source) -> list:
@@ -1360,12 +1357,12 @@ class BubbleWindow(QWidget):
             self._was_near = False
             self.changed = now
         elif self._was_near:
-            # On a platform that only reports the pointer over our own windows, that leave may be the
-            # pointer crossing the gap to the face: it gets a moment.
-            if self.face.pointer_known() or now - self._near_at >= CROSS_GAP_S:
-                self.face.pinned = False
-                self.place("")
-                return
+            # The pointer left the bubble: close it straight away.
+            # Moving from the face onto its own bubble is already handled by
+            # face.pointer_near(self) being true, which is caught above.
+            self.face.pinned = False
+            self.place("")
+            return
         elif self.changed and now - self.changed > reading_seconds(self.full_text):
             # Nobody pointed at it and nothing new came: it goes away after a while.
             self.face.pinned = False

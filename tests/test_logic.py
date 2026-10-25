@@ -335,36 +335,37 @@ class GrokAvatarFallback(unittest.TestCase):
             self.assertLessEqual((sx - 800) ** 2 + sy ** 2, 120 ** 2 + 1)
 
     def test_the_pointer_opens_the_arc_from_the_top_middle(self):
-        """Should open for a point on the visible dome, not well below it."""
+        """Should open just under the top edge, not below the shallow catch strip."""
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
         faces._hotspot = lambda: (800.0, 0.0)
-        self.assertTrue(faces._pointer_over_arc(800, 100))
+        self.assertTrue(faces._pointer_over_arc(800, 60))
+        self.assertFalse(faces._pointer_over_arc(800, 80))
         self.assertFalse(faces._pointer_over_arc(800, 150))
         self.assertFalse(faces._pointer_over_arc(800, 400))
         self.assertFalse(faces._in_hotspot(800, 150))
 
     def test_the_top_catch_is_a_quarter_of_the_old_area(self):
-        """Stefan's half circle: a 280x100 strip on the top edge, not the old 560x200 one."""
+        """Stefan's half circle: a 200x70 strip on the top edge, not the old 560x200 one."""
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from PySide6.QtWidgets import QApplication, QWidget
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
         from botwidget.qt_ui.faces import ARC_CATCH_X, ARC_CATCH_Y, Faces
-        self.assertEqual((ARC_CATCH_X, ARC_CATCH_Y), (140, 100), "plain constants, not derived from the radius")
+        self.assertEqual((ARC_CATCH_X, ARC_CATCH_Y), (100, 70), "plain constants, not derived from the radius")
         app = QApplication.instance() or QApplication([])
         faces = Faces.__new__(Faces)
         faces._hotspot = lambda: (800.0, 0.0)
         faces._catcher = QWidget()
         faces._place_catcher()
         geo = faces._catcher.geometry()
-        self.assertEqual((geo.width(), geo.height()), (280, 100))
-        self.assertEqual((geo.x(), geo.y()), (660, 0))
+        self.assertEqual((geo.width(), geo.height()), (200, 70))
+        self.assertEqual((geo.x(), geo.y()), (700, 0))
         self.assertIsNotNone(app)
-        self.assertTrue(faces._pointer_over_arc(800 + 139, 99), "the near corner still catches")
-        self.assertFalse(faces._pointer_over_arc(800 + 141, 50), "22px wider than the old catch")
-        self.assertFalse(faces._pointer_over_arc(800, 101))
+        self.assertTrue(faces._pointer_over_arc(800 + 99, 69), "the near corner still catches")
+        self.assertFalse(faces._pointer_over_arc(800 + 101, 50), "2px wider than the catch")
+        self.assertFalse(faces._pointer_over_arc(800, 71), "2px deeper than the catch")
         self.assertFalse(faces._pointer_over_arc(800 + 200, 150))
 
     def test_arc_bots_leave_the_centre_one_at_a_time_and_return_last_first(self):
@@ -2102,10 +2103,10 @@ class BubbleHover(unittest.TestCase):
             with mock.patch.object(type(bubble), "underMouse", return_value=True):
                 self.assertTrue(self.window.pointer_near(bubble), "the pointer is on the bubble")
 
-    def test_on_wayland_the_gap_between_face_and_bubble_is_a_moment_and_not_a_leave(self):
+    def test_on_wayland_a_bubble_closes_at_once_when_the_pointer_leaves(self):
+        """No close grace: off the bubble for one frame and it goes. Only the face-to-bubble move is kept."""
         from contextlib import ExitStack
         from unittest import mock
-        from botwidget.qt_ui import bubble_window
         bubble = self.open_settings()
         bubble._kept_until = 0.0
         start = time.monotonic()
@@ -2120,15 +2121,8 @@ class BubbleHover(unittest.TestCase):
 
         tick(start, over=True)
         self.assertTrue(bubble.isVisible(), "the pointer was on it")
-        tick(start + 0.2, over=False)
-        self.assertTrue(bubble.isVisible(), "off the window: that may be the gap on the way to the face")
-        tick(start + 0.5, over=False)
-        self.assertTrue(bubble.isVisible(), "still within the crossing")
-        tick(start + 0.55, over=True)
-        tick(start + 0.95, over=False)
-        self.assertTrue(bubble.isVisible(), "back on the bubble: the moment starts over")
-        tick(start + 1.3, over=False)
-        self.assertFalse(bubble.isVisible(), "away for longer than a crossing: gone")
+        tick(start + 0.05, over=False)
+        self.assertFalse(bubble.isVisible(), "one frame away, no grace delay")
 
     def test_on_wayland_crossing_from_the_face_onto_the_bubble_does_not_close_it(self):
         """The gap between face and bubble is not a leave: the bubble stays when the pointer lands on it."""
@@ -2159,44 +2153,31 @@ class BubbleHover(unittest.TestCase):
         tick(start, face_over=True, bubble_over=False)
         self.assertTrue(bubble.isVisible(), "face hover opened the bubble")
 
-        # Pointer left the face, is in the gap. Bubble must stay visible (gap < CROSS_GAP_S).
-        tick(start + 0.2, face_over=False, bubble_over=False)
-        self.assertTrue(bubble.isVisible(), "the gap between face and bubble is not a leave")
-
-        # Pointer lands on the bubble inside the gap. Bubble must stay visible and the gap timer restarts.
-        tick(start + 0.25, face_over=False, bubble_over=True)
-        self.assertTrue(bubble.isVisible(), "on the bubble: still open")
-
-        # The face window's leave must not cancel the grace: an already-read bubble stays through the gap.
+        # Straight off the face onto its own bubble: one move, not a leave. The read bubble stays.
+        window.leaveEvent(None)
         bubble.changed = start - 1000
-        bubble.leaveEvent(None)
-        tick(start + 0.3, face_over=False, bubble_over=False)
-        self.assertTrue(bubble.isVisible(), "leaving the face on the way to the bubble is not a close")
+        tick(start + 0.01, face_over=False, bubble_over=True)
+        self.assertTrue(bubble.isVisible(), "landing on its own bubble is the same hover, not a leave")
 
     def test_on_wayland_the_bubble_closes_when_the_pointer_is_far_and_the_app_stays_active(self):
         """XWayland keeps the app active and underMouse() stuck true after the pointer has left both windows."""
         from unittest import mock
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
-        from botwidget.qt_ui.bubble_window import CROSS_GAP_S
 
         self.hover()
         bubble = self.window.bubble
         self.assertTrue(bubble.isVisible())
         start = time.monotonic()
-        # The pointer leaves our windows now, while the grace from the last hover is still running,
-        # and Qt then keeps reporting underMouse() true on both windows (stale on XWayland).
+        # The pointer leaves both windows and Qt keeps reporting underMouse() true (stale on XWayland).
+        # The next frame must close it: there is no grace to wait out.
         with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
                 mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive), \
                 mock.patch.object(type(self.window), "underMouse", return_value=True), \
                 mock.patch.object(type(bubble), "underMouse", return_value=True):
             self.window.leaveEvent(None)
             bubble.leaveEvent(None)
-            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=start + 0.2):
-                bubble._tick()
-            self.assertTrue(bubble.isVisible(), "a moment in the gap may still be the crossing")
-            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic",
-                            return_value=start + CROSS_GAP_S + 0.2):
+            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=start + 0.05):
                 bubble._tick()
         self.assertFalse(bubble.isVisible(), "a stuck underMouse must not hold the bubble after both windows were left")
 
