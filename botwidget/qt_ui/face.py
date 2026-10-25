@@ -61,7 +61,7 @@ from botwidget.openbot import (
 )
 from botwidget import attachments, grokbot, hermesbot, menu_pages, __version__
 from botwidget.qt_ui import desktops, screens
-from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow
+from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow, pointer_on_no_window
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
 from botwidget.system.current import activate_app, send_behind_windows
@@ -564,6 +564,8 @@ class FaceWindow(QWidget):
         """Whether the pointer is over this window, trusting a leave that came after the last enter."""
         if self._left_at is not None and (self._entered_at is None or self._left_at > self._entered_at):
             return False
+        if pointer_on_no_window():
+            return False
         return self.underMouse()
 
     def _pointer(self) -> tuple:
@@ -635,7 +637,7 @@ class FaceWindow(QWidget):
                 self._sync_bubble(self._chat, force=True)
                 return
         if not global_pointer():
-            hovered = self.underMouse()
+            hovered = self.underMouse() and not pointer_on_no_window()
         else:
             px, py = self._pointer()
             cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2

@@ -149,6 +149,11 @@ def move_to_active_space(win_id: int) -> None:
     _send(objc, None)(window, objc.sel_registerName(b"orderFrontRegardless"))
 
 
+def pointer_window() -> int | None:
+    """Only needed under XWayland; here the pointer position is known."""
+    return None
+
+
 def send_behind_windows(win_id: int) -> None:
     """Just above the desktop icons and below all normal windows, on every desktop.
 

@@ -54,6 +54,11 @@ def data_home() -> str:
     return os.environ.get("APPDATA") or os.path.expanduser("~")
 
 
+def pointer_window() -> int | None:
+    """Only needed under XWayland; here the pointer position is known."""
+    return None
+
+
 def send_behind_windows(win_id: int) -> None:
     # Qt puts the window at the bottom itself (HWND_BOTTOM).
     pass

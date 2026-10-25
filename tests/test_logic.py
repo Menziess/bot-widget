@@ -2182,6 +2182,29 @@ class BubbleHover(unittest.TestCase):
         self.assertFalse(bubble.isVisible(), "a stuck underMouse must not hold the bubble after both windows were left")
 
 
+    def test_on_xwayland_the_bubble_closes_when_the_pointer_goes_onto_another_app_without_a_leave(self):
+        """Straight from the bubble onto a Wayland window: no leave event arrives and underMouse() stays true,
+        but X says the pointer is over no X window any more."""
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+
+        self.hover()
+        bubble = self.window.bubble
+        start = time.monotonic()
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive), \
+                mock.patch.object(type(self.window), "underMouse", return_value=True), \
+                mock.patch.object(type(bubble), "underMouse", return_value=True):
+            bubble.enterEvent(None)
+            with mock.patch("botwidget.qt_ui.bubble_window.pointer_window", return_value=0x600021):
+                bubble._tick()
+            self.assertTrue(bubble.isVisible(), "the pointer is on one of our X windows")
+            with mock.patch("botwidget.qt_ui.bubble_window.pointer_window", return_value=0), \
+                    mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=start + 0.05):
+                bubble._tick()
+        self.assertFalse(bubble.isVisible(), "over no X window means over another app")
+
     def test_on_wayland_a_bubble_closes_when_the_pointer_never_came_near_it(self):
         from unittest import mock
         bubble = self.open_settings()

@@ -157,6 +157,21 @@ def send_behind_windows(win_id: int) -> None:
     lib.behind(int(win_id))
 
 
+def pointer_window() -> int | None:
+    """The top-level X window under the pointer, 0 when it is over no X window at all, None when unknown.
+
+    XWayland keeps the last pointer position when the pointer moves onto a Wayland window, but it does move
+    its sprite to the root, so the child under the pointer becomes 0. Enter/leave events can get lost on the
+    way; this asks the X server directly.
+    """
+    if os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        return None
+    lib = _xlib()
+    if lib is None:
+        return None
+    return lib.pointer_child()
+
+
 class _Xlib:
     def __init__(self):
         x11 = ctypes.CDLL("libX11.so.6")
@@ -173,10 +188,24 @@ class _Xlib:
                                    ctypes.c_long, ctypes.c_void_p]
         x11.XLowerWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
         x11.XFlush.argtypes = [ctypes.c_void_p]
+        ulong, sint = ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_int)
+        x11.XQueryPointer.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ulong, ulong, sint, sint, sint, sint,
+                                      ctypes.POINTER(ctypes.c_uint)]
         self._x11 = x11
         self._display = x11.XOpenDisplay(None)
         self._root = x11.XDefaultRootWindow(self._display) if self._display else 0
         self._atoms = {}
+
+    def pointer_child(self) -> int | None:
+        if not self._display:
+            return None
+        root, child = ctypes.c_ulong(), ctypes.c_ulong()
+        a, b, c, d = ctypes.c_int(), ctypes.c_int(), ctypes.c_int(), ctypes.c_int()
+        mask = ctypes.c_uint()
+        same_screen = self._x11.XQueryPointer(self._display, self._root, ctypes.byref(root), ctypes.byref(child),
+                                              ctypes.byref(a), ctypes.byref(b), ctypes.byref(c), ctypes.byref(d),
+                                              ctypes.byref(mask))
+        return child.value if same_screen else 0
 
     def _atom(self, name: str) -> int:
         cached = self._atoms.get(name)

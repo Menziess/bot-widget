@@ -47,7 +47,7 @@ from botwidget.config import always_on_top
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, screens
-from botwidget.system.current import send_behind_windows
+from botwidget.system.current import pointer_window, send_behind_windows
 from botwidget.qt_ui.controls import ActionButton, SlashList, Switch
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
@@ -124,6 +124,16 @@ TAIL_LENGTH = 7
 THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the balls on their arc
 
 USER_KEEP_S = 3.0  # what the user does with a bubble keeps it open this long, pointer or not
+
+
+def pointer_on_no_window() -> bool:
+    """XWayland: the pointer is over no X window at all, so it is on another app or the desktop.
+
+    The enter/leave events of our windows can get lost when the pointer goes straight onto a Wayland window;
+    the X server's own answer does not. Only 0 counts: another X window under the pointer is left to the
+    leave event.
+    """
+    return pointer_window() == 0
 
 
 def pasted_files(source) -> list:
@@ -789,6 +799,8 @@ class BubbleWindow(QWidget):
     def pointer_over(self) -> bool:
         """Whether the pointer is over the bubble, trusting a leave that came after the last enter."""
         if self._left_at is not None and (self._entered_at is None or self._left_at > self._entered_at):
+            return False
+        if pointer_on_no_window():
             return False
         return self.underMouse()
 
