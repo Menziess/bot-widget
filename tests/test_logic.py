@@ -1939,6 +1939,7 @@ class BubbleHover(unittest.TestCase):
         self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Nog iets."}], "activity": ""})
         self.assertFalse(self.window.bubble._notice.isVisible())
 
+    @unittest.skipIf(sys.platform == "win32", "Cmd+Backspace is a Mac key; Windows Qt deletes a word on Ctrl+Backspace first")
     def test_cmd_backspace_deletes_the_line_before_the_cursor(self):
         from unittest import mock
         from PySide6.QtCore import Qt
@@ -2500,7 +2501,7 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(bubble._attachments, [])
         self.assertFalse(bubble._attachment_row.isVisibleTo(bubble))
         self.assertEqual(self.window._outbox.items[0]["text"],
-                         "Kijk even\n\nAttached local files:\n- twee.pdf: /x/twee.pdf")
+                         "Kijk even\n\nAttached local files:\n- twee.pdf: " + str(Path("/x/twee.pdf")))
 
     def test_a_file_alone_is_a_message_and_a_queued_one_keeps_its_file_for_editing(self):
         from pathlib import Path
@@ -3885,7 +3886,10 @@ class MenuInBubble(unittest.TestCase):
         self.right_click()
         bubble = self.window.bubble
         slash = bubble._slash
-        self.assertGreaterEqual(bubble._geom[1], slash.wanted_width(), "the bubble is wide enough for the notes")
+        # As wide as the notes need, up to the cap; wider fonts (Windows) get their notes elided, never cut.
+        from botwidget.qt_ui.bubble_window import BUBBLE_MAX_W
+        cap = BUBBLE_MAX_W + 60
+        self.assertGreaterEqual(bubble._geom[1], min(slash.wanted_width(), cap), "the bubble is wide enough for the notes")
         image = QImage(slash.width(), slash.height(), QImage.Format_ARGB32)
         image.fill(QColor("#ffffff"))
         from PySide6.QtCore import QPoint
