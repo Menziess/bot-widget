@@ -24,3 +24,16 @@ def set_flags(widget, flags) -> None:
     widget.setWindowFlags(flags)
     if created:
         widget.destroy()
+
+
+def drop_hidden(widget) -> None:
+    """X: a window that was just hidden gives up its native window; the next show makes a new one.
+
+    A bubble that opens and closes again before the window manager handled its map request is mapped anyway
+    once the manager gets to it, after Qt's unmap: Qt calls it hidden, the X server shows an invisible window
+    on top of the face. That ghost takes the pointer (no hover-open) and the clicks (no right-click menu)
+    until the bot is restarted. A destroyed window cannot be mapped late.
+    """
+    from PySide6.QtGui import QGuiApplication
+    if QGuiApplication.platformName() == "xcb" and widget.windowHandle() is not None and not widget.isVisible():
+        widget.destroy()

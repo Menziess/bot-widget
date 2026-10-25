@@ -2319,6 +2319,45 @@ class BubbleHover(unittest.TestCase):
             self.assertFalse(bubble.isVisible(), "left it: closed at once")
             self.assertIsNone(bubble._reserve_win, "and the place holder is gone")
 
+    def test_on_x_a_closed_bubble_leaves_no_window_the_window_manager_could_still_map(self):
+        """Opened and closed again before the window manager mapped it: Mutter maps it anyway, after Qt's
+        unmap. That invisible window sat on the face, took hover and right-click, and the bot looked stuck."""
+        from unittest import mock
+        from PySide6.QtGui import QGuiApplication
+        window = self.window
+        window.show()
+        bubble = window.bubble
+        with mock.patch.object(QGuiApplication, "platformName", return_value="xcb"):
+            window.open_command_menu()
+            self.assertTrue(bubble.isVisible())
+            self.assertIsNotNone(bubble.windowHandle())
+            bubble.place("")
+            self.assertIsNone(bubble.windowHandle(), "closed: no X window left that a late map could show")
+            window.open_command_menu()
+            self.assertTrue(bubble.isVisible(), "and it opens again on a new window")
+            self.assertIsNotNone(bubble.windowHandle())
+
+    def test_a_bubble_whose_state_lost_step_with_its_window_opens_again_on_hover_and_right_click(self):
+        """Backstop: the bubble thinks it is closed but its window is up (or the other way round). Pointing at
+        the face or a right-click must still open it, not leave the bot stuck until a restart."""
+        window = self.window
+        window.show()
+        bubble = window.bubble
+        self.hover()
+        self.assertTrue(bubble.isVisible())
+        bubble.kind = ""  # closed in name only
+        bubble._physics.stop()
+        self.where["at"] = (5000, 5000)
+        window._animate()
+        window._hover_retry = window._hover_blocked_until = 0.0
+        self.hover()
+        self.assertTrue(bubble.isVisible())
+        self.assertNotEqual(bubble.kind, "", "pointing at the face opened it for real")
+        self.assertTrue(bubble._physics.isActive())
+        bubble.hide()  # open in name only: the window is gone
+        window.open_command_menu()
+        self.assertTrue(bubble.isVisible(), "a right-click shows the command list")
+
     def test_on_wayland_only_our_own_windows_count_as_the_pointer_being_there(self):
         from unittest import mock
         bubble = self.open_settings()

@@ -698,6 +698,8 @@ class FaceWindow(QWidget):
             hovered = (px - cx) ** 2 + (py - cy) ** 2 <= ON_FACE ** 2
         self._hovered = hovered
         now = time.monotonic()
+        if hovered:
+            self.bubble.heal()
         if not hovered:
             self._hover_since = 0.0
             return
@@ -1232,6 +1234,7 @@ class FaceWindow(QWidget):
     def open_command_menu(self):
         """Right-click, or back from a page: the command list in the bubble. Asked for on purpose, so the other
         bubbles close and it never gives way to one of them."""
+        self.bubble.heal()
         self._menu_page = None
         self.pinned = False
         if self.faces is not None:

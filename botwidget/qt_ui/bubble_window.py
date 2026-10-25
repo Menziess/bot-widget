@@ -49,7 +49,7 @@ from botwidget.config import always_on_top
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, screens
-from botwidget.qt_ui.native import native_id, set_flags
+from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
 from botwidget.qt_ui.controls import ActionButton, SlashList, Switch
 from botwidget.qt_ui.measure import measure
@@ -531,6 +531,8 @@ class ReserveWindow(QWidget):
         if visible and not self.isVisible():
             mark_before_show(self)
         super().setVisible(visible)
+        if not visible:
+            drop_hidden(self)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -1439,6 +1441,8 @@ class BubbleWindow(QWidget):
         if visible and not self.isVisible():
             mark_before_show(self)
         super().setVisible(visible)
+        if not visible:
+            drop_hidden(self)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -1532,6 +1536,17 @@ class BubbleWindow(QWidget):
         if abs(tx - nx) < 0.6 and abs(self._vx) < 0.35 and abs(ty - ny) < 0.6 and abs(self._vy) < 0.35:
             nx, ny, self._vx, self._vy = tx, ty, 0.0, 0.0
         self.move(int(nx), int(ny))
+
+    def heal(self) -> bool:
+        """Backstop: the bubble's state and its window disagree (open without a window, a window without being
+        open, open without the physics that closes it). Close it for real, so pointing at the face or a
+        right-click opens it again instead of the bot looking stuck. True when something was wrong."""
+        visible = self.isVisible()
+        if (visible and not self.kind) or (self.kind and not visible and not self._yielding) \
+                or (self.kind and not self._physics.isActive()):
+            self.place("")
+            return True
+        return False
 
     def place(self, kind: str):
         """Show or hide the bubble. The face stays."""
