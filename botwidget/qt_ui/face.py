@@ -636,13 +636,13 @@ class FaceWindow(QWidget):
             # whether it is hovering the bubble itself.
             if self.pointer_over():
                 return True
-            return bubble.isVisible() and (bubble.pointer_over() or bubble.in_reserve())
+            return bubble.isVisible() and bubble.pointer_over()
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         if (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2:
             return True
-        return bubble.isVisible() and (bubble.frameGeometry().adjusted(-margin, -margin, margin, margin).contains(
-            QPoint(px, py)) or bubble.in_reserve())
+        return bubble.isVisible() and bubble.frameGeometry().adjusted(-margin, -margin, margin, margin).contains(
+            QPoint(px, py))
 
     def pointer_known(self) -> bool:
         """Whether the platform says where the pointer is outside our own windows."""

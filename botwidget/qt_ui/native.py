@@ -38,9 +38,3 @@ def drop_hidden(widget) -> None:
     if QGuiApplication.platformName() == "xcb" and widget.windowHandle() is not None and not widget.isVisible():
         widget.destroy()
 
-
-def mapped(widget) -> bool:
-    """Is the window really on screen yet? The window manager maps a shown window a moment later (5-20 ms
-    measured on XWayland); until Qt gets its expose, the X server knows nothing of it under the pointer."""
-    handle = widget.windowHandle()
-    return handle is not None and handle.isExposed()

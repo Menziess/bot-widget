@@ -2302,7 +2302,7 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         bubble.command.emit("page/commands")
         self.finish_growth()
-        self.assertFalse(bubble.frameGeometry().contains(QPoint(*self.where["at"])), "the list is smaller")
+        self.assertFalse(bubble.card().contains(QPoint(*self.where["at"])), "the list is smaller")
         return bubble, page
 
     def test_the_area_of_the_bigger_bubble_stays_hover_area_after_the_back_arrow(self):
@@ -2320,37 +2320,27 @@ class BubbleHover(unittest.TestCase):
             bubble._tick()
             self.assertFalse(bubble.isVisible(), "out of it: closed at once, the pointer had been on the bubble")
 
-    def test_on_xwayland_the_reserved_area_is_an_x_window_until_the_pointer_leaves_it(self):
-        """XWayland only knows the pointer over X windows: the spot of the bigger bubble is held by a
-        see-through window, so the X server can say when the pointer leaves it."""
+    def test_on_xwayland_the_window_keeps_the_page_area_so_x_names_the_bubble_until_the_pointer_leaves(self):
+        """XWayland only knows the pointer over X windows: after the back arrow the bubble's own window keeps
+        the area of the page, see-through around the smaller card, so the X server names the bubble there."""
         from unittest import mock
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtGui import QGuiApplication
         window = self.window
         window.show()
-
-        def under_pointer():
-            x, y = self.where["at"]
-            bubble = window.bubble
-            reserve = bubble._reserve_win
-            for widget in (bubble, window, reserve):
-                if widget is not None and widget.isVisible() and widget.geometry().contains(QPoint(int(x), int(y))):
-                    return native_id(widget)
-            return 0
-
-        with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive), \
-                mock.patch.object(QGuiApplication, "platformName", return_value="xcb"), \
-                mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
-                mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer):
+        with self.x_pointer(), \
+                mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive):
             bubble, page = self.back_arrow_leaves_the_pointer_outside()
-            self.assertIsNotNone(bubble._reserve_win)
-            self.assertEqual(bubble._reserve_win.geometry(), page)
+            self.assertTrue(bubble.frameGeometry().contains(page), "the window still covers the page")
+            self.assertTrue(bubble.frameGeometry().contains(bubble.card()))
+            from botwidget.qt_ui import bubble_window as bubble_module
+            self.assertEqual(bubble_module.pointer_window(), native_id(bubble), "X names the bubble there")
             bubble._tick()
-            self.assertTrue(bubble.isVisible(), "the pointer is on the reserved window")
+            self.assertTrue(bubble.isVisible(), "the pointer is on the bubble's window")
             self.where["at"] = (page.right() + 200, page.top() + 60)
             bubble._tick()
             self.assertFalse(bubble.isVisible(), "left it: closed at once")
-            self.assertIsNone(bubble._reserve_win, "and the place holder is gone")
+            self.assertIsNone(bubble.holding_area(), "and the window holds nothing any more")
 
     def test_nothing_that_happens_by_itself_closes_a_bubble_the_pointer_is_on(self):
         """Focus taken by another window, the time to read it, a poll with an empty chat: none of them may take
@@ -2393,7 +2383,8 @@ class BubbleHover(unittest.TestCase):
         - a closed bubble never leaves the face unresponsive: pointing at the face opens it again."""
         import random
         from PySide6.QtCore import QPoint, Qt
-        from PySide6.QtGui import QGuiApplication, QRegion
+        from PySide6.QtGui import QGuiApplication
+        from botwidget.qt_ui import bubble_window as bubble_module
         from unittest import mock
         from botwidget.qt_ui import face as face_module
         state = dict(self.settings_state())
@@ -2422,8 +2413,12 @@ class BubbleHover(unittest.TestCase):
                     self.assertTrue(bubble.isVisible() and bubble.engaged(),
                                     f"the pointer is not on the bubble while it changes, after {held[-6:]}")
                 # A frame as it comes: the bubble as it is drawn now is what the pointer is on or not.
+                inside = bubble.isVisible() and bubble_module.pointer_window() == native_id(bubble)
                 if bubble._physics.isActive():
                     bubble._tick()
+                if inside:
+                    self.assertTrue(bubble.isVisible(), f"closed with the pointer in its window, after {held or ''}")
+                self.window_holds(bubble, "on a frame")
                 window._animate()
                 clock[0] += 0.016
                 if bubble._growth is not None:
@@ -2435,12 +2430,7 @@ class BubbleHover(unittest.TestCase):
         def check(step, log):
             self.assertTrue(bubble.consistent(), f"state {bubble.state()} vs window, after {log[-6:]}")
             self.one_content(bubble, f"after {log[-6:]}")
-            self.reserve_is_current(bubble, f"after {log[-6:]}")
-            win = bubble._reserve_win
-            if win is not None and win.isVisible() and bubble.isVisible():
-                held = win.mask().translated(win.pos()) if not win.mask().isEmpty() else QRegion(win.geometry())
-                self.assertFalse(held.intersects(QRegion(bubble.frameGeometry())),
-                                 f"the place holder covers the bubble, after {log[-6:]}")
+            self.window_holds(bubble, f"after {log[-6:]}")
 
         def responsive(log):
             """Point at the face for long enough: the bubble opens."""
@@ -2469,10 +2459,10 @@ class BubbleHover(unittest.TestCase):
                     if op == "hover":
                         self.where["at"] = (window.x() + 34, window.y() + 34)
                     elif op == "on_bubble" and bubble.isVisible():
-                        centre = bubble.frameGeometry().center()
+                        centre = bubble.card().center()
                         self.where["at"] = (centre.x(), centre.y())
                     elif op == "edge" and bubble.isVisible():
-                        frame = bubble.frameGeometry()
+                        frame = bubble.card()
                         self.where["at"] = (frame.left() + 2, frame.bottom() - 2)
                     elif op == "leave":
                         self.where["at"] = (5000, 5000)
@@ -2501,7 +2491,7 @@ class BubbleHover(unittest.TestCase):
                             window.open_menu(rnd.choice(["settings", "bots", "connections"]))  # a page first
                             frames()
                         # The pointer somewhere on the page, often low on it, where the list will not be.
-                        frame = bubble.frameGeometry()
+                        frame = bubble.card()
                         self.where["at"] = (rnd.randint(frame.left() + 10, frame.right() - 10),
                                             rnd.randint(frame.center().y(), frame.bottom() - 10))
                         frames(1)
@@ -2538,7 +2528,7 @@ class BubbleHover(unittest.TestCase):
                     frames(held=log if swap and engaged_before else None)
                     check(step, log)
                     if op in automatic and engaged_before:
-                        here = bubble._reserved is not None or bubble.frameGeometry().contains(pointer()) \
+                        here = bubble.frameGeometry().contains(pointer()) \
                             or window.geometry().contains(pointer())
                         if here:
                             self.assertTrue(bubble.isVisible(), f"closed under the pointer, after {log[-6:]}")
@@ -2556,7 +2546,7 @@ class BubbleHover(unittest.TestCase):
 
     def x_pointer(self):
         """XWayland as on Stefan's desktop: X says which of our windows is under the pointer (no hover margin),
-        a place holder mapped after the bubble lies on top of it, and a window mask lets the pointer through."""
+        the bubble lies over its face, and a window mask lets the pointer through."""
         from unittest import mock
         from PySide6.QtCore import QPoint
         from PySide6.QtGui import QGuiApplication
@@ -2565,8 +2555,8 @@ class BubbleHover(unittest.TestCase):
         def under_pointer():
             x, y = self.where["at"]
             point = QPoint(int(x), int(y))
-            for widget in (window.bubble._reserve_win, window.bubble, window):
-                if widget is None or not widget.isVisible() or not widget.geometry().contains(point):
+            for widget in (window.bubble, window):
+                if not widget.isVisible() or not widget.geometry().contains(point):
                     continue
                 mask = widget.mask()
                 if mask.isEmpty() or mask.contains(point - widget.pos()):
@@ -2579,37 +2569,19 @@ class BubbleHover(unittest.TestCase):
         stack.enter_context(mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer))
         return stack
 
-    def test_on_x_the_back_arrow_keeps_the_bubble_while_its_place_holder_is_not_mapped_yet(self):
-        """As measured on Stefan's X: the place holder is mapped 5-20 ms after its show, while the bubble
-        already shrinks frame by frame. Until then X names no window of ours under the pointer low on the
-        page; that is not the pointer leaving."""
+    def test_the_back_arrow_keeps_the_page_area_in_the_bubbles_own_window_on_every_frame(self):
+        """Stefan, after the back arrow with the pointer low on the page: the bubble just disappears. A second,
+        see-through window that held the page's area had to be mapped and stacked by the window manager on its own
+        (late, or under another app), and until then X named no window of ours under the pointer. Now the
+        bubble's own window keeps the page's area on every frame while the card shrinks inside it: X names the
+        bubble there from the first frame on, and leaving that window still closes it at once."""
         from unittest import mock
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtGui import QGuiApplication
+        from botwidget.qt_ui import bubble_window as bubble_module
         window = self.window
         window.show()
-        mapped = {"reserve": False}
-
-        def under_pointer():
-            x, y = self.where["at"]
-            point = QPoint(int(x), int(y))
-            for widget in (window.bubble._reserve_win, window.bubble, window):
-                if widget is None or not widget.isVisible() or not widget.geometry().contains(point):
-                    continue
-                if widget is window.bubble._reserve_win and not mapped["reserve"]:
-                    continue
-                mask = widget.mask()
-                if mask.isEmpty() or mask.contains(point - widget.pos()):
-                    return native_id(widget)
-            return 0
-
-        def is_mapped(widget):
-            return mapped["reserve"] if widget is window.bubble._reserve_win else True
-
-        with mock.patch.object(QGuiApplication, "platformName", return_value="xcb"), \
-                mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
-                mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer), \
-                mock.patch("botwidget.qt_ui.bubble_window.mapped", side_effect=is_mapped, create=True), \
+        with self.x_pointer(), \
                 mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive):
             bubble = self.open_settings()
             page = bubble.frameGeometry()
@@ -2617,18 +2589,19 @@ class BubbleHover(unittest.TestCase):
             bubble._tick()
             self.assertTrue(bubble.isVisible())
             bubble.command.emit("page/commands")
-            self.assertIsNotNone(bubble._reserve_win, "the list is smaller than the page")
             for ms in range(0, 400, 16):
-                if ms >= 32:
-                    mapped["reserve"] = True
                 if bubble._growth is not None:
                     bubble._slide.setCurrentTime(min(ms, bubble._slide.duration()))
+                self.assertTrue(bubble.frameGeometry().contains(page), f"the window let go of the page at {ms} ms")
+                self.assertTrue(bubble.frameGeometry().contains(bubble.card()), f"the card sticks out at {ms} ms")
+                self.assertEqual(bubble_module.pointer_window(), native_id(bubble), f"X lost the bubble at {ms} ms")
                 bubble._tick()
                 self.assertTrue(bubble.isVisible(), f"closed {ms} ms after the back arrow")
             self.assertTrue(bubble._list_only)
+            self.assertFalse(bubble.card().contains(QPoint(*self.where["at"])), "the card is the smaller list")
             self.where["at"] = (page.right() + 200, page.top() + 60)
             bubble._tick()
-            self.assertFalse(bubble.isVisible(), "leaving the area still closes it")
+            self.assertFalse(bubble.isVisible(), "leaving the window still closes it")
 
     def choose_from_the_menu(self, command):
         """Right-click the face, point at the command's row and click it; the page grows in frame by frame."""
@@ -2705,25 +2678,21 @@ class BubbleHover(unittest.TestCase):
                             self.one_content(bubble, f"back from {command}")
                     bubble.close_bubble("refresh")
 
-    def live_reserves(self):
-        from PySide6.QtWidgets import QApplication
-        from botwidget.qt_ui.bubble_window import ReserveWindow
-        return [w for w in QApplication.topLevelWidgets() if isinstance(w, ReserveWindow) and w.isVisible()]
+    def window_holds(self, bubble, when=""):
+        """While a shrink is pending the window still covers the old area (and the card); else it is the card."""
+        held = bubble.holding_area()
+        if held is None:
+            if bubble.isVisible():
+                self.assertEqual(bubble.frameGeometry(), bubble.card(), f"a window bigger than its card {when}")
+            return
+        self.assertEqual(bubble.state(), "open", f"an area held for a bubble that is not open {when}")
+        self.assertTrue(bubble.frameGeometry().contains(held), f"the window let go of the old area {when}")
+        self.assertTrue(bubble.frameGeometry().contains(bubble.card()), f"the card sticks out {when}")
 
-    def reserve_is_current(self, bubble, when=""):
-        """No place holder unless its bubble is open and still holding that area, and never a second one."""
-        live = self.live_reserves()
-        if bubble._reserve_win is None:
-            self.assertEqual(live, [], f"a place holder outlived its bubble's change {when}")
-        else:
-            self.assertEqual(bubble.state(), "open", f"a place holder for a bubble that is not open {when}")
-            self.assertIsNotNone(bubble._reserved)
-            self.assertEqual(live, [bubble._reserve_win], f"an old place holder is still up {when}")
-
-    def test_the_place_holder_of_a_bigger_bubble_goes_with_the_next_change_or_a_yield(self):
-        """After the back arrow the list holds the page's area. A next change of content (another right-click,
-        with the pointer on the list) or giving way to another bubble ended that, but the see-through window
-        stayed: an empty window on the screen that still counted as the bubble."""
+    def test_the_held_area_of_a_bigger_bubble_goes_once_the_pointer_is_on_the_card_or_with_a_yield(self):
+        """After the back arrow the window holds the page's area. Once the pointer is on the smaller card, or the
+        bubble gives way to another one or closes, the window is the card again: no see-through area is left on
+        the screen that still counts as the bubble."""
         from unittest import mock
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
@@ -2732,24 +2701,52 @@ class BubbleHover(unittest.TestCase):
         with self.x_pointer(), mock.patch.object(QGuiApplication, "applicationState",
                                                  return_value=Qt.ApplicationInactive):
             bubble, page = self.back_arrow_leaves_the_pointer_outside()
-            old = bubble._reserve_win
-            self.assertIsNotNone(old)
-            centre = bubble.frameGeometry().center()
+            self.assertIsNotNone(bubble.holding_area())
+            self.window_holds(bubble, "after the back arrow")
+            centre = bubble.card().center()
             self.where["at"] = (centre.x(), centre.y())  # onto the list itself
             bubble._tick()
-            window.open_command_menu()  # the content changes again
-            self.assertFalse(old.isVisible(), "the old place holder went with the change")
-            self.reserve_is_current(bubble, "after a second change")
+            self.assertTrue(bubble.isVisible())
+            self.assertIsNone(bubble.holding_area(), "on the card: nothing to hold any more")
+            self.assertEqual(bubble.frameGeometry(), bubble.card())
+            window.open_command_menu()  # the content changes again, the pointer on it
+            self.window_holds(bubble, "after a second change")
             # Again, and now the bubble gives way to another one.
             self.where["at"] = (page.center().x(), page.bottom() - 30)
             bubble2, _page = self.back_arrow_leaves_the_pointer_outside()
-            self.assertIsNotNone(bubble._reserve_win)
+            self.assertIsNotNone(bubble.holding_area())
             with mock.patch.object(type(bubble), "_must_yield", return_value=True):
                 bubble._tick()
             self.assertEqual(bubble.state(), "yielding")
-            self.reserve_is_current(bubble, "while yielding")
+            self.assertIsNone(bubble.holding_area(), "nothing held while yielding")
             bubble.close_bubble("refresh")
-            self.reserve_is_current(bubble, "closed")
+            self.assertIsNone(bubble.holding_area(), "nor once closed")
+
+    def test_a_held_area_over_a_face_leaves_that_face_clickable(self):
+        """The window that keeps a page's area must not take the clicks meant for a face under it: the face's
+        spot is cut out of the window's shape (and so of its input) for as long as the area is held."""
+        from unittest import mock
+        from PySide6.QtCore import QPoint, QRect, Qt
+        from PySide6.QtGui import QGuiApplication
+        window = self.window
+        window.show()
+        with self.x_pointer(), mock.patch.object(QGuiApplication, "applicationState",
+                                                 return_value=Qt.ApplicationInactive):
+            bubble, page = self.back_arrow_leaves_the_pointer_outside()
+            self.assertIsNotNone(bubble.holding_area())
+            # The area held reaches over the face (as when a tall page sat beside it).
+            bubble._held = bubble.holding_area().united(window.frameGeometry())
+            bubble._fit_window()
+            self.window_holds(bubble, "over the face")
+            face = window.frameGeometry()
+            self.assertTrue(bubble.frameGeometry().contains(face))
+            from botwidget.qt_ui import bubble_window as bubble_module
+            self.where["at"] = (face.center().x(), face.center().y())
+            self.assertEqual(bubble_module.pointer_window(), native_id(window), "a click there reaches the face")
+            self.where["at"] = (page.center().x(), page.bottom() - 30)
+            self.assertEqual(bubble_module.pointer_window(), native_id(bubble), "the rest is still the bubble")
+            centre = bubble.card().center() - bubble.pos()
+            self.assertTrue(bubble.mask().contains(centre), "the card itself is never cut")
 
     def test_choosing_bots_from_the_menu_keeps_the_bubble_whatever_the_place_of_the_face(self):
         """/bots from the right-click list of the top faces closed the bubble at once: the page started its
@@ -2777,8 +2774,7 @@ class BubbleHover(unittest.TestCase):
                 self.assertEqual(window._menu_page, "bots")
                 pointer = QPoint(*self.where["at"])
                 for frame in frames:
-                    self.assertTrue(frame.contains(pointer) or bubble._reserved is not None
-                                    and bubble._reserved.contains(pointer), f"pointer let go in {frame}")
+                    self.assertTrue(frame.contains(pointer), f"pointer let go in {frame}")
                 self.where["at"] = (5000, 5000)
                 bubble._tick()
                 self.assertFalse(bubble.isVisible(), "leaving closes it at once")
@@ -2814,9 +2810,9 @@ class BubbleHover(unittest.TestCase):
             self.assertTrue(bubble.isVisible() and bubble._list_only, "the command list stays as well")
 
     def test_a_right_click_after_a_left_click_lets_the_command_list_be_clicked_on_x(self):
-        """Left-click opens the chat, right-click swaps it for the smaller command list. The see-through window
-        that holds the chat's area was mapped last, so the window manager put it on top of the bubble, and every
-        click on a command went to it: the list looked stuck. It must hold only what the bubble does not cover."""
+        """Left-click opens the chat, right-click swaps it for the smaller command list. A separate window that
+        held the chat's area once lay on top of the list and took every click: the list looked stuck. The
+        bubble's own window holds that area now, so a click on a command always reaches the list."""
         from unittest import mock
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtGui import QGuiApplication
@@ -2827,11 +2823,10 @@ class BubbleHover(unittest.TestCase):
         bubble = window.bubble
 
         def under_pointer():
-            # X stacking as Mutter left it: the place holder, mapped last, on top of the bubble.
             x, y = self.where["at"]
             point = QPoint(int(x), int(y))
-            for widget in (bubble._reserve_win, bubble, window):
-                if widget is None or not widget.isVisible() or not widget.geometry().contains(point):
+            for widget in (bubble, window):
+                if not widget.isVisible() or not widget.geometry().contains(point):
                     continue
                 mask = widget.mask()
                 if mask.isEmpty() or mask.contains(point - widget.pos()):
@@ -2849,24 +2844,25 @@ class BubbleHover(unittest.TestCase):
                 bubble._growth_done()
             chat = bubble.frameGeometry()
             window.open_command_menu()
-            menu = bubble.frameGeometry()
+            menu = bubble.card()
             self.assertTrue(bubble._list_only)
             self.assertFalse(menu.width() >= chat.width() and menu.height() >= chat.height(), "the list is smaller")
-            self.assertIsNotNone(bubble._reserve_win, "the chat's area is held")
             row = bubble._slash.mapToGlobal(QPoint(bubble._slash.width() // 2, bubble._slash.ROW_H + 10))
             self.where["at"] = (row.x(), row.y())
             self.assertEqual(under_pointer(), native_id(bubble), "a click on a command reaches the bubble")
             outside = next((QPoint(x, y) for x in range(chat.left(), chat.right(), 4)
                             for y in range(chat.top(), chat.bottom(), 4)
-                            if not menu.contains(QPoint(x, y))), None)
-            if outside is not None:
+                            if not menu.contains(QPoint(x, y)) and not window.frameGeometry().contains(QPoint(x, y))),
+                           None)
+            if bubble.holding_area() is not None and outside is not None:
                 self.where["at"] = (outside.x(), outside.y())
-                self.assertEqual(under_pointer(), native_id(bubble._reserve_win), "the rest is still held")
-            bubble.move(bubble.x() + 7, bubble.y() + 5)  # the spring moves the bubble on
-            moved = bubble.frameGeometry().center()
+                self.assertEqual(under_pointer(), native_id(bubble), "the rest of the chat's area is still the bubble")
+            card = bubble.card()
+            bubble._put(card.x() + 7, card.y() + 5)  # the spring moves the card on
+            moved = bubble.card().center()
             self.where["at"] = (moved.x(), moved.y())
-            if bubble._reserve_win is not None:
-                self.assertEqual(under_pointer(), native_id(bubble), "also where the bubble went")
+            self.assertEqual(under_pointer(), native_id(bubble), "also where the card went")
+            self.window_holds(bubble, "after the spring moved it")
 
     def test_on_x_a_closed_bubble_leaves_no_window_the_window_manager_could_still_map(self):
         """Opened and closed again before the window manager mapped it: Mutter maps it anyway, after Qt's

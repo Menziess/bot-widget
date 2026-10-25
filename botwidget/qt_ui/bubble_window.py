@@ -49,7 +49,7 @@ from botwidget.config import always_on_top
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, screens
-from botwidget.qt_ui.native import drop_hidden, mapped, native_id, set_flags
+from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
 from botwidget.qt_ui.controls import ActionButton, SlashList, Switch
 from botwidget.qt_ui.measure import measure
@@ -520,47 +520,6 @@ class BubbleText(QTextBrowser):
         self._press, self._dragging = None, False
         self._cursor_for(pos)
 
-class ReserveWindow(QWidget):
-    """See-through and empty: holds the place of a bubble that just got smaller, so the X server can tell when
-    the pointer leaves it. Under the bubble, on the bubble's layer, never in the taskbar."""
-
-    def __init__(self):
-        super().__init__()
-        layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
-        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint
-                  | Qt.WindowDoesNotAcceptFocus)
-        self.setAttribute(Qt.WA_TranslucentBackground)
-        self.setAttribute(Qt.WA_ShowWithoutActivating)
-
-    def setVisible(self, visible: bool):
-        if visible and not self.isVisible():
-            mark_before_show(self)
-        super().setVisible(visible)
-        if not visible:
-            drop_hidden(self)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        handle = self.windowHandle()
-        if handle is not None:
-            handle.setTransientParent(None)
-        if always_on_top():
-            self.lower()  # under the bubble: clicks on the bubble must reach it
-        else:
-            send_behind_windows(native_id(self))
-
-    def leave_out(self, bubble: QRect) -> bool:
-        """Hold only what the bubble does not cover. It is mapped after the bubble, so the window manager may well
-        stack it on top: without this cut-out every click on the command list went to this window and the list
-        looked stuck. False when the bubble covers all of it, so there is nothing left to hold."""
-        region = QRegion(self.rect()).subtracted(QRegion(bubble.translated(-self.pos())))
-        if region.isEmpty():
-            return False
-        if region != self.mask():
-            self.setMask(region)
-        return True
-
-
 class BubbleWindow(QWidget):
     older = Signal()
     command = Signal(str)
@@ -609,7 +568,10 @@ class BubbleWindow(QWidget):
         self._load_timer.setSingleShot(True)
         self._load_timer.timeout.connect(self._load_older)
 
-        self._chrome = QLabel(self)
+        # Everything that shows sits on the card; the window around it can be bigger (see _hold_after).
+        self._card = QWidget(self)
+        self._card_at = QPoint(0, 0)  # where the card is on the screen
+        self._chrome = QLabel(self._card)
         self._text = QLabel()
         self._text.setAttribute(Qt.WA_TranslucentBackground)
         self._doc = BubbleText(self._text)
@@ -617,25 +579,25 @@ class BubbleWindow(QWidget):
         self._doc.clicked.connect(self._on_click)
         self._doc.command.connect(self.command)
         self._doc.selected.connect(self._on_selected)
-        self._scroll = OlderScroll(self)
+        self._scroll = OlderScroll(self._card)
         self._scroll.older.connect(self._wheel_older)
         self._scroll.setWidget(self._text)
         self._scroll.setFrameShape(QScrollArea.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll.viewport().setAutoFillBackground(False)
-        self._link_row = QLabel(self)
+        self._link_row = QLabel(self._card)
         self._link_row.setObjectName("links")
         self._link_row.setOpenExternalLinks(True)
         self._link_row.setTextFormat(Qt.RichText)
         self._notice = CopyNotice(self._scroll.viewport())
         self._notice_from_end = 0
         self._scroll.verticalScrollBar().valueChanged.connect(self._move_notice)
-        self._entry = BubbleEntry(self)
+        self._entry = BubbleEntry(self._card)
         self._entry.setPlaceholderText("Send a message…")
         self._entry.returnPressed.connect(self._send)
         self._entry.resized.connect(self._entry_resized)
         self._entry.attached.connect(self._attach)
-        self._slash = SlashList(self)
+        self._slash = SlashList(self._card)
         self._slash.chosen.connect(self._run_command)
         self._entry.textChanged.connect(self._update_commands)
         self._entry.textChanged.connect(self._edited)
@@ -645,7 +607,7 @@ class BubbleWindow(QWidget):
         self._entry.closed.connect(self._close_commands)
         self._commands_forced = False
         self._attachments = []
-        self._attachment_row = QLabel(self)
+        self._attachment_row = QLabel(self._card)
         self._attachment_row.setTextFormat(Qt.RichText)
         self._attachment_row.setObjectName("attachments")
         self._attachment_row.linkActivated.connect(self._unattach)
@@ -659,8 +621,7 @@ class BubbleWindow(QWidget):
         self._follow = False
         self._entry.dismissed.connect(face.unpin)
 
-        self._reserved = None  # QRect the bubble covered before it shrank under the pointer
-        self._reserve_win = None
+        self._held = None  # QRect on the screen the window still covers after the card shrank under the pointer
         self._physics = QTimer(self)
         self._physics.setInterval(16)
         self._physics.timeout.connect(self._tick)
@@ -710,91 +671,94 @@ class BubbleWindow(QWidget):
         """Right-click: the command list on its own, without the conversation."""
         old = self._area_under_pointer()
         self._show_command_menu()
-        self._reserve_after(old)
+        self._hold_after(old)
 
-    # ── The area a bubble covered before it shrank ─────────────────
+    # ── The card and the window around it ──────────────────────────
+    #
+    # The bubble is drawn on a card. Normally the window is exactly the card. When a change of content makes the
+    # card smaller or moves it away from under the pointer (the back arrow, a page swap), the window keeps the area
+    # it had: the rest of it is see-through but still this window, so the X server keeps naming it as the window
+    # under the pointer and leaving it closes the bubble as ever. No second window, nothing to map late, no timer.
+
+    def card(self) -> QRect:
+        """Where the bubble is drawn on the screen."""
+        return QRect(self._card_at, self._card.size())
+
+    def _put(self, x, y):
+        """The card to this spot; the window follows."""
+        self._card_at = QPoint(int(x), int(y))
+        self._fit_window()
+
+    def _fit_window(self):
+        card = self.card()
+        area = card.united(self._held) if self._held is not None else card
+        if self.geometry() != area:
+            self.setGeometry(area)
+        self._card.move(card.topLeft() - area.topLeft())
+        self._shape(area, card)
+
+    def _shape(self, area: QRect, card: QRect):
+        """A held area takes no clicks meant for a face: those spots are cut out of the window."""
+        region = QRegion()
+        if self._held is not None:
+            faces = getattr(getattr(self.face, "faces", None), "faces", None) or {}
+            for face in {id(f): f for f in [self.face, *faces.values()]}.values():
+                if not face.isVisible():
+                    continue
+                rect = face.frameGeometry().intersected(area)
+                if not rect.isEmpty():
+                    region = region.united(QRegion(rect).subtracted(QRegion(card)))
+        if region.isEmpty():
+            if not self.mask().isEmpty():
+                self.clearMask()
+            return
+        mask = QRegion(area.translated(-area.topLeft())).subtracted(region.translated(-area.topLeft()))
+        if mask != self.mask():
+            self.setMask(mask)
+
+    def holding_area(self) -> QRect | None:
+        """The area the window still holds for a card that shrank, None when the window is just the card."""
+        return QRect(self._held) if self._held is not None else None
 
     def _area_under_pointer(self) -> QRect | None:
-        """Where the bubble is now, when the pointer is on it: what a smaller one keeps as hover area."""
+        """The whole window, when the pointer is on it: what a smaller card keeps as hover area."""
         if not (self.isVisible() and self.kind and self.face.pointer_near(self)):
             return None
-        if self._reserved is not None and not self.pointer_over() and self._pointer_in_reserve():
-            # Engaged through the area an earlier change held: that area is what stays under the pointer.
-            return QRect(self._reserved)
         return QRect(self.frameGeometry())
 
-    def _reserve_after(self, old: QRect | None):
-        """A page change made the bubble smaller (the back arrow) or moved it (a tall page that no longer fits
-        above the face goes beside it): the area the bubble covered keeps counting as on the bubble until the
-        pointer leaves it. No timer.
+    def _hold_after(self, old: QRect | None):
+        """A page change made the card smaller (the back arrow) or moved it (a tall page that no longer fits
+        above the face goes beside it): the window keeps covering the area it had, until the pointer leaves the
+        window or comes onto the card.
 
         The pointer was on the bubble, so it has been touched: leaving closes it at once, not after a while.
         """
-        # Whatever an earlier change held ends with this one: a new hold is made below if it is still needed.
-        self._release_reserve()
+        self._release_hold()
         if old is None or not self.isVisible() or not self.kind:
             return
         self._was_near = True
         width, height = self._final_size()
         tx, ty, _tip = self._goal()
         final = QRect(int(tx), int(ty), width, height)
-        if final.contains(old) and self.frameGeometry().contains(old):
+        if final.contains(old) and self.card().contains(old):
             return  # it grows over where it was: the pointer stays on it
-        self._reserved = old
-        if QGuiApplication.platformName() == "xcb":
-            # XWayland only knows where the pointer is over X windows: over the desktop or a Wayland app the
-            # spot left by the shrunken bubble would be invisible to it. A see-through window keeps it an X
-            # window, so the X server can say when the pointer leaves it.
-            self._reserve_win = ReserveWindow()
-            self._reserve_win.setGeometry(old)
-            if not self._reserve_win.leave_out(self.frameGeometry()):
-                self._release_reserve()
-                return
-            self._reserve_win.show()
+        self._held = QRect(old)
+        self._fit_window()
 
-    def moveEvent(self, event):
-        super().moveEvent(event)
-        self._keep_reserve_clear()
+    def _release_hold(self):
+        """The window becomes the card again."""
+        if self._held is None:
+            return
+        self._held = None
+        self._fit_window()
 
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._keep_reserve_clear()
-
-    def _keep_reserve_clear(self):
-        """The bubble moves on (its spring) or changes size: the place holder keeps out from under it."""
-        win = getattr(self, "_reserve_win", None)
-        if win is not None and not win.leave_out(self.frameGeometry()):
-            self._release_reserve()
-
-    def _pointer_in_reserve(self) -> bool:
-        area = self._reserved
-        if area is None:
+    def _pointer_on_card(self) -> bool:
+        """Only where the position can be trusted: on X while the pointer is on this window, or where the
+        pointer is known everywhere. A stale position must not shrink the window away from under it."""
+        if not (pointer_on(self) or self.face.pointer_known()):
             return False
-        win = self._reserve_win
-        # Until the window manager has mapped the place holder, X names no window of ours there: the bubble
-        # already shrank. That is not the pointer leaving, so the area itself decides until then.
-        on = pointer_on(win) if win is not None and mapped(win) else None
-        if on is None:
-            px, py = self.face._pointer()
-            on = area.contains(QPoint(int(px), int(py)))
-        return bool(on)
-
-    def in_reserve(self) -> bool:
-        """Is the pointer still in the area the bubble covered before it shrank? Once it is not, that is over,
-        and so it is when the bubble is no longer open."""
-        if self._reserved is None:
-            return False
-        on = self.state() == "open" and self.isVisible() and self._pointer_in_reserve()
-        if not on:
-            self._release_reserve()
-        return on
-
-    def _release_reserve(self):
-        self._reserved = None
-        win, self._reserve_win = self._reserve_win, None
-        if win is not None:
-            win.hide()
-            win.deleteLater()
+        px, py = self.face._pointer()
+        return self.card().contains(QPoint(int(px), int(py)))
 
     def _show_command_menu(self):
         self._list_only = True
@@ -1176,7 +1140,8 @@ class BubbleWindow(QWidget):
         box_w = self._shown_w(full_w)
         size = pix.deviceIndependentSize().toSize()
         self._chrome.setGeometry(0, 0, size.width(), size.height())
-        self.resize(size)
+        self._card.resize(size)
+        self._fit_window()
         x, y = PAD_SVG + PAD_BODY, PAD_SVG + PAD_BODY
         if self._list_only:
             self._scroll.hide()
@@ -1270,12 +1235,12 @@ class BubbleWindow(QWidget):
 
     def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
                     older: bool = False, keep_scroll: bool = False):
-        """New content; a bubble that gets smaller under the pointer keeps the area it covered, see reserve."""
+        """New content; a bubble that gets smaller under the pointer keeps the area it covered, see _hold_after."""
         old = self._area_under_pointer()
         try:
             self._show_blocks(blocks, kind, input, links, older, keep_scroll)
         finally:
-            self._reserve_after(old)
+            self._hold_after(old)
 
     def _show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
                      older: bool = False, keep_scroll: bool = False):
@@ -1413,7 +1378,7 @@ class BubbleWindow(QWidget):
         tx, ty, self._tip = self._goal(size)
         self._layout_children(self._paint_chrome())
         self._vx = self._vy = 0.0
-        self.move(int(tx), int(ty))
+        self._put(tx, ty)
         bar = self._scroll.verticalScrollBar()
         bar.setValue(min(bar.maximum(), round(growth.added * (1 - progress))) if getattr(growth, "older", False)
                      else self._scroll_value())
@@ -1461,7 +1426,7 @@ class BubbleWindow(QWidget):
         not swing to another side while it is still growing.
         """
         fx, fy = self.face.spot()
-        bw, bh = size or (self.width() or 80, self.height() or 48)
+        bw, bh = size or (self._card.width() or 80, self._card.height() or 48)
         final_w, final_h = self._final_size()
         if size is None and not self.isVisible():
             bw, bh = final_w, final_h
@@ -1502,7 +1467,7 @@ class BubbleWindow(QWidget):
 
     def _show_at(self, tx, ty):
         self._vx = self._vy = 0.0
-        self.move(int(tx), int(ty))
+        self._put(tx, ty)
         self.show()
         desktops.apply(self)
 
@@ -1529,7 +1494,7 @@ class BubbleWindow(QWidget):
     def _final_size(self) -> tuple:
         """The window size once it has grown to its size."""
         if not self._geom or (self._growth is None and self.isVisible()):
-            return self.width() or 80, self.height() or 48
+            return self._card.width() or 80, self._card.height() or 48
         growth, self._growth = self._growth, None
         try:
             return (self._geom[1] + 2 * PAD_BODY + 2 * PAD_SVG,
@@ -1560,7 +1525,7 @@ class BubbleWindow(QWidget):
         if self._yielding:
             # Out of the way of a bubble the user is busy with: it comes back when that one is gone.
             self.changed = now
-            self._release_reserve()
+            self._release_hold()
             self.hide()
             return
         if was_yielding:
@@ -1571,6 +1536,8 @@ class BubbleWindow(QWidget):
             self._slide.start()
             return
         pointer = self.face.pointer_near(self)
+        if pointer and self._held is not None and self._pointer_on_card():
+            self._release_hold()  # on the card: the window can be the card again, the pointer stays inside
         # A bubble the pointer really was on goes the moment it leaves, a thinking cloud of a busy bot too.
         # Only a bubble kept up for another reason waits for its answer before it counts as seen.
         # No timer keeps a bubble the pointer has left: the hover margin (the transparent edge of the window,
@@ -1597,13 +1564,13 @@ class BubbleWindow(QWidget):
             tx, ty, _tip = self._goal()
         if self._growth is not None:
             return
-        x, y = self.x(), self.y()
+        x, y = self._card_at.x(), self._card_at.y()
         self._vx = (self._vx + (tx - x) * 0.16) * 0.7
         self._vy = (self._vy + (ty - y) * 0.16) * 0.7
         nx, ny = x + self._vx, y + self._vy
         if abs(tx - nx) < 0.6 and abs(self._vx) < 0.35 and abs(ty - ny) < 0.6 and abs(self._vy) < 0.35:
             nx, ny, self._vx, self._vy = tx, ty, 0.0, 0.0
-        self.move(int(nx), int(ny))
+        self._put(nx, ny)
 
     # ── Open and closed: one state, one rule, one door out ─────────────
     #
@@ -1631,7 +1598,7 @@ class BubbleWindow(QWidget):
 
     def engaged(self) -> bool:
         """The one rule for the pointer being with this bubble: on the face, on the bubble or within its hover
-        margin, or in the area a bigger bubble covered before a page change (see _reserve_after). Words typed
+        margin, or in the area a bigger bubble covered before a page change (see _hold_after). Words typed
         or selected count too."""
         return self.isVisible() and (bool(self.face.pointer_near(self)) or self.holding())
 
@@ -1662,7 +1629,7 @@ class BubbleWindow(QWidget):
             self.face._think_quiet = True
         self.kind = kind
         if kind == "":
-            self._release_reserve()
+            self._release_hold()
             self._yielding = False
             self._slide.stop()
             self._growth = None
@@ -1695,7 +1662,7 @@ class BubbleWindow(QWidget):
             self._growth = None
             self._commands_forced = False
             self._show_commands([])
-            self._release_reserve()
+            self._release_hold()
             self.hide()
         elif not self.isVisible():
             self._show_at(tx, ty)
