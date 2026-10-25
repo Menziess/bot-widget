@@ -2182,15 +2182,15 @@ class BubbleHover(unittest.TestCase):
         next(w for w in bubble._control_widgets if isinstance(w, Switch)).click()
         self.assertEqual(sent, ["toggle/sound"])
 
-    def test_the_arrow_on_a_page_leads_back_to_the_field_with_the_list_of_commands(self):
+    def test_the_arrow_on_a_page_leads_back_to_the_list_of_commands_only(self):
         bubble = self.open_settings()
         self.assertEqual(bubble._geom[0][0]["back"], "page/commands")
         bubble.command.emit("page/commands")
         self.finish_growth()
         self.assertIsNone(self.window._menu_page)
-        self.assertEqual(bubble._entry.text(), "")
+        self.assertTrue(bubble._list_only, "the command list on its own, as a first right-click")
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
-        self.assertIn("Ja.", bubble.full_text, "above the conversation")
+        self.assertNotIn("Ja.", bubble.full_text, "no conversation")
 
     def test_a_page_has_the_arrow_up_instead_of_a_menu_link_and_it_goes_back(self):
         bubble = self.open_settings()
@@ -3988,6 +3988,17 @@ class MenuInBubble(unittest.TestCase):
         self.window.bubble.command.emit("page/commands")
         self.assertEqual(self.window.bubble._entry.text(), "")
         self.assertTrue(self.window.bubble._slash.isVisibleTo(self.window.bubble))
+
+    def test_back_from_a_page_shows_only_the_command_list_like_a_first_right_click(self):
+        self.right_click()
+        first = (self.window.bubble._list_only, self.window.bubble.full_text, list(self.window.bubble._slash.rows),
+                 self.window.bubble._geom[1])
+        self.window.on_user_message("/settings")
+        self.window.bubble.command.emit("page/commands")
+        bubble = self.window.bubble
+        self.assertTrue(bubble.isVisible())
+        self.assertEqual((bubble._list_only, bubble.full_text, list(bubble._slash.rows), bubble._geom[1]), first)
+        self.assertNotIn("Hoi.", bubble.full_text, "no answer text, only the commands")
 
     def test_a_link_in_the_bubble_runs_its_command(self):
         from PySide6.QtCore import QUrl
