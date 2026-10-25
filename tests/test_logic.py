@@ -2385,6 +2385,7 @@ class BubbleHover(unittest.TestCase):
 
         def frames(count=6, held=None):
             for _ in range(count):
+                self.one_content(bubble, "on a frame")
                 if held is not None:
                     self.assertTrue(bubble.isVisible() and bubble.engaged(),
                                     f"the pointer is not on the bubble while it changes, after {held[-6:]}")
@@ -2401,6 +2402,7 @@ class BubbleHover(unittest.TestCase):
 
         def check(step, log):
             self.assertTrue(bubble.consistent(), f"state {bubble.state()} vs window, after {log[-6:]}")
+            self.one_content(bubble, f"after {log[-6:]}")
             win = bubble._reserve_win
             if win is not None and win.isVisible() and bubble.isVisible():
                 held = win.mask().translated(win.pos()) if not win.mask().isEmpty() else QRegion(win.geometry())
@@ -2567,6 +2569,57 @@ class BubbleHover(unittest.TestCase):
             if not bubble.isVisible():
                 break
         return menu, frames
+
+    def one_content(self, bubble, when=""):
+        """Never two contents at once: the command list on its own, or a page/chat without that list."""
+        listing = bubble._slash.isVisibleTo(bubble)
+        page = bubble._scroll.isVisibleTo(bubble) or bubble._entry.isVisibleTo(bubble)
+        if bubble._list_only:
+            self.assertFalse(page, f"the list shows with a page under it {when}")
+        else:
+            self.assertFalse(listing and not bubble._input, f"the old command list shows over the page {when}")
+
+    def test_after_choosing_a_command_or_going_back_only_one_content_shows_on_every_frame(self):
+        """/bots from the right-click list drew the page with the list still on top of it: the list was kept to
+        keep the bubble's size, and its rows with it. Only the size carries over, never the rows."""
+        from botwidget import menu_pages
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        from unittest import mock
+        state = dict(self.settings_state())
+        state["bots"] = [{"id": f"b{i}", "name": f"Bot {i}", "source": "OpenBot", "on": True} for i in range(3)]
+        state.update({"openbot": True, "automation_ready": True, "gbot": False, "grok": "not found"})
+        window = self.window
+        window.show()
+        window.faces = type("Faces", (), {"menu_state": lambda _self: state,
+                                          "menu_command": lambda _self, command, page: page,
+                                          "close_bubbles_except": lambda _self, _id: None,
+                                          "raise_bubbles": lambda _self: None})()
+        bubble = window.bubble
+        window.move(26, 62)
+        window._home = (26, 62)
+        with self.x_pointer(), mock.patch.object(QGuiApplication, "applicationState",
+                                                 return_value=Qt.ApplicationInactive), \
+                mock.patch("PySide6.QtGui.QDesktopServices.openUrl", return_value=True), \
+                mock.patch("botwidget.qt_ui.face.api_get", side_effect=OSError("no network in tests")):
+            for command, _note in menu_pages.COMMANDS:
+                with self.subTest(command=command):
+                    menu, frames = self.choose_from_the_menu(command)
+                    self.one_content(bubble, f"after {command}")
+                    for _ in range(25):  # and on every frame of the growth
+                        if bubble._growth is not None:
+                            bubble._slide.setCurrentTime(min(bubble._slide.currentTime() + 16,
+                                                             bubble._slide.duration()))
+                        self.one_content(bubble, f"while {command} grows")
+                    if window._menu_page is not None:
+                        bubble.command.emit("page/commands")
+                        self.assertTrue(bubble._list_only)
+                        for _ in range(25):
+                            if bubble._growth is not None:
+                                bubble._slide.setCurrentTime(min(bubble._slide.currentTime() + 16,
+                                                                 bubble._slide.duration()))
+                            self.one_content(bubble, f"back from {command}")
+                    bubble.close_bubble("refresh")
 
     def test_choosing_bots_from_the_menu_keeps_the_bubble_whatever_the_place_of_the_face(self):
         """/bots from the right-click list of the top faces closed the bubble at once: the page started its

@@ -1265,6 +1265,12 @@ class BubbleWindow(QWidget):
         # The size it has on screen now, the command list included: a new page grows from there. Measured after
         # _list_only went off it was a sliver, which left the pointer outside and closed the bubble at once.
         start = (self._shown_w(self._geom[1]), self._body_h(self._geom[2])) if self._geom and visible else None
+        if self._list_only:
+            # The new content takes the list's place in this very step: its size carries over (start), its rows
+            # do not. Left visible they were drawn over the page.
+            self._slash.show_rows([])
+            self._entry.commands_open = False
+            self._commands_forced = False
         self._list_only = False
         key = (kind, block_text(blocks), input, tuple(links or []), self._height_cap())
         if key == self._built and not self._dots_lines:
