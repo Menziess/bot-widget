@@ -2579,6 +2579,57 @@ class BubbleHover(unittest.TestCase):
         stack.enter_context(mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer))
         return stack
 
+    def test_on_x_the_back_arrow_keeps_the_bubble_while_its_place_holder_is_not_mapped_yet(self):
+        """As measured on Stefan's X: the place holder is mapped 5-20 ms after its show, while the bubble
+        already shrinks frame by frame. Until then X names no window of ours under the pointer low on the
+        page; that is not the pointer leaving."""
+        from unittest import mock
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QGuiApplication
+        window = self.window
+        window.show()
+        mapped = {"reserve": False}
+
+        def under_pointer():
+            x, y = self.where["at"]
+            point = QPoint(int(x), int(y))
+            for widget in (window.bubble._reserve_win, window.bubble, window):
+                if widget is None or not widget.isVisible() or not widget.geometry().contains(point):
+                    continue
+                if widget is window.bubble._reserve_win and not mapped["reserve"]:
+                    continue
+                mask = widget.mask()
+                if mask.isEmpty() or mask.contains(point - widget.pos()):
+                    return native_id(widget)
+            return 0
+
+        def is_mapped(widget):
+            return mapped["reserve"] if widget is window.bubble._reserve_win else True
+
+        with mock.patch.object(QGuiApplication, "platformName", return_value="xcb"), \
+                mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer), \
+                mock.patch("botwidget.qt_ui.bubble_window.mapped", side_effect=is_mapped, create=True), \
+                mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive):
+            bubble = self.open_settings()
+            page = bubble.frameGeometry()
+            self.where["at"] = (page.center().x(), page.bottom() - 30)
+            bubble._tick()
+            self.assertTrue(bubble.isVisible())
+            bubble.command.emit("page/commands")
+            self.assertIsNotNone(bubble._reserve_win, "the list is smaller than the page")
+            for ms in range(0, 400, 16):
+                if ms >= 32:
+                    mapped["reserve"] = True
+                if bubble._growth is not None:
+                    bubble._slide.setCurrentTime(min(ms, bubble._slide.duration()))
+                bubble._tick()
+                self.assertTrue(bubble.isVisible(), f"closed {ms} ms after the back arrow")
+            self.assertTrue(bubble._list_only)
+            self.where["at"] = (page.right() + 200, page.top() + 60)
+            bubble._tick()
+            self.assertFalse(bubble.isVisible(), "leaving the area still closes it")
+
     def choose_from_the_menu(self, command):
         """Right-click the face, point at the command's row and click it; the page grows in frame by frame."""
         from PySide6.QtCore import QPoint

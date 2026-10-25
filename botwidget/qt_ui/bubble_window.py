@@ -49,7 +49,7 @@ from botwidget.config import always_on_top
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, screens
-from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
+from botwidget.qt_ui.native import drop_hidden, mapped, native_id, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
 from botwidget.qt_ui.controls import ActionButton, SlashList, Switch
 from botwidget.qt_ui.measure import measure
@@ -770,7 +770,10 @@ class BubbleWindow(QWidget):
         area = self._reserved
         if area is None:
             return False
-        on = pointer_on(self._reserve_win) if self._reserve_win is not None else None
+        win = self._reserve_win
+        # Until the window manager has mapped the place holder, X names no window of ours there: the bubble
+        # already shrank. That is not the pointer leaving, so the area itself decides until then.
+        on = pointer_on(win) if win is not None and mapped(win) else None
         if on is None:
             px, py = self.face._pointer()
             on = area.contains(QPoint(int(px), int(py)))
