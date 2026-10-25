@@ -2793,7 +2793,7 @@ class BubbleHover(unittest.TestCase):
         self.app.processEvents()
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
         self.assertEqual([c for c, _n in bubble._slash.rows],
-                         ["/home", "/settings", "/bots", "/connections", "/refresh", "/feedback"])
+                         ["/settings", "/bots", "/connections", "/refresh", "/feedback"])
         self.assertLess(bubble._slash.geometry().bottom(), bubble._entry.geometry().top(), "above the field")
         self.assertGreater(bubble.height(), height, "the bubble makes room for the list")
         bubble._entry.setText("/b")
@@ -2814,9 +2814,8 @@ class BubbleHover(unittest.TestCase):
         bubble = self.window.bubble
         bubble._entry.setText("/")
         QTest.keyClick(bubble._entry, Qt.Key_Down)
-        QTest.keyClick(bubble._entry, Qt.Key_Down)
         QTest.keyClick(bubble._entry, Qt.Key_Return)
-        self.assertEqual(self.window._menu_page, "bots")
+        self.assertEqual(self.window._menu_page, "bots", "the second row since /home is gone")
         self.assertEqual(bubble._entry.text(), "")
 
     def test_tab_completes_the_command_without_running_it_and_escape_closes_the_list_with_what_was_typed(self):
@@ -2985,9 +2984,11 @@ class BubbleHover(unittest.TestCase):
     def test_every_command_in_the_list_opens_a_page(self):
         from botwidget import menu_pages
         for command, _note in menu_pages.COMMANDS:
-            if command in ("/home", "/refresh", "/feedback"):
+            if command in ("/refresh", "/feedback"):
                 continue
             self.assertIn(command, menu_pages.SLASH)
+        self.assertNotIn("/home", [command for command, _note in menu_pages.COMMANDS],
+                         "gone: the back arrow and a right-click show the list")
         self.assertNotIn("/refresh", menu_pages.SLASH, "reload, not a menu page")
         self.assertNotIn("/feedback", menu_pages.SLASH, "a browser page, not a menu page")
 
@@ -4011,7 +4012,8 @@ class MenuInBubble(unittest.TestCase):
         from PySide6.QtTest import QTest
         self.right_click()
         slash = self.window.bubble._slash
-        row = 2 * slash.ROW_H + slash.ROW_H // 2 + 4
+        index = [command for command, _note in slash.rows].index("/bots")
+        row = index * slash.ROW_H + slash.ROW_H // 2 + 4
         QTest.mouseClick(slash, Qt.LeftButton, Qt.NoModifier, QPoint(20, row))
         self.assertIn("Fritsie", self.text(), "the click on /bots opened the bots page")
 
