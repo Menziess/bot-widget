@@ -457,8 +457,12 @@ class Faces(QObject):
 
     def _semicircle_tick(self):
         """Move one bot at a time between the centre and its slot."""
-        if self._semicircle_phase == "idle":
-            self._semicircle_timer.stop()
+        snapping = self._tick_snaps()
+        if self._semicircle_phase in ("idle", "visible"):
+            if snapping:
+                self._emit_semicircle()
+            else:
+                self._semicircle_timer.stop()
             return
         elapsed = time.monotonic() - self._arc_t0
         inward = self._arc_mode == "in"
@@ -481,6 +485,36 @@ class Faces(QObject):
             self._semicircle_phase = "visible"
             self._semicircle_timer.stop()
         self._emit_semicircle()
+
+    def _tick_snaps(self) -> bool:
+        """Bots let go inside the arc glide back to their slot. True while one of them moved."""
+        now = time.monotonic()
+        moved = False
+        for info in self._semicircle.values():
+            t0 = info.get("snap_t0")
+            if t0 is None:
+                continue
+            u = min(1.0, (now - t0) / ARC_MOVE_S) if ARC_MOVE_S > 0 else 1.0
+            ease = u * u * (3 - 2 * u)
+            fx, fy = info["snap_from"]
+            info["x"] = fx + (info["slot_x"] - fx) * ease
+            info["y"] = fy + (info["slot_y"] - fy) * ease
+            moved = True
+            if u >= 1:
+                del info["snap_t0"]
+        return moved
+
+    def _snap_back(self, face):
+        """A bot of the arc let go inside the arc goes back to its own slot, the way a drag-in lands."""
+        info = self._semicircle[face.agent_id]
+        x = face.x() + face.width() / 2
+        y = face.y() + face.height() / 2
+        info["x"], info["y"] = x, y
+        info["snap_from"] = (x, y)
+        info["snap_t0"] = time.monotonic()
+        info["visible"] = True
+        self._emit_semicircle()
+        self._semicircle_timer.start()
 
     def _emit_semicircle(self):
         """Tell every face on the arc where it is."""
@@ -584,6 +618,9 @@ class Faces(QObject):
             return True
         if kind == "out":
             self._leave_arc(face)
+            return True
+        if face.agent_id in self._semicircle:
+            self._snap_back(face)
             return True
         return False
 

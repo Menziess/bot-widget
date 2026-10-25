@@ -368,6 +368,48 @@ class GrokAvatarFallback(unittest.TestCase):
         self.assertFalse(faces._pointer_over_arc(800, 71), "2px deeper than the catch")
         self.assertFalse(faces._pointer_over_arc(800 + 200, 150))
 
+    def test_a_bot_of_the_arc_let_go_inside_the_arc_glides_back_to_its_slot(self):
+        """Dragging a hidden bot around inside the arc and letting go: it snaps back like a drag-in does."""
+        from unittest import mock
+        from botwidget.qt_ui import faces as faces_module
+        from botwidget.qt_ui.faces import ARC_MOVE_S, Faces
+
+        class Timer:
+            active = False
+            def start(self): self.active = True
+            def stop(self): self.active = False
+
+        class Guest:
+            agent_id, _arc_guest = "g", True
+            def __init__(self): self.at, self.seen = (790, 30), []
+            def x(self): return self.at[0]
+            def y(self): return self.at[1]
+            def width(self): return 48
+            def height(self): return 48
+            def _set_semicircle(self, semicircle): self.seen.append((semicircle["g"]["x"], semicircle["g"]["y"]))
+
+        faces = Faces.__new__(Faces)
+        guest = Guest()
+        faces.faces, faces._arc_guests = {"a": None, "b": None}, {"g": guest}
+        faces._hotspot = lambda: (800.0, 0.0)
+        faces._semicircle_phase, faces._semicircle_timer = "visible", Timer()
+        faces._semicircle = {"g": {"x": 700.0, "y": 70.0, "slot_x": 700.0, "slot_y": 70.0, "visible": True,
+                                   "rank": None, "size": 48}}
+        faces._emit_semicircle = lambda: guest._set_semicircle(faces._semicircle)
+        self.assertTrue(faces.drop_arc(guest), "the drop is handled: the bot does not stay where it was let go")
+        self.assertTrue(faces._semicircle_timer.active)
+        self.assertEqual(guest.seen[-1], (814.0, 54.0), "it starts where it was let go")
+        start = time.monotonic()
+        with mock.patch.object(faces_module.time, "monotonic", return_value=start + ARC_MOVE_S / 2):
+            faces._semicircle_tick()
+        mid = guest.seen[-1]
+        self.assertTrue(700 < mid[0] < 814, "on its way, not a jump")
+        with mock.patch.object(faces_module.time, "monotonic", return_value=start + ARC_MOVE_S + 0.01):
+            faces._semicircle_tick()
+            self.assertEqual(guest.seen[-1], (700.0, 70.0), "home in its slot")
+            faces._semicircle_tick()
+        self.assertFalse(faces._semicircle_timer.active, "nothing left to move")
+
     def test_arc_bots_leave_the_centre_one_at_a_time_and_return_last_first(self):
         """Should hold later bots until the one before them has started, and reverse that on the way back."""
         from botwidget.qt_ui.faces import ARC_MOVE_S, ARC_STEP_S, arc_drop, arc_progress
