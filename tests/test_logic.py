@@ -3763,6 +3763,24 @@ class MenuPages(unittest.TestCase):
         self.assertEqual(markdown.command_href("b"), "")
 
 
+class BotSources(unittest.TestCase):
+    """The /bots page says where each bot lives."""
+
+    def test_each_bot_shows_its_source(self):
+        from botwidget import grokbot, hermesbot
+        try:
+            from botwidget.qt_ui.faces import bot_source
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        grok, hermes = grokbot.face_id("General"), hermesbot.face_id()
+        self.assertEqual([bot_source(i) for i in ("agent-1", grok, hermes)], ["OpenBot", "Grok Bot", "Hermes"])
+        state = {"bots": [{"id": "agent-1", "name": "Grumpy", "on": True, "source": "OpenBot"},
+                          {"id": grok, "name": "General", "on": True, "source": "Grok Bot"}]}
+        text = " ".join(str(block) for block in menu_pages.bots(state))
+        self.assertIn("Grumpy · OpenBot", text)
+        self.assertIn("General · Grok Bot", text)
+
+
 class MenuInBubble(unittest.TestCase):
     """Should open the menu in the bubble on a right-click or a slash command, and act on its rows."""
 

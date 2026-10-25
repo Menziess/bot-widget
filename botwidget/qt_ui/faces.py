@@ -81,6 +81,15 @@ def arc_progress(elapsed: float, rank: int, step: float = ARC_STEP_S, move: floa
     return min(1.0, local / move)
 
 
+def bot_source(bot_id: str) -> str:
+    """Which app the bot lives in, as the /bots page shows it."""
+    if grokbot.is_grok(bot_id):
+        return "Grok Bot"
+    if hermesbot.is_hermes(bot_id):
+        return "Hermes"
+    return "OpenBot"
+
+
 def _all_bots() -> list:
     """Every bot the widget can show a face for: the local ones, Grok Bot, and Hermes Bot."""
     bots = list(list_bots())
@@ -378,7 +387,7 @@ class Faces(QObject):
             "all_desktops": all_desktops(), "login": startup.is_enabled(), "check_updates": check_updates(),
             "can_install_updates": can_install_update() or startup.from_checkout(), "auto_update": auto_update(),
             "bots": [{"id": bot["id"], "name": bot["name"], "on": bot["id"] in self.faces,
-                      "muted": bot["id"] in muted_bots()} for bot in bots],
+                      "muted": bot["id"] in muted_bots(), "source": bot_source(bot["id"])} for bot in bots],
             "openbot": openbot_installed(), "automation_ready": automation_ready(),
             "gbot": gbot_installed(), "grok": self.grok_line(),
             "grok_target": grokbot.target(),

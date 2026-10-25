@@ -90,7 +90,9 @@ def bots(state: dict) -> list:
                         _row(("Shift+click a bot's face to mute or unmute its thinking.", "dim")),
                         plain_block("gap")]
     for bot in state["bots"]:
-        blocks.append(_toggle(bot["name"], f"bot/{bot['id']}", bot["on"]))
+        # Where the bot lives: OpenBot, Grok Bot or Hermes.
+        label = f"{bot['name']} · {bot['source']}" if bot.get("source") else bot["name"]
+        blocks.append(_toggle(label, f"bot/{bot['id']}", bot["on"]))
         blocks.append({**_toggle("Thinking muted", f"mute/{bot['id']}", bot.get("muted", False)), "indent": 44})
     if not state["bots"]:
         blocks.append(_row(("No bots found yet", "dim")))
