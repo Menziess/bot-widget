@@ -16,6 +16,7 @@ else:
 
 CAN_PICK_DESKTOPS = _os.CAN_PICK_DESKTOPS
 HOTKEY_LABEL = _os.HOTKEY_LABEL
+FOCUS_ON_HOVER = _os.FOCUS_ON_HOVER
 UPDATE_ASSET = _os.UPDATE_ASSET
 activate_app = _os.activate_app
 can_install_update = _os.can_install_update

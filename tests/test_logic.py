@@ -1462,6 +1462,9 @@ class BubbleHover(unittest.TestCase):
 
     def test_the_field_gets_focus_only_when_the_pointer_stays(self):
         focus = []
+        old_hover = self.face.FOCUS_ON_HOVER
+        self.addCleanup(setattr, self.face, "FOCUS_ON_HOVER", old_hover)
+        self.face.FOCUS_ON_HOVER = True
         old = self.face.activate_app
         self.addCleanup(setattr, self.face, "activate_app", old)
         self.face.activate_app = lambda: None
@@ -1475,6 +1478,20 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(focus, [1])
         self.window._animate()
         self.assertEqual(focus, [1], "once")
+
+    def test_where_hover_must_not_take_focus_resting_on_the_face_does_not_activate_the_bubble(self):
+        """GNOME shows "Bot Widget is ready" for a window that asks for focus without a click."""
+        focus = []
+        old_hover = self.face.FOCUS_ON_HOVER
+        self.addCleanup(setattr, self.face, "FOCUS_ON_HOVER", old_hover)
+        self.face.FOCUS_ON_HOVER = False
+        self.window.bubble.focus_entry = lambda: focus.append(1)
+        self.hover()
+        self.window._hover_since -= 1
+        self.window._animate()
+        self.assertEqual(focus, [], "only a click puts the cursor in the field")
+        self.click_face()
+        self.assertEqual(focus, [1])
 
     def test_flying_past_the_face_never_takes_the_keyboard(self):
         focus = []

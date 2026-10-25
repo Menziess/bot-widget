@@ -84,6 +84,8 @@ def ensure_x11_libraries() -> None:
 
 HOTKEY_LABEL = ""
 CAN_PICK_DESKTOPS = False
+# Taking the keyboard without a click makes GNOME say "Bot Widget is ready" instead of focusing.
+FOCUS_ON_HOVER = False
 
 
 def set_desktops(win_id: int, everywhere: bool) -> None:

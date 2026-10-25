@@ -176,6 +176,15 @@ class BubbleEntry(QPlainTextEdit):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.document().documentLayout().documentSizeChanged.connect(self._document_resized)
 
+    def mousePressEvent(self, event):
+        """A click into the field is the one moment the bubble asks for the keyboard: the bubble window does not
+        take focus by itself, so it is activated here, with the click as the reason."""
+        window = self.window()
+        if not window.isActiveWindow():
+            window.activateWindow()
+        super().mousePressEvent(event)
+        self.setFocus()
+
     def _document_resized(self, _size):
         # A scrollbar only once the lines no longer fit: before that it would flash up for the moment
         # a new line has wrapped and the field has not grown yet.

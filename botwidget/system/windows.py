@@ -5,6 +5,8 @@ import os
 
 HOTKEY_LABEL = ""
 CAN_PICK_DESKTOPS = False
+# Windows only flashes the taskbar for a window that takes focus without a click.
+FOCUS_ON_HOVER = False
 
 
 def set_desktops(win_id: int, everywhere: bool) -> None:

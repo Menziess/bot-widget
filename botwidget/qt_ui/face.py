@@ -64,7 +64,7 @@ from botwidget.qt_ui import desktops, screens
 from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow, pointer_on_no_window
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
-from botwidget.system.current import activate_app, send_behind_windows
+from botwidget.system.current import FOCUS_ON_HOVER, activate_app, send_behind_windows
 from botwidget.theme import BUBBLE_FONT
 
 DOT_SIZE = 14
@@ -656,7 +656,8 @@ class FaceWindow(QWidget):
             self._claim_bubble()
             self.bubble.shown_by_pointer()
             self._hover_since = now if self.bubble.isVisible() else 0.0
-        elif self._hover_since and now - self._hover_since >= FOCUS_DWELL_S and self._drag_origin is None:
+        elif (self._hover_since and now - self._hover_since >= FOCUS_DWELL_S and self._drag_origin is None
+              and FOCUS_ON_HOVER):
             # Typing starts at once, but only when the pointer stays: passing over the face is not asking.
             self._hover_since = 0.0
             if self.bubble.isVisible() and self.bubble.takes_input() and self.bubble.kind == "say":
