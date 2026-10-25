@@ -3439,6 +3439,26 @@ class MenuInBubble(unittest.TestCase):
         self.assertTrue(bubble.windowOpacity() == 1.0 or bubble._growth is not None,
                         "a cancelled open must not leave the bubble invisible")
 
+    def test_a_right_click_on_a_busy_bot_keeps_the_command_list_open(self):
+        """A bot that works refreshes its thinking cloud all the time; that must not replace the menu."""
+        self.window._pump_outbox = lambda: None
+        busy = {"messages": [{"role": "user", "text": "Klaar?"}], "activity": "reading"}
+        self.face.latest_chat = lambda thread_id, limit=8: busy
+        self.window._sync_bubble(busy, force=True)
+        self.window._working = True
+        self.window._asked = True
+        self.right_click()
+        bubble = self.window.bubble
+        for _ in range(3):
+            self.window._sync_bubble(busy, force=True)
+            self.window._sync_bubble(busy)
+            self.window._check_hover()
+        self.assertTrue(bubble._list_only, "the menu stays")
+        bubble._tick_dots()  # the dots of the thought before must not trip over a bubble without text
+        self.assertEqual(bubble._slash.rows, list(menu_pages.COMMANDS))
+        self.window.on_user_message("/settings")
+        self.assertIn("Sound on a new answer", self.text())
+
     def test_typing_a_slash_command_opens_its_page_and_sends_nothing(self):
         self.window._pump_outbox = lambda: None
         for typed, expected in (("/settings", "Sound on a new answer"), ("/bots", "Fritsie"),

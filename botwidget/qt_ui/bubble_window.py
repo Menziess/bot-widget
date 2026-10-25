@@ -653,6 +653,9 @@ class BubbleWindow(QWidget):
         self.full_text = ""
         self.kind = "say"
         self._commands_forced = True
+        # The dots of a thought before belong to text that is gone; ticking them on would draw nothing.
+        self._dots_lines = []
+        self._loading_lines = []
         self._slash.show_rows(list(menu_pages.COMMANDS))
         self._geom = ([], MIN_INTERACTIVE_W, 0)
         self._built = ("commands",)
@@ -1042,7 +1045,7 @@ class BubbleWindow(QWidget):
             # Resizing puts the text back in the corner of the scroll area, which would undo a bounce.
             self._text.resize(size)
         # One panel padding lower: the shapes keep the text of the first panel at that spot.
-        top = panel_pad(panels[0])
+        top = panel_pad(panels[0]) if panels else 0
         self._doc.setGeometry(0, top, box_w, max(1, inner - top))
         self._doc.setVisible(self.kind != "")
         self._place_controls()

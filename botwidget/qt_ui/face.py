@@ -1006,6 +1006,8 @@ class FaceWindow(QWidget):
             if self.bubble.isVisible():
                 return  # a page of the menu is open: the conversation waits
             self._menu_page = None
+        if self.bubble._list_only and self.bubble.isVisible():
+            return  # the right-click menu is open: a busy bot's thinking cloud must not replace it
         if not (openbot_installed() or gbot_installed()):
             if self.pinned or force or not self._hint_shown:
                 self._hint_shown = True
