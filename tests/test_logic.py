@@ -3171,6 +3171,66 @@ class LatestChat(unittest.TestCase):
         self.assertLessEqual(len(text), openbot.MESSAGE_CHARS + 1)
 
 
+class FailedTurn(unittest.TestCase):
+    """A turn OpenBot gave up on (a spent provider) is not thinking: the face says why."""
+
+    def store(self, status, active=None, error=None):
+        import sqlite3
+        from botwidget import openbot
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        path = os.path.join(folder, "openbot.db")
+        con = sqlite3.connect(path)
+        con.execute("CREATE TABLE projection_thread_messages (thread_id, author, item_type, message_json, created_at)")
+        con.execute("CREATE TABLE projection_threads (thread_id, active_turn_id)")
+        con.execute("CREATE TABLE projection_turns (turn_id, thread_id, status)")
+        con.execute("CREATE TABLE projection_deliveries (turn_id, error)")
+        con.execute("INSERT INTO projection_thread_messages VALUES ('t', 'user', 'message', ?, '2026-01-01T10:00')",
+                    (json.dumps({"text": "Are you alive?"}),))
+        con.execute("INSERT INTO projection_thread_messages VALUES ('t', 'bot', 'commentary', ?, '2026-01-01T10:01')",
+                    (json.dumps({"text": "Looking at it"}),))
+        con.execute("INSERT INTO projection_threads VALUES ('t', ?)", (active,))
+        con.execute("INSERT INTO projection_turns VALUES ('u1', 't', ?)", (status,))
+        con.execute("INSERT INTO projection_deliveries VALUES ('u1', ?)", (error,))
+        con.commit()
+        con.close()
+        old = openbot.DB_FILE
+        self.addCleanup(setattr, openbot, "DB_FILE", old)
+        openbot.DB_FILE = path
+        return openbot.latest_chat("t")
+
+    def test_a_spent_provider_is_out_of_tokens_not_thinking(self):
+        chat = self.store("failed", error="RequestError: Internal error: Free usage limit reached. Connect a provider")
+        self.assertEqual(chat["activity"], "", "no thinking for a turn that is over")
+        self.assertTrue(chat["failed"].startswith("Out of tokens"))
+
+    def test_another_failure_says_the_turn_failed(self):
+        self.assertEqual(self.store("failed", error="boom")["failed"], "The last turn failed: boom")
+
+    def test_a_running_turn_still_thinks(self):
+        chat = self.store("running", active="u1")
+        self.assertEqual(chat["activity"], "Looking at it")
+        self.assertEqual(chat["failed"], "")
+
+    def test_the_face_shows_offline_with_the_reason(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui import face
+        QApplication.instance() or QApplication([])
+        window = face.FaceWindow("t", "Test", spot=(300, 400))
+        window._poll_timer.stop()
+        self.addCleanup(window.close_face)
+        old = face.automation_ready
+        self.addCleanup(setattr, face, "automation_ready", old)
+        face.automation_ready = lambda: True
+        chat = {"messages": [{"role": "user", "text": "Are you alive?"}], "activity": "",
+                "failed": "Out of tokens: Free usage limit reached."}
+        window._sync_bubble(chat, force=True)
+        self.assertFalse(window._working)
+        self.assertEqual(window._motion_mood(), "offline")
+        self.assertIn("Out of tokens", window.bubble.full_text)
+
+
 class ScreenChanges(unittest.TestCase):
     """Should move the face onto a screen when its screen goes, and back when the screen returns."""
 

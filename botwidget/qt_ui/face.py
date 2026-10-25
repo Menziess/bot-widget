@@ -805,7 +805,7 @@ class FaceWindow(QWidget):
                 return self.hermes.note()
             except Exception:
                 return ""
-        return ""
+        return getattr(self, "_failed_note", "")
 
     def _has_grok_or_hermes(self) -> bool:
         return bool(self.grok or self.hermes)
@@ -1052,6 +1052,8 @@ class FaceWindow(QWidget):
     def _sync_bubble(self, chat: dict, force: bool = False):
         """Cloud during a running turn, the conversation as long as the bubble is pinned or fresh."""
         self._working = bool(chat.get("activity")) or self._has_attention()
+        # OpenBot: the last turn failed (a spent provider, say). The face shows it like Grok Bot offline.
+        self._failed_note = chat.get("failed") or ""
         self.bubble.set_queueing(self._working, len(self._queue), answering=self._open_question() is not None)
         self._next_queued()
         stored = chat.get("messages") or []
@@ -1279,7 +1281,8 @@ class FaceWindow(QWidget):
         elif self.hermes:
             status = self._send_status or self.hermes.note()
         else:
-            status = self._send_status or ("" if automation_ready() else self._waiting_note())
+            status = (self._send_status or ("" if automation_ready() else self._waiting_note())
+                      or getattr(self, "_failed_note", ""))
         if not status and self._refresh_note and time.monotonic() < self._refresh_note_until:
             status = self._refresh_note
         if status:

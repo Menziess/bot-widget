@@ -257,6 +257,7 @@ def latest_chat(thread_id: str, limit: int = 20) -> dict:
             """,
             (thread_id, thread_id),
         ).fetchone()
+        turn = _last_turn(con, thread_id)
     except sqlite3.Error:
         return empty
     finally:
@@ -277,4 +278,47 @@ def latest_chat(thread_id: str, limit: int = 20) -> dict:
         if line and ("bearer " in line.lower() or "authorization" in line.lower()):
             line = "working…"
         activity = line
-    return {"messages": messages, "activity": activity}
+    failed = ""
+    if turn is not None:
+        active, status, error = turn
+        if not active:
+            # No turn runs: commentary without a final answer is what a failed turn leaves behind, not work.
+            activity = ""
+            if status == "failed":
+                failed = failure_note(error)
+    return {"messages": messages, "activity": activity, "failed": failed}
+
+
+USAGE_LIMIT_WORDS = ("usage limit", "quota", "rate limit", "insufficient", "credit", "billing", "out of tokens")
+
+
+def failure_note(error: str | None) -> str:
+    """One short line on why the last turn failed. A spent provider becomes 'Out of tokens'."""
+    text = " ".join(str(error or "").split())
+    for prefix in ("RequestError:", "Internal error:"):
+        text = text.replace(prefix, "").strip()
+    if any(word in text.lower() for word in USAGE_LIMIT_WORDS):
+        return "Out of tokens: " + (text[:110] + "…" if len(text) > 110 else text)
+    if not text:
+        return "The last turn failed."
+    return "The last turn failed: " + (text[:110] + "…" if len(text) > 110 else text)
+
+
+def _last_turn(con, thread_id: str) -> tuple | None:
+    """(a turn runs now, status of the latest turn, its delivery error), or None for a store without turns."""
+    try:
+        active = con.execute("SELECT active_turn_id FROM projection_threads WHERE thread_id = ?",
+                             (thread_id,)).fetchone()
+        last = con.execute(
+            """
+            SELECT t.status, (SELECT d.error FROM projection_deliveries d
+                              WHERE d.turn_id = t.turn_id AND d.error IS NOT NULL LIMIT 1)
+            FROM projection_turns t WHERE t.thread_id = ? ORDER BY t.rowid DESC LIMIT 1
+            """,
+            (thread_id,),
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    if active is None or last is None:
+        return None
+    return bool(active[0]), last[0], last[1]
