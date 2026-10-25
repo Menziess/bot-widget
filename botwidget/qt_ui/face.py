@@ -85,6 +85,8 @@ BUBBLE_HOVER_MARGIN = 24  # the pointer counts as on the bubble this far outside
 HOVER_RETRY_S = 0.5
 # After you closed the bubble on purpose it stays closed this long; if the pointer is still on the face it comes back.
 REOPEN_AFTER_S = 3.0
+# How long the line on how a /refresh went stays under the chat.
+REFRESH_NOTE_S = 8.0
 
 
 def global_pointer() -> bool:
@@ -188,6 +190,8 @@ class FaceWindow(QWidget):
         self._menu_page = None  # a page of the menu is in the bubble
         self._depth = 1  # how many of the latest messages the bubble shows
         self._loading_older = False
+        self._refreshing = False  # /refresh asked; the next poll says how it went
+        self._refresh_note, self._refresh_note_until = "", 0.0
         self._conversation = None
         self._messages = []
         self._chat = {}
@@ -902,12 +906,19 @@ class FaceWindow(QWidget):
                 if self._poll_thread is None or not self._poll_thread.is_alive():
                     self._poll_thread = threading.Thread(target=self._poll_grok, daemon=True)
                     self._poll_thread.start()
+            if self._refreshing and not self.grok.is_polling and (
+                    self._poll_thread is None or not self._poll_thread.is_alive()):
+                # Nothing went out to Grok Bot after all: say so rather than wait for an answer that never comes.
+                self._refreshed(self.grok.note() or "Refreshed.")
             self._sync_bubble(self._latest())
             if self.grok.active():
                 self._poll_timer.start(1000)
             return
         if self.hermes:
             # Hermes Bot uses --oneshot mode, no polling needed after send.
+            if self._refreshing:
+                self._refreshed(self.hermes.note() or "Refreshed.")
+                return
             self._sync_bubble(self._latest())
             return
         try:
@@ -921,7 +932,10 @@ class FaceWindow(QWidget):
             if has_pending != self.has_pending:
                 self.has_pending = has_pending
             changed = self._set_attention(data)
-        self._sync_bubble(self._latest(), force=changed)
+        if self._refreshing:
+            self._refreshed("Refreshed." if data is not None else "Could not reach OpenBot.")
+        else:
+            self._sync_bubble(self._latest(), force=changed)
         self._poll_timer.start((WORK_POLL_INTERVAL if self._working else POLL_INTERVAL) * 1000)
 
     def _poll_grok(self):
@@ -930,7 +944,20 @@ class FaceWindow(QWidget):
         if self._alive:
             self.grok_polled.emit()
 
+    def _refreshed(self, note: str):
+        """The refresh is done: the chat comes back with one line on how it went."""
+        if not self._refreshing:
+            return
+        self._refreshing = False
+        self._refresh_note, self._refresh_note_until = note, time.monotonic() + REFRESH_NOTE_S
+        self._depth = max(self._depth, 1)
+        self.bubble.keep_for(MENU_KEEP_S)
+        self._sync_bubble(self._latest(), force=True)
+
     def _on_grok_polled(self):
+        if self._alive and self._refreshing:
+            self._refreshed(self.grok.note() or "Refreshed.")
+            return
         if self._alive:
             self._sync_bubble(self._latest())
             if self.grok.active() and not self._poll_timer.isActive():
@@ -1108,8 +1135,15 @@ class FaceWindow(QWidget):
         QDesktopServices.openUrl(QUrl(url))
 
     def refresh(self):
-        """Reload this bot's chat now. The other faces keep their own timer."""
+        """Reload this bot's chat now. The other faces keep their own timer.
+
+        The bubble says it is busy at once, and how it went once the chat is in: never an empty bubble.
+        """
         self._menu_page = None
+        self._refreshing = True
+        self._refresh_note = ""
+        self.bubble.keep_for(MENU_KEEP_S)
+        self.bubble.show_blocks([status_block("Refreshing…"), role_panel("bot"), plain_block("dots")], "say")
         if self.grok:
             self.grok.request_fetch()
         if self.hermes:
@@ -1186,6 +1220,8 @@ class FaceWindow(QWidget):
             status = self._send_status or self.hermes.note()
         else:
             status = self._send_status or ("" if automation_ready() else self._waiting_note())
+        if not status and self._refresh_note and time.monotonic() < self._refresh_note_until:
+            status = self._refresh_note
         if status:
             blocks.append(status_block(status))
         return blocks

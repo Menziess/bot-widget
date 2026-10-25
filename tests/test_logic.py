@@ -3547,6 +3547,24 @@ class MenuInBubble(unittest.TestCase):
         self.assertEqual(calls, ["polled"])
         self.assertEqual(self.window._outbox.items, [])
 
+    def test_refresh_says_it_is_busy_and_then_how_it_went(self):
+        """Never an empty white bubble: 'Refreshing…' at once, then the chat with one line on the result."""
+        from unittest import mock
+        self.window._poll_timer.timeout.disconnect()
+        self.right_click()
+        self.window.bubble._run_command("/refresh")
+        self.assertIn("Refreshing", self.text())
+        self.assertTrue(self.window.bubble.isVisible())
+        with mock.patch.object(self.face, "api_get", return_value={"prompts": [], "approvals": []}):
+            self.window._poll_pending()
+        self.assertIn("Refreshed.", self.text())
+        self.assertIn("Hoi.", self.text())
+        self.right_click()
+        self.window.bubble._run_command("/refresh")
+        with mock.patch.object(self.face, "api_get", side_effect=OSError("down")):
+            self.window._poll_pending()
+        self.assertIn("Could not reach OpenBot.", self.text())
+
     def test_a_right_click_never_takes_away_what_you_typed(self):
         self.window.pin()
         bubble = self.window.bubble
