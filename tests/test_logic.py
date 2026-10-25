@@ -1497,6 +1497,38 @@ class BubbleHover(unittest.TestCase):
         self.hover()
         self.assertTrue(self.window.bubble._entry.isVisibleTo(self.window.bubble))
 
+    def test_clicking_into_the_field_gives_it_the_keys_but_a_bubble_that_opens_by_itself_takes_none(self):
+        """X: the window manager hands the keyboard only to a window that accepts focus (WM_HINTS input), and
+        Qt refuses to even ask for one that does not. A bubble that opens by itself must not take the keys."""
+        from PySide6.QtCore import QPoint, Qt, qInstallMessageHandler
+        from PySide6.QtTest import QTest
+        said = []
+        old = qInstallMessageHandler(lambda _kind, _context, text: said.append(text))
+        self.addCleanup(qInstallMessageHandler, old)
+        bubble = self.window.bubble
+        del bubble.focus_entry  # the real one: this test is about focus
+        self.hover()
+        self.assertTrue(bubble.isVisible())
+        self.assertTrue(bubble.testAttribute(Qt.WA_ShowWithoutActivating), "opening by itself takes no focus")
+        entry = bubble._entry
+        QTest.mouseClick(entry.viewport(), Qt.LeftButton, Qt.NoModifier, QPoint(10, 5))
+        self.click_face()
+        self.assertFalse(bubble.windowFlags() & Qt.WindowDoesNotAcceptFocus,
+                         "a bubble that never accepts focus can never be typed in")
+        self.assertFalse([text for text in said if "DoesNotAcceptFocus" in text])
+
+    def test_a_left_click_on_the_face_puts_the_cursor_in_the_field_once_the_field_shows(self):
+        """The field only shows once the bubble has grown a bit: asking for the cursor before that must not
+        get lost, or the keys go nowhere."""
+        bubble = self.window.bubble
+        del bubble.focus_entry  # the real one: this test is about focus
+        self.assertFalse(bubble.isVisible())
+        self.click_face()
+        self.assertTrue(bubble.isVisible())
+        self.finish_growth()
+        self.assertTrue(bubble._entry.isVisible())
+        self.assertIs(bubble.focusWidget(), bubble._entry)
+
     def test_a_conversation_that_has_not_started_greets_you_with_the_field(self):
         self.MESSAGES = []
         self.hover()

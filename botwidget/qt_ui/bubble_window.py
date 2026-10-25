@@ -199,6 +199,11 @@ class BubbleEntry(QPlainTextEdit):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.document().documentLayout().documentSizeChanged.connect(self._document_resized)
 
+    def mousePressEvent(self, event):
+        # A click into the field asks for the keyboard, also where the window manager does not focus on click.
+        self.window().activateWindow()
+        super().mousePressEvent(event)
+
     def _document_resized(self, _size):
         # A scrollbar only once the lines no longer fit: before that it would flash up for the moment
         # a new line has wrapped and the field has not grown yet.
@@ -589,6 +594,7 @@ class BubbleWindow(QWidget):
         self._entered_at = None
         self._left_at = None
         self._had_focus = False
+        self._wants_keys = False
         self._wait_since = 0.0
         self._growth = None
         self._older_until = 0.0
@@ -925,9 +931,12 @@ class BubbleWindow(QWidget):
             self._notice.setGeometry(self._notice_rect())
 
     def focus_entry(self):
+        """The cursor into the field, asked for by the user. A field that is not there yet (the bubble is still
+        growing) gets it as soon as it shows: Qt drops focus given to a hidden widget."""
         if self._input:
             self.activateWindow()
             self._entry.setFocus()
+            self._wants_keys = self.focusWidget() is not self._entry
 
     def shows(self, kind: str, text: str, input: bool) -> bool:
         """Is exactly this already showing in the bubble? Then nothing needs to be redrawn."""
@@ -1129,8 +1138,9 @@ class BubbleWindow(QWidget):
         when its face is behind them.
         """
         layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
-        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint
-                            | Qt.WindowDoesNotAcceptFocus)
+        # It takes focus, or nothing can be typed in its field: the window manager gives the keyboard only to a
+        # window that accepts focus. Opening by itself takes none (WA_ShowWithoutActivating); a click does.
+        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint)
 
     def restack(self):
         """After always-on-top changes: new flags need a show if the bubble is already open."""
@@ -1192,6 +1202,9 @@ class BubbleWindow(QWidget):
         # hiding it would drop the cursor at every new thought.
         self._entry.setVisible(self._input and (self._growth is None or self._growth.progress >= 0.35
                                                 or self._entry.isVisible()))
+        if self._wants_keys and self._entry.isVisible():
+            self._wants_keys = False
+            self._entry.setFocus()
         self._move_notice()
         self._place_controls()
 
@@ -1654,6 +1667,7 @@ class BubbleWindow(QWidget):
             self._was_near = False
             self._near_at = 0.0
             self._had_focus = False
+            self._wants_keys = False
             self._physics.stop()
             self._physics_on = False
             self._commands_forced = False
