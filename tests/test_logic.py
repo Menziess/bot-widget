@@ -3673,6 +3673,23 @@ class MenuInBubble(unittest.TestCase):
             bubble._tick()
         self.assertFalse(bubble.isVisible(), "it goes by itself")
 
+    def test_the_right_click_menu_is_flat_rows_in_the_bubble_with_nothing_cut(self):
+        """One outline, the bubble's: the list draws no box of its own, and every note fits."""
+        from PySide6.QtGui import QColor, QImage
+        self.right_click()
+        bubble = self.window.bubble
+        slash = bubble._slash
+        self.assertGreaterEqual(bubble._geom[1], slash.wanted_width(), "the bubble is wide enough for the notes")
+        image = QImage(slash.width(), slash.height(), QImage.Format_ARGB32)
+        image.fill(QColor("#ffffff"))
+        from PySide6.QtCore import QPoint
+        from PySide6.QtGui import QRegion
+        from PySide6.QtWidgets import QWidget
+        slash.render(image, QPoint(), QRegion(), QWidget.RenderFlag.DrawChildren)
+        mid = slash.height() // 2
+        self.assertEqual(image.pixelColor(0, mid).name(), "#ffffff", "no outline on the left edge")
+        self.assertEqual(image.pixelColor(slash.width() - 1, mid).name(), "#ffffff", "nor on the right")
+
     def test_a_right_click_never_takes_away_what_you_typed(self):
         self.window.pin()
         bubble = self.window.bubble

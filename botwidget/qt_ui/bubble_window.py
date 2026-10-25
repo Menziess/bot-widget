@@ -658,7 +658,8 @@ class BubbleWindow(QWidget):
         self._dots_lines = []
         self._loading_lines = []
         self._slash.show_rows(list(menu_pages.COMMANDS))
-        self._geom = ([], MIN_INTERACTIVE_W, 0)
+        # As wide as the commands and their notes need, so nothing is cut; never wider than a chat bubble.
+        self._geom = ([], max(MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60)), 0)
         self._built = ("commands",)
         self._growth = None
         self.setWindowOpacity(1.0)

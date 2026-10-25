@@ -1,7 +1,7 @@
 """Real form elements for the menu pages: a switch with its label, and a button."""
 
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QAbstractButton, QPushButton, QWidget
 
 from botwidget.qt_ui.text_doc import color
@@ -101,17 +101,39 @@ class SlashList(QWidget):
         if self.rows:
             self.chosen.emit(self.rows[self._row_at(event.position().y())][0])
 
-    def paintEvent(self, _event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QColor(28, 28, 28, 46))
-        painter.setBrush(QColor("#ffffff"))
-        painter.drawRoundedRect(QRectF(0.5, 0.5, self.width() - 1, self.height() - 1), 10, 10)
+    PAD_X = 12  # text inset; the highlight runs 4px from the edge
+    GAP = 14  # between a command and its note
+
+    @staticmethod
+    def _fonts() -> tuple:
         command_font = QFont(SAND_SANS)
         command_font.setPixelSize(BUBBLE_FONT)
         command_font.setBold(True)
         note_font = QFont(SAND_SANS)
         note_font.setPixelSize(BUBBLE_FONT - 1)
+        return command_font, note_font
+
+    def command_w(self) -> int:
+        """The command column fits the longest command, so /connections is not cut."""
+        command_font, _note_font = self._fonts()
+        metrics = QFontMetrics(command_font)
+        return max((metrics.horizontalAdvance(command) for command, _note in self.rows), default=0) + self.GAP
+
+    def wanted_width(self) -> int:
+        """Wide enough for every command and its whole note."""
+        _command_font, note_font = self._fonts()
+        notes = QFontMetrics(note_font)
+        widest = max((notes.horizontalAdvance(note) for _command, note in self.rows), default=0)
+        return 2 * self.PAD_X + self.command_w() + widest
+
+    def paintEvent(self, _event):
+        """Flat rows on the bubble's own white: the bubble is the only outline."""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        command_font, note_font = self._fonts()
+        command_w = self.command_w()
+        note_x = self.PAD_X + command_w
+        notes = QFontMetrics(note_font)
         for i, (command, note) in enumerate(self.rows):
             top = 4 + i * self.ROW_H
             if i == self.index:
@@ -120,7 +142,9 @@ class SlashList(QWidget):
                 painter.drawRoundedRect(QRectF(4, top, self.width() - 8, self.ROW_H), 7, 7)
             painter.setFont(command_font)
             painter.setPen(color(SAND_ACCENT))
-            painter.drawText(QRectF(12, top, 104, self.ROW_H), Qt.AlignVCenter | Qt.AlignLeft, command)
+            painter.drawText(QRectF(self.PAD_X, top, command_w, self.ROW_H), Qt.AlignVCenter | Qt.AlignLeft, command)
             painter.setFont(note_font)
             painter.setPen(color(SAND_INK_SOFT))
-            painter.drawText(QRectF(118, top, self.width() - 126, self.ROW_H), Qt.AlignVCenter | Qt.AlignLeft, note)
+            room = max(0, self.width() - note_x - self.PAD_X)
+            painter.drawText(QRectF(note_x, top, room, self.ROW_H), Qt.AlignVCenter | Qt.AlignLeft,
+                             notes.elidedText(note, Qt.ElideRight, room))
