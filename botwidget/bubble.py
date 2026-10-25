@@ -98,6 +98,16 @@ def bubble_height_cap(face_h: int) -> int:
     return PAD_SVG + TAIL_ROOM + 3 * band + 16
 
 
+# A page of the menu (settings, bots, connections) is a place to work in, not a chat line: it grows to this
+# share of the screen before it scrolls.
+MENU_SCREEN_SHARE = 0.7
+
+
+def menu_height_cap(face_cap: int, screen_h: int) -> int:
+    """Max window height of a menu page: as tall as its content, up to most of the screen."""
+    return max(int(face_cap), int(screen_h * MENU_SCREEN_SHARE))
+
+
 def panel_rects(panels: list) -> list:
     """(top, height) of every panel in the scrolling content, where panel_svg draws it."""
     rects, top = [], 0

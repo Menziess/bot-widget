@@ -1134,6 +1134,8 @@ class FaceWindow(QWidget):
         self.pinned = False
         # A page smaller than the one before may leave the pointer outside the bubble.
         self.bubble.keep_for(MENU_KEEP_S)
+        # The others close first: a tall page would otherwise give way to a bubble it is about to replace.
+        self.faces.close_bubbles_except(self.agent_id)
         self.bubble.show_blocks(menu_pages.page_blocks(page, self.faces.menu_state()), "say", keep_scroll=again)
         self._claim_bubble()
         self.bubble.activateWindow()

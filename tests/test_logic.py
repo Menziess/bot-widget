@@ -2177,6 +2177,20 @@ class BubbleHover(unittest.TestCase):
             with mock.patch.object(type(bubble), "underMouse", return_value=True):
                 self.assertTrue(self.window.pointer_near(bubble), "the pointer is on the bubble")
 
+    def test_a_menu_page_grows_to_its_content_before_it_scrolls(self):
+        """Settings is taller than the chat band of a face: it gets the room, up to most of the screen."""
+        from botwidget.bubble import MENU_SCREEN_SHARE, bubble_height_cap
+        from botwidget.qt_ui import screens
+        bubble = self.open_settings()
+        _x, _y, _w, screen_h = screens.rect_at(self.window.x() + 34, self.window.y() + 34)
+        chat_cap = bubble_height_cap(self.window.height())
+        panels, _box_w, inner = bubble._geom
+        self.assertGreater(bubble.height(), chat_cap, "more than the chat band of the face")
+        self.assertLessEqual(bubble.height(), max(chat_cap, screen_h * MENU_SCREEN_SHARE) + bubble._extras() + 1)
+        bar = bubble._scroll.verticalScrollBar()
+        if inner + 2 * 12 < screen_h * MENU_SCREEN_SHARE - 80:
+            self.assertEqual(bar.maximum(), 0, "it all fits: nothing to scroll")
+
     def test_on_wayland_a_bubble_closes_at_once_when_the_pointer_leaves(self):
         """No close grace: off the bubble for one frame and it goes. Only the face-to-bubble move is kept."""
         from contextlib import ExitStack
