@@ -29,13 +29,24 @@ class Result(NamedTuple):
 
 HERMES_CLI = "hermes"
 
+# `hermes --version` takes about 0.2 s. The arc asks on the drag path, so the answer is kept a while.
+INSTALLED_TTL_S = 300.0
+_installed_cache: tuple | None = None  # (when, answer)
+
+
 def is_hermes_installed() -> bool:
-    """Check if the hermes CLI is installed and available."""
+    """Check if the hermes CLI is installed and available; asked again after INSTALLED_TTL_S."""
+    global _installed_cache
+    now = time.monotonic()
+    if _installed_cache is not None and now - _installed_cache[0] < INSTALLED_TTL_S:
+        return _installed_cache[1]
     try:
         result = subprocess.run([HERMES_CLI, "--version"], capture_output=True, timeout=5)
+        installed = result.returncode == 0
     except (subprocess.TimeoutExpired, OSError):
-        return False
-    return result.returncode == 0
+        installed = False
+    _installed_cache = (now, installed)
+    return installed
 
 def face_id(target: str = DEFAULT_TARGET) -> str:
     """The id of the face of a Hermes Bot bot."""

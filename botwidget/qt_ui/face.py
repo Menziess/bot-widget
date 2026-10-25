@@ -10,7 +10,7 @@ import threading
 import time
 import uuid
 
-from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import QEasingCurve, QPoint, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter
 from PySide6.QtWidgets import QWidget
 
@@ -85,6 +85,10 @@ BUBBLE_HOVER_MARGIN = 24  # the pointer counts as on the bubble this far outside
 HOVER_RETRY_S = 0.5
 # After you closed the bubble on purpose it stays closed this long; if the pointer is still on the face it comes back.
 REOPEN_AFTER_S = 3.0
+# A face dragged into or out of the arc shrinks or grows over this long instead of jumping.
+DRAG_RESIZE_MS = 160
+# Stacking the bubbles costs X round trips: during a drag at most this often.
+DRAG_RESTACK_S = 0.25
 # How long the line on how a /refresh went stays under the chat.
 REFRESH_NOTE_S = 8.0
 
@@ -460,10 +464,13 @@ class FaceWindow(QWidget):
             if size < AVATAR_SIZE and self.bubble.isVisible():
                 self.pinned = False
                 self.bubble.place("")
-            if self.width() != size:
-                self.setFixedSize(size, size)
-            self._move_icon(cx - size / 2, cy - size / 2)
-            self.faces.raise_bubbles()
+            self._drag_center = (cx, cy)
+            self._resize_to(size)
+            self._move_icon(cx - self.width() / 2, cy - self.height() / 2)
+            now = time.monotonic()
+            if now - getattr(self, "_restacked_at", 0.0) >= DRAG_RESTACK_S:
+                self._restacked_at = now
+                self.faces.raise_bubbles()
             self.faces.offer_semicircle(cx, cy)
         now = time.monotonic()
         if self._drag_sample and now - self._drag_sample[0] >= 0.03:
@@ -472,10 +479,43 @@ class FaceWindow(QWidget):
             self._dvy = (y - sy) / (now - t)
             self._drag_sample = (now, x, y)
 
+    def _resize_to(self, size: int):
+        """Grow or shrink around the centre the pointer holds, over DRAG_RESIZE_MS."""
+        goal = getattr(self, "_size_goal", None)
+        if size == (self.width() if goal is None else goal):
+            return
+        self._size_goal = size
+        anim = getattr(self, "_size_anim", None)
+        if anim is None:
+            anim = self._size_anim = QVariantAnimation(self)
+            anim.setEasingCurve(QEasingCurve.OutCubic)
+            anim.valueChanged.connect(self._apply_drag_size)
+        anim.stop()
+        anim.setDuration(DRAG_RESIZE_MS)
+        anim.setStartValue(float(self.width()))
+        anim.setEndValue(float(size))
+        anim.start()
+
+    def _apply_drag_size(self, value):
+        side = max(1, int(round(value)))
+        cx, cy = getattr(self, "_drag_center", (self.x() + self.width() / 2, self.y() + self.height() / 2))
+        if self.width() != side:
+            self.setFixedSize(side, side)
+        self._move_icon(cx - side / 2, cy - side / 2)
+
+    def _finish_resize(self):
+        """Let go: the size the drag was heading for, at once, so a drop works on the real size."""
+        anim = getattr(self, "_size_anim", None)
+        if anim is not None and anim.state() == QVariantAnimation.Running:
+            anim.stop()
+            self._apply_drag_size(self._size_goal)
+        self._size_goal = None
+
     def mouseReleaseEvent(self, event):
         """A click (hardly any movement) puts the cursor in the field."""
         if event.button() != Qt.LeftButton:
             return
+        self._finish_resize()
         click = False
         if self._press_pos:
             point = event.globalPosition()

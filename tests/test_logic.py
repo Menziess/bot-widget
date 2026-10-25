@@ -1502,6 +1502,34 @@ class BubbleHover(unittest.TestCase):
         self.assertIn("Ask me anything", self.window.bubble.full_text)
         self.assertTrue(self.window.bubble._entry.isVisibleTo(self.window.bubble))
 
+    def test_a_dragged_face_shrinks_smoothly_around_the_pointer(self):
+        """Into the arc the face gets small over a moment, not in one jump, and stays centred on the pointer."""
+        from PySide6.QtTest import QTest
+        window = self.window
+        window._drag_center = (window.x() + 34.0, window.y() + 34.0)
+        window._resize_to(48)
+        self.assertEqual(window.width(), 68, "no jump on the first move")
+        QTest.qWait(self.face.DRAG_RESIZE_MS // 2)
+        self.assertTrue(48 <= window.width() <= 68)
+        QTest.qWait(self.face.DRAG_RESIZE_MS + 80)
+        self.assertEqual(window.width(), 48)
+        self.assertEqual((window.x() + 24, window.y() + 24), tuple(int(v) for v in window._drag_center))
+        window._resize_to(68)
+        window._finish_resize()
+        self.assertEqual(window.width(), 68, "letting go settles at once on the size it was heading for")
+
+    def test_the_arc_does_not_ask_hermes_on_every_drag(self):
+        """`hermes --version` costs 0.2 s; asked once, the answer is kept."""
+        from unittest import mock
+        from botwidget import hermesbot
+        old = hermesbot._installed_cache
+        self.addCleanup(setattr, hermesbot, "_installed_cache", old)
+        hermesbot._installed_cache = None
+        with mock.patch.object(hermesbot.subprocess, "run", return_value=mock.Mock(returncode=0)) as run:
+            self.assertTrue(hermesbot.is_hermes_installed())
+            self.assertTrue(hermesbot.is_hermes_installed())
+        self.assertEqual(run.call_count, 1)
+
     def test_the_field_gets_focus_only_when_the_pointer_stays(self):
         focus = []
         old_hover = self.face.FOCUS_ON_HOVER
