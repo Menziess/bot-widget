@@ -2319,6 +2319,36 @@ class BubbleHover(unittest.TestCase):
             self.assertFalse(bubble.isVisible(), "left it: closed at once")
             self.assertIsNone(bubble._reserve_win, "and the place holder is gone")
 
+    def test_a_bot_without_a_conversation_keeps_its_greeting_while_the_pointer_is_on_it(self):
+        """Hermes with an empty chat: hover (or a click) opened the greeting, and the next poll found no
+        conversation and closed it within a tenth of a second. It stays while the pointer is there, like any
+        bubble, and goes the moment the pointer leaves. The command list of such a bot stays too."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        from unittest import mock
+        self.face.latest_chat = lambda thread_id, limit=8: {"messages": [], "activity": ""}
+        window = self.window
+        window.show()
+        bubble = window.bubble
+        with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive):
+            self.hover()
+            self.assertTrue(bubble.isVisible())
+            self.assertIn("Ask me anything", bubble.full_text)
+            window._sync_bubble(window._latest())  # the poll that follows
+            self.assertTrue(bubble.isVisible(), "the pointer is on it: the greeting stays")
+            bubble._tick()
+            self.assertTrue(bubble.isVisible())
+            window.open_input()
+            window._sync_bubble(window._latest())
+            self.assertTrue(bubble.isVisible(), "a click on the face keeps it too")
+            self.where["at"] = (5000, 5000)
+            bubble._tick()
+            self.assertFalse(bubble.isVisible(), "the pointer left: it goes at once")
+            self.where["at"] = (window.x() + 34, window.y() + 34)
+            window.open_command_menu()
+            window._sync_bubble(window._latest())
+            self.assertTrue(bubble.isVisible() and bubble._list_only, "the command list stays as well")
+
     def test_a_right_click_after_a_left_click_lets_the_command_list_be_clicked_on_x(self):
         """Left-click opens the chat, right-click swaps it for the smaller command list. The see-through window
         that holds the chat's area was mapped last, so the window manager put it on top of the bubble, and every

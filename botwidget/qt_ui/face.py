@@ -1170,8 +1170,16 @@ class FaceWindow(QWidget):
             # Only new text brings the bubble back by itself; after it slid away it stays away.
             self._shown_text = text
             self.bubble.show_blocks(blocks, "say", input=True, older=older)
-        elif not blocks and self.bubble.kind:
+        elif not blocks and self.bubble.kind and not self._bubble_held():
+            # The conversation is gone (a new chat): the bubble goes too, unless someone is using it.
             self.bubble.place("")
+
+    def _bubble_held(self) -> bool:
+        """An open bubble the user is with: the pointer is on it or the face, words are typed or selected in it,
+        or it shows the command list. A bot without a conversation shows a greeting there that no poll brings
+        back: closing it on the empty chat made the bubble of such a bot vanish the moment it opened."""
+        bubble = self.bubble
+        return bubble.isVisible() and (bubble._list_only or bubble.holding() or bool(self.pointer_near(bubble)))
 
     def open_feedback(self):
         """Open a prefilled GitHub issue in the browser. The user logs in there.
