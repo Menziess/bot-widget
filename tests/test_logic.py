@@ -2320,6 +2320,36 @@ class BubbleHover(unittest.TestCase):
             self.assertFalse(bubble.isVisible(), "left it: closed at once")
             self.assertIsNone(bubble._reserve_win, "and the place holder is gone")
 
+    def test_nothing_that_happens_by_itself_closes_a_bubble_the_pointer_is_on(self):
+        """Focus taken by another window, the time to read it, a poll with an empty chat: none of them may take
+        a bubble the pointer is still on. Things the user does (Escape, another face) still close it at once."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        from unittest import mock
+        window = self.window
+        window.show()
+        bubble = window.bubble
+        with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive):
+            self.hover()
+            window.open_input()
+            self.finish_growth()
+            centre = bubble.frameGeometry().center()
+            self.where["at"] = (centre.x(), centre.y())
+            bubble._had_focus = True  # the field had the focus; now another window took it
+            with mock.patch("botwidget.qt_ui.bubble_window.QApplication.activeWindow", return_value=None):
+                bubble._tick()
+            self.assertTrue(bubble.isVisible(), "focus went elsewhere, the pointer did not")
+            bubble.changed = 1.0  # long past the time to read it
+            bubble._tick()
+            self.assertTrue(bubble.isVisible())
+            for reason in bubble.CLOSE_UNLESS_ENGAGED:
+                self.assertFalse(bubble.close_bubble(reason), reason)
+            self.assertTrue(bubble.isVisible() and bubble.consistent())
+            self.assertTrue(bubble.close_bubble("unpin"), "Escape closes it, pointer or not")
+            self.assertFalse(bubble.isVisible())
+            self.assertEqual(bubble.state(), "closed")
+            self.assertTrue(bubble.consistent())
+
     def x_pointer(self):
         """XWayland as on Stefan's desktop: X says which of our windows is under the pointer (no hover margin),
         a place holder mapped after the bubble lies on top of it, and a window mask lets the pointer through."""

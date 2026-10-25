@@ -300,8 +300,7 @@ class FaceWindow(QWidget):
             if waiting:
                 self._semicircle_visible = True
                 self.pinned = False
-                if self.bubble.isVisible():
-                    self.bubble.place("")
+                self.bubble.close_bubble("semicircle")
                 # Leave the desktop spot before hiding, so the old picture does not stay behind.
                 size = int(info["size"])
                 self._move_icon(info["x"] - size / 2, info["y"] - size / 2)
@@ -318,8 +317,7 @@ class FaceWindow(QWidget):
             return
         self._semicircle_visible = True
         self.pinned = False
-        if self.bubble.isVisible():
-            self.bubble.place("")
+        self.bubble.close_bubble("semicircle")
         size = int(info["size"])
         if self.width() != size:
             self.setFixedSize(size, size)
@@ -461,7 +459,7 @@ class FaceWindow(QWidget):
                                  len(self.faces.faces), AVATAR_SIZE)
             if size < AVATAR_SIZE and self.bubble.isVisible():
                 self.pinned = False
-                self.bubble.place("")
+                self.bubble.close_bubble("drag")
             self._drag_center = (cx, cy)
             self._resize_to(size)
             self._move_icon(cx - self.width() / 2, cy - self.height() / 2)
@@ -544,7 +542,7 @@ class FaceWindow(QWidget):
             self._dvx, self._dvy = self._wall_kick
         if abs(self._dvx) > 500 or abs(self._dvy) > 500:
             self._coasting = True
-            self.bubble.place("")  # it cannot keep up with a throw
+            self.bubble.close_bubble("throw")  # it cannot keep up with a throw
             self._coast_timer.start()
         else:
             self._landed()
@@ -869,7 +867,7 @@ class FaceWindow(QWidget):
             return
         desktops.apply(bubble)
         if not desktops.shown_here(bubble):
-            bubble.place("")
+            bubble.close_bubble("other_desktop")
             self._shown_text = ""
 
     def _claim_bubble(self):
@@ -903,7 +901,7 @@ class FaceWindow(QWidget):
         if self._working:
             self._sync_bubble(self._latest())
         else:
-            self.bubble.place("")
+            self.bubble.close_bubble("unpin")
 
     def visible_to_user(self) -> bool:
         """On the screen in front of you, not covered by other windows or on another desktop."""
@@ -1118,7 +1116,7 @@ class FaceWindow(QWidget):
                 # Thinking is silenced: no cloud, until the face is clicked again.
                 self._shown_text = ""
                 if self.bubble.kind == "think":
-                    self.bubble.place("")
+                    self.bubble.close_bubble("quiet")
                 return
             # Dots from the moment you ask, before the bot is marked as thinking.
             # Hover shows the thought and the field. Leaving shrinks it back to the dots.
@@ -1170,16 +1168,9 @@ class FaceWindow(QWidget):
             # Only new text brings the bubble back by itself; after it slid away it stays away.
             self._shown_text = text
             self.bubble.show_blocks(blocks, "say", input=True, older=older)
-        elif not blocks and self.bubble.kind and not self._bubble_held():
-            # The conversation is gone (a new chat): the bubble goes too, unless someone is using it.
-            self.bubble.place("")
-
-    def _bubble_held(self) -> bool:
-        """An open bubble the user is with: the pointer is on it or the face, words are typed or selected in it,
-        or it shows the command list. A bot without a conversation shows a greeting there that no poll brings
-        back: closing it on the empty chat made the bubble of such a bot vanish the moment it opened."""
-        bubble = self.bubble
-        return bubble.isVisible() and (bubble._list_only or bubble.holding() or bool(self.pointer_near(bubble)))
+        elif not blocks and self.bubble.kind and not self.bubble._list_only:
+            # The conversation is gone (a new chat): the bubble goes too, unless the pointer is engaged with it.
+            self.bubble.close_bubble("empty")
 
     def open_feedback(self):
         """Open a prefilled GitHub issue in the browser. The user logs in there.
@@ -1226,8 +1217,7 @@ class FaceWindow(QWidget):
     def reload_quietly(self):
         """/refresh typed into another bot: reset and reload this one without opening its bubble."""
         self._reset_state()
-        if self.bubble.isVisible():
-            self.bubble.place("")
+        self.bubble.close_bubble("refresh")
         if self.grok:
             self.grok.request_fetch()
         if self.hermes:

@@ -1516,11 +1516,11 @@ class BubbleWindow(QWidget):
         if self._input and self._entry.hasFocus():
             self._had_focus = True
         elif (self._had_focus and self._input and not self._entry.text() and not awaiting
-              and QApplication.activeWindow() not in (self, self.face)):
-            # Clicked into another window with nothing typed: the bubble goes, pinned or not.
-            # Clicking on its own words or on the face is not leaving.
+              and QApplication.activeWindow() not in (self, self.face) and not self.engaged()):
+            # Clicked into another window with nothing typed: the bubble goes, pinned or not. Clicking on its own
+            # words or on the face is not leaving, and nor is focus taken away while the pointer is still here.
             self.face.unpin()
-            self.place("")
+            self.close_bubble("focus_elsewhere")
             return
         tx, ty, tip = self._goal()
         was_yielding, self._yielding = self._yielding, self._must_yield()
@@ -1551,14 +1551,12 @@ class BubbleWindow(QWidget):
             # until the face is pointed at again.
             # Moving from the face onto its own bubble is already handled by
             # face.pointer_near(self) being true, which is caught above.
-            self.face.pinned = False
-            self.place("")
-            return
+            if self.close_bubble("left"):
+                return
         elif self.changed and now - self.changed > reading_seconds(self.full_text):
             # Nobody pointed at it and nothing new came: it goes away after a while.
-            self.face.pinned = False
-            self.place("")
-            return
+            if self.close_bubble("unread"):
+                return
         if tip != self._tip:
             self._tip = tip
             self._layout_children(self._paint_chrome())
@@ -1573,16 +1571,55 @@ class BubbleWindow(QWidget):
             nx, ny, self._vx, self._vy = tx, ty, 0.0, 0.0
         self.move(int(nx), int(ny))
 
+    # ── Open and closed: one state, one rule, one door out ─────────────
+    #
+    # The state is kind ("" is closed) plus _yielding; the window follows it, never the other way round:
+    #   closed    kind == ""                      window hidden (and on X without a native window)
+    #   open      kind set, not yielding          window shown
+    #   yielding  kind set, yielding              window hidden, physics on, back when there is room
+    # place(kind) is the only way in and place("") the only way out; _tick hides and shows for yielding.
+    # Everything that wants a bubble gone calls close_bubble(reason). Reasons in CLOSE_UNLESS_ENGAGED happen by
+    # themselves (time, a poll, focus elsewhere) and never take a bubble the pointer is engaged with; the others are
+    # things the user did (Escape, another face, a drag) and close at once.
+
+    CLOSE_UNLESS_ENGAGED = frozenset({"left", "unread", "empty", "focus_elsewhere", "quiet"})
+
+    def state(self) -> str:
+        if not self.kind:
+            return "closed"
+        return "yielding" if self._yielding else "open"
+
+    def consistent(self) -> bool:
+        """Does the window match the state?"""
+        visible = self.isVisible()
+        return {"closed": not visible, "open": visible and self._physics.isActive(),
+                "yielding": not visible and self._physics.isActive()}[self.state()]
+
+    def engaged(self) -> bool:
+        """The one rule for the pointer being with this bubble: on the face, on the bubble or within its hover
+        margin, or in the area a bigger bubble covered before a page change (see _reserve_after). Words typed
+        or selected count too."""
+        return self.isVisible() and (bool(self.face.pointer_near(self)) or self.holding())
+
+    def close_bubble(self, reason: str) -> bool:
+        """Close the bubble, unless it closes by itself and the pointer is still engaged. True when it closed."""
+        if not self.kind and not self.isVisible():
+            return False
+        if reason in self.CLOSE_UNLESS_ENGAGED and self.engaged():
+            return False
+        if reason in ("left", "unread"):
+            self.face.pinned = False
+        self.place("")
+        return True
+
     def heal(self) -> bool:
         """Backstop: the bubble's state and its window disagree (open without a window, a window without being
         open, open without the physics that closes it). Close it for real, so pointing at the face or a
         right-click opens it again instead of the bot looking stuck. True when something was wrong."""
-        visible = self.isVisible()
-        if (visible and not self.kind) or (self.kind and not visible and not self._yielding) \
-                or (self.kind and not self._physics.isActive()):
-            self.place("")
-            return True
-        return False
+        if self.consistent():
+            return False
+        self.place("")
+        return True
 
     def place(self, kind: str):
         """Show or hide the bubble. The face stays."""

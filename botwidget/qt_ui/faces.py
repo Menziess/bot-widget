@@ -371,7 +371,7 @@ class Faces(QObject):
         for other_id, face in self.faces.items():
             if other_id != agent_id and face.bubble.isVisible():
                 face.pinned = False
-                face.bubble.place("")
+                face.bubble.close_bubble("other_face")
 
     def menu_state(self) -> dict:
         """What the menu pages show: the settings as they are now, the bots, and what was found."""
