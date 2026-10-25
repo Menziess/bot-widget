@@ -3231,6 +3231,42 @@ class FailedTurn(unittest.TestCase):
         self.assertIn("Out of tokens", window.bubble.full_text)
 
 
+class NewFlagsNewWindow(unittest.TestCase):
+    """Switching always-on-top gives the windows new flags. Qt used to swap the native window only after the
+    show, so skip-taskbar and send-behind went to the old one: a taskbar entry per bot, a bubble above other
+    apps while its face stayed behind them."""
+
+    def setUp(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance() or QApplication([])
+
+    def test_new_flags_drop_the_old_native_window(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QWidget
+        from botwidget.qt_ui.native import set_flags
+        widget = QWidget()
+        self.addCleanup(widget.deleteLater)
+        widget.show()
+        self.assertTrue(widget.testAttribute(Qt.WA_WState_Created))
+        set_flags(widget, Qt.FramelessWindowHint | Qt.WindowStaysOnBottomHint)
+        self.assertFalse(widget.testAttribute(Qt.WA_WState_Created), "made again, with the new flags, at the show")
+
+    def test_restack_marks_the_window_that_is_shown(self):
+        from botwidget.qt_ui import bubble_window, face
+        from botwidget.qt_ui.native import native_id
+        window = face.FaceWindow("t", "Test", spot=(300, 400))
+        window._poll_timer.stop()
+        self.addCleanup(window.close_face)
+        window.show()
+        marked = []
+        old = bubble_window.before_show
+        self.addCleanup(setattr, bubble_window, "before_show", old)
+        bubble_window.before_show = lambda wid, layer="": marked.append(wid)
+        window.restack()
+        self.assertIn(native_id(window), marked)
+
+
 class ScreenChanges(unittest.TestCase):
     """Should move the face onto a screen when its screen goes, and back when the screen returns."""
 

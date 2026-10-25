@@ -30,6 +30,7 @@ from botwidget.config import (
 )
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
 from botwidget.qt_ui.bubble_window import mark_before_show
+from botwidget.qt_ui.native import native_id, set_flags
 from botwidget.qt_ui.face import FaceWindow
 from botwidget.system.current import (
     CAN_PICK_DESKTOPS,
@@ -99,7 +100,7 @@ class ArcCatcher(QWidget):
     def __init__(self, faces):
         super().__init__()
         self.faces = faces
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
+        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
                             | Qt.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -528,7 +529,7 @@ class Faces(QObject):
         face._arc_guest = True
         face._poll_timer.stop()
         # The catcher stays above ordinary windows. A guest on the bottom layer can never be grabbed.
-        face.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
+        set_flags(face, Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
                             | Qt.WindowDoesNotAcceptFocus)
         self._arc_guests[bot["id"]] = face
 
@@ -712,7 +713,7 @@ class Faces(QObject):
                 face.raise_()
             else:
                 face.lower()
-                send_behind_windows(int(face.winId()))
+                send_behind_windows(native_id(face))
             bubble = getattr(face, "bubble", None)
             if bubble is not None and bubble.isVisible():
                 bubble.raise_()

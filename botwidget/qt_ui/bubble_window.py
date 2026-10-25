@@ -48,6 +48,7 @@ from botwidget.config import always_on_top
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, screens
+from botwidget.qt_ui.native import native_id, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
 from botwidget.qt_ui.controls import ActionButton, SlashList, Switch
 from botwidget.qt_ui.measure import measure
@@ -133,7 +134,7 @@ def mark_before_show(widget) -> None:
     """Called right before a top-level window of ours is mapped; see system before_show."""
     flags = widget.windowFlags()
     layer = "above" if flags & Qt.WindowStaysOnTopHint else "below" if flags & Qt.WindowStaysOnBottomHint else ""
-    before_show(int(widget.winId()), layer)
+    before_show(native_id(widget), layer)
 
 
 def pointer_on_no_window() -> bool:
@@ -979,7 +980,7 @@ class BubbleWindow(QWidget):
         when its face is behind them.
         """
         layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint
+        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint
                             | Qt.WindowDoesNotAcceptFocus)
 
     def restack(self):
@@ -1334,7 +1335,7 @@ class BubbleWindow(QWidget):
         if handle is not None:
             handle.setTransientParent(None)
         if not always_on_top():
-            send_behind_windows(int(self.winId()))
+            send_behind_windows(native_id(self))
         faces = getattr(self.face, "faces", None)
         if faces is not None:
             faces.raise_bubbles()

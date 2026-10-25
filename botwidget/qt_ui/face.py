@@ -62,6 +62,7 @@ from botwidget.openbot import (
 from botwidget import attachments, grokbot, hermesbot, menu_pages, __version__
 from botwidget.qt_ui import desktops, screens
 from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow, mark_before_show, pointer_on_no_window
+from botwidget.qt_ui.native import native_id, set_flags
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
 from botwidget.system.current import FOCUS_ON_HOVER, activate_app, send_behind_windows
@@ -246,9 +247,8 @@ class FaceWindow(QWidget):
     def _apply_flags(self):
         """Separate from the taskbar; above or below normal windows according to widget.json."""
         layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
-        # Tool: no taskbar button. A normal window shows up as __main__.py.
-        # Changed: no Qt.Tool — each face appears in the taskbar so it can be found with Alt+Tab.
-        self.setWindowFlags(Qt.FramelessWindowHint | layer)
+        # No Qt.Tool: a normal window, kept out of the taskbar by skip-taskbar written before each map.
+        set_flags(self, Qt.FramelessWindowHint | layer)
 
     def restack(self):
         """After a change of the setting: new flags ask the window to be shown again."""
@@ -268,7 +268,7 @@ class FaceWindow(QWidget):
         if handle is not None:
             handle.setTransientParent(None)
         if not always_on_top():
-            send_behind_windows(int(self.winId()))
+            send_behind_windows(native_id(self))
         self.apply_desktops()
         if self.faces is not None:
             self.faces.raise_bubbles()
