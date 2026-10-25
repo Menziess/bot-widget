@@ -2033,7 +2033,6 @@ class BubbleHover(unittest.TestCase):
             bubble = self.window.bubble
             self.assertEqual(bubble.kind, "think")
             bubble._was_near = False
-            bubble._kept_until = 0.0
             self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
             bubble._tick()
             self.assertEqual(bubble.kind, "think", "the pointer is on it")
@@ -2223,6 +2222,43 @@ class BubbleHover(unittest.TestCase):
             bubble._tick()
         self.assertFalse(bubble.isVisible(), "gone once the pointer has been away past the delay")
 
+    def test_no_timer_closes_a_bubble_the_pointer_is_on_and_leaving_the_margin_closes_it_at_once(self):
+        from unittest import mock as _mock
+        from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtGui import QGuiApplication as _App
+        active = _mock.patch.object(_App, "applicationState", return_value=_Qt.ApplicationActive)
+        active.start()
+        self.addCleanup(active.stop)
+        from unittest import mock
+        self.hover()
+        bubble = self.window.bubble
+        later = time.monotonic() + 600
+        near = (bubble.frameGeometry().right() + 10, bubble.frameGeometry().center().y())
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=later):
+            self.where["at"] = near
+            bubble._tick()
+            self.assertTrue(bubble.isVisible(), "just outside, in the margin: still on it, however long")
+            self.where["at"] = (bubble.frameGeometry().right() + 200, bubble.frameGeometry().center().y())
+            bubble._tick()
+        self.assertFalse(bubble.isVisible(), "out of the margin: closed at once")
+
+    def test_a_right_click_menu_closes_the_moment_the_pointer_leaves_not_seconds_later(self):
+        from unittest import mock as _mock
+        from PySide6.QtCore import Qt as _Qt
+        from PySide6.QtGui import QGuiApplication as _App
+        active = _mock.patch.object(_App, "applicationState", return_value=_Qt.ApplicationActive)
+        active.start()
+        self.addCleanup(active.stop)
+        self.stub_faces()
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.window.open_command_menu()
+        bubble = self.window.bubble
+        bubble._tick()
+        self.assertTrue(bubble.isVisible())
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertFalse(bubble.isVisible(), "no keep-open timer from the moment it opened")
+
     def test_on_wayland_only_our_own_windows_count_as_the_pointer_being_there(self):
         from unittest import mock
         bubble = self.open_settings()
@@ -2271,7 +2307,6 @@ class BubbleHover(unittest.TestCase):
         from contextlib import ExitStack
         from unittest import mock
         bubble = self.open_settings()
-        bubble._kept_until = 0.0
         start = time.monotonic()
 
         def tick(at: float, over: bool):
@@ -2295,7 +2330,6 @@ class BubbleHover(unittest.TestCase):
         from PySide6.QtCore import Qt
 
         bubble = self.open_settings()
-        bubble._kept_until = 0.0
         start = time.monotonic()
         window = self.window
 
@@ -2391,7 +2425,6 @@ class BubbleHover(unittest.TestCase):
             self.assertTrue(bubble.isVisible())
             with mock.patch("botwidget.qt_ui.bubble_window.pointer_window", return_value=0x5400004):
                 self.assertFalse(bubble.user_owned(), "the pointer is on another app's X window")
-                bubble._kept_until = 0.0
                 bubble._tick()
         self.assertFalse(bubble.isVisible())
 
@@ -2904,7 +2937,6 @@ class BubbleHover(unittest.TestCase):
         self.hover()
         bubble = self.window.bubble
         bubble.type_text("nog niet verstuurd")
-        bubble._kept_until = 0.0
         self.where["at"] = (5000, 5000)
         bubble._tick()
         self.assertTrue(bubble.kind, "the words in the field would be lost")
@@ -2914,7 +2946,6 @@ class BubbleHover(unittest.TestCase):
         self.hover()
         bubble = self.window.bubble
         with mock.patch.object(self.window, "awaiting", lambda: True):
-            bubble._kept_until = 0.0
             self.where["at"] = (5000, 5000)
             bubble._tick()
         self.assertEqual(bubble.kind, "", "waiting does not keep the bubble up")
@@ -2924,7 +2955,6 @@ class BubbleHover(unittest.TestCase):
         bubble = self.window.bubble
         bubble.type_text("a")
         bubble._entry.clear()
-        bubble._kept_until = 0.0
         self.where["at"] = (5000, 5000)
         bubble._tick()
         self.assertEqual(bubble.kind, "", "an empty field is no reason to stay")
@@ -3045,7 +3075,6 @@ class BubbleHover(unittest.TestCase):
         bubble._was_near = True
         bubble.type_text("ok")
         bubble._entry.clearFocus()
-        bubble._kept_until = 0.0
         bubble._send()
         bubble._tick()
         self.assertTrue(bubble.kind, "a message that was just sent keeps it for a moment")

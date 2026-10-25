@@ -112,8 +112,6 @@ BOUNCE_PX = 10
 BOUNCE_MS = 320
 # While the message before loads, the arrow is dots and the text hangs this far down; no scrolling meanwhile.
 OLDER_LOAD_MS = 700
-# A menu page that opens smaller than the one before can leave the pointer outside it: it stays this long.
-MENU_KEEP_S = 2.5
 LOAD_PUSH_PX = 14
 # How far a flick must pull past the top, in wheel units (a mouse notch is 120), to load the message before:
 # a flick that starts at the top needs little; one that ran into the top first bounces and needs a new pull.
@@ -124,8 +122,6 @@ LOAD_PUSH_MS = 160
 SEED_W, SEED_H = 36, 22
 TAIL_LENGTH = 7
 THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the balls on their arc
-
-USER_KEEP_S = 3.0  # what the user does with a bubble keeps it open this long, pointer or not
 
 # A button of a menu page: the pill sits in the middle of its line.
 BUTTON_H = 28
@@ -608,7 +604,6 @@ class BubbleWindow(QWidget):
         self._attachment_row.hide()
         self._control_widgets = []
         self._controls_key = None
-        self._kept_until = 0.0
         self._opened = 0.0
         self._spot = (0, 0, 0, 0)
         self._yielding = False
@@ -633,10 +628,10 @@ class BubbleWindow(QWidget):
     # ── Input ───────────────────────────────────────────────────
 
     def _edited(self):
-        self.keep_for(USER_KEEP_S)
+        self.changed = time.monotonic()
 
     def _send(self):
-        self.keep_for(USER_KEEP_S)
+        self.changed = time.monotonic()
         text, files = self._entry.text().strip(), self._attachments
         if text or files:
             self._entry.clear()
@@ -669,6 +664,9 @@ class BubbleWindow(QWidget):
         self.blocks = []
         self.full_text = ""
         self.kind = "say"
+        # Armed once the pointer is on the face or the list: after the back arrow it may be elsewhere, and the
+        # list must not vanish before it got there.
+        self._was_near = False
         self._commands_forced = True
         # The dots of a thought before belong to text that is gone; ticking them on would draw nothing.
         self._dots_lines = []
@@ -707,7 +705,7 @@ class BubbleWindow(QWidget):
         return self._slash.height_for(len(self._slash.rows)) + COMMANDS_GAP if self._slash.rows else 0
 
     def _run_command(self, command: str):
-        self.keep_for(USER_KEEP_S)
+        self.changed = time.monotonic()
         # A slash being typed is the command. A message that was already there stays, also after a right-click.
         typed = self._entry.text().strip()
         if not self._commands_forced or (typed.startswith("/") and " " not in typed):
@@ -717,7 +715,7 @@ class BubbleWindow(QWidget):
         self.face.on_user_message(command)
 
     def _attach(self, paths: list):
-        self.keep_for(USER_KEEP_S)
+        self.changed = time.monotonic()
         self._attachments += paths
         self._show_attachments()
 
@@ -870,14 +868,9 @@ class BubbleWindow(QWidget):
         if self._geom is not None and self._input and self._growth is None:
             self._layout_children(self._paint_chrome())
 
-    def keep_for(self, seconds: float):
-        """The bubble stays for this long whether or not the pointer is on it."""
-        self._kept_until = max(self._kept_until, time.monotonic() + seconds)
-
     def user_owned(self) -> bool:
         """The user is busy with this bubble: a bubble that opened by itself gives way to it."""
-        return (self.face.pinned or self.holding() or time.monotonic() < self._kept_until
-                or self.face.pointer_near(self))
+        return self.face.pinned or self.holding() or self.face.pointer_near(self)
 
     def _others(self) -> list:
         faces = getattr(self.face.faces, "faces", {})
@@ -1411,7 +1404,9 @@ class BubbleWindow(QWidget):
         pointer = self.face.pointer_near(self)
         # A bubble the pointer really was on goes the moment it leaves, a thinking cloud of a busy bot too.
         # Only a bubble kept up for another reason waits for its answer before it counts as seen.
-        if pointer or self.holding() or now < self._kept_until:
+        # No timer keeps a bubble the pointer has left: the hover margin (the transparent edge of the window,
+        # BUBBLE_HOVER_MARGIN where the pointer is known everywhere) is the slack, and leaving it closes at once.
+        if pointer or self.holding():
             self.changed = now
             self._was_near = self._was_near or bool(pointer) or not awaiting
             if pointer:

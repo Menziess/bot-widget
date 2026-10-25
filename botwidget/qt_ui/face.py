@@ -61,7 +61,7 @@ from botwidget.openbot import (
 )
 from botwidget import attachments, grokbot, hermesbot, menu_pages, __version__
 from botwidget.qt_ui import desktops, screens
-from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window
+from botwidget.qt_ui.bubble_window import BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window
 from botwidget.qt_ui.native import native_id, set_flags
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
@@ -81,7 +81,6 @@ WELCOME_S = 9.0
 FOCUS_DWELL_S = 0.25
 # After a queued message went out, the next one waits at most this long for the bot to start on it.
 QUEUE_HOLD_S = 30.0
-MENU_KEEP_S = 2.5  # a menu page stays this long after it opened, pointer or not
 BUBBLE_HOVER_MARGIN = 24  # the pointer counts as on the bubble this far outside it
 HOVER_RETRY_S = 0.5
 # After you closed the bubble on purpose it stays closed this long; if the pointer is still on the face it comes back.
@@ -997,7 +996,6 @@ class FaceWindow(QWidget):
         self._refreshing = False
         self._refresh_note, self._refresh_note_until = note, time.monotonic() + REFRESH_NOTE_S
         self._depth = max(self._depth, 1)
-        self.bubble.keep_for(MENU_KEEP_S)
         self._sync_bubble(self._latest(), force=True)
 
     def _on_grok_polled(self):
@@ -1184,7 +1182,6 @@ class FaceWindow(QWidget):
         from botwidget.startup import install_kind
         self._menu_page = None
         self.pinned = False
-        self.bubble.keep_for(MENU_KEEP_S)
         self.bubble.show_blocks([status_block("Opening a GitHub issue in your browser…")], "say")
         url = menu_pages.feedback_issue_url(__version__, platform.system(), install_kind())
         opened = QDesktopServices.openUrl(QUrl(url))
@@ -1202,7 +1199,6 @@ class FaceWindow(QWidget):
         self._menu_page = None
         self._refreshing = True
         self._refresh_note = ""
-        self.bubble.keep_for(MENU_KEEP_S)
         self.bubble.show_blocks([status_block("Refreshing…"), role_panel("bot"), plain_block("dots")], "say")
         if self.grok:
             self.grok.request_fetch()
@@ -1238,7 +1234,6 @@ class FaceWindow(QWidget):
         bubbles close and it never gives way to one of them."""
         self._menu_page = None
         self.pinned = False
-        self.bubble.keep_for(MENU_KEEP_S)
         if self.faces is not None:
             self.faces.close_bubbles_except(self.agent_id)
         self.bubble.show_command_menu()
@@ -1251,8 +1246,6 @@ class FaceWindow(QWidget):
         self._menu_page = page
         # A page goes away by itself like any bubble, and with Escape.
         self.pinned = False
-        # A page smaller than the one before may leave the pointer outside the bubble.
-        self.bubble.keep_for(MENU_KEEP_S)
         # The others close first: a tall page would otherwise give way to a bubble it is about to replace.
         self.faces.close_bubbles_except(self.agent_id)
         self.bubble.show_blocks(menu_pages.page_blocks(page, self.faces.menu_state()), "say", keep_scroll=again)
