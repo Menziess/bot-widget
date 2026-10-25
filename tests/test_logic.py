@@ -3279,9 +3279,10 @@ class FailedTurn(unittest.TestCase):
         window = face.FaceWindow("t", "Test", spot=(300, 400))
         window._poll_timer.stop()
         self.addCleanup(window.close_face)
-        old = face.automation_ready
-        self.addCleanup(setattr, face, "automation_ready", old)
-        face.automation_ready = lambda: True
+        # What is installed on this computer must not matter: OpenBot is there, its local API is on.
+        for name in ("automation_ready", "openbot_installed", "gbot_installed"):
+            self.addCleanup(setattr, face, name, getattr(face, name))
+            setattr(face, name, lambda: True)
         chat = {"messages": [{"role": "user", "text": "Are you alive?"}], "activity": "",
                 "failed": "Out of tokens: Free usage limit reached."}
         window._sync_bubble(chat, force=True)
@@ -3717,7 +3718,8 @@ class MenuInBubble(unittest.TestCase):
 
     def setUp(self):
         for name, value in (("latest_chat", lambda thread_id, limit=20: {"messages": [{"role": "bot", "text": "Hoi."}], "activity": ""}),
-                            ("openbot_installed", lambda: True), ("gbot_installed", lambda: True)):
+                            ("openbot_installed", lambda: True), ("gbot_installed", lambda: True),
+                            ("automation_ready", lambda: True)):
             old = getattr(self.face, name)
             self.addCleanup(setattr, self.face, name, old)
             setattr(self.face, name, value)
