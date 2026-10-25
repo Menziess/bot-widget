@@ -2016,6 +2016,36 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble._entry.isVisibleTo(bubble))
         self.assertEqual(bubble._entry.placeholderText(), "Queue a message…")
 
+    def test_a_thinking_cloud_closes_at_once_when_the_pointer_leaves(self):
+        """Busy bot, cloud open by itself: point at it, then leave (also straight onto another app)."""
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        active = mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive)
+        active.start()
+        self.addCleanup(active.stop)
+        for leave_onto_other_app in (False, True):
+            self.start_working()
+            self.window._working = True
+            bubble = self.window.bubble
+            self.assertEqual(bubble.kind, "think")
+            bubble._was_near = False
+            bubble._kept_until = 0.0
+            self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+            bubble._tick()
+            self.assertEqual(bubble.kind, "think", "the pointer is on it")
+            if leave_onto_other_app:
+                with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                        mock.patch.object(type(self.window), "underMouse", return_value=True), \
+                        mock.patch.object(type(bubble), "underMouse", return_value=True), \
+                        mock.patch("botwidget.qt_ui.bubble_window.pointer_window", return_value=0):
+                    bubble._tick()
+            else:
+                self.where["at"] = (5000, 5000)
+                bubble._tick()
+            self.assertEqual(bubble.kind, "", "gone at once, not after a reading time")
+            self.window._think_quiet = False
+
     def start_working(self):
         self.state = {"activity": "reading"}
         self.face.latest_chat = lambda thread_id, limit=8: {"messages": self.MESSAGES, "activity": self.state["activity"]}

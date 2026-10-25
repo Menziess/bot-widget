@@ -1384,18 +1384,16 @@ class BubbleWindow(QWidget):
             self._slide.start()
             return
         pointer = self.face.pointer_near(self)
-        # The thinking cloud uses the same reading time as any bubble. The face keeps moving without it.
-        # Leaving starts that time again, on the dots only. A writing bubble still goes once you leave it.
+        # A bubble the pointer really was on goes the moment it leaves, a thinking cloud of a busy bot too.
+        # Only a bubble kept up for another reason waits for its answer before it counts as seen.
         if pointer or self.holding() or now < self._kept_until:
             self.changed = now
-            self._was_near = self._was_near or not awaiting
+            self._was_near = self._was_near or bool(pointer) or not awaiting
             if pointer:
                 self._near_at = now
-        elif self._was_near and self.kind == "think":
-            self._was_near = False
-            self.changed = now
         elif self._was_near:
-            # The pointer left the bubble: close it straight away.
+            # The pointer left the bubble: close it straight away, a thinking cloud too. It stays quiet
+            # until the face is pointed at again.
             # Moving from the face onto its own bubble is already handled by
             # face.pointer_near(self) being true, which is caught above.
             self.face.pinned = False
