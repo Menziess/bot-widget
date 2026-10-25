@@ -3607,6 +3607,26 @@ class MenuInBubble(unittest.TestCase):
             self.window._poll_pending()
         self.assertIn("Could not reach OpenBot.", self.text())
 
+    def test_back_from_a_page_shows_the_commands_and_leaves_nothing_stuck(self):
+        """Settings, then the arrow back: the list shows, it closes once the pointer is gone, and right-click
+        and the chat work as before."""
+        from unittest import mock
+        window, bubble = self.window, self.window.bubble
+        self.right_click()
+        bubble._run_command("/settings")
+        self.assertIn("Settings", self.text())
+        window._menu_command("page/commands")
+        self.assertFalse(window.pinned, "the arrow back does not pin")
+        self.assertEqual(bubble._slash.rows, list(menu_pages.COMMANDS))
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=time.monotonic() + 60):
+            bubble._tick()
+        self.assertFalse(bubble.isVisible(), "the pointer is not on it: it goes")
+        self.right_click()
+        self.assertTrue(bubble.isVisible() and bubble._list_only, "right-click works again")
+        bubble.place("")
+        window._sync_bubble(window._latest(), force=True)
+        self.assertIn("Hoi.", self.text(), "and the chat shows again")
+
     def test_a_right_click_never_takes_away_what_you_typed(self):
         self.window.pin()
         bubble = self.window.bubble

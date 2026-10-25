@@ -1191,12 +1191,21 @@ class FaceWindow(QWidget):
         self._poll_timer.start(0)
 
     def open_commands(self):
-        """Right-click, or the arrow on a page: the list of commands opens above the field, the same as typing a
-        slash. What was typed in the field stays."""
+        """The arrow on top of a page: the conversation with the field and the list of commands above it.
+
+        Not pinned: the chat is far smaller than the page, so the pointer that clicked the arrow is usually
+        outside it now. A pinned bubble the pointer never came back to stayed open for good (on Linux the
+        field never gets focus, the one other way out), and every other bubble gave way to it.
+        """
         self._menu_page = None
-        self.pin()
-        self.bubble.open_command_list()
-        activate_app()
+        self.pinned = False
+        self.bubble.keep_for(MENU_KEEP_S)
+        self._sync_bubble(self._latest(), force=True)
+        if self.bubble.isVisible() and self.bubble.takes_input():
+            self.bubble.open_command_list()
+        else:
+            self.bubble.show_command_menu()
+        self.bubble.shown_by_pointer()
 
     def open_menu(self, page: str = "settings"):
         """A page of the menu in the bubble: /settings, /bots or /connections typed or picked."""
