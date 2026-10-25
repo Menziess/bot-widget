@@ -2395,6 +2395,46 @@ class BubbleHover(unittest.TestCase):
                 bubble._tick()
         self.assertFalse(bubble.isVisible())
 
+    def test_on_xwayland_hover_opens_and_keeps_the_bubble_while_another_app_has_the_focus(self):
+        """GNOME: the Grok Bot app or a terminal has the focus, so our app is inactive. X still says the pointer
+        is on the face: the bubble opens and stays, instead of closing at once (and a click-opened one too)."""
+        from unittest import mock
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QGuiApplication
+        window, bubble = self.window, self.window.bubble
+        window.show()
+
+        def under_pointer():
+            x, y = self.where["at"]
+            for widget in (bubble, window):
+                if widget.isVisible() and widget.geometry().contains(QPoint(int(x), int(y))):
+                    return native_id(widget)
+            return 0
+
+        with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive), \
+                mock.patch.object(QGuiApplication, "platformName", return_value="xcb"), \
+                mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer):
+            self.where["at"] = (window.x() + 34, window.y() + 34)
+            for _ in range(5):
+                window._animate()
+                bubble._tick()
+                self.finish_growth()
+            self.assertTrue(bubble.isVisible(), "hover opened it and it stayed")
+            window.pin()
+            bubble._tick()
+            self.assertTrue(bubble.isVisible(), "a click keeps it too")
+            self.where["at"] = (5000, 5000)
+            bubble._tick()
+            self.assertFalse(bubble.isVisible(), "the pointer went away: it closes")
+            window._hover_retry = 0.0  # the retry pause is about time, not about this
+            self.where["at"] = (window.x() + 34, window.y() + 34)
+            for _ in range(3):
+                window._animate()
+                bubble._tick()
+                self.finish_growth()
+            self.assertTrue(bubble.isVisible(), "and hovering opens it again")
+
     def test_a_see_through_bubble_does_not_push_the_others_aside(self):
         other = self.second_face()
         other._sync_bubble(other._latest(), force=True)

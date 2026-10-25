@@ -631,9 +631,12 @@ class FaceWindow(QWidget):
 
     def pointer_near(self, bubble, margin: int = BUBBLE_HOVER_MARGIN) -> bool:
         """Mouse within GAZE_NEAR of the head, or over the bubble?"""
-        # When the app is inactive the user is in another window; stale underMouse()
-        # on XWayland would otherwise keep the bubble open forever.
-        if QGuiApplication.applicationState() == Qt.ApplicationInactive:
+        # When the app is inactive the user is in another window; a stale underMouse() would otherwise keep
+        # the bubble open forever. Where X says which window the pointer is on, that answer counts instead:
+        # on GNOME our app is inactive whenever another app has the focus (the Grok Bot app, a terminal),
+        # and every bubble that hover or a click opened closed again at once.
+        x_knows = not global_pointer() and pointer_on(self) is not None
+        if not x_knows and QGuiApplication.applicationState() == Qt.ApplicationInactive:
             return False
         if not global_pointer():
             # Wayland: QCursor.pos() is unreliable (stale), so we only trust
