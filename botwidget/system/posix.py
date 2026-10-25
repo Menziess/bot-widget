@@ -25,10 +25,21 @@ def spawn_first(candidates) -> None:
 
 
 def spawn_script(script: str, *args: str) -> None:
-    """A shell script that keeps running after the widget has quit."""
+    """A shell script that keeps running after the widget has quit.
+
+    The script removes its own file once the shell has it open. Removing it from here, right after the
+    start, raced the shell: on a busy machine /bin/sh found no file and the update never happened.
+    """
     handle, path = tempfile.mkstemp(suffix=".sh", prefix="botwidget-")
     with os.fdopen(handle, "w") as fh:
-        fh.write(script)
+        fh.write(self_removing(script))
     subprocess.Popen(["/bin/sh", path, *args], start_new_session=True,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    os.unlink(path)
+
+
+def self_removing(script: str) -> str:
+    """The script with a line right after the shebang that deletes the script file itself."""
+    first, newline, rest = script.partition("\n")
+    if first.startswith("#!"):
+        return first + newline + 'rm -f -- "$0"\n' + rest
+    return 'rm -f -- "$0"\n' + script

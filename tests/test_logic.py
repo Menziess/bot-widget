@@ -4705,6 +4705,26 @@ class MacBundleSwap(unittest.TestCase):
             self.assertEqual(sorted(os.listdir(os.path.join(home, "Apps"))), ["Bot Widget.app"])
 
 
+class SpawnScript(unittest.TestCase):
+    """The update script must still be there when /bin/sh opens it; it cleans itself up."""
+
+    @unittest.skipIf(sys.platform == "win32", "no /bin/sh")
+    def test_the_script_runs_and_removes_its_own_file(self):
+        import subprocess
+        from unittest import mock
+        from botwidget.system import posix
+        with tempfile.TemporaryDirectory() as folder:
+            out = os.path.join(folder, "ran")
+            with mock.patch.object(posix.subprocess, "Popen") as popen:
+                posix.spawn_script('#!/bin/sh\necho ok > "$1"\n', out)
+            script = popen.call_args[0][0][1]
+            self.assertTrue(os.path.exists(script), "still there for a shell that starts late")
+            subprocess.run(["/bin/sh", *popen.call_args[0][0][1:]], check=True)
+            with open(out) as fh:
+                self.assertEqual(fh.read().strip(), "ok")
+            self.assertFalse(os.path.exists(script), "the script removed its own file")
+
+
 class DevRunner(unittest.TestCase):
     """Should see new and changed files in dev mode, and ignore the rest."""
 
