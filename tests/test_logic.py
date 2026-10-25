@@ -2350,6 +2350,175 @@ class BubbleHover(unittest.TestCase):
             self.assertEqual(bubble.state(), "closed")
             self.assertTrue(bubble.consistent())
 
+    def test_random_use_never_breaks_the_rules_of_opening_and_closing(self):
+        """Random sequences of what Stefan does (hover, leave, clicks, every menu command, the back arrow, a
+        refresh, a new answer, focus elsewhere, the face in every corner and edge), with the pointer as X reports it.
+        After every step:
+        - the bubble's state matches its window (closed, open, yielding);
+        - a bubble the pointer is engaged with is still open after anything that happens by itself;
+        - a page change never takes the bubble from under the pointer: it stays engaged;
+        - the window that holds a bigger bubble's area never covers the bubble;
+        - a closed bubble never leaves the face unresponsive: pointing at the face opens it again."""
+        import random
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QGuiApplication, QRegion
+        from unittest import mock
+        from botwidget.qt_ui import face as face_module
+        state = dict(self.settings_state())
+        state["bots"] = [{"id": f"b{i}", "name": f"Bot {i}", "source": "OpenBot", "on": True} for i in range(3)]
+        state.update({"openbot": True, "automation_ready": True, "gbot": False, "grok": "not found"})
+        chat = {"messages": [], "activity": ""}
+        self.face.latest_chat = lambda thread_id, limit=8: chat
+        window = self.window
+        window.show()
+        bubble = window.bubble
+        window.faces = type("Faces", (), {"menu_state": lambda _self: state,
+                                          "menu_command": lambda _self, command, page: page,
+                                          "close_bubbles_except": lambda _self, _id: None,
+                                          "raise_bubbles": lambda _self: None})()
+        clock = [1000.0]
+        screen = QGuiApplication.primaryScreen().geometry()
+        right, bottom = screen.right() - 72, screen.bottom() - 72
+        spots = [(4, 4), (right, 4), (4, bottom), (right, bottom), (right // 2, 4), (4, bottom // 2),
+                 (right, bottom // 2), (right // 2, bottom), (26, 62), (27, 139), (right // 2, bottom // 2)]
+        answers = ["Ja.", "Dit is een lang antwoord. " * 30, "Kort.\n\n- een\n- twee\n- drie"]
+
+        def frames(count=6, held=None):
+            for _ in range(count):
+                if held is not None:
+                    self.assertTrue(bubble.isVisible() and bubble.engaged(),
+                                    f"the pointer is not on the bubble while it changes, after {held[-6:]}")
+                # A frame as it comes: the bubble as it is drawn now is what the pointer is on or not.
+                if bubble._physics.isActive():
+                    bubble._tick()
+                window._animate()
+                clock[0] += 0.016
+                if bubble._growth is not None:
+                    bubble._slide.setCurrentTime(min(bubble._slide.currentTime() + 16, bubble._slide.duration()))
+
+        def pointer():
+            return QPoint(*[int(v) for v in self.where["at"]])
+
+        def check(step, log):
+            self.assertTrue(bubble.consistent(), f"state {bubble.state()} vs window, after {log[-6:]}")
+            win = bubble._reserve_win
+            if win is not None and win.isVisible() and bubble.isVisible():
+                held = win.mask().translated(win.pos()) if not win.mask().isEmpty() else QRegion(win.geometry())
+                self.assertFalse(held.intersects(QRegion(bubble.frameGeometry())),
+                                 f"the place holder covers the bubble, after {log[-6:]}")
+
+        def responsive(log):
+            """Point at the face for long enough: the bubble opens."""
+            self.where["at"] = (window.x() + 34, window.y() + 34)
+            clock[0] += face_module.REOPEN_AFTER_S + face_module.HOVER_RETRY_S + 0.1
+            frames(3)
+            self.assertTrue(bubble.isVisible(), f"pointing at the face opened nothing, after {log[-6:]}")
+
+        ops = ["hover", "on_bubble", "edge", "leave", "left_click", "right_click", "choose", "back", "refresh",
+               "answer", "poll", "new_chat", "focus_elsewhere", "move_face", "wait", "escape"]
+        automatic = {"poll", "answer", "new_chat", "wait", "focus_elsewhere"}
+        with self.x_pointer(), mock.patch("time.monotonic", side_effect=lambda: clock[0]), \
+                mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive), \
+                mock.patch.object(face_module, "api_get", side_effect=OSError("no network in tests"), create=True), \
+                mock.patch("PySide6.QtGui.QDesktopServices.openUrl", return_value=True):
+            for seed in range(10):
+                rnd = random.Random(seed)
+                log = []
+                bubble.close_bubble("refresh")
+                window.move(*rnd.choice(spots))
+                window._home = (window.x(), window.y())
+                for step in range(50):
+                    op = rnd.choice(ops)
+                    log.append(op)
+                    engaged_before = bubble.isVisible() and bubble.engaged()
+                    if op == "hover":
+                        self.where["at"] = (window.x() + 34, window.y() + 34)
+                    elif op == "on_bubble" and bubble.isVisible():
+                        centre = bubble.frameGeometry().center()
+                        self.where["at"] = (centre.x(), centre.y())
+                    elif op == "edge" and bubble.isVisible():
+                        frame = bubble.frameGeometry()
+                        self.where["at"] = (frame.left() + 2, frame.bottom() - 2)
+                    elif op == "leave":
+                        self.where["at"] = (5000, 5000)
+                    elif op == "left_click":
+                        self.where["at"] = (window.x() + 34, window.y() + 34)
+                        window.open_input()
+                    elif op == "right_click":
+                        self.where["at"] = (window.x() + 34, window.y() + 34)
+                        window.open_command_menu()
+                    elif op == "choose":
+                        if not (bubble.isVisible() and bubble._list_only and bubble._slash.rows):
+                            self.where["at"] = (window.x() + 34, window.y() + 34)  # right-click first
+                            window.open_command_menu()
+                            frames()
+                        index = rnd.randrange(len(bubble._slash.rows))
+                        command = bubble._slash.rows[index][0]
+                        log[-1] = "choose " + command
+                        row = bubble._slash.mapToGlobal(QPoint(bubble._slash.width() // 2,
+                                                               4 + bubble._slash.ROW_H * index + 18))
+                        self.where["at"] = (row.x(), row.y())
+                        frames(1)
+                        engaged_before = bubble.isVisible() and bubble.engaged()
+                        bubble._run_command(command)
+                    elif op == "back":
+                        if not (bubble.isVisible() and window._menu_page is not None):
+                            window.open_menu(rnd.choice(["settings", "bots", "connections"]))  # a page first
+                            frames()
+                        # The pointer somewhere on the page, often low on it, where the list will not be.
+                        frame = bubble.frameGeometry()
+                        self.where["at"] = (rnd.randint(frame.left() + 10, frame.right() - 10),
+                                            rnd.randint(frame.center().y(), frame.bottom() - 10))
+                        frames(1)
+                        engaged_before = bubble.isVisible() and bubble.engaged()
+                        bubble.command.emit("page/commands")
+                    elif op == "refresh":
+                        window.on_user_message("/refresh")
+                    elif op == "answer":
+                        chat = {"messages": [{"role": "user", "text": "Vraag?"},
+                                             {"role": "bot", "text": rnd.choice(answers) + f" ({step})"}],
+                                "activity": ""}
+                        window._sync_bubble(window._latest())
+                    elif op == "poll":
+                        window._sync_bubble(window._latest())
+                    elif op == "new_chat":
+                        chat = {"messages": [], "activity": ""}
+                        window._sync_bubble(window._latest())
+                    elif op == "focus_elsewhere":
+                        bubble._had_focus = bubble._input
+                        with mock.patch("botwidget.qt_ui.bubble_window.QApplication.activeWindow",
+                                        return_value=None):
+                            frames(2)
+                    elif op == "move_face":
+                        window.move(*rnd.choice(spots))
+                        window._home = (window.x(), window.y())
+                        self.where["at"] = (window.x() + 34, window.y() + 34)
+                    elif op == "wait":
+                        clock[0] += rnd.choice([0.5, 3.0, 30.0, 120.0])
+                    elif op == "escape":
+                        window.unpin()
+                    op = log[-1]
+                    swap = (op.startswith("choose /") and op not in ("choose /refresh", "choose /feedback")
+                            or op == "back")
+                    frames(held=log if swap and engaged_before else None)
+                    check(step, log)
+                    if op in automatic and engaged_before:
+                        here = bubble._reserved is not None or bubble.frameGeometry().contains(pointer()) \
+                            or window.geometry().contains(pointer())
+                        if here:
+                            self.assertTrue(bubble.isVisible(), f"closed under the pointer, after {log[-6:]}")
+                    if op.startswith("choose /") and op != "choose /refresh" and engaged_before \
+                            and op != "choose /feedback":
+                        self.assertTrue(bubble.isVisible() and bubble.engaged(),
+                                        f"the page left the pointer, after {log[-6:]}")
+                    if op == "back" and engaged_before:
+                        self.assertTrue(bubble.isVisible() and bubble.engaged(),
+                                        f"the list left the pointer, after {log[-6:]}")
+                    if not bubble.isVisible() and rnd.random() < 0.4:
+                        log.append("probe")
+                        responsive(log)
+                        check(step, log)
+
     def x_pointer(self):
         """XWayland as on Stefan's desktop: X says which of our windows is under the pointer (no hover margin),
         a place holder mapped after the bubble lies on top of it, and a window mask lets the pointer through."""
