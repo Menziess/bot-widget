@@ -2393,6 +2393,19 @@ class BubbleHover(unittest.TestCase):
                 bubble._tick()
         self.assertFalse(bubble.isVisible())
 
+    def test_a_see_through_bubble_does_not_push_the_others_aside(self):
+        other = self.second_face()
+        other._sync_bubble(other._latest(), force=True)
+        other.bubble._slide.stop()
+        other.bubble._growth_done()
+        self.assertIn(other.bubble, self.window.bubble._others())
+        other.bubble.setWindowOpacity(0.0)
+        other.bubble.windowOpacity = lambda: 0.0  # offscreen keeps no opacity
+        self.assertNotIn(other.bubble, self.window.bubble._others())
+        other.bubble._growth = object()
+        self.assertIn(other.bubble, self.window.bubble._others(), "fading in is on its way to be seen")
+        other.bubble._growth = None
+
     def test_a_right_click_closes_the_other_bubbles_instead_of_giving_way(self):
         from PySide6.QtCore import QEvent, QPointF, Qt
         from PySide6.QtGui import QMouseEvent

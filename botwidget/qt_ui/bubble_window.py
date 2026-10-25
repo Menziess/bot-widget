@@ -881,7 +881,12 @@ class BubbleWindow(QWidget):
 
     def _others(self) -> list:
         faces = getattr(self.face.faces, "faces", {})
-        return [face.bubble for face in faces.values() if face.bubble is not self and face.bubble.isVisible()]
+        return [face.bubble for face in faces.values() if face.bubble is not self and face.bubble.seen()]
+
+    def seen(self) -> bool:
+        """Open where you can see it. A bubble left see-through with no growth to fade it in is not: it must
+        not push the others aside or make them give way."""
+        return self.isVisible() and (self._growth is not None or self.windowOpacity() > 0.01)
 
     def _body_rect(self, x, y, w, h) -> QRect:
         return QRect(round(x + PAD_SVG), round(y + PAD_SVG), max(1, w - 2 * PAD_SVG), max(1, h - PAD_SVG - TAIL_ROOM))
