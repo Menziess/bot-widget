@@ -2259,6 +2259,66 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertFalse(bubble.isVisible(), "no keep-open timer from the moment it opened")
 
+    def back_arrow_leaves_the_pointer_outside(self):
+        """Settings open, the pointer low on the page (scrolling up past the top goes back too); the back arrow
+        shrinks the bubble to the list."""
+        from PySide6.QtCore import QPoint
+        bubble = self.open_settings()
+        page = bubble.frameGeometry()
+        self.where["at"] = (page.center().x(), page.bottom() - 30)
+        bubble._tick()
+        bubble.command.emit("page/commands")
+        self.finish_growth()
+        self.assertFalse(bubble.frameGeometry().contains(QPoint(*self.where["at"])), "the list is smaller")
+        return bubble, page
+
+    def test_the_area_of_the_bigger_bubble_stays_hover_area_after_the_back_arrow(self):
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive):
+            bubble, page = self.back_arrow_leaves_the_pointer_outside()
+            bubble._tick()
+            self.assertTrue(bubble.isVisible(), "still in the area the settings page covered")
+            self.where["at"] = (page.center().x(), page.bottom() - 10)
+            bubble._tick()
+            self.assertTrue(bubble.isVisible(), "moving inside that area")
+            self.where["at"] = (page.right() + 200, page.top() + 60)
+            bubble._tick()
+            self.assertFalse(bubble.isVisible(), "out of it: closed at once, the pointer had been on the bubble")
+
+    def test_on_xwayland_the_reserved_area_is_an_x_window_until_the_pointer_leaves_it(self):
+        """XWayland only knows the pointer over X windows: the spot of the bigger bubble is held by a
+        see-through window, so the X server can say when the pointer leaves it."""
+        from unittest import mock
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QGuiApplication
+        window = self.window
+        window.show()
+
+        def under_pointer():
+            x, y = self.where["at"]
+            bubble = window.bubble
+            reserve = bubble._reserve_win
+            for widget in (bubble, window, reserve):
+                if widget is not None and widget.isVisible() and widget.geometry().contains(QPoint(int(x), int(y))):
+                    return native_id(widget)
+            return 0
+
+        with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive), \
+                mock.patch.object(QGuiApplication, "platformName", return_value="xcb"), \
+                mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer):
+            bubble, page = self.back_arrow_leaves_the_pointer_outside()
+            self.assertIsNotNone(bubble._reserve_win)
+            self.assertEqual(bubble._reserve_win.geometry(), page)
+            bubble._tick()
+            self.assertTrue(bubble.isVisible(), "the pointer is on the reserved window")
+            self.where["at"] = (page.right() + 200, page.top() + 60)
+            bubble._tick()
+            self.assertFalse(bubble.isVisible(), "left it: closed at once")
+            self.assertIsNone(bubble._reserve_win, "and the place holder is gone")
+
     def test_on_wayland_only_our_own_windows_count_as_the_pointer_being_there(self):
         from unittest import mock
         bubble = self.open_settings()

@@ -16,6 +16,7 @@ from PySide6.QtCore import (
     QByteArray,
     QEasingCurve,
     QIODevice,
+    QPoint,
     QRect,
     Qt,
     QTimer,
@@ -514,6 +515,34 @@ class BubbleText(QTextBrowser):
         self._press, self._dragging = None, False
         self._cursor_for(pos)
 
+class ReserveWindow(QWidget):
+    """See-through and empty: holds the place of a bubble that just got smaller, so the X server can tell when
+    the pointer leaves it. Under the bubble, on the bubble's layer, never in the taskbar."""
+
+    def __init__(self):
+        super().__init__()
+        layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
+        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint
+                  | Qt.WindowDoesNotAcceptFocus)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+
+    def setVisible(self, visible: bool):
+        if visible and not self.isVisible():
+            mark_before_show(self)
+        super().setVisible(visible)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        handle = self.windowHandle()
+        if handle is not None:
+            handle.setTransientParent(None)
+        if always_on_top():
+            self.lower()  # under the bubble: clicks on the bubble must reach it
+        else:
+            send_behind_windows(native_id(self))
+
+
 class BubbleWindow(QWidget):
     older = Signal()
     command = Signal(str)
@@ -611,6 +640,8 @@ class BubbleWindow(QWidget):
         self._follow = False
         self._entry.dismissed.connect(face.unpin)
 
+        self._reserved = None  # QRect the bubble covered before it shrank under the pointer
+        self._reserve_win = None
         self._physics = QTimer(self)
         self._physics.setInterval(16)
         self._physics.timeout.connect(self._tick)
@@ -658,6 +689,61 @@ class BubbleWindow(QWidget):
 
     def show_command_menu(self):
         """Right-click: the command list on its own, without the conversation."""
+        old = self._area_under_pointer()
+        self._show_command_menu()
+        self._reserve_after(old)
+
+    # ── The area a bubble covered before it shrank ─────────────────
+
+    def _area_under_pointer(self) -> QRect | None:
+        """Where the bubble is now, when the pointer is on it: what a smaller one keeps as hover area."""
+        if self.isVisible() and self.kind and self.face.pointer_near(self):
+            return QRect(self.frameGeometry())
+        return None
+
+    def _reserve_after(self, old: QRect | None):
+        """The back arrow (or any page change) made the bubble smaller and left the pointer outside it: the
+        area the bigger bubble covered keeps counting as on the bubble until the pointer leaves it. No timer.
+
+        The pointer was on the bubble, so it has been touched: leaving closes it at once, not after a while.
+        """
+        if old is None or not self.isVisible() or not self.kind:
+            return
+        self._was_near = True
+        width, height = self._final_size()
+        if width >= old.width() and height >= old.height():
+            return
+        self._release_reserve()
+        self._reserved = old
+        if QGuiApplication.platformName() == "xcb":
+            # XWayland only knows where the pointer is over X windows: over the desktop or a Wayland app the
+            # spot left by the shrunken bubble would be invisible to it. A see-through window keeps it an X
+            # window, so the X server can say when the pointer leaves it.
+            self._reserve_win = ReserveWindow()
+            self._reserve_win.setGeometry(old)
+            self._reserve_win.show()
+
+    def in_reserve(self) -> bool:
+        """Is the pointer still in the area the bubble covered before it shrank? Once it is not, that is over."""
+        area = self._reserved
+        if area is None:
+            return False
+        on = pointer_on(self._reserve_win) if self._reserve_win is not None else None
+        if on is None:
+            px, py = self.face._pointer()
+            on = area.contains(QPoint(int(px), int(py)))
+        if not on:
+            self._release_reserve()
+        return on
+
+    def _release_reserve(self):
+        self._reserved = None
+        win, self._reserve_win = self._reserve_win, None
+        if win is not None:
+            win.hide()
+            win.deleteLater()
+
+    def _show_command_menu(self):
         self._list_only = True
         self._input = False
         self._links = []
@@ -1121,6 +1207,15 @@ class BubbleWindow(QWidget):
 
     def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
                     older: bool = False, keep_scroll: bool = False):
+        """New content; a bubble that gets smaller under the pointer keeps the area it covered, see reserve."""
+        old = self._area_under_pointer()
+        try:
+            self._show_blocks(blocks, kind, input, links, older, keep_scroll)
+        finally:
+            self._reserve_after(old)
+
+    def _show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
+                     older: bool = False, keep_scroll: bool = False):
         """Put blocks in the bubble, read from the top. With older, a message was added above;
         with keep_scroll the same page is shown again, where it was. A thought is followed down as it
         grows, until you scroll up in it."""
@@ -1445,6 +1540,7 @@ class BubbleWindow(QWidget):
             self.face._think_quiet = True
         self.kind = kind
         if kind == "":
+            self._release_reserve()
             self._yielding = False
             self._slide.stop()
             self._growth = None
