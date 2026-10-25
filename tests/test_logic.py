@@ -344,6 +344,29 @@ class GrokAvatarFallback(unittest.TestCase):
         self.assertFalse(faces._pointer_over_arc(800, 400))
         self.assertFalse(faces._in_hotspot(800, 150))
 
+    def test_the_top_catch_is_a_quarter_of_the_old_area(self):
+        """Stefan's half circle: a 280x100 strip on the top edge, not the old 560x200 one."""
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication, QWidget
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        from botwidget.qt_ui.faces import ARC_CATCH_X, ARC_CATCH_Y, Faces
+        self.assertEqual((ARC_CATCH_X, ARC_CATCH_Y), (140, 100), "plain constants, not derived from the radius")
+        app = QApplication.instance() or QApplication([])
+        faces = Faces.__new__(Faces)
+        faces._hotspot = lambda: (800.0, 0.0)
+        faces._catcher = QWidget()
+        faces._place_catcher()
+        geo = faces._catcher.geometry()
+        self.assertEqual((geo.width(), geo.height()), (280, 100))
+        self.assertEqual((geo.x(), geo.y()), (660, 0))
+        self.assertIsNotNone(app)
+        self.assertTrue(faces._pointer_over_arc(800 + 139, 99), "the near corner still catches")
+        self.assertFalse(faces._pointer_over_arc(800 + 141, 50), "22px wider than the old catch")
+        self.assertFalse(faces._pointer_over_arc(800, 101))
+        self.assertFalse(faces._pointer_over_arc(800 + 200, 150))
+
     def test_arc_bots_leave_the_centre_one_at_a_time_and_return_last_first(self):
         """Should hold later bots until the one before them has started, and reverse that on the way back."""
         from botwidget.qt_ui.faces import ARC_MOVE_S, ARC_STEP_S, arc_drop, arc_progress
