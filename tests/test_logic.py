@@ -1505,14 +1505,15 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_dragged_face_shrinks_smoothly_around_the_pointer(self):
         """Into the arc the face gets small over a moment, not in one jump, and stays centred on the pointer."""
-        from PySide6.QtTest import QTest
         window = self.window
         window._drag_center = (window.x() + 34.0, window.y() + 34.0)
         window._resize_to(48)
         self.assertEqual(window.width(), 68, "no jump on the first move")
-        QTest.qWait(self.face.DRAG_RESIZE_MS // 2)
-        self.assertTrue(48 <= window.width() <= 68)
-        QTest.qWait(self.face.DRAG_RESIZE_MS + 80)
+        # The animation is stepped by hand: waiting for real time made the test flaky on a busy machine.
+        anim = window._size_anim
+        anim.setCurrentTime(self.face.DRAG_RESIZE_MS // 2)
+        self.assertTrue(48 < window.width() < 68, "half way")
+        anim.setCurrentTime(self.face.DRAG_RESIZE_MS)
         self.assertEqual(window.width(), 48)
         self.assertEqual((window.x() + 24, window.y() + 24), tuple(int(v) for v in window._drag_center))
         window._resize_to(68)
