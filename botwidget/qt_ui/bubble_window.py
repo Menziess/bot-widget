@@ -513,6 +513,10 @@ class BubbleWindow(QWidget):
         self._chrome_key = self._chrome_pix = None
         self._was_near = False
         self._near_at = 0.0
+        # Qt's enter/leave for this window. A leave newer than the last enter means the pointer is
+        # gone, whatever underMouse() still says on XWayland.
+        self._entered_at = None
+        self._left_at = None
         self._had_focus = False
         self._wait_since = 0.0
         self._growth = None
@@ -775,14 +779,21 @@ class BubbleWindow(QWidget):
 
     def enterEvent(self, event):
         """Mouse over the bubble: it stays."""
+        self._entered_at = time.monotonic()
         self.changed = time.monotonic()
 
     def leaveEvent(self, event):
-        """Mouse left the bubble: start the same grace period as when the pointer left the face."""
-        if not self.kind:
-            return
-        self._was_near = False
-        self._near_at = time.monotonic()
+        """Mouse left the bubble: the pointer is away, even when underMouse() stays true.
+
+        The grace that lets the pointer cross the gap lives in _tick, so _was_near is left alone here.
+        """
+        self._left_at = time.monotonic()
+
+    def pointer_over(self) -> bool:
+        """Whether the pointer is over the bubble, trusting a leave that came after the last enter."""
+        if self._left_at is not None and (self._entered_at is None or self._left_at > self._entered_at):
+            return False
+        return self.underMouse()
 
     # ── Content ─────────────────────────────────────────────────
 

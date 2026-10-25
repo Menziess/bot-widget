@@ -2130,6 +2130,77 @@ class BubbleHover(unittest.TestCase):
         tick(start + 1.3, over=False)
         self.assertFalse(bubble.isVisible(), "away for longer than a crossing: gone")
 
+    def test_on_wayland_crossing_from_the_face_onto_the_bubble_does_not_close_it(self):
+        """The gap between face and bubble is not a leave: the bubble stays when the pointer lands on it."""
+        from contextlib import ExitStack
+        from unittest import mock
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtCore import Qt
+
+        bubble = self.open_settings()
+        bubble._kept_until = 0.0
+        start = time.monotonic()
+        window = self.window
+
+        def tick(at: float, face_over: bool, bubble_over: bool):
+            with ExitStack() as stack:
+                stack.enter_context(mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False))
+                stack.enter_context(mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=at))
+                stack.enter_context(
+                    mock.patch.object(type(window), "underMouse", return_value=face_over))
+                stack.enter_context(
+                    mock.patch.object(type(bubble), "underMouse", return_value=bubble_over))
+                stack.enter_context(
+                    mock.patch.object(QGuiApplication, "applicationState",
+                                      return_value=Qt.ApplicationState.ApplicationActive))
+                bubble._tick()
+
+        # Pointer on the face: marks the pointer as near.
+        tick(start, face_over=True, bubble_over=False)
+        self.assertTrue(bubble.isVisible(), "face hover opened the bubble")
+
+        # Pointer left the face, is in the gap. Bubble must stay visible (gap < CROSS_GAP_S).
+        tick(start + 0.2, face_over=False, bubble_over=False)
+        self.assertTrue(bubble.isVisible(), "the gap between face and bubble is not a leave")
+
+        # Pointer lands on the bubble inside the gap. Bubble must stay visible and the gap timer restarts.
+        tick(start + 0.25, face_over=False, bubble_over=True)
+        self.assertTrue(bubble.isVisible(), "on the bubble: still open")
+
+        # The face window's leave must not cancel the grace: an already-read bubble stays through the gap.
+        bubble.changed = start - 1000
+        bubble.leaveEvent(None)
+        tick(start + 0.3, face_over=False, bubble_over=False)
+        self.assertTrue(bubble.isVisible(), "leaving the face on the way to the bubble is not a close")
+
+    def test_on_wayland_the_bubble_closes_when_the_pointer_is_far_and_the_app_stays_active(self):
+        """XWayland keeps the app active and underMouse() stuck true after the pointer has left both windows."""
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        from botwidget.qt_ui.bubble_window import CROSS_GAP_S
+
+        self.hover()
+        bubble = self.window.bubble
+        self.assertTrue(bubble.isVisible())
+        start = time.monotonic()
+        # The pointer leaves our windows now, while the grace from the last hover is still running,
+        # and Qt then keeps reporting underMouse() true on both windows (stale on XWayland).
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive), \
+                mock.patch.object(type(self.window), "underMouse", return_value=True), \
+                mock.patch.object(type(bubble), "underMouse", return_value=True):
+            self.window.leaveEvent(None)
+            bubble.leaveEvent(None)
+            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=start + 0.2):
+                bubble._tick()
+            self.assertTrue(bubble.isVisible(), "a moment in the gap may still be the crossing")
+            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic",
+                            return_value=start + CROSS_GAP_S + 0.2):
+                bubble._tick()
+        self.assertFalse(bubble.isVisible(), "a stuck underMouse must not hold the bubble after both windows were left")
+
+
     def test_on_wayland_a_bubble_closes_when_the_pointer_never_came_near_it(self):
         from unittest import mock
         bubble = self.open_settings()

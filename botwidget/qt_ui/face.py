@@ -137,6 +137,10 @@ class FaceWindow(QWidget):
         self._alive = True
         self._semicircle_visible = False
         self._semicircle_raised = False
+        # Pointer state from Qt's own enter/leave events. On XWayland underMouse() can stay true
+        # after the pointer has gone, so a leave newer than the last enter means "not over".
+        self._entered_at = None
+        self._left_at = None
 
         self.has_pending = False
         self.pinned = False
@@ -545,14 +549,22 @@ class FaceWindow(QWidget):
 
     def enterEvent(self, event):
         super().enterEvent(event)
+        self._entered_at = time.monotonic()
         if self._semicircle_visible and self.faces is not None:
             self.faces.semicircle_pointer_here()
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
+        self._left_at = time.monotonic()
         # Wayland cannot see the pointer in the gaps, so leaving a small face starts the hide.
         if self._semicircle_visible and self.isVisible() and self.faces is not None:
             self.faces.semicircle_pointer_left()
+
+    def pointer_over(self) -> bool:
+        """Whether the pointer is over this window, trusting a leave that came after the last enter."""
+        if self._left_at is not None and (self._entered_at is None or self._left_at > self._entered_at):
+            return False
+        return self.underMouse()
 
     def _pointer(self) -> tuple:
         pos = QCursor.pos()
@@ -569,9 +581,9 @@ class FaceWindow(QWidget):
             # Qt's own hit-testing.  underMouse() on the face window tells us
             # whether the pointer is hovering the icon, and on the bubble
             # whether it is hovering the bubble itself.
-            if self.underMouse():
+            if self.pointer_over():
                 return True
-            return bubble.isVisible() and bubble.underMouse()
+            return bubble.isVisible() and bubble.pointer_over()
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         if (px - cx) ** 2 + (py - cy) ** 2 <= GAZE_NEAR ** 2:
@@ -599,7 +611,7 @@ class FaceWindow(QWidget):
 
     def _pointer_on_head(self) -> bool:
         if not global_pointer():
-            return self.underMouse()
+            return self.pointer_over()
         px, py = self._pointer()
         cx, cy = self.x() + AVATAR_SIZE / 2, self.y() + AVATAR_SIZE / 2
         return (px - cx) ** 2 + (py - cy) ** 2 <= ON_FACE ** 2
