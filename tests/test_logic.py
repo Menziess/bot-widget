@@ -2403,6 +2403,7 @@ class BubbleHover(unittest.TestCase):
         def check(step, log):
             self.assertTrue(bubble.consistent(), f"state {bubble.state()} vs window, after {log[-6:]}")
             self.one_content(bubble, f"after {log[-6:]}")
+            self.reserve_is_current(bubble, f"after {log[-6:]}")
             win = bubble._reserve_win
             if win is not None and win.isVisible() and bubble.isVisible():
                 held = win.mask().translated(win.pos()) if not win.mask().isEmpty() else QRegion(win.geometry())
@@ -2620,6 +2621,52 @@ class BubbleHover(unittest.TestCase):
                                                                  bubble._slide.duration()))
                             self.one_content(bubble, f"back from {command}")
                     bubble.close_bubble("refresh")
+
+    def live_reserves(self):
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui.bubble_window import ReserveWindow
+        return [w for w in QApplication.topLevelWidgets() if isinstance(w, ReserveWindow) and w.isVisible()]
+
+    def reserve_is_current(self, bubble, when=""):
+        """No place holder unless its bubble is open and still holding that area, and never a second one."""
+        live = self.live_reserves()
+        if bubble._reserve_win is None:
+            self.assertEqual(live, [], f"a place holder outlived its bubble's change {when}")
+        else:
+            self.assertEqual(bubble.state(), "open", f"a place holder for a bubble that is not open {when}")
+            self.assertIsNotNone(bubble._reserved)
+            self.assertEqual(live, [bubble._reserve_win], f"an old place holder is still up {when}")
+
+    def test_the_place_holder_of_a_bigger_bubble_goes_with_the_next_change_or_a_yield(self):
+        """After the back arrow the list holds the page's area. A next change of content (another right-click,
+        with the pointer on the list) or giving way to another bubble ended that, but the see-through window
+        stayed: an empty window on the screen that still counted as the bubble."""
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        window = self.window
+        window.show()
+        with self.x_pointer(), mock.patch.object(QGuiApplication, "applicationState",
+                                                 return_value=Qt.ApplicationInactive):
+            bubble, page = self.back_arrow_leaves_the_pointer_outside()
+            old = bubble._reserve_win
+            self.assertIsNotNone(old)
+            centre = bubble.frameGeometry().center()
+            self.where["at"] = (centre.x(), centre.y())  # onto the list itself
+            bubble._tick()
+            window.open_command_menu()  # the content changes again
+            self.assertFalse(old.isVisible(), "the old place holder went with the change")
+            self.reserve_is_current(bubble, "after a second change")
+            # Again, and now the bubble gives way to another one.
+            self.where["at"] = (page.center().x(), page.bottom() - 30)
+            bubble2, _page = self.back_arrow_leaves_the_pointer_outside()
+            self.assertIsNotNone(bubble._reserve_win)
+            with mock.patch.object(type(bubble), "_must_yield", return_value=True):
+                bubble._tick()
+            self.assertEqual(bubble.state(), "yielding")
+            self.reserve_is_current(bubble, "while yielding")
+            bubble.close_bubble("refresh")
+            self.reserve_is_current(bubble, "closed")
 
     def test_choosing_bots_from_the_menu_keeps_the_bubble_whatever_the_place_of_the_face(self):
         """/bots from the right-click list of the top faces closed the bubble at once: the page started its

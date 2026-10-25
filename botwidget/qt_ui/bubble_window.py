@@ -710,9 +710,12 @@ class BubbleWindow(QWidget):
 
     def _area_under_pointer(self) -> QRect | None:
         """Where the bubble is now, when the pointer is on it: what a smaller one keeps as hover area."""
-        if self.isVisible() and self.kind and self.face.pointer_near(self):
-            return QRect(self.frameGeometry())
-        return None
+        if not (self.isVisible() and self.kind and self.face.pointer_near(self)):
+            return None
+        if self._reserved is not None and not self.pointer_over() and self._pointer_in_reserve():
+            # Engaged through the area an earlier change held: that area is what stays under the pointer.
+            return QRect(self._reserved)
+        return QRect(self.frameGeometry())
 
     def _reserve_after(self, old: QRect | None):
         """A page change made the bubble smaller (the back arrow) or moved it (a tall page that no longer fits
@@ -721,6 +724,8 @@ class BubbleWindow(QWidget):
 
         The pointer was on the bubble, so it has been touched: leaving closes it at once, not after a while.
         """
+        # Whatever an earlier change held ends with this one: a new hold is made below if it is still needed.
+        self._release_reserve()
         if old is None or not self.isVisible() or not self.kind:
             return
         self._was_near = True
@@ -729,7 +734,6 @@ class BubbleWindow(QWidget):
         final = QRect(int(tx), int(ty), width, height)
         if final.contains(old) and self.frameGeometry().contains(old):
             return  # it grows over where it was: the pointer stays on it
-        self._release_reserve()
         self._reserved = old
         if QGuiApplication.platformName() == "xcb":
             # XWayland only knows where the pointer is over X windows: over the desktop or a Wayland app the
@@ -756,8 +760,7 @@ class BubbleWindow(QWidget):
         if win is not None and not win.leave_out(self.frameGeometry()):
             self._release_reserve()
 
-    def in_reserve(self) -> bool:
-        """Is the pointer still in the area the bubble covered before it shrank? Once it is not, that is over."""
+    def _pointer_in_reserve(self) -> bool:
         area = self._reserved
         if area is None:
             return False
@@ -765,6 +768,14 @@ class BubbleWindow(QWidget):
         if on is None:
             px, py = self.face._pointer()
             on = area.contains(QPoint(int(px), int(py)))
+        return bool(on)
+
+    def in_reserve(self) -> bool:
+        """Is the pointer still in the area the bubble covered before it shrank? Once it is not, that is over,
+        and so it is when the bubble is no longer open."""
+        if self._reserved is None:
+            return False
+        on = self.state() == "open" and self.isVisible() and self._pointer_in_reserve()
         if not on:
             self._release_reserve()
         return on
@@ -1533,6 +1544,7 @@ class BubbleWindow(QWidget):
         if self._yielding:
             # Out of the way of a bubble the user is busy with: it comes back when that one is gone.
             self.changed = now
+            self._release_reserve()
             self.hide()
             return
         if was_yielding:
@@ -1666,6 +1678,7 @@ class BubbleWindow(QWidget):
             self._growth = None
             self._commands_forced = False
             self._show_commands([])
+            self._release_reserve()
             self.hide()
         elif not self.isVisible():
             self._show_at(tx, ty)
