@@ -4,6 +4,7 @@ No window or toolkit: only calculating and parsing, so this also runs on a CI
 machine without a display.
 """
 
+import contextlib
 import io
 import json
 import math
@@ -2318,6 +2319,87 @@ class BubbleHover(unittest.TestCase):
             bubble._tick()
             self.assertFalse(bubble.isVisible(), "left it: closed at once")
             self.assertIsNone(bubble._reserve_win, "and the place holder is gone")
+
+    def x_pointer(self):
+        """XWayland as on Stefan's desktop: X says which of our windows is under the pointer (no hover margin),
+        a place holder mapped after the bubble lies on top of it, and a window mask lets the pointer through."""
+        from unittest import mock
+        from PySide6.QtCore import QPoint
+        from PySide6.QtGui import QGuiApplication
+        window = self.window
+
+        def under_pointer():
+            x, y = self.where["at"]
+            point = QPoint(int(x), int(y))
+            for widget in (window.bubble._reserve_win, window.bubble, window):
+                if widget is None or not widget.isVisible() or not widget.geometry().contains(point):
+                    continue
+                mask = widget.mask()
+                if mask.isEmpty() or mask.contains(point - widget.pos()):
+                    return native_id(widget)
+            return 0
+
+        stack = contextlib.ExitStack()
+        stack.enter_context(mock.patch.object(QGuiApplication, "platformName", return_value="xcb"))
+        stack.enter_context(mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False))
+        stack.enter_context(mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer))
+        return stack
+
+    def choose_from_the_menu(self, command):
+        """Right-click the face, point at the command's row and click it; the page grows in frame by frame."""
+        from PySide6.QtCore import QPoint
+        window, bubble = self.window, self.window.bubble
+        self.where["at"] = (window.x() + 34, window.y() + 34)
+        window.open_command_menu()
+        self.finish_growth()
+        index = [row[0] for row in bubble._slash.rows].index(command)
+        row = bubble._slash.mapToGlobal(QPoint(bubble._slash.width() // 2,
+                                               4 + bubble._slash.ROW_H * index + bubble._slash.ROW_H // 2))
+        self.where["at"] = (row.x(), row.y())
+        bubble._tick()
+        menu = bubble.frameGeometry()
+        bubble._run_command(command)
+        frames = []
+        for ms in range(0, 400, 16):
+            if bubble._growth is not None:
+                bubble._slide.setCurrentTime(min(ms, bubble._slide.duration()))
+            bubble._tick()
+            frames.append(bubble.frameGeometry())
+            if not bubble.isVisible():
+                break
+        return menu, frames
+
+    def test_choosing_bots_from_the_menu_keeps_the_bubble_whatever_the_place_of_the_face(self):
+        """/bots from the right-click list of the top faces closed the bubble at once: the page started its
+        growth from a sliver (the list's height was forgotten first), which left the pointer outside. Further down
+        a page too tall to fit above the face moves to the side, away from the pointer."""
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QGuiApplication
+        from unittest import mock
+        state = dict(self.settings_state())
+        state["bots"] = [{"id": f"b{i}", "name": f"Bot {i}", "source": "OpenBot", "on": True} for i in range(3)]
+        window = self.window
+        window.show()
+        window.faces = type("Faces", (), {"menu_state": lambda _self: state,
+                                          "menu_command": lambda _self, command, page: page,
+                                          "close_bubbles_except": lambda _self, _id: None,
+                                          "raise_bubbles": lambda _self: None})()
+        bubble = window.bubble
+        for spot in ((26, 62), (27, 139), (25, 210), (300, 400)):
+            with self.subTest(spot=spot), self.x_pointer(), \
+                    mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive):
+                window.move(*spot)
+                window._home = spot
+                menu, frames = self.choose_from_the_menu("/bots")
+                self.assertTrue(bubble.isVisible(), f"the /bots page stays: {menu} then {frames[:3]}")
+                self.assertEqual(window._menu_page, "bots")
+                pointer = QPoint(*self.where["at"])
+                for frame in frames:
+                    self.assertTrue(frame.contains(pointer) or bubble._reserved is not None
+                                    and bubble._reserved.contains(pointer), f"pointer let go in {frame}")
+                self.where["at"] = (5000, 5000)
+                bubble._tick()
+                self.assertFalse(bubble.isVisible(), "leaving closes it at once")
 
     def test_a_bot_without_a_conversation_keeps_its_greeting_while_the_pointer_is_on_it(self):
         """Hermes with an empty chat: hover (or a click) opened the greeting, and the next poll found no

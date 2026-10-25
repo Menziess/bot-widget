@@ -715,8 +715,9 @@ class BubbleWindow(QWidget):
         return None
 
     def _reserve_after(self, old: QRect | None):
-        """The back arrow (or any page change) made the bubble smaller and left the pointer outside it: the
-        area the bigger bubble covered keeps counting as on the bubble until the pointer leaves it. No timer.
+        """A page change made the bubble smaller (the back arrow) or moved it (a tall page that no longer fits
+        above the face goes beside it): the area the bubble covered keeps counting as on the bubble until the
+        pointer leaves it. No timer.
 
         The pointer was on the bubble, so it has been touched: leaving closes it at once, not after a while.
         """
@@ -724,8 +725,10 @@ class BubbleWindow(QWidget):
             return
         self._was_near = True
         width, height = self._final_size()
-        if width >= old.width() and height >= old.height():
-            return
+        tx, ty, _tip = self._goal()
+        final = QRect(int(tx), int(ty), width, height)
+        if final.contains(old) and self.frameGeometry().contains(old):
+            return  # it grows over where it was: the pointer stays on it
         self._release_reserve()
         self._reserved = old
         if QGuiApplication.platformName() == "xcb":
@@ -826,7 +829,10 @@ class BubbleWindow(QWidget):
         typed = self._entry.text().strip()
         if not self._commands_forced or (typed.startswith("/") and " " not in typed):
             self._entry.clear()
-        self._show_commands([])
+        if not self._list_only:
+            # The list above the field goes. The right-click list is the whole bubble: it stays until the page
+            # replaces it, else the bubble shrank to a sliver first and left the pointer outside (and closed).
+            self._show_commands([])
         self._commands_forced = False
         self.face.on_user_message(command)
 
@@ -1255,9 +1261,12 @@ class BubbleWindow(QWidget):
                                             or (self._follow and self._growth is not None)
                                             or bar.value() >= bar.maximum() - FOLLOW_SLACK)
         self._scroll_target = bar.value() if keep_scroll or (kind == "think" and not self._follow) else 0
+        visible = self.isVisible()
+        # The size it has on screen now, the command list included: a new page grows from there. Measured after
+        # _list_only went off it was a sliver, which left the pointer outside and closed the bubble at once.
+        start = (self._shown_w(self._geom[1]), self._body_h(self._geom[2])) if self._geom and visible else None
         self._list_only = False
         key = (kind, block_text(blocks), input, tuple(links or []), self._height_cap())
-        visible = self.isVisible()
         if key == self._built and not self._dots_lines:
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
             self.changed = time.monotonic()
@@ -1267,7 +1276,6 @@ class BubbleWindow(QWidget):
                 self.place(kind)
                 self._slide.start()
             return
-        start = (self._shown_w(self._geom[1]), self._body_h(self._geom[2])) if self._geom and visible else None
         old_inner = self._geom[2] if self._geom else 0
         # stop() does not finish an animation that has not started, so the bubble would stay invisible.
         self._slide.stop()
