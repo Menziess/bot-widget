@@ -1,12 +1,46 @@
 """Windows: no ps or /proc, sound through winsound."""
 
+import ctypes
 import os
+import sys
 
 
 HOTKEY_LABEL = ""
 CAN_PICK_DESKTOPS = False
 # Windows only flashes the taskbar for a window that takes focus without a click.
 FOCUS_ON_HOVER = False
+# A face is a tool window: no taskbar button. (Linux keeps a normal window, see linux.FACE_IS_TOOL.)
+FACE_IS_TOOL = True
+
+GWL_EXSTYLE = -20
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_APPWINDOW = 0x00040000
+
+
+def _user32():
+    if sys.platform != "win32":
+        return None
+    try:
+        return ctypes.WinDLL("user32", use_last_error=True)
+    except (AttributeError, OSError):
+        return None
+
+
+def hide_from_taskbar(win_id: int, user32=None) -> None:
+    """No taskbar button: tool window on, app window off. Qt.Tool asks for the same; this holds also when Qt
+    made the native window again."""
+    user32 = user32 if user32 is not None else _user32()
+    if user32 is None or not win_id:
+        return
+    get = getattr(user32, "GetWindowLongPtrW", None) or user32.GetWindowLongW
+    put = getattr(user32, "SetWindowLongPtrW", None) or user32.SetWindowLongW
+    get.restype = put.restype = ctypes.c_ssize_t
+    get.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    put.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_ssize_t]
+    style = get(ctypes.c_void_p(int(win_id)), GWL_EXSTYLE)
+    wanted = (style | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+    if wanted != style:
+        put(ctypes.c_void_p(int(win_id)), GWL_EXSTYLE, wanted)
 
 
 def set_desktops(win_id: int, everywhere: bool) -> None:
@@ -57,7 +91,8 @@ def data_home() -> str:
 
 
 def before_show(win_id: int, layer: str = "") -> None:
-    """Only GNOME needs a window marked before it is mapped."""
+    """Right before a window of ours is shown: no taskbar button for it."""
+    hide_from_taskbar(win_id)
 
 
 def pointer_window() -> int | None:

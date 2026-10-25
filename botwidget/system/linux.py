@@ -84,6 +84,9 @@ def ensure_x11_libraries() -> None:
 
 HOTKEY_LABEL = ""
 CAN_PICK_DESKTOPS = False
+# Not Qt.Tool: mutter lifts a utility window to the layer of its group (above other apps); skip-taskbar
+# written before each map keeps the face out of the taskbar instead.
+FACE_IS_TOOL = False
 # Taking the keyboard without a click makes GNOME say "Bot Widget is ready" instead of focusing.
 FOCUS_ON_HOVER = False
 

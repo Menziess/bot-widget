@@ -3326,6 +3326,55 @@ class NewFlagsNewWindow(unittest.TestCase):
         self.assertIn(native_id(window), marked)
 
 
+class NoTaskbarButton(unittest.TestCase):
+    """Faces and bubbles never get a button in the Windows taskbar."""
+
+    def test_the_windows_helper_turns_tool_window_on_and_app_window_off(self):
+        from unittest import mock
+        from botwidget.system import windows
+        user32 = mock.Mock()
+        user32.GetWindowLongPtrW.return_value = windows.WS_EX_APPWINDOW | 0x8
+        windows.hide_from_taskbar(0x1234, user32=user32)
+        (_hwnd, index, style), _ = user32.SetWindowLongPtrW.call_args
+        self.assertEqual(index, windows.GWL_EXSTYLE)
+        self.assertEqual(style, windows.WS_EX_TOOLWINDOW | 0x8)
+
+    def test_the_windows_helper_leaves_a_tool_window_alone_and_does_nothing_elsewhere(self):
+        from unittest import mock
+        from botwidget.system import windows
+        user32 = mock.Mock()
+        user32.GetWindowLongPtrW.return_value = windows.WS_EX_TOOLWINDOW
+        windows.hide_from_taskbar(0x1234, user32=user32)
+        user32.SetWindowLongPtrW.assert_not_called()
+        if sys.platform != "win32":
+            windows.hide_from_taskbar(0x1234)  # no user32 here: nothing happens, nothing breaks
+
+    def test_every_top_level_window_is_a_tool_window_on_windows(self):
+        from unittest import mock
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui import face, faces
+        QApplication.instance() or QApplication([])
+        with mock.patch.object(face, "FACE_IS_TOOL", True):
+            window = face.FaceWindow("t", "Test", spot=(300, 400))
+            window._poll_timer.stop()
+            self.addCleanup(window.close_face)
+            catcher = faces.ArcCatcher(None)
+            self.addCleanup(catcher.deleteLater)
+            for widget in (window, window.bubble, catcher):
+                self.assertTrue(widget.windowFlags() & Qt.Tool, type(widget).__name__)
+            window.restack()
+            self.assertTrue(window.windowFlags() & Qt.Tool, "still a tool window after always-on-top switched")
+            self.assertTrue(window.bubble.windowFlags() & Qt.Tool)
+        import inspect
+        self.assertIn("Qt.Tool", inspect.getsource(faces.Faces._spawn_guest), "arc guests")
+
+    def test_linux_faces_stay_normal_windows(self):
+        from botwidget.system import linux
+        self.assertFalse(linux.FACE_IS_TOOL, "a utility window rises above other apps under mutter")
+
+
 class ScreenChanges(unittest.TestCase):
     """Should move the face onto a screen when its screen goes, and back when the screen returns."""
 

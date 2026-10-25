@@ -65,7 +65,7 @@ from botwidget.qt_ui.bubble_window import USER_KEEP_S, BubbleWindow, mark_before
 from botwidget.qt_ui.native import native_id, set_flags
 from botwidget.qt_ui.render import svg_pixmap
 from botwidget.sound import play_sound
-from botwidget.system.current import FOCUS_ON_HOVER, activate_app, send_behind_windows
+from botwidget.system.current import FACE_IS_TOOL, FOCUS_ON_HOVER, activate_app, send_behind_windows
 from botwidget.theme import BUBBLE_FONT
 
 DOT_SIZE = 14
@@ -247,8 +247,10 @@ class FaceWindow(QWidget):
     def _apply_flags(self):
         """Separate from the taskbar; above or below normal windows according to widget.json."""
         layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
-        # No Qt.Tool: a normal window, kept out of the taskbar by skip-taskbar written before each map.
-        set_flags(self, Qt.FramelessWindowHint | layer)
+        # Windows: Qt.Tool, no taskbar button. Linux: a normal window, kept out of the taskbar by skip-taskbar
+        # written before each map (a tool window there would rise above other apps).
+        tool = Qt.Tool if FACE_IS_TOOL else Qt.WindowType(0)
+        set_flags(self, Qt.FramelessWindowHint | layer | tool)
 
     def restack(self):
         """After a change of the setting: new flags ask the window to be shown again."""
