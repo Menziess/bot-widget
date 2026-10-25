@@ -5,6 +5,7 @@ and "hint"). A speech bubble can get an input field and a row of links.
 """
 
 import html
+import math
 import os
 import sys
 import time
@@ -209,7 +210,14 @@ class BubbleEntry(QPlainTextEdit):
     def wanted_height(self) -> int:
         fm = self.fontMetrics()
         ls = fm.lineSpacing()
-        actual_lines = round(self.document().size().height() / ls) if ls > 0 else 1
+        raw = self.document().size().height()
+        # QPlainTextEdit reports document height in lines when the layout
+        # has not been given a pixel text width (height stays ~block/wrap count).
+        if ls > 0 and raw > ls:
+            actual_lines = math.ceil(raw / ls)
+        else:
+            actual_lines = max(1, int(round(raw)) if raw else 1)
+        actual_lines = max(actual_lines, self.document().blockCount())
         lines = max(1, min(ENTRY_MAX_LINES, actual_lines))
         return max(ENTRY_H, lines * ls + ENTRY_PAD + 2)
 
