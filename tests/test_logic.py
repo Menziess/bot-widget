@@ -2319,6 +2319,61 @@ class BubbleHover(unittest.TestCase):
             self.assertFalse(bubble.isVisible(), "left it: closed at once")
             self.assertIsNone(bubble._reserve_win, "and the place holder is gone")
 
+    def test_a_right_click_after_a_left_click_lets_the_command_list_be_clicked_on_x(self):
+        """Left-click opens the chat, right-click swaps it for the smaller command list. The see-through window
+        that holds the chat's area was mapped last, so the window manager put it on top of the bubble, and every
+        click on a command went to it: the list looked stuck. It must hold only what the bubble does not cover."""
+        from unittest import mock
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtGui import QGuiApplication
+        long = "Dit is een lang antwoord over van alles en nog wat. " * 40
+        self.face.latest_chat = lambda thread_id, limit=8: {"messages": [{"role": "bot", "text": long}], "activity": ""}
+        window = self.window
+        window.show()
+        bubble = window.bubble
+
+        def under_pointer():
+            # X stacking as Mutter left it: the place holder, mapped last, on top of the bubble.
+            x, y = self.where["at"]
+            point = QPoint(int(x), int(y))
+            for widget in (bubble._reserve_win, bubble, window):
+                if widget is None or not widget.isVisible() or not widget.geometry().contains(point):
+                    continue
+                mask = widget.mask()
+                if mask.isEmpty() or mask.contains(point - widget.pos()):
+                    return native_id(widget)
+            return 0
+
+        with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive), \
+                mock.patch.object(QGuiApplication, "platformName", return_value="xcb"), \
+                mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer):
+            self.where["at"] = (window.x() + 34, window.y() + 34)
+            window.open_input()
+            if bubble._growth is not None:
+                bubble._slide.stop()
+                bubble._growth_done()
+            chat = bubble.frameGeometry()
+            window.open_command_menu()
+            menu = bubble.frameGeometry()
+            self.assertTrue(bubble._list_only)
+            self.assertFalse(menu.width() >= chat.width() and menu.height() >= chat.height(), "the list is smaller")
+            self.assertIsNotNone(bubble._reserve_win, "the chat's area is held")
+            row = bubble._slash.mapToGlobal(QPoint(bubble._slash.width() // 2, bubble._slash.ROW_H + 10))
+            self.where["at"] = (row.x(), row.y())
+            self.assertEqual(under_pointer(), native_id(bubble), "a click on a command reaches the bubble")
+            outside = next((QPoint(x, y) for x in range(chat.left(), chat.right(), 4)
+                            for y in range(chat.top(), chat.bottom(), 4)
+                            if not menu.contains(QPoint(x, y))), None)
+            if outside is not None:
+                self.where["at"] = (outside.x(), outside.y())
+                self.assertEqual(under_pointer(), native_id(bubble._reserve_win), "the rest is still held")
+            bubble.move(bubble.x() + 7, bubble.y() + 5)  # the spring moves the bubble on
+            moved = bubble.frameGeometry().center()
+            self.where["at"] = (moved.x(), moved.y())
+            if bubble._reserve_win is not None:
+                self.assertEqual(under_pointer(), native_id(bubble), "also where the bubble went")
+
     def test_on_x_a_closed_bubble_leaves_no_window_the_window_manager_could_still_map(self):
         """Opened and closed again before the window manager mapped it: Mutter maps it anyway, after Qt's
         unmap. That invisible window sat on the face, took hover and right-click, and the bot looked stuck."""

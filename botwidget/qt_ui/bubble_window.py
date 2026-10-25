@@ -24,7 +24,7 @@ from PySide6.QtCore import (
     QVariantAnimation,
     Signal,
 )
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QGuiApplication, QImage, QPainter, QTextOption
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QGuiApplication, QImage, QPainter, QRegion, QTextOption
 from PySide6.QtWidgets import QApplication, QLabel, QPlainTextEdit, QScrollArea, QTextBrowser, QWidget
 
 from botwidget import attachments, menu_pages
@@ -544,6 +544,17 @@ class ReserveWindow(QWidget):
         else:
             send_behind_windows(native_id(self))
 
+    def leave_out(self, bubble: QRect) -> bool:
+        """Hold only what the bubble does not cover. It is mapped after the bubble, so the window manager may well
+        stack it on top: without this cut-out every click on the command list went to this window and the list
+        looked stuck. False when the bubble covers all of it, so there is nothing left to hold."""
+        region = QRegion(self.rect()).subtracted(QRegion(bubble.translated(-self.pos())))
+        if region.isEmpty():
+            return False
+        if region != self.mask():
+            self.setMask(region)
+        return True
+
 
 class BubbleWindow(QWidget):
     older = Signal()
@@ -723,7 +734,24 @@ class BubbleWindow(QWidget):
             # window, so the X server can say when the pointer leaves it.
             self._reserve_win = ReserveWindow()
             self._reserve_win.setGeometry(old)
+            if not self._reserve_win.leave_out(self.frameGeometry()):
+                self._release_reserve()
+                return
             self._reserve_win.show()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._keep_reserve_clear()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._keep_reserve_clear()
+
+    def _keep_reserve_clear(self):
+        """The bubble moves on (its spring) or changes size: the place holder keeps out from under it."""
+        win = getattr(self, "_reserve_win", None)
+        if win is not None and not win.leave_out(self.frameGeometry()):
+            self._release_reserve()
 
     def in_reserve(self) -> bool:
         """Is the pointer still in the area the bubble covered before it shrank? Once it is not, that is over."""
