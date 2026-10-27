@@ -1,6 +1,6 @@
 """Frosted glass behind the bubbles, where the system can blur what is behind a window."""
 
-from PySide6.QtCore import QBuffer, QIODevice, QRect
+from PySide6.QtCore import QBuffer, QIODevice, QRect, Qt
 from PySide6.QtGui import QGuiApplication
 
 from botwidget.config import widget_config
@@ -28,10 +28,16 @@ def alpha() -> float:
 
 
 def png(pixmap) -> bytes:
-    """The shape as a picture. Uncompressed: it is made often, and read once."""
+    """The shape as a picture, at one pixel per point: the blur has no use for more. Uncompressed: it is made often,
+    and read once."""
+    image = pixmap.toImage()
+    ratio = pixmap.devicePixelRatio()
+    if ratio > 1:
+        image = image.scaled(round(image.width() / ratio), round(image.height() / ratio), Qt.IgnoreAspectRatio,
+                             Qt.SmoothTransformation)
     buffer = QBuffer()
     buffer.open(QIODevice.WriteOnly)
-    pixmap.toImage().save(buffer, "PNG", 100)
+    image.save(buffer, "PNG", 100)
     return bytes(buffer.data())
 
 

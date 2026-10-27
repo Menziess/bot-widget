@@ -32,6 +32,7 @@ from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbo
 from botwidget.qt_ui import desktops, glass
 from botwidget.qt_ui.bubble_window import mark_before_show
 from botwidget.qt_ui.native import native_id, set_flags
+from botwidget.qt_ui.prewarm import prewarm
 from botwidget.qt_ui.face import FaceWindow
 from botwidget.system.current import (
     CAN_PICK_DESKTOPS,
@@ -188,6 +189,8 @@ class Faces(QObject):
     def __init__(self):
         super().__init__()
         self.pos = {}
+        if QGuiApplication.platformName() != "offscreen":
+            QTimer.singleShot(1500, prewarm)
         enabled = self._load()
         self.faces = {}
         self.grok = {"connected": False, "bots": [], "note": "not tried yet"}

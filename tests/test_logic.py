@@ -3645,6 +3645,26 @@ class BubbleHover(unittest.TestCase):
         self.wheel_up_at(bubble, 115.0)
         self.assertEqual(self.window._depth, 2, "scrolled far enough, however slowly")
 
+    def test_after_a_message_came_in_the_scrolling_that_goes_on_pulls_nothing_until_a_new_scroll(self):
+        self.MESSAGES = [{"role": "user", "text": "Eerst?"}, {"role": "bot", "text": "Ja."}, *self.MESSAGES]
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up_at(bubble, 100.0)
+        self.finish_growth()
+        for step in range(4):
+            self.wheel_up_at(bubble, 100.1 + step * 0.01)
+        self.assertEqual(self.window._depth, 2)
+        self.finish_growth()
+        self.assertFalse(bubble._more_open, "the line went with the message")
+        for step in range(30):
+            self.wheel_up_at(bubble, 100.2 + step * 0.02)
+        self.assertEqual(self.window._depth, 2, "the same scroll does not load the next message")
+        self.assertFalse(bubble._more_open, "and does not bring the line back")
+        self.wheel_up_at(bubble, 101.5)
+        self.assertTrue(bubble._more_open, "a new scroll does")
+        self.assertEqual(self.window._depth, 2)
+
     def test_scrolling_back_down_shrinks_the_line_again(self):
         self.hover()
         bubble = self.window.bubble

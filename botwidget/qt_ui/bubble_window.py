@@ -531,6 +531,7 @@ class BubbleWindow(QWidget):
         self._more_engaged = 0.0
         self._more_progress = 0.0
         self._pull_px = 0.0  # how far the line is pulled
+        self._pull_spent = False  # it loaded a message: the scrolling that is still going on pulls nothing
         self._pull_held = False  # a finger is still on the pad
         self._pull_tick = 0.0
         self._more_hover = False  # the pointer is on the arrow
@@ -1397,6 +1398,14 @@ class BubbleWindow(QWidget):
             return
         if self.kind != "say" or not self._has_older:
             return
+        if self._pull_spent:
+            # The message came in: what is left of this scrolling, coasting included, does nothing. A new scroll
+            # (after the wheel has been quiet for a moment, or with a new finger) pulls the next one.
+            quiet = now - self._pull_last > LET_GO_S
+            self._pull_last = now
+            if not quiet:
+                return
+            self._pull_spent = False
         self._more_engaged = now
         if not self._more_open and pixels > 0:
             self._set_more(True)
@@ -1432,7 +1441,9 @@ class BubbleWindow(QWidget):
 
     def _load_older(self):
         """The message before comes in above, sliding down from the top; the arrow has done its job."""
-        self._pull_px = self._pull_last = 0.0
+        self._pull_px = 0.0
+        self._pull_last = time.monotonic()
+        self._pull_spent = True
         self._set_progress(0.0)
         self.older.emit()
 
