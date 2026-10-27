@@ -455,6 +455,7 @@ class BubbleText(QTextBrowser):
         self._cursor_for(pos)
 
 class BubbleWindow(QWidget):
+    travels = True  # it belongs to the desktop of its face, wherever that is now, see desktops.apply
     older = Signal()
     command = Signal(str)
     edit_queued = Signal(str)  # the id of a queued message that was clicked
@@ -836,8 +837,7 @@ class BubbleWindow(QWidget):
         """The cursor into the field, asked for by the user. A field that is not there yet (the bubble is still
         growing) gets it as soon as it shows: Qt drops focus given to a hidden widget."""
         if self._input:
-            if self.face.activation_safe():
-                self.activateWindow()
+            self.activateWindow()
             self._entry.setFocus()
             self._wants_keys = self.focusWidget() is not self._entry
 
@@ -1475,6 +1475,7 @@ class BubbleWindow(QWidget):
     def _show_at(self, tx, ty):
         self._vx = self._vy = 0.0
         self._put(tx, ty)
+        desktops.apply(self)  # before it shows: it opens on this desktop, it does not take you to its last one
         self.show()
         desktops.apply(self)
 

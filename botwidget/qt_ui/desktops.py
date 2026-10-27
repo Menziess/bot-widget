@@ -13,8 +13,9 @@ def _real() -> bool:
 
 
 def apply(window) -> None:
+    """A window that has travels = True (a bubble) opens on the desktop you are on; the others stay where they are."""
     if _real():
-        set_desktops(native_id(window), all_desktops())
+        set_desktops(native_id(window), all_desktops(), getattr(window, "travels", False))
 
 
 def shown_here(window) -> bool:
@@ -27,26 +28,11 @@ def bring_here(window) -> bool:
     if not _real() or all_desktops() or on_active_space(native_id(window)):
         return False
     move_to_active_space(native_id(window))
-    QTimer.singleShot(150, lambda: _insist(window))
     QTimer.singleShot(500, lambda: apply(window))  # it stays on this desktop from now on
     return True
-
-
-def _insist(window) -> None:
-    """The system can ignore the move of a window (one that sits on a desktop it was swiped away from): shown
-    again it opens on the desktop you are on."""
-    if window.isVisible() and not on_active_space(native_id(window)):
-        move_to_active_space(native_id(window))
-        window.hide()
-        window.show()
 
 
 def face_here(face) -> bool:
     """Is the face on the desktop you are looking at? A face that lives on one desktop has bubbles only there."""
     return not _real() or all_desktops() or on_active_space(native_id(face))
 
-
-def all_here(windows) -> bool:
-    """Is every window that shows on the desktop you are on? Activating the app takes you to the desktop of a window
-    of it that is somewhere else."""
-    return all(face_here(window) for window in windows if window.isVisible())

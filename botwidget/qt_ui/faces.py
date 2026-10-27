@@ -29,6 +29,7 @@ from botwidget.config import (
     widget_config,
 )
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
+from botwidget.qt_ui import desktops
 from botwidget.qt_ui.bubble_window import mark_before_show
 from botwidget.qt_ui.native import native_id, set_flags
 from botwidget.qt_ui.face import FaceWindow
@@ -105,6 +106,8 @@ def _all_bots() -> list:
 
 class ArcCatcher(QWidget):
     """Sits in the top middle. On XWayland the pointer is only known over our own windows."""
+
+    travels = True  # it belongs to the desktop you are on, see desktops.apply
 
     def __init__(self, faces):
         super().__init__()
@@ -206,7 +209,9 @@ class Faces(QObject):
         self._semicircle_timer.timeout.connect(self._semicircle_tick)
         self._catcher = ArcCatcher(self)
         self._place_catcher()
+        desktops.apply(self._catcher)
         self._catcher.show()
+        desktops.apply(self._catcher)
         self.raise_bubbles()
         app = QGuiApplication.instance()
         if app is not None:
@@ -307,12 +312,10 @@ class Faces(QObject):
             return
         # Living on one desktop, the face first comes to the one you are on.
         moved = any([other.bring_here() for other in self.faces.values()])
+        desktops.bring_here(self._catcher)
         if face.pinned and not moved:
             face.unpin()
         else:
-            # Asked for with the keys, and the faces were just pulled here: the move may not show yet.
-            for other in self.faces.values():
-                other.allow_activation(1.5)
             activate_app()
             face.pin()
 

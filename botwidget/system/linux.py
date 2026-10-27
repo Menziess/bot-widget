@@ -91,7 +91,7 @@ FACE_IS_TOOL = False
 FOCUS_ON_HOVER = False
 
 
-def set_desktops(win_id: int, everywhere: bool) -> None:
+def set_desktops(win_id: int, everywhere: bool, travels: bool = False) -> None:
     pass
 
 

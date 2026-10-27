@@ -43,7 +43,7 @@ def hide_from_taskbar(win_id: int, user32=None) -> None:
         put(ctypes.c_void_p(int(win_id)), GWL_EXSTYLE, wanted)
 
 
-def set_desktops(win_id: int, everywhere: bool) -> None:
+def set_desktops(win_id: int, everywhere: bool, travels: bool = False) -> None:
     pass
 
 

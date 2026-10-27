@@ -3753,42 +3753,37 @@ class BubbleHover(unittest.TestCase):
                 QApplication.processEvents()
                 self.assertEqual(entry.horizontalScrollBar().value(), 0, f"{pattern!r} after {i} letters")
 
-    def test_the_app_only_comes_to_the_front_when_that_does_not_take_you_to_another_desktop(self):
-        from unittest import mock
-        from botwidget.qt_ui import desktops, face as face_module
-        window = self.window
-        with mock.patch.object(face_module, "activate_app") as front:
-            with mock.patch.object(desktops, "all_here", return_value=False):
-                window.activate()
-                window.bubble.focus_entry()
-            self.assertEqual(front.call_count, 0, "a window of ours is on another desktop")
-            with mock.patch.object(desktops, "all_here", return_value=False):
-                window.allow_activation(5)
-                window.activate()
-            self.assertEqual(front.call_count, 1, "the key combination asked for it")
-            window._activate_until = 0.0
-            with mock.patch.object(desktops, "all_here", return_value=True):
-                window.activate()
-            self.assertEqual(front.call_count, 2)
+    def test_a_bubble_opens_on_the_desktop_you_are_on_and_a_face_stays_where_it_lives(self):
+        from botwidget.system import macos
+        from botwidget.qt_ui.faces import ArcCatcher
+        stays = macos.desktop_behavior(False)
+        travels = macos.desktop_behavior(False, travels=True)
+        self.assertTrue(stays & macos.MANAGED and not stays & macos.MOVE_TO_ACTIVE_SPACE)
+        self.assertTrue(travels & macos.MOVE_TO_ACTIVE_SPACE and not travels & macos.MANAGED)
+        everywhere = macos.desktop_behavior(True, travels=True)
+        self.assertTrue(everywhere & macos.CAN_JOIN_ALL_SPACES and not everywhere & macos.MOVE_TO_ACTIVE_SPACE)
+        self.assertTrue(self.window.bubble.travels and ArcCatcher.travels)
+        self.assertFalse(getattr(self.window, "travels", False))
 
-    def test_a_window_that_did_not_come_along_is_shown_again_to_land_on_this_desktop(self):
-        from types import SimpleNamespace
+    def test_apply_tells_the_system_whether_a_window_travels(self):
         from unittest import mock
         from botwidget.qt_ui import desktops
-        calls = []
-        stub = SimpleNamespace(isVisible=lambda: True, hide=lambda: calls.append("hide"),
-                               show=lambda: calls.append("show"))
-        with mock.patch.object(desktops, "native_id", return_value=1), \
-                mock.patch.object(desktops, "on_active_space", return_value=False), \
-                mock.patch.object(desktops, "move_to_active_space", side_effect=lambda _id: calls.append("move")):
-            desktops._insist(stub)
-        self.assertEqual(calls, ["move", "hide", "show"])
-        calls.clear()
-        with mock.patch.object(desktops, "native_id", return_value=1), \
-                mock.patch.object(desktops, "on_active_space", return_value=True), \
-                mock.patch.object(desktops, "move_to_active_space", side_effect=lambda _id: calls.append("move")):
-            desktops._insist(stub)
-        self.assertEqual(calls, [], "it came along: nothing to do")
+        with mock.patch.object(desktops, "_real", return_value=True), \
+                mock.patch.object(desktops, "all_desktops", return_value=False), \
+                mock.patch.object(desktops, "set_desktops") as call:
+            desktops.apply(self.window.bubble)
+            desktops.apply(self.window)
+        self.assertEqual([c.args[1:] for c in call.call_args_list], [(False, True), (False, False)])
+
+    def test_a_bubble_gets_its_desktop_before_it_shows(self):
+        from unittest import mock
+        from botwidget.qt_ui import bubble_window
+        bubble = self.window.bubble
+        order = []
+        with mock.patch.object(bubble_window.desktops, "apply", side_effect=lambda w: order.append("apply")), \
+                mock.patch.object(type(bubble), "show", lambda _self: order.append("show")):
+            bubble._show_at(10, 10)
+        self.assertEqual(order, ["apply", "show", "apply"], "shown first, it would take you to its last desktop")
 
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt
@@ -4334,8 +4329,8 @@ class Hotkey(unittest.TestCase):
         from types import SimpleNamespace
         calls = []
         face = SimpleNamespace(pinned=False, pin=lambda: calls.append("pin"), unpin=lambda: calls.append("unpin"),
-                               bring_here=lambda: False, allow_activation=lambda seconds: None)
-        me = SimpleNamespace(faces={"a": face})
+                               bring_here=lambda: False)
+        me = SimpleNamespace(faces={"a": face}, _catcher=object())
         old = self.faces.activate_app
         self.addCleanup(setattr, self.faces, "activate_app", old)
         self.faces.activate_app = lambda: calls.append("activate")
@@ -4380,11 +4375,11 @@ class Hotkey(unittest.TestCase):
         from types import SimpleNamespace
         calls = []
         face = SimpleNamespace(pinned=True, pin=lambda: calls.append("pin"), unpin=lambda: calls.append("unpin"),
-                               bring_here=lambda: True, allow_activation=lambda seconds: None)
+                               bring_here=lambda: True)
         old = self.faces.activate_app
         self.addCleanup(setattr, self.faces, "activate_app", old)
         self.faces.activate_app = lambda: None
-        self.faces.Faces.hotkey(SimpleNamespace(faces={"a": face}))
+        self.faces.Faces.hotkey(SimpleNamespace(faces={"a": face}, _catcher=object()))
         self.assertEqual(calls, ["pin"], "it was pinned on the other desktop; here it must show, not close")
 
     def test_no_faces_no_error(self):
@@ -4457,7 +4452,7 @@ class Desktops(unittest.TestCase):
 
     def test_a_face_on_another_desktop_comes_to_this_one_and_stays_here(self):
         try:
-            self.assertEqual(self.bring(everywhere=False, here=False), (True, 1, 2, 0), "two timers: look again, and pin it here")
+            self.assertEqual(self.bring(everywhere=False, here=False), (True, 1, 1, 0))
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
 

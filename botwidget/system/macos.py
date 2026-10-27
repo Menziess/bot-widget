@@ -114,18 +114,22 @@ def register_hotkey(callback) -> bool:
     return status == 0
 
 
-def desktop_behavior(everywhere: bool) -> int:
-    """On every desktop at once, or on one that you can change in Mission Control; always over full-screen apps."""
-    return (CAN_JOIN_ALL_SPACES if everywhere else MANAGED) | FULL_SCREEN_AUXILIARY
+def desktop_behavior(everywhere: bool, travels: bool = False) -> int:
+    """On every desktop at once, or on one that you can change in Mission Control; always over full-screen apps.
+    A window that travels opens on the desktop you are on each time it is shown, instead of taking you to the one
+    it was last shown on."""
+    if everywhere:
+        return CAN_JOIN_ALL_SPACES | FULL_SCREEN_AUXILIARY
+    return (MOVE_TO_ACTIVE_SPACE if travels else MANAGED) | FULL_SCREEN_AUXILIARY
 
 
-def set_desktops(win_id: int, everywhere: bool) -> None:
-    """Without this a window moves to the desktop you switch to only when it is next shown, and the
-    bubble stays behind on the one you left."""
+def set_desktops(win_id: int, everywhere: bool, travels: bool = False) -> None:
+    """A face lives on one desktop. A bubble belongs on the desktop of its face, wherever that is now: left to
+    itself it stays on the desktop it was last shown on, and showing it takes you back there."""
     objc = _objc()
     window = _send(objc, ctypes.c_void_p)(win_id, objc.sel_registerName(b"window"))
     _send(objc, None, ctypes.c_ulong)(window, objc.sel_registerName(b"setCollectionBehavior:"),
-                                      desktop_behavior(everywhere))
+                                      desktop_behavior(everywhere, travels))
 
 
 def on_active_space(win_id: int) -> bool:
