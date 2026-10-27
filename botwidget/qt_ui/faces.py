@@ -29,7 +29,7 @@ from botwidget.config import (
     widget_config,
 )
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
-from botwidget.qt_ui import desktops
+from botwidget.qt_ui import desktops, glass
 from botwidget.qt_ui.bubble_window import mark_before_show
 from botwidget.qt_ui.native import native_id, set_flags
 from botwidget.qt_ui.face import FaceWindow
@@ -390,6 +390,7 @@ class Faces(QObject):
             "staged_update": self.update.version if self.staged and self.update else "",
             "sound": config.get("sound") is True, "quiet_hours": config.get("quiet_hours") is True,
             "always_on_top": always_on_top(), "can_pick_desktops": CAN_PICK_DESKTOPS,
+            "can_glass": glass.available(), "glass": glass.wanted(),
             "all_desktops": all_desktops(), "login": startup.is_enabled(), "check_updates": check_updates(),
             "can_install_updates": can_install_update() or startup.from_checkout(), "auto_update": auto_update(),
             "bots": [{"id": bot["id"], "name": bot["name"], "on": bot["id"] in self.faces,
@@ -406,6 +407,7 @@ class Faces(QObject):
         "quiet_hours": lambda faces, on: save_widget_config(quiet_hours=on),
         "always_on_top": lambda faces, on: faces._set_always_on_top(on),
         "all_desktops": lambda faces, on: faces._set_all_desktops(on),
+        "glass": lambda faces, on: faces._set_glass(on),
         "login": lambda faces, on: startup.set_enabled(on),
         "check_updates": lambda faces, on: save_widget_config(check_updates=on),
         "auto_update": lambda faces, on: save_widget_config(auto_update=on),
@@ -446,6 +448,11 @@ class Faces(QObject):
         elif kind == "action" and name == "quit":
             QApplication.quit()
         return None
+
+    def _set_glass(self, on: bool):
+        save_widget_config(glass=on)
+        for face in [*self.faces.values(), *self._arc_guests.values()]:
+            face.bubble.restyle()
 
     def _set_all_desktops(self, on: bool):
         save_widget_config(all_desktops=on)

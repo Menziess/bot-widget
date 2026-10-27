@@ -14,13 +14,23 @@ SAND_INK_SOFT = "#1c1c1c8f"
 SAND_ACCENT = "#0b6dd3"
 SAND_HAIRLINE = "#1c1c1c1f"
 SAND_BUBBLE = "#ffffff"
+# The glass of the bubble: a white that turns faintly cool towards the bottom, with a bright inner edge. How
+# much of it shows through to what is behind depends on whether that is blurred (GLASS_ALPHA) or not.
+SAND_GLASS_TOP = "#ffffff"
+SAND_GLASS_BOTTOM = "#eef3fb"
+SAND_GLASS_EDGE = "#ffffff"
+GLASS_ALPHA = 0.74  # over a blurred background
+GLASS_ALPHA_FLAT = 0.95  # where nothing can be blurred, the text must still be read
+GLASS_FADE = 16  # the text fades away over this many pixels where it scrolls out of the bubble
 SAND_PANEL_USER = "#2a2a2a"
+SAND_PANEL_USER_TOP = "#3a3a42"
+SAND_PANEL_USER_BOTTOM = "#222226"
 SAND_ON_USER = "#ffffff"
 SAND_ON_USER_SOFT = "#ffffffa8"
 SAND_LINE_USER = "#ffffff33"
 SAND_CHIP = "#1c1c1c0f"
 SAND_CHIP_USER = "#ffffff1f"
-SAND_RADIUS = 18
+SAND_RADIUS = 20
 SAND_RADIUS_PANEL = 12
 SAND_RADIUS_CODE = 8
 BUBBLE_FONT = 15
@@ -71,7 +81,7 @@ BUBBLE_WAIT_MAX = 600.0
 TAIL_ROOM = 22
 SHADOW_GROW = 3
 SHADOW_BLUR = 4.0
-SHADOW_ALPHA = 0.30
+SHADOW_ALPHA = 0.24
 # Line heights in the bubble (bubble.py line_height): gap, rule, dots, and per-line padding.
 LINE_GAP_H = 10
 LINE_RULE_H = 14

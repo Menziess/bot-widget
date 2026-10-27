@@ -68,6 +68,8 @@ def settings(state: dict) -> list:
     if state.get("switch_label"):
         blocks.append(_button(state["switch_label"], "action/switch"))
     blocks.append(plain_block("gap"))
+    if state.get("can_glass"):
+        blocks.append(_toggle("Frosted glass bubbles", "toggle/glass", state["glass"]))
     blocks += [
         _toggle("Sound on a new answer", "toggle/sound", state["sound"]),
         _toggle(f"No sound from {QUIET_FROM}:00 to {QUIET_TO:02d}:00", "toggle/quiet_hours", state["quiet_hours"]),

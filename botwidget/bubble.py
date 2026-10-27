@@ -25,7 +25,13 @@ from botwidget.theme import (
     PAD_PANEL_X,
     PAD_PANEL_Y,
     PAD_SVG,
+    GLASS_ALPHA_FLAT,
     SAND_BUBBLE,
+    SAND_GLASS_BOTTOM,
+    SAND_GLASS_EDGE,
+    SAND_GLASS_TOP,
+    SAND_PANEL_USER_BOTTOM,
+    SAND_PANEL_USER_TOP,
     SAND_HAIRLINE,
     SAND_INK,
     SAND_INK_SOFT,
@@ -141,7 +147,7 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
         panel_h = 2 * pad + sum(heights)
         if user:
             out.append(f'<rect x="{ox}" y="{y}" width="{box_w}" height="{panel_h}"'
-                       f' rx="{SAND_RADIUS_PANEL}" fill="{SAND_PANEL_USER}"/>')
+                       f' rx="{SAND_RADIUS_PANEL}" fill="url(#user)"/>')
         tops, acc = [], y + pad
         for h in heights:
             tops.append(acc)
@@ -157,7 +163,12 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
                 out.append(f'<rect x="{ox + PAD_PANEL_X}" y="{tops[n] + 6}"'
                            f' width="{box_w - 2 * PAD_PANEL_X}" height="1" fill="{hair}"/>')
         y += panel_h + panel_gap(panel, panels[index + 1] if index + 1 < len(panels) else None)
-    return "".join(out)
+    shapes = "".join(out)
+    if "url(#user)" in shapes:
+        shapes = (f'<defs><linearGradient id="user" x1="0" y1="0" x2="0" y2="1">'
+                  f'<stop offset="0" stop-color="{SAND_PANEL_USER_TOP}"/>'
+                  f'<stop offset="1" stop-color="{SAND_PANEL_USER_BOTTOM}"/></linearGradient></defs>') + shapes
+    return shapes
 
 
 def more_svg(x: float, y: float, progress: float = 0.0) -> str:
@@ -201,7 +212,7 @@ def bubble_deco_svg(panels: list, box_w: int) -> str:
 
 
 def _bubble_canvas(body_w: int, body_h: int, inner: str) -> str:
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{body_w + 2 * PAD_SVG}"'
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="{body_w + 2 * PAD_SVG}"'
             f' height="{body_h + PAD_SVG + TAIL_ROOM}">' + inner + "</svg>")
 
 
@@ -256,20 +267,34 @@ def bubble_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: 
         f'<path d="{tail}" fill="#000" opacity="{SHADOW_ALPHA if alpha is None else alpha}"/>'))
 
 
-def bubble_body_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above") -> str:
-    """The white area with hairline and the tail toward the face.
+def _glass(shape: str, height: float, alpha: float) -> str:
+    """The glass: one group, so the tail and the body do not show through twice where they overlap, filled with a
+    gradient that runs over the whole height of the bubble."""
+    return (f'<defs><linearGradient id="glass" gradientUnits="userSpaceOnUse" x1="0" y1="{PAD_SVG}" x2="0"'
+            f' y2="{PAD_SVG + height}"><stop offset="0" stop-color="{SAND_GLASS_TOP}"/>'
+            f'<stop offset="1" stop-color="{SAND_GLASS_BOTTOM}"/></linearGradient></defs>'
+            f'<g opacity="{alpha}" fill="url(#glass)">{shape}</g>')
+
+
+def bubble_body_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above",
+                    alpha: float = GLASS_ALPHA_FLAT, mask: bool = False) -> str:
+    """The glass area with a bright inner edge, a faint outer line and the tail toward the face.
 
     tip is the face in image coordinates, along the edge the tail comes out of (x above or below the
-    face, y beside it), so the tail follows the face wherever it goes.
+    face, y beside it), so the tail follows the face wherever it goes. As a mask it is only the shape, opaque.
     """
     x0, y0 = PAD_SVG, PAD_SVG
     edge = _tail_edge(side, body_w, body_h)[0]
     tail = _bubble_tail(_bubble_tip(side, body_w, body_h, tip), edge, side, 0)
-    return _bubble_canvas(body_w, body_h, (
-        f'<rect x="{x0}" y="{y0}" width="{body_w}" height="{body_h}"'
-        f' rx="{SAND_RADIUS}" fill="{SAND_BUBBLE}" stroke="{SAND_HAIRLINE}"'
-        f' stroke-width="1"/>'
-        f'<path d="{tail}" fill="{SAND_BUBBLE}"/>'))
+    shape = (f'<rect x="{x0}" y="{y0}" width="{body_w}" height="{body_h}" rx="{SAND_RADIUS}"/>'
+             f'<path d="{tail}"/>')
+    if mask:
+        return _bubble_canvas(body_w, body_h, f'<g fill="#000">{shape}</g>')
+    edges = (f'<rect x="{x0 + 0.5}" y="{y0 + 0.5}" width="{body_w - 1}" height="{body_h - 1}" rx="{SAND_RADIUS - 0.5}"'
+             f' fill="none" stroke="{SAND_GLASS_EDGE}" stroke-width="1" opacity="0.9"/>'
+             f'<rect x="{x0}" y="{y0}" width="{body_w}" height="{body_h}" rx="{SAND_RADIUS}"'
+             f' fill="none" stroke="#1c1c1c" stroke-width="1" opacity="0.10"/>')
+    return _bubble_canvas(body_w, body_h, _glass(shape, body_h, alpha) + edges)
 
 
 # ── Thinking cloud ──────────────────────────────────────────────────
@@ -347,11 +372,15 @@ def cloud_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: s
         + _circles_svg(trail, fill) + "</g>"))
 
 
-def cloud_body_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above") -> str:
-    """The white thinking cloud with hairline, shaped like the nuage face."""
+def cloud_body_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above",
+                   alpha: float = GLASS_ALPHA_FLAT, mask: bool = False) -> str:
+    """The thinking cloud in glass, shaped like the nuage face."""
     path, trail = _cloud_parts(body_w, body_h, tip, side)
-    paint = f'fill="{SAND_BUBBLE}" stroke="{SAND_HAIRLINE}" stroke-width="2"'
-    return _bubble_canvas(body_w, body_h, (
-        f'<path d="{path}" {paint} stroke-linejoin="round"/>'
-        + _circles_svg(trail, paint)))
-
+    shape = f'<path d="{path}"/>' + _circles_svg(trail, "")
+    if mask:
+        return _bubble_canvas(body_w, body_h, f'<g fill="#000">{shape}</g>')
+    # The silhouette is drawn once and used twice: as the glass, and as its faint outline.
+    outline = ('<use xlink:href="#cloud" fill="none" stroke-linejoin="round" stroke="#1c1c1c" stroke-width="1.5"'
+               ' opacity="0.12"/>')
+    return _bubble_canvas(body_w, body_h, f'<defs><g id="cloud">{shape}</g></defs>'
+                          + _glass('<use xlink:href="#cloud"/>', body_h, alpha) + outline)

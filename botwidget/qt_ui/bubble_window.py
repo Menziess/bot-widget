@@ -23,8 +23,27 @@ from PySide6.QtCore import (
     QVariantAnimation,
     Signal,
 )
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QGuiApplication, QImage, QPainter, QRegion, QTextOption
-from PySide6.QtWidgets import QApplication, QLabel, QPlainTextEdit, QScrollArea, QTextBrowser, QWidget
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QDesktopServices,
+    QFont,
+    QGuiApplication,
+    QImage,
+    QLinearGradient,
+    QPainter,
+    QRegion,
+    QTextOption,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QGraphicsOpacityEffect,
+    QLabel,
+    QPlainTextEdit,
+    QScrollArea,
+    QTextBrowser,
+    QWidget,
+)
 
 from botwidget import attachments, menu_pages
 from botwidget.avatar import AVATAR_SIZE, CIRCLE_R
@@ -46,12 +65,12 @@ from botwidget.bubble import (
 from botwidget.config import always_on_top
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_text
-from botwidget.qt_ui import desktops, screens
+from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
 from botwidget.qt_ui.controls import ActionButton, SlashList, Switch
 from botwidget.qt_ui.measure import measure
-from botwidget.qt_ui.render import blurred, stacked, svg_pixmap
+from botwidget.qt_ui.render import blurred, cut_out, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document, selected_text
 from botwidget.theme import (
     BUBBLE_FONT,
@@ -73,6 +92,7 @@ from botwidget.theme import (
     SAND_PANEL_USER,
     SAND_RADIUS_PANEL,
     SAND_SANS,
+    GLASS_FADE,
     SHADOW_BLUR,
     TAIL_ROOM,
 )
@@ -86,10 +106,10 @@ QScrollArea:hover QScrollBar::handle:vertical {{ background: rgba(28, 28, 28, 11
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; border: none; height: 0; }}
 QPlainTextEdit {{
-    background: #ffffff; color: {SAND_INK}; border: 1px solid rgba(28, 28, 28, 31);
-    border-radius: 8px; padding: 8px;
+    background: rgba(255, 255, 255, 150); color: {SAND_INK}; border: 1px solid rgba(28, 28, 28, 26);
+    border-radius: 10px; padding: 8px;
 }}
-QPlainTextEdit:focus {{ border-color: rgba(22, 128, 243, 140); }}
+QPlainTextEdit:focus {{ background: rgba(255, 255, 255, 215); border-color: rgba(22, 128, 243, 150); }}
 QLabel#links {{ color: {SAND_ACCENT}; }}
 """
 ENTRY_H = 34
@@ -492,6 +512,7 @@ class BubbleWindow(QWidget):
         self._wait_since = 0.0
         self._growth = None
         self._older_until = 0.0
+        self._glass_mask = b""  # the shape of the card as a picture, for the blur behind it
         self._has_older = False  # earlier messages wait above
         self._more_open = False  # their arrow is showing
         self._toggling = False
@@ -519,6 +540,12 @@ class BubbleWindow(QWidget):
         self._scroll = OlderScroll(self._card)
         self._scroll.pulled.connect(self._on_pulled)
         self._scroll.setWidget(self._text)
+        # Text that scrolls out of the bubble fades away at the edge, where there is more of it.
+        self._fade = QGraphicsOpacityEffect(self._scroll)
+        self._fade.setOpacity(1.0)
+        self._scroll.setGraphicsEffect(self._fade)
+        self._scroll.verticalScrollBar().valueChanged.connect(self._update_fade)
+        self._scroll.verticalScrollBar().rangeChanged.connect(self._update_fade)
         self._scroll.setFrameShape(QScrollArea.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._scroll.viewport().setAutoFillBackground(False)
@@ -1072,14 +1099,20 @@ class BubbleWindow(QWidget):
         _panels, box_w, inner = self._geom
         tip, side = self._tip or (None, "above")
         args = (self._shown_w(box_w) + 2 * PAD_BODY, self._body_h(inner), tip, side)
-        if (self.kind, args) == self._chrome_key:
+        alpha = glass.alpha()
+        if (self.kind, args, alpha) == self._chrome_key:
             return self._chrome_pix
         cloud = self.kind == "think"
         shadow_svg = cloud_shadow_svg(*args) if cloud else bubble_shadow_svg(*args)
-        body_svg = cloud_body_svg(*args) if cloud else bubble_body_svg(*args)
-        pix = stacked(blurred(svg_pixmap(shadow_svg), SHADOW_BLUR * 3), svg_pixmap(body_svg))
+        body_svg = cloud_body_svg(*args, alpha=alpha) if cloud else bubble_body_svg(*args, alpha=alpha)
+        mask_svg = cloud_body_svg(*args, mask=True) if cloud else bubble_body_svg(*args, mask=True)
+        shape = svg_pixmap(mask_svg)
+        shadow = cut_out(blurred(svg_pixmap(shadow_svg), SHADOW_BLUR * 3), shape)
+        pix = stacked(shadow, svg_pixmap(body_svg))
         self._chrome.setPixmap(pix)
-        self._chrome_key, self._chrome_pix = (self.kind, args), pix
+        if glass.enabled():
+            self._glass_mask = glass.png(shape)
+        self._chrome_key, self._chrome_pix = (self.kind, args, alpha), pix
         return pix
 
     def _layout_children(self, pix):
@@ -1090,6 +1123,8 @@ class BubbleWindow(QWidget):
         self._chrome.setGeometry(0, 0, size.width(), size.height())
         self._card.resize(size)
         self._fit_window()
+        if self._glass_mask:
+            glass.update(self, self.card(), self.geometry(), self._glass_mask)
         x, y = PAD_SVG + PAD_BODY, PAD_SVG + PAD_BODY
         if self._list_only:
             self._scroll.hide()
@@ -1099,6 +1134,7 @@ class BubbleWindow(QWidget):
             return
         view_h = max(1, self._body_h(inner) - 2 * PAD_BODY - self._extras())
         self._scroll.setGeometry(x, y, box_w + SCROLLBAR_W, view_h)
+        self._update_fade()
         below = y + view_h
         if self._links:
             self._link_row.setGeometry(x, below + 4, box_w, LINKS_H - 4)
@@ -1123,6 +1159,28 @@ class BubbleWindow(QWidget):
             self._entry.setFocus()
         self._move_notice()
         self._place_controls()
+
+    def _update_fade(self, *_args):
+        """Fade the text over the first and last stretch of the view, on the sides where it goes on."""
+        height = self._scroll.height()
+        if height <= 2 * GLASS_FADE:
+            return
+        bar = self._scroll.verticalScrollBar()
+        edge = GLASS_FADE / height
+        top = 255 if bar.value() <= bar.minimum() else 0
+        bottom = 255 if bar.value() >= bar.maximum() else 0
+        gradient = QLinearGradient(0, 0, 0, height)
+        for at, level in ((0.0, top), (edge, 255), (1 - edge, 255), (1.0, bottom)):
+            gradient.setColorAt(at, QColor(0, 0, 0, level))
+        self._fade.setOpacityMask(QBrush(gradient))
+
+    def restyle(self):
+        """The look changed (glass on or off): draw it again."""
+        self._chrome_key = None
+        if self.kind and self._geom:
+            if not glass.enabled():
+                glass.clear(self)
+            self._layout_children(self._paint_chrome())
 
     def _set_text(self):
         """The shapes behind the text; the words themselves are the text document."""

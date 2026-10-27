@@ -60,3 +60,13 @@ def stacked(*pixmaps: QPixmap) -> QPixmap:
         painter.drawPixmap(0, 0, pixmap)
     painter.end()
     return base
+
+
+def cut_out(pixmap: QPixmap, shape: QPixmap) -> QPixmap:
+    """A copy of the pixmap without the part under the shape: a shadow must not show through glass."""
+    result = QPixmap(pixmap)
+    painter = QPainter(result)
+    painter.setCompositionMode(QPainter.CompositionMode_DestinationOut)
+    painter.drawPixmap(0, 0, shape)
+    painter.end()
+    return result

@@ -157,6 +157,89 @@ def move_to_active_space(win_id: int) -> None:
     _send(objc, None)(window, objc.sel_registerName(b"orderFrontRegardless"))
 
 
+class _Point(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
+
+
+class _Size(ctypes.Structure):
+    _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+
+
+class _Rect(ctypes.Structure):
+    _fields_ = [("origin", _Point), ("size", _Size)]
+
+
+CAN_BLUR = True
+POPOVER_MATERIAL = 6  # NSVisualEffectMaterialPopover: light, bright and soft
+BEHIND_WINDOW = 0  # blur what is behind the window, not what is in it
+ALWAYS_ACTIVE = 1  # also while the app is in the background, which is where a bubble usually is
+BELOW = -1  # NSWindowBelow
+_backdrops: dict = {}  # window -> (effect view, frame, mask) of the blur behind it
+
+
+def _class(objc, name: bytes):
+    objc.objc_getClass.restype = ctypes.c_void_p
+    objc.objc_getClass.argtypes = [ctypes.c_char_p]
+    return objc.objc_getClass(name)
+
+
+def set_backdrop(win_id: int, x: float, y: float, w: float, h: float, mask_png: bytes) -> bool:
+    """Blur what is behind the window inside the shape of a picture (its transparency is the shape), in the
+    rectangle x, y (from the top left of the window), w, h. The window itself draws the tint over it. False when
+    the system would not."""
+    try:
+        objc = _objc()
+        sel = objc.sel_registerName
+        window = _send(objc, ctypes.c_void_p)(win_id, sel(b"window"))
+        content = _send(objc, ctypes.c_void_p)(window, sel(b"contentView"))
+        frame_view = _send(objc, ctypes.c_void_p)(content, sel(b"superview"))
+        height = _send(objc, _Rect)(frame_view, sel(b"bounds")).size.height
+        known = _backdrops.get(win_id)
+        effect = known[0] if known else None
+        if effect and _send(objc, ctypes.c_void_p)(effect, sel(b"window")) != window:
+            effect = None
+        if not effect:
+            alloc = _send(objc, ctypes.c_void_p)(_class(objc, b"NSVisualEffectView"), sel(b"alloc"))
+            effect = _send(objc, ctypes.c_void_p)(alloc, sel(b"init"))
+            _send(objc, None, ctypes.c_long)(effect, sel(b"setMaterial:"), POPOVER_MATERIAL)
+            _send(objc, None, ctypes.c_long)(effect, sel(b"setBlendingMode:"), BEHIND_WINDOW)
+            _send(objc, None, ctypes.c_long)(effect, sel(b"setState:"), ALWAYS_ACTIVE)
+            name = _send(objc, ctypes.c_void_p, ctypes.c_char_p)(_class(objc, b"NSString"),
+                                                                  sel(b"stringWithUTF8String:"), b"NSAppearanceNameAqua")
+            light = _send(objc, ctypes.c_void_p, ctypes.c_void_p)(_class(objc, b"NSAppearance"),
+                                                                   sel(b"appearanceNamed:"), name)
+            _send(objc, None, ctypes.c_void_p)(effect, sel(b"setAppearance:"), light)
+            _send(objc, None, ctypes.c_void_p, ctypes.c_long, ctypes.c_void_p)(
+                frame_view, sel(b"addSubview:positioned:relativeTo:"), effect, BELOW, content)
+            known = None
+        rect = (round(x, 1), round(y, 1), round(w, 1), round(h, 1), round(height, 1))
+        if known and known[1] == rect and known[2] == mask_png:
+            return True
+        _send(objc, None, _Rect)(effect, sel(b"setFrame:"), _Rect(_Point(x, height - y - h), _Size(w, h)))
+        data = _send(objc, ctypes.c_void_p, ctypes.c_char_p, ctypes.c_ulong)(
+            _class(objc, b"NSData"), sel(b"dataWithBytes:length:"), mask_png, len(mask_png))
+        image = _send(objc, ctypes.c_void_p)(_send(objc, ctypes.c_void_p)(_class(objc, b"NSImage"), sel(b"alloc")),
+                                             sel(b"init"))
+        image = _send(objc, ctypes.c_void_p, ctypes.c_void_p)(image, sel(b"initWithData:"), data)
+        _send(objc, None, _Size)(image, sel(b"setSize:"), _Size(w, h))
+        _send(objc, None, ctypes.c_void_p)(effect, sel(b"setMaskImage:"), image)
+        _send(objc, None)(image, sel(b"release"))
+        _backdrops[win_id] = (effect, rect, mask_png)
+        return True
+    except Exception:
+        return False
+
+
+def clear_backdrop(win_id: int) -> None:
+    known = _backdrops.pop(win_id, None)
+    if known:
+        try:
+            objc = _objc()
+            _send(objc, None)(known[0], objc.sel_registerName(b"removeFromSuperview"))
+        except Exception:
+            pass
+
+
 def before_show(win_id: int, layer: str = "") -> None:
     """Only GNOME needs a window marked before it is mapped."""
 

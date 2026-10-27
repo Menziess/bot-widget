@@ -95,6 +95,18 @@ def set_desktops(win_id: int, everywhere: bool, travels: bool = False) -> None:
     pass
 
 
+CAN_BLUR = False
+
+
+def set_backdrop(win_id: int, x: float, y: float, w: float, h: float, mask_png: bytes) -> bool:
+    """No blur behind a window here."""
+    return False
+
+
+def clear_backdrop(win_id: int) -> None:
+    pass
+
+
 def on_active_space(win_id: int) -> bool:
     return True
 

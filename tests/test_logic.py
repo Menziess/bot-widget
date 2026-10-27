@@ -3785,6 +3785,66 @@ class BubbleHover(unittest.TestCase):
             bubble._show_at(10, 10)
         self.assertEqual(order, ["apply", "show", "apply"], "shown first, it would take you to its last desktop")
 
+    def test_the_bubble_is_glass_and_its_mask_is_only_the_shape(self):
+        from botwidget import bubble
+        from botwidget.theme import GLASS_ALPHA
+        body = bubble.bubble_body_svg(200, 100, alpha=GLASS_ALPHA)
+        self.assertIn(f'opacity="{GLASS_ALPHA}"', body)
+        self.assertIn("linearGradient", body)
+        mask = bubble.bubble_body_svg(200, 100, mask=True)
+        self.assertNotIn("stroke", mask)
+        self.assertNotIn("Gradient", mask)
+        cloud = bubble.cloud_body_svg(200, 100, alpha=GLASS_ALPHA)
+        self.assertEqual(cloud.count("<path"), 1, "the silhouette is drawn once and used twice")
+        self.assertEqual(cloud.count("<use"), 2)
+
+    def test_a_shadow_does_not_show_through_the_glass(self):
+        from botwidget import bubble
+        from botwidget.qt_ui.render import blurred, cut_out, svg_pixmap
+        shadow = blurred(svg_pixmap(bubble.bubble_shadow_svg(200, 100)), 12)
+        shape = svg_pixmap(bubble.bubble_body_svg(200, 100, mask=True))
+        ratio = shadow.devicePixelRatio()
+        centre = (int(120 * ratio), int(70 * ratio))
+        self.assertGreater(shadow.toImage().pixelColor(*centre).alpha(), 0)
+        self.assertEqual(cut_out(shadow, shape).toImage().pixelColor(*centre).alpha(), 0)
+
+    def test_the_glass_is_less_paint_where_it_can_blur(self):
+        from unittest import mock
+        from botwidget.qt_ui import glass
+        from botwidget.theme import GLASS_ALPHA, GLASS_ALPHA_FLAT
+        self.assertEqual(glass.alpha(), GLASS_ALPHA_FLAT, "offscreen: nothing to blur")
+        with mock.patch.object(glass, "enabled", return_value=True):
+            self.assertEqual(glass.alpha(), GLASS_ALPHA)
+
+    def test_text_fades_at_the_edge_where_it_goes_on_and_not_where_it_starts(self):
+        from botwidget.qt_ui.face import conversation_blocks
+        bubble = self.window.bubble
+        long = [{"role": "bot", "text": "Een lange regel met woorden. " * 80}]
+        bubble.show_blocks(conversation_blocks(long, "T"), "say", input=True)
+        self.finish_growth()
+        bar = bubble._scroll.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0)
+
+        def ends():
+            stops = bubble._fade.opacityMask().gradient().stops()
+            return stops[0][1].alpha(), stops[-1][1].alpha()
+
+        bar.setValue(0)
+        self.assertEqual(ends(), (255, 0), "the top is where it starts, the bottom is where it goes on")
+        bar.setValue(bar.maximum() // 2)
+        self.assertEqual(ends(), (0, 0))
+        bar.setValue(bar.maximum())
+        self.assertEqual(ends(), (0, 255))
+
+    def test_the_settings_offer_the_glass_only_where_it_can_blur(self):
+        from botwidget import menu_pages
+        state = {**self.settings_state(), "glass": True}
+        self.assertNotIn("toggle/glass", [c for c in self.window_commands(menu_pages.settings(state))])
+        self.assertIn("toggle/glass", self.window_commands(menu_pages.settings({**state, "can_glass": True})))
+
+    def window_commands(self, blocks):
+        return [block["command"] for block in blocks if block.get("kind") == "control"]
+
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest

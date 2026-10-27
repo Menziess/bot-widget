@@ -14,6 +14,7 @@ elif sys.platform == "darwin":
 else:
     from botwidget.system import linux as _os
 
+CAN_BLUR = _os.CAN_BLUR
 CAN_PICK_DESKTOPS = _os.CAN_PICK_DESKTOPS
 HOTKEY_LABEL = _os.HOTKEY_LABEL
 FOCUS_ON_HOVER = _os.FOCUS_ON_HOVER
@@ -21,6 +22,7 @@ FACE_IS_TOOL = _os.FACE_IS_TOOL
 UPDATE_ASSET = _os.UPDATE_ASSET
 activate_app = _os.activate_app
 can_install_update = _os.can_install_update
+clear_backdrop = _os.clear_backdrop
 data_home = _os.data_home
 hide_from_dock = _os.hide_from_dock
 install_update = _os.install_update
@@ -36,5 +38,6 @@ before_show = _os.before_show
 pointer_window = _os.pointer_window
 send_behind_windows = _os.send_behind_windows
 stable_app_command = _os.stable_app_command
+set_backdrop = _os.set_backdrop
 set_desktops = _os.set_desktops
 set_launch_at_login = _os.set_launch_at_login

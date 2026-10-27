@@ -60,7 +60,7 @@ from botwidget.openbot import (
     openbot_installed,
 )
 from botwidget import attachments, grokbot, hermesbot, menu_pages, __version__
-from botwidget.qt_ui import desktops, screens
+from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.bubble_window import BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window
 from botwidget.qt_ui.native import native_id, set_flags
 from botwidget.qt_ui.render import svg_pixmap
@@ -938,6 +938,7 @@ class FaceWindow(QWidget):
         """Hide this face and stop its timers."""
         self._alive = False
         self._poll_timer.stop()
+        glass.clear(self.bubble)
         self.bubble.close()
         self.close()
 

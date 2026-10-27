@@ -30,6 +30,8 @@ botwidget
 - Names only show above the messages when there are several
 - The bubble sits above the face, or to the right of it when there is no room above, then to the left, and below only when nothing else fits
 - The bubble opens at its full size, fading in and sliding out from the face, and closes as soon as the pointer leaves or you click into another window with nothing typed
+- The bubble and the thinking cloud are glass: a white that turns faintly cool towards the bottom, with a bright inner edge, a faint outer line and a soft shadow that stays outside the shape. On macOS what is behind the bubble is blurred (frosted glass, switch it off with Frosted glass bubbles on the /settings page), elsewhere the glass is almost opaque so the text stays easy to read
+- Text that scrolls out of the bubble fades away at the edge instead of being cut off, on the sides where there is more of it
 - After you send a message the bubble stays, with moving dots, until the bot has answered
 - A new answer opens it by itself and it stays for as long as it takes to read, unless you point at it
 - It also stays while you have typed words or selected words
