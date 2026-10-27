@@ -3629,20 +3629,67 @@ class BubbleHover(unittest.TestCase):
         self.assertIn("Klaar?", bubble.full_text)
         self.assertFalse(bubble._more_open, "the arrow went with the loading")
 
-    def test_holding_the_scroll_at_the_top_loads_the_message_before_but_a_flick_does_not(self):
-        from PySide6.QtCore import Qt
+    def test_the_line_is_pulled_by_the_distance_scrolled_and_far_enough_loads_the_message_before(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up_at(bubble, 100.0)
+        self.finish_growth()
+        self.assertTrue(bubble._more_open)
+        self.assertEqual(self.window._depth, 1, "a flick only shows the line")
+        first = bubble._more_progress
+        self.wheel_up_at(bubble, 105.0)
+        self.assertGreater(bubble._more_progress, first, "the further, the more it swells, however slowly")
+        self.assertEqual(self.window._depth, 1, "not far enough yet")
+        self.wheel_up_at(bubble, 110.0)
+        self.assertEqual(self.window._depth, 1)
+        self.wheel_up_at(bubble, 115.0)
+        self.assertEqual(self.window._depth, 2, "scrolled far enough, however slowly")
+
+    def test_scrolling_back_down_shrinks_the_line_again(self):
         self.hover()
         bubble = self.window.bubble
         self.wheel_up_at(bubble, 100.0)
         self.finish_growth()
         self.wheel_up_at(bubble, 100.1)
-        self.assertEqual(self.window._depth, 1, "a flick only shows the arrow")
-        self.assertTrue(bubble._more_open)
-        self.wheel_up_at(bubble, 100.2)
-        self.wheel_up_at(bubble, 100.4)
-        self.assertEqual(self.window._depth, 1, "not long enough yet")
-        self.wheel_up_at(bubble, 100.6)
-        self.assertEqual(self.window._depth, 2, "kept scrolling for half a second")
+        pulled = bubble._pull_px
+        self.wheel_up_at(bubble, 100.2, delta=-120)
+        self.assertLess(bubble._pull_px, pulled)
+        self.wheel_up_at(bubble, 100.3, delta=-1200)
+        self.assertEqual(bubble._pull_px, 0.0)
+        self.assertEqual(self.window._depth, 1)
+
+    def test_letting_go_shoots_the_line_back_up_without_loading(self):
+        from unittest import mock
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up_at(bubble, 100.0)
+        self.finish_growth()
+        self.wheel_up_at(bubble, 100.1)
+        self.assertGreater(bubble._pull_px, 0)
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=100.15):
+            bubble._watch_arrow(100.15)
+        self.assertGreater(bubble._pull_px, 0, "the wheel has only just stopped")
+        now = 100.3
+        for step in range(30):
+            now += 0.016
+            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+                bubble._watch_arrow(now)
+        self.assertEqual(bubble._pull_px, 0.0)
+        self.assertEqual(self.window._depth, 1, "letting go loads nothing")
+
+    def test_a_finger_that_stays_on_the_pad_holds_the_line_where_it_is(self):
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up_at(bubble, 100.0, Qt.ScrollBegin)
+        self.finish_growth()
+        self.wheel_up_at(bubble, 100.1, Qt.ScrollUpdate)
+        pulled = bubble._pull_px
+        for now in (101.0, 102.0, 103.0):
+            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+                bubble._watch_arrow(now)
+        self.assertEqual(bubble._pull_px, pulled)
 
     def test_the_momentum_after_a_lifted_finger_shows_the_arrow_but_never_loads(self):
         from PySide6.QtCore import Qt
@@ -3653,17 +3700,7 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble._more_open)
         self.assertEqual(self.window._depth, 1)
 
-    def test_a_run_of_scrolling_that_stops_starts_again_from_nothing(self):
-        self.hover()
-        bubble = self.window.bubble
-        self.wheel_up_at(bubble, 100.0)
-        self.wheel_up_at(bubble, 100.2)
-        self.wheel_up_at(bubble, 100.4)
-        self.wheel_up_at(bubble, 101.0)
-        self.assertEqual(self.window._depth, 1, "the pause ended the run")
-        self.assertLess(bubble._pull_since, 101.5)
-
-    def test_the_hold_shows_as_an_arc_round_the_arrow(self):
+    def test_the_pull_shows_as_a_swell_in_the_line(self):
         from botwidget.bubble import bubble_deco_svg
         self.hover()
         bubble = self.window.bubble

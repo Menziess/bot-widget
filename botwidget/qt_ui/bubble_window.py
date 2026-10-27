@@ -127,15 +127,19 @@ GROW_MS = 240
 OPEN_SLIDE = 14  # a new bubble starts this many pixels toward its face
 OPEN_TOWARD = {"above": (0, 1), "below": (0, -1), "right": (-1, 0), "left": (1, 0)}
 OLDER_PAUSE_S = 0.3
-# The arrow for the message before shows when you scroll up at the top, or the pointer is in the top MORE_ZONE_PX of
-# the bubble; it stays while the pointer is within MORE_KEEP_PX of the top (the bubble grew by the arrow, so the
-# zone moved with it), and goes MORE_LINGER_S after that. A click loads the message at once, scrolling on at the top
-# for HOLD_LOAD_S does too; wheel events less than WHEEL_RUN_GAP_S apart are one run of scrolling.
+# The line for the message before shows when you scroll up at the top, or the pointer is in the top MORE_ZONE_PX of
+# the bubble; it stays while the pointer is within MORE_KEEP_PX of the top (the bubble grew by it, so the zone moved
+# with it), and goes MORE_LINGER_S after that. Scrolling on at the top pulls it: it swells with the distance you
+# scrolled (PULL_PX pixels loads the message), shrinks again when you scroll back down, and when you let go it
+# shoots back up. A click loads the message at once.
 MORE_ZONE_PX = 28
 MORE_KEEP_PX = 70
 MORE_LINGER_S = 0.8
-HOLD_LOAD_S = 0.5
-WHEEL_RUN_GAP_S = 0.25
+PULL_PX = 140
+WHEEL_PX = 40  # one notch of a mouse wheel, which has no pixel distance of its own
+LET_GO_S = 0.15  # without a finger on a trackpad, the wheel stopping this long is letting go
+RECOIL_RATE = 0.0003  # what is left of the pull after a second of letting go, and ...
+RECOIL_PX_S = 260  # ... how fast it also shrinks in a straight line
 TAIL_LENGTH = 7
 THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the balls on their arc
 
@@ -371,15 +375,22 @@ class Growth:
 
 
 class OlderScroll(QScrollArea):
-    """Scrolling up at the top says so (pulled, with whether it is only the momentum after a lifted finger); what
-    the bubble does with that is up to the bubble."""
+    """Scrolling at the top says so (pulled, with the distance in pixels, up being positive; whether it is only the
+    momentum after a lifted finger; whether a finger is still on the pad); what the bubble does with that is up to
+    the bubble."""
 
-    pulled = Signal(bool)
+    pulled = Signal(float, bool, bool)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.pull_active = lambda: False
 
     def wheelEvent(self, event):
         bar = self.verticalScrollBar()
-        if event.angleDelta().y() > 0 and bar.value() <= bar.minimum():
-            self.pulled.emit(event.phase() == Qt.ScrollMomentum)
+        phase = event.phase()
+        pixels = event.pixelDelta().y() or event.angleDelta().y() / 120 * WHEEL_PX
+        if bar.value() <= bar.minimum() and (pixels > 0 or self.pull_active()):
+            self.pulled.emit(float(pixels), phase == Qt.ScrollMomentum, phase in (Qt.ScrollBegin, Qt.ScrollUpdate))
             event.accept()
             return
         super().wheelEvent(event)
@@ -516,9 +527,12 @@ class BubbleWindow(QWidget):
         self._has_older = False  # earlier messages wait above
         self._more_open = False  # their arrow is showing
         self._toggling = False
-        self._pull_since = self._pull_last = 0.0  # a run of scrolling at the top: its start and its latest event
+        self._pull_last = 0.0  # the latest wheel event at the top
         self._more_engaged = 0.0
         self._more_progress = 0.0
+        self._pull_px = 0.0  # how far the line is pulled
+        self._pull_held = False  # a finger is still on the pad
+        self._pull_tick = 0.0
         self._more_hover = False  # the pointer is on the arrow
         self._tip = None
         self._vx = self._vy = 0.0
@@ -543,6 +557,7 @@ class BubbleWindow(QWidget):
         self._doc.selected.connect(self._on_selected)
         self._scroll = OlderScroll(self._card)
         self._scroll.pulled.connect(self._on_pulled)
+        self._scroll.pull_active = lambda: self._pull_px > 0
         self._scroll.setWidget(self._text)
         # Text that scrolls out of the bubble fades away at the edge, where there is more of it.
         self._fade = QGraphicsOpacityEffect(self._scroll)
@@ -1370,28 +1385,41 @@ class BubbleWindow(QWidget):
         self._scroll_to_top()
         QTimer.singleShot(0, self._scroll_to_top)
 
-    def _on_pulled(self, momentum: bool):
-        """Scrolling up at the top. On a page of the menu that goes back; in the chat it shows the arrow for the
-        message before, and holding on loads it."""
+    def _on_pulled(self, pixels: float, momentum: bool, held: bool):
+        """Scrolling at the top. On a page of the menu that goes back; in the chat it shows the line for the message
+        before, pulls it by the distance, and far enough loads it."""
         now = time.monotonic()
         back = next((panel["back"] for panel in self._geom[0] if panel.get("back")), "") if self._geom else ""
         if back:
-            if self._growth is None and now >= self._older_until:
+            if pixels > 0 and self._growth is None and now >= self._older_until:
                 self._older_until = now + OLDER_PAUSE_S
                 self.command.emit(back)
             return
         if self.kind != "say" or not self._has_older:
             return
         self._more_engaged = now
-        if not self._more_open:
+        if not self._more_open and pixels > 0:
             self._set_more(True)
+        self._pull_held = held
         if momentum:
+            self._pull_last = 0.0  # let go: the rest is the coasting of a finger that is gone
             return
-        if now - self._pull_last > WHEEL_RUN_GAP_S:
-            self._pull_since = now
+        self._pull_px = min(float(PULL_PX), max(0.0, self._pull_px + pixels))
         self._pull_last = now
-        if now - self._pull_since >= HOLD_LOAD_S and self._growth is None:
+        self._show_pull()
+        if self._pull_px >= PULL_PX and self._growth is None:
             self._load_older()
+
+    def _show_pull(self):
+        progress = self._pull_px / PULL_PX
+        if abs(progress - self._more_progress) >= 0.01 or (progress == 0.0 and self._more_progress):
+            self._set_progress(progress)
+
+    def _recoil(self, now: float):
+        """Let go: the line shoots back up, fast at first."""
+        dt = min(0.1, now - self._pull_tick) if self._pull_tick else 0.016
+        self._pull_px = max(0.0, self._pull_px * RECOIL_RATE ** dt - RECOIL_PX_S * dt)
+        self._show_pull()
 
     def _arrow_clicked(self):
         back = next((panel["back"] for panel in self._geom[0] if panel.get("back")), "") if self._geom else ""
@@ -1404,7 +1432,7 @@ class BubbleWindow(QWidget):
 
     def _load_older(self):
         """The message before comes in above, sliding down from the top; the arrow has done its job."""
-        self._pull_since = self._pull_last = 0.0
+        self._pull_px = self._pull_last = 0.0
         self._set_progress(0.0)
         self.older.emit()
 
@@ -1414,7 +1442,7 @@ class BubbleWindow(QWidget):
             return
         self._more_open = on
         self._more_hover = False
-        self._pull_since = self._pull_last = 0.0
+        self._pull_px = self._pull_last = 0.0
         self._toggling = True
         try:
             self.show_blocks(self.blocks, self.kind, self._input, self._links, keep_scroll=True)
@@ -1454,21 +1482,21 @@ class BubbleWindow(QWidget):
         if bar.value() <= 0 and self.face.pointer_known():
             px, py = self.face._pointer()
             near = card.left() <= px <= card.right() and card.top() - 6 <= py <= card.top() + reach
-        if near or (self._pull_last and now - self._pull_last < WHEEL_RUN_GAP_S):
+        if near or self._pull_px > 0:
             self._more_engaged = now
             if not self._more_open:
                 self._set_more(True)
         elif self._more_open and bar.value() <= 0 and now - self._more_engaged > MORE_LINGER_S:
             self._set_more(False)
         if self._more_open:
-            holding = bool(self._pull_since) and now - self._pull_last < WHEEL_RUN_GAP_S
-            progress = min(1.0, (now - self._pull_since) / HOLD_LOAD_S) if holding else 0.0
+            let_go = not self._pull_held and now - self._pull_last > LET_GO_S
+            if self._pull_px > 0 and let_go:
+                self._recoil(now)
             hover = self._pointer_on_arrow()
             if hover != self._more_hover:
                 self._more_hover = hover
                 self._set_arrow(hover=hover)
-            if abs(progress - self._more_progress) >= 0.03 or (progress == 0.0 and self._more_progress):
-                self._set_progress(progress)
+        self._pull_tick = now
 
     def _opening_growth(self) -> Growth:
         """A bubble that opens has its full size at once: the text does not wrap again at every step and the shadow

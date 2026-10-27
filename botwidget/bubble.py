@@ -180,7 +180,7 @@ def more_svg(x: float, y: float, width: float, progress: float = 0.0, hover: boo
     """A thin line across the top of the bubble: there is more above. The further you pull (scroll up, or hold on),
     the more the middle of the line swells into a soft blob of light, like the glow at the edge of a list you
     overscroll; a chevron shows in it as it fills. The pointer on the line gives it a first swell."""
-    mid, base = x + width / 2, y + 2
+    mid, base = x + width / 2, y + 7  # room above the line for the glow, so the top of the view does not cut it
     progress = min(1.0, max(0.0, progress))
     done = progress >= 0.999
     swell = max(progress, 0.22 if hover else 0.0)
@@ -192,7 +192,7 @@ def more_svg(x: float, y: float, width: float, progress: float = 0.0, hover: boo
             f' C{mid - reach * 0.45:.1f} {base:.1f} {mid - reach * 0.4:.1f} {base + depth:.1f} {mid:.1f} {base + depth:.1f}'
             f' C{mid + reach * 0.4:.1f} {base + depth:.1f} {mid + reach * 0.45:.1f} {base:.1f} {mid + reach:.1f} {base:.1f}'
             f' H{x + width:.1f}')
-    out = [f'<defs><linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">'
+    out = [f'<defs><linearGradient id="rule" gradientUnits="userSpaceOnUse" x1="{x:.1f}" y1="0" x2="{x + width:.1f}" y2="0">'
            f'<stop offset="0" stop-color="{colour}" stop-opacity="0"/>'
            f'<stop offset="0.25" stop-color="{colour}" stop-opacity="{line_a}"/>'
            f'<stop offset="0.75" stop-color="{colour}" stop-opacity="{line_a}"/>'
@@ -202,8 +202,8 @@ def more_svg(x: float, y: float, width: float, progress: float = 0.0, hover: boo
            f'<stop offset="0.55" stop-color="{SAND_ACCENT}" stop-opacity="{0.16 if done else 0.10}"/>'
            f'<stop offset="1" stop-color="{SAND_ACCENT}" stop-opacity="0"/></radialGradient></defs>']
     if swell:
-        out.append(f'<ellipse cx="{mid:.1f}" cy="{base:.1f}" rx="{reach * 1.25:.1f}" ry="{depth * 1.7 + 3:.1f}"'
-                   f' fill="url(#glow)"/>')
+        out.append(f'<ellipse cx="{mid:.1f}" cy="{base + depth * 0.45:.1f}" rx="{reach * 1.2:.1f}"'
+                   f' ry="{depth * 0.55 + 5:.1f}" fill="url(#glow)"/>')
     out.append(f'<path d="{path}" fill="none" stroke="url(#rule)" stroke-width="1.6" stroke-linecap="round"/>')
     if swell > 0.3:
         cy = base + depth * 0.5
