@@ -3675,6 +3675,42 @@ class BubbleHover(unittest.TestCase):
         bubble._growth_step(0.5)
         self.assertEqual(bubble._scroll.verticalScrollBar().value(), 0, "no flying past the text while it grows")
 
+    def test_the_field_keeps_the_cursor_in_view_when_a_wrapped_paragraph_passes_the_fifth_line(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui.face import conversation_blocks
+        bubble = self.window.bubble
+        bubble.show_blocks(conversation_blocks([{"role": "bot", "text": "Ja"}], "T"), "say", input=True)
+        self.finish_growth()
+        entry = bubble._entry
+        for i in range(400):
+            QTest.keyClick(entry, " " if i % 9 == 0 else "x")
+            QApplication.processEvents()
+            if entry.line_count() > 5:
+                self.assertLessEqual(entry.cursorRect().bottom(), entry.viewport().height(), f"after {i} letters")
+        self.assertGreater(entry.line_count(), 6)
+        self.assertEqual(entry.document().blockCount(), 1, "one paragraph, many lines")
+
+    def test_the_cloud_after_a_message_stays_when_the_pointer_was_on_the_bubble_and_then_leaves(self):
+        self.window._pump_outbox = lambda: None
+        self.window._pointer_on_head = lambda: False
+        self.hover()
+        self.window.pin()
+        self.finish_growth()
+        bubble = self.window.bubble
+        bubble._tick()
+        bubble.type_text("Hallo")
+        bubble._send()
+        self.assertEqual(bubble.kind, "think")
+        bubble._tick()
+        self.where["at"] = (5000, 5000)
+        for _ in range(5):
+            bubble._tick()
+            self.window._check_hover()
+        self.assertEqual(bubble.kind, "think", "the mouse went back to the work: only the dots are left")
+        self.assertFalse(bubble._input)
+
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest

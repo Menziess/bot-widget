@@ -53,6 +53,7 @@ botwidget
 - Turning off the bot whose bubble holds a page moves the page to the bubble of another bot
 - Typing, sending, picking a command or attaching a file keeps the bubble open for a few seconds, also when the pointer is away
 - A field that was typed in keeps the bubble open, also when you emptied it again, until you send, press Escape or click the face
+- The field grows to five lines, then scrolls with the cursor, wrapped lines included, so what you type stays in view
 - With Show on all desktops off, a bubble only opens on the desktop of its face; elsewhere you only hear the sound, and the bubble opens when you go there
 - A bubble that opens by itself (another bot answers) never covers the one you are busy with: it takes another side, or waits out of sight and comes back once yours is gone
 - Shift+Enter starts a new line in the field, and the field grows with its lines

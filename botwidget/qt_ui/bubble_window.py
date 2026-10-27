@@ -5,7 +5,6 @@ and "hint"). A speech bubble can get an input field and a row of links.
 """
 
 import html
-import math
 import os
 import sys
 import time
@@ -206,14 +205,24 @@ class BubbleEntry(QPlainTextEdit):
     def _document_resized(self, _size):
         # A scrollbar only once the lines no longer fit: before that it would flash up for the moment
         # a new line has wrapped and the field has not grown yet.
-        lines = max(1, self.document().blockCount())
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if lines > ENTRY_MAX_LINES else Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded if self.line_count() > ENTRY_MAX_LINES
+                                        else Qt.ScrollBarAlwaysOff)
         self.resized.emit()
         # The field grows a moment later: until then the cursor may sit below what is shown.
         QTimer.singleShot(0, self._show_cursor)
 
+    def line_count(self) -> int:
+        """The lines on screen, wrapped ones too: a paragraph that wraps over six lines is six lines, not one block.
+        Counted from the layout of each block; the height of the document is in lines or in pixels, depending on
+        the system."""
+        total, block = 0, self.document().begin()
+        while block.isValid():
+            total += max(1, block.lineCount())
+            block = block.next()
+        return max(1, total)
+
     def _show_cursor(self):
-        if self.document().blockCount() <= ENTRY_MAX_LINES:
+        if self.line_count() <= ENTRY_MAX_LINES:
             self.verticalScrollBar().setValue(0)
         else:
             self.ensureCursorVisible()
@@ -242,18 +251,8 @@ class BubbleEntry(QPlainTextEdit):
         self.setPlainText(text)
 
     def wanted_height(self) -> int:
-        fm = self.fontMetrics()
-        ls = fm.lineSpacing()
-        raw = self.document().size().height()
-        # QPlainTextEdit reports document height in lines when the layout
-        # has not been given a pixel text width (height stays ~block/wrap count).
-        if ls > 0 and raw > ls:
-            actual_lines = math.ceil(raw / ls)
-        else:
-            actual_lines = max(1, int(round(raw)) if raw else 1)
-        actual_lines = max(actual_lines, self.document().blockCount())
-        lines = max(1, min(ENTRY_MAX_LINES, actual_lines))
-        return max(ENTRY_H, lines * ls + ENTRY_PAD + 2)
+        lines = min(ENTRY_MAX_LINES, self.line_count())
+        return max(ENTRY_H, lines * self.fontMetrics().lineSpacing() + ENTRY_PAD + 2)
 
     def keyPressEvent(self, event):
         """Escape closes the bubble without sending anything and keeps what was typed; with the list of commands open it
