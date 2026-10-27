@@ -83,7 +83,8 @@ def ensure_x11_libraries() -> None:
 
 
 HOTKEY_LABEL = ""
-CAN_PICK_DESKTOPS = False
+# Mutter honours the X11 desktop property on the XWayland window the widget uses: "Always on Visible Workspace".
+CAN_PICK_DESKTOPS = True
 # Not Qt.Tool: mutter lifts a utility window to the layer of its group (above other apps); skip-taskbar
 # written before each map keeps the face out of the taskbar instead.
 FACE_IS_TOOL = False
@@ -92,7 +93,13 @@ FOCUS_ON_HOVER = False
 
 
 def set_desktops(win_id: int, everywhere: bool, travels: bool = False) -> None:
-    pass
+    """Put a face on every desktop, or back on the one you are on. A bubble travels: it opens on the desktop you are
+    looking at and is never stuck to all of them."""
+    if travels:
+        return
+    lib = _xlib()
+    if lib is not None:
+        lib.set_desktop(win_id, everywhere)
 
 
 CAN_BLUR = False
@@ -224,6 +231,11 @@ class _Xlib:
         ulong, sint = ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_int)
         x11.XQueryPointer.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ulong, ulong, sint, sint, sint, sint,
                                       ctypes.POINTER(ctypes.c_uint)]
+        x11.XGetWindowProperty.restype = ctypes.c_int
+        x11.XGetWindowProperty.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_long,
+                                           ctypes.c_long, ctypes.c_int, ctypes.c_ulong, ulong, sint, ulong, ulong,
+                                           ctypes.POINTER(ctypes.c_void_p)]
+        x11.XFree.argtypes = [ctypes.c_void_p]
         self._x11 = x11
         self._display = x11.XOpenDisplay(None)
         self._root = x11.XDefaultRootWindow(self._display) if self._display else 0
@@ -250,6 +262,37 @@ class _Xlib:
                                               ctypes.byref(a), ctypes.byref(b), ctypes.byref(c), ctypes.byref(d),
                                               ctypes.byref(mask))
         return child.value if same_screen else 0
+
+    def set_desktop(self, win_id: int, everywhere: bool) -> None:
+        """0xFFFFFFFF is the X11 value for a window on all desktops; anything else is one desktop, by number."""
+        if not self._display:
+            return
+        desktop = 0xFFFFFFFF if everywhere else (self._cardinal(self._root, "_NET_CURRENT_DESKTOP") or 0)
+        event = _ClientMessage()
+        event.type = 33
+        event.display = self._display
+        event.window = win_id
+        event.message_type = self._atom("_NET_WM_DESKTOP")
+        event.format = 32
+        event.data[0] = desktop
+        mask = (1 << 20) | (1 << 19)  # StructureNotify and SubstructureNotify, as the window manager wants
+        self._x11.XSendEvent(self._display, self._root, False, mask, ctypes.byref(event))
+        self._x11.XFlush(self._display)
+
+    def _cardinal(self, win_id: int, name: str) -> int | None:
+        """One number out of a window property, such as the desktop that is showing now."""
+        if not self._display:
+            return None
+        kind, size = ctypes.c_ulong(), ctypes.c_int()
+        count, rest = ctypes.c_ulong(), ctypes.c_ulong()
+        data = ctypes.c_void_p()
+        if self._x11.XGetWindowProperty(self._display, win_id, self._atom(name), 0, 1, False, 0,
+                                        ctypes.byref(kind), ctypes.byref(size), ctypes.byref(count),
+                                        ctypes.byref(rest), ctypes.byref(data)) != 0 or not data.value:
+            return None
+        value = ctypes.cast(data, ctypes.POINTER(ctypes.c_ulong))[0]
+        self._x11.XFree(data)
+        return int(value)
 
     def _atom(self, name: str) -> int:
         cached = self._atoms.get(name)

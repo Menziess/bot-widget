@@ -3960,9 +3960,11 @@ class BubbleHover(unittest.TestCase):
         from unittest import mock
         from botwidget.qt_ui import glass
         from botwidget.theme import GLASS_ALPHA, GLASS_ALPHA_FLAT
-        self.assertEqual(glass.alpha(), GLASS_ALPHA_FLAT, "offscreen: nothing to blur")
-        with mock.patch.object(glass, "enabled", return_value=True):
-            self.assertEqual(glass.alpha(), GLASS_ALPHA)
+        # Non-blur platform at default: the glass starts more transparent so the gradient and grain show.
+        # (The user's glass_clear may be slightly above 40, so alpha is a touch under GLASS_ALPHA_FLAT.)
+        self.assertLessEqual(glass.alpha(), GLASS_ALPHA_FLAT, "offscreen: glass is clearer so paint and grain are visible")
+        with mock.patch.object(glass, "blurs", return_value=True):
+            self.assertEqual(glass.alpha(), GLASS_ALPHA, "over a blur it can be much clearer")
 
     def test_text_fades_at_the_edge_where_it_goes_on_and_not_where_it_starts(self):
         from botwidget.qt_ui.face import conversation_blocks
@@ -3984,10 +3986,13 @@ class BubbleHover(unittest.TestCase):
         bar.setValue(bar.maximum())
         self.assertEqual(ends(), (0, 255))
 
-    def test_the_settings_offer_the_glass_slider_only_where_it_can_blur(self):
+    def test_the_settings_offer_the_glass_slider_wherever_the_glass_is_painted(self):
         from botwidget import menu_pages
+        from botwidget.qt_ui import glass
+        self.assertTrue(glass.available(), "the glass is painted here, so the setting for it belongs in the menu")
         state = {**self.settings_state(), "glass_clear": 40}
-        self.assertNotIn("slider/glass", self.window_commands(menu_pages.settings(state)))
+        self.assertNotIn("slider/glass", self.window_commands(menu_pages.settings(state)),
+                         "a state without glass has no slider")
         blocks = menu_pages.settings({**state, "can_glass": True})
         self.assertIn("slider/glass", self.window_commands(blocks))
         slider = next(block for block in blocks if block.get("control") == "slider")
@@ -3997,10 +4002,10 @@ class BubbleHover(unittest.TestCase):
         from unittest import mock
         from botwidget.qt_ui import glass
         from botwidget.theme import GLASS_ALPHA
-        with mock.patch.object(glass, "enabled", return_value=True), \
+        with mock.patch.object(glass, "blurs", return_value=True), \
                 mock.patch.object(glass, "widget_config", return_value={}):
             self.assertEqual(glass.alpha(), GLASS_ALPHA, "the default is where it started")
-        with mock.patch.object(glass, "enabled", return_value=True):
+        with mock.patch.object(glass, "blurs", return_value=True):
             values = []
             for percent in (0, 50, 100, 250, -5):
                 with mock.patch.object(glass, "widget_config", return_value={"glass_clear": percent}):
@@ -4011,6 +4016,15 @@ class BubbleHover(unittest.TestCase):
         self.assertGreater(values[1], values[2])
         self.assertEqual(values[3], values[2], "more than 100 is 100")
         self.assertEqual(values[4], values[0], "less than 0 is 0")
+        # Where nothing behind the window can be blurred the glass starts more solid, but the slider still takes
+        # paint away: that is the frost.
+        from botwidget.theme import GLASS_ALPHA_FLAT, GLASS_ALPHA_FLAT_CLEAR
+        with mock.patch.object(glass, "blurs", return_value=False), \
+                mock.patch.object(glass, "widget_config", return_value={}):
+            self.assertEqual(glass.alpha(), GLASS_ALPHA_FLAT)
+        with mock.patch.object(glass, "blurs", return_value=False), \
+                mock.patch.object(glass, "widget_config", return_value={"glass_clear": 100}):
+            self.assertEqual(glass.alpha(), GLASS_ALPHA_FLAT_CLEAR)
 
     def test_moving_the_glass_slider_saves_it_and_draws_the_bubbles_again_without_a_new_page(self):
         from unittest import mock
@@ -4299,6 +4313,173 @@ class BubbleHover(unittest.TestCase):
             bubble._near_at = time.monotonic() - 1.0
             bubble._tick()
         self.assertEqual(bubble.kind, "")
+
+
+class BubbleScrollMemory(unittest.TestCase):
+    """Should open where you left off: the same page shown again keeps the place you scrolled to."""
+
+    LONG = "\n\n".join(f"Regel {i} van een antwoord dat veel langer is dan de bubbel." for i in range(60))
+    MESSAGES = [{"role": "user", "text": "Leg uit."}, {"role": "bot", "text": LONG}]
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+            from botwidget.qt_ui import face
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.face = face
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        for name, value in (("latest_chat", lambda thread_id, limit=8: {"messages": self.MESSAGES, "activity": ""}),
+                            ("openbot_installed", lambda: True), ("gbot_installed", lambda: True),
+                            ("automation_ready", lambda: True)):
+            old = getattr(self.face, name)
+            self.addCleanup(setattr, self.face, name, old)
+            setattr(self.face, name, value)
+        self.window = self.face.FaceWindow("t", "Test", spot=(300, 400))
+        self.window._poll_timer.stop()
+        self.addCleanup(self.window.close_face)
+        self.where = {"at": (5000, 5000)}
+        self.window._pointer = lambda: self.where["at"]
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        old_path = config.CONFIG_PATH
+        self.addCleanup(setattr, config, "CONFIG_PATH", old_path)
+        config.CONFIG_PATH = os.path.join(folder, "widget.json")
+        old_activate = self.face.activate_app
+        self.addCleanup(setattr, self.face, "activate_app", old_activate)
+        self.face.activate_app = lambda: None
+        self.window.bubble.focus_entry = lambda: None
+
+    def open_bubble(self):
+        """Point at the face until the chat fills the bubble."""
+        self.window._animate()
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.window._animate()
+        bubble = self.window.bubble
+        self.finish_growth()
+        return bubble
+
+    def finish_growth(self):
+        bubble = self.window.bubble
+        bubble._slide.stop()
+        bubble._growth_done()
+
+    def scroll_to(self, bubble, share):
+        """Scroll to a share of the way down the answer, and hand back where that is."""
+        bar = bubble._scroll.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0, "the answer must be longer than the bubble")
+        bar.setValue(round(bar.maximum() * share))
+        self.assertGreater(bar.value(), 0, "the bubble must be scrolled away from the start")
+        return bar.value()
+
+    def pulse(self):
+        """Let Qt lay out what just changed: a hidden scroll area is pinned to its top only then, as in the widget."""
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+
+    def test_the_field_coming_and_going_keeps_the_place_you_scrolled_to(self):
+        bubble = self.open_bubble()
+        bubble.show_blocks(bubble.blocks, "say", input=False, hover_field=True)
+        self.finish_growth()
+        place = self.scroll_to(bubble, 0.3)
+        bubble.show_blocks(bubble.blocks, "say", input=True, hover_field=True)
+        self.finish_growth()
+        self.pulse()
+        self.assertEqual(bubble._scroll.verticalScrollBar().value(), place)
+
+    def test_closing_the_bubble_keeps_the_place_you_left(self):
+        bubble = self.open_bubble()
+        place = self.scroll_to(bubble, 0.4)
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.pulse()
+        self.assertFalse(bubble.isVisible(), "the pointer left, so the bubble went")
+        self.assertEqual(bubble._scroll.verticalScrollBar().value(), 0, "Qt pins a hidden scroll area to its top")
+        self.assertEqual(bubble._scroll_place, place, "but the bubble kept the place aside")
+
+    def test_reopening_the_bubble_starts_where_you_left_it(self):
+        bubble = self.open_bubble()
+        place = self.scroll_to(bubble, 0.5)
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.pulse()
+        self.assertFalse(bubble.isVisible(), "the pointer left, so the bubble went")
+        # Opening it again lays the same page out, as the face does when you point at it.
+        bubble.show_blocks(bubble.blocks, "say", input=True, hover_field=True)
+        self.finish_growth()
+        self.pulse()
+        self.assertEqual(bubble._scroll.verticalScrollBar().value(), place)
+
+    def test_a_poll_while_it_is_closed_does_not_lose_the_place(self):
+        bubble = self.open_bubble()
+        place = self.scroll_to(bubble, 0.6)
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.pulse()
+        # The poll runs while the bubble is closed, laying the same page out again for the next opening.
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
+        self.pulse()
+        bubble.show_blocks(bubble.blocks, "say", input=True, hover_field=True)
+        self.finish_growth()
+        self.pulse()
+        self.assertEqual(bubble._scroll.verticalScrollBar().value(), place)
+
+
+class FrostLook(unittest.TestCase):
+    """Should look frosted where the system cannot blur what is behind the window, without a per-frame blur."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.app = QApplication.instance() or QApplication([])
+
+    def parts(self):
+        """A plain glass card the size of a bubble, and its shape as a mask."""
+        from botwidget import bubble
+        from botwidget.qt_ui.render import svg_pixmap
+        body = svg_pixmap(bubble.bubble_body_svg(240, 160, None, "above", 0.9))
+        shape = svg_pixmap(bubble.bubble_body_svg(240, 160, None, "above", mask=True))
+        return body, shape
+
+    def test_the_grain_stays_inside_the_shape(self):
+        from botwidget.qt_ui import glass
+        body, shape = self.parts()
+        out = glass.frost(body, shape)
+        self.assertEqual(out.size(), body.size())
+        inside = body.rect().center()
+        corner = body.rect().topLeft()
+        self.assertNotEqual(out.toImage().pixelColor(inside), body.toImage().pixelColor(inside),
+                            "the glass is grained")
+        self.assertEqual(out.toImage().pixelColor(corner).alpha(), 0, "outside the shape stays empty")
+
+    def test_every_platform_that_cannot_blur_gets_the_grain(self):
+        """Not just Linux: Windows ignores blur behind a window since Windows 8, so it gets the same frost."""
+        from unittest import mock
+        from PySide6.QtGui import QGuiApplication
+        from botwidget.qt_ui import glass
+        for platform in ("windows", "xcb", "wayland"):
+            with mock.patch.object(QGuiApplication, "platformName", return_value=platform), \
+                    mock.patch.object(glass, "CAN_BLUR", False):
+                self.assertFalse(glass.blurs(), f"{platform} cannot blur behind the window, so it is painted")
+        with mock.patch.object(QGuiApplication, "platformName", return_value="cocoa"), \
+                mock.patch.object(glass, "CAN_BLUR", True):
+            self.assertTrue(glass.blurs(), "macOS blurs for real, so it is not painted")
+
+    def test_the_same_size_gets_the_same_grain_every_time(self):
+        from botwidget.qt_ui import glass
+        body, shape = self.parts()
+        plain = body.toImage()
+        self.assertEqual(glass.frost(body, shape).toImage(), glass.frost(body, shape).toImage(),
+                         "a redraw must not shift the grain")
+        self.assertEqual(body.toImage(), plain, "the glass handed in is left alone")
 
 
 class LatestChat(unittest.TestCase):
@@ -4777,10 +4958,17 @@ class Desktops(unittest.TestCase):
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
 
-    def test_other_systems_have_nothing_to_choose(self):
-        self.assertFalse(linux.CAN_PICK_DESKTOPS or windows.CAN_PICK_DESKTOPS)
-        linux.set_desktops(0, True)
+    def test_windows_has_nothing_to_choose_and_linux_does(self):
+        from unittest import mock
+        self.assertTrue(linux.CAN_PICK_DESKTOPS, "the X11 desktop property works on the XWayland window")
+        self.assertFalse(windows.CAN_PICK_DESKTOPS)
         windows.set_desktops(0, False)
+        sent = []
+        fake = mock.Mock(set_desktop=lambda win, everywhere: sent.append((win, everywhere)))
+        with mock.patch.object(linux, "_xlib", return_value=fake):
+            linux.set_desktops(7, True)
+            linux.set_desktops(8, True, travels=True)  # a bubble opens on the desktop you are on
+        self.assertEqual(sent, [(7, True)], "only the face is put on every desktop")
 
 
 class MenuPages(unittest.TestCase):

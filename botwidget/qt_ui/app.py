@@ -5,6 +5,7 @@ import signal
 import sys
 
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from botwidget import __version__, channel, startup, updates
@@ -13,6 +14,21 @@ from botwidget.instance import ensure_single_instance
 from botwidget.qt_ui.faces import Faces
 from botwidget.qt_ui.fonts import install_font_fallbacks
 from botwidget.system.current import hide_from_dock, prepare_gui_environment, register_hotkey
+
+
+def icon_path() -> str:
+    """The icon of this build, else the one the Linux installer put in your folder. The window, the app menu and the
+    dock must show the same one, or a running widget looks like a nameless process."""
+    beside = [os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "icon.png")]
+    if getattr(sys, "_MEIPASS", ""):
+        beside.insert(0, os.path.join(sys._MEIPASS, "icon.png"))
+    beside.append(os.path.expanduser("~/.local/share/botwidget/icon.png"))
+    # On Linux also try the system icon theme so the app menu and search find it.
+    if sys.platform == "linux":
+        beside.append(os.path.expanduser("~/.local/share/icons/hicolor/512x512/apps/botwidget.png"))
+        beside.append("/usr/share/icons/hicolor/512x512/apps/botwidget.png")
+        beside.append("/usr/share/pixmaps/botwidget.png")
+    return next((path for path in beside if os.path.exists(path)), "")
 
 
 def _login_item(args: list):
@@ -57,6 +73,11 @@ def main():
     app = QApplication(sys.argv)
     install_quit_signals(app)
     app.setApplicationName("Bot Widget")
+    # Matches botwidget.desktop: the app menu, the dock and the window find each other by this name.
+    app.setDesktopFileName("botwidget")
+    icon = icon_path()
+    if icon:
+        app.setWindowIcon(QIcon(icon))
     hide_from_dock()
     # The faces and bubbles are Tool windows; closing one must not stop the app.
     app.setQuitOnLastWindowClosed(False)

@@ -48,6 +48,9 @@ def set_desktops(win_id: int, everywhere: bool, travels: bool = False) -> None:
 
 
 CAN_BLUR = False
+# A real blur is possible here, but not as blur behind a region: DwmEnableBlurBehind is ignored since Windows 8,
+# and SetWindowCompositionAttribute / DWMWA_SYSTEMBACKDROP_TYPE blur the whole window rect, which loses the bubble's
+# shape. Until that is worth it, the glass is painted (see glass.frost).
 
 
 def set_backdrop(win_id: int, x: float, y: float, w: float, h: float, mask_png: bytes) -> bool:

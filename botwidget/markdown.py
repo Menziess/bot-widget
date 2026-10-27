@@ -1,5 +1,6 @@
 """Markdown to blocks and panels; pure text, no toolkit."""
 
+import os
 import re
 from urllib.parse import urlparse
 
@@ -9,6 +10,7 @@ MD_INLINE_RE = re.compile(
     r"(\*\*.+?\*\*|__.+?__|`[^`]+?`|\*[^*\s][^*]*?\*|_[^_\s][^_]*?_"
     r"|\[[^\]]+?\]\((?:[^()\s]|\([^()\s]*\))*\)"
     r"|https?://[^\s<>\"'`]+)"
+    r"|(?:[A-Za-z]:\\\\|~/|/home/|/usr/)[^\s<>\"'`]*[.](?:png|jpg|jpeg|gif|webp|bmp|svg|ico|pdf|txt|md|csv|log|py|js|ts|html|css|sh|bat|exe|dll|dylib|so|mp4|avi|mov|mkv|mp3|wav|flac|zip|tar|gz|7z|rar|dmg|deb|rpm|appimage|appx|msi|apk)"
 )
 _URL_PAIRS = {")": "(", "]": "[", "}": "{"}
 _URL_TAIL = ".,;:!?"
@@ -30,6 +32,15 @@ def table_cells(line: str) -> list:
     return [md_inline(cell.strip().replace("\\|", "|")) for cell in re.split(r"(?<!\\)\|", inner)]
 
 
+def _path_to_file_url(path: str) -> str:
+    """Convert a local file path to a file:// URL. ~/ is expanded, backslashes on Windows."""
+    import pathlib
+    expanded = path if not path.startswith("~") else os.path.expanduser(path)
+    # Normalise separators.
+    norm = os.path.normpath(expanded)
+    return pathlib.Path(norm).as_uri()
+
+
 def url_host(url: str) -> str:
     """Only the host of a link, shown dim after the label."""
     try:
@@ -40,11 +51,16 @@ def url_host(url: str) -> str:
 
 
 def anchor_url(style: str) -> str:
-    """The href of a link piece; empty for anything that is not an http(s) link."""
+    """The href of a link piece; empty for anything that is not an http(s) or file link."""
     if not style.startswith("link:"):
         return ""
     url = style[len("link:"):]
-    return url if url.startswith(("http://", "https://")) else ""
+    if url.startswith(("http://", "https://")):
+        return url
+    # File path: turn into a file:// URL.
+    if ":\\" in url or url.startswith("~/") or url.startswith("/home/") or url.startswith("/usr/"):
+        return _path_to_file_url(url)
+    return ""
 
 
 def command_href(style: str) -> str:
@@ -84,6 +100,9 @@ def md_inline(text: str) -> list:
                     out.append((tok[len(url):], ""))
             else:
                 out.append((tok, ""))
+        elif ":\\" in tok or tok.startswith("~/") or tok.startswith("/home/") or tok.startswith("/usr/"):
+            # A file path: show it, turn into a file:// link so a click opens the file.
+            out.append((tok, "link:" + tok))
         elif tok[:2] in ("**", "__"):
             out.append((tok[2:-2], "b"))
         elif tok[0] == "`":

@@ -107,10 +107,10 @@ QScrollArea:hover QScrollBar::handle:vertical {{ background: rgba(28, 28, 28, 11
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; border: none; height: 0; }}
 QPlainTextEdit {{
-    background: rgba(255, 255, 255, 150); color: {SAND_INK}; border: 1px solid rgba(28, 28, 28, 26);
-    border-radius: 10px; padding: 8px;
+    background: rgba(255, 255, 255, 180); color: {SAND_INK};
+    border: 1px solid rgba(255, 255, 255, 140); border-radius: 10px; padding: 8px;
 }}
-QPlainTextEdit:focus {{ background: rgba(255, 255, 255, 215); border-color: rgba(22, 128, 243, 150); }}
+QPlainTextEdit:focus {{ background: rgba(255, 255, 255, 220); border-color: rgba(22, 128, 243, 180); }}
 QLabel#links {{ color: {SAND_ACCENT}; }}
 """
 ENTRY_H = 34
@@ -434,6 +434,8 @@ class BubbleText(QTextBrowser):
     def _open(self, url: QUrl):
         if url.scheme() in ("http", "https"):
             QDesktopServices.openUrl(url)
+        elif url.scheme() == "file":
+            QDesktopServices.openUrl(url)
         elif url.scheme() == "bw":
             self.command.emit(url.path())
 
@@ -575,6 +577,7 @@ class BubbleWindow(QWidget):
         self._fade.setOpacity(1.0)
         self._scroll.setGraphicsEffect(self._fade)
         self._scroll.verticalScrollBar().valueChanged.connect(self._update_fade)
+        self._scroll.verticalScrollBar().valueChanged.connect(self._remember_place)
         self._scroll.verticalScrollBar().rangeChanged.connect(self._update_fade)
         self._scroll.setFrameShape(QScrollArea.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -612,6 +615,8 @@ class BubbleWindow(QWidget):
         self._spot = (0, 0, 0, 0)
         self._yielding = False
         self._scroll_target = 0
+        self._scroll_page = ("", "")  # which page the place below belongs to
+        self._scroll_place = 0  # where you left that page: a hidden scroll area is pinned back to its top
         self._follow = False
         self._entry.dismissed.connect(face.unpin)
 
@@ -1148,8 +1153,11 @@ class BubbleWindow(QWidget):
         shape = svg_pixmap(mask_svg)
         shadow = cut_out(blurred(svg_pixmap(shadow_svg), SHADOW_BLUR * 3), shape)
         pix = stacked(shadow, svg_pixmap(body_svg))
+        if not glass.blurs():
+            # Nothing behind the window can be blurred here: the grain is what makes it read as frosted glass.
+            pix = glass.frost(pix, shape)
         self._chrome.setPixmap(pix)
-        if glass.enabled():
+        if glass.blurs():
             self._glass_mask = glass.png(shape)
         self._chrome_key, self._chrome_pix = (self.kind, args, alpha), pix
         return pix
@@ -1197,6 +1205,12 @@ class BubbleWindow(QWidget):
         self._move_notice()
         self._place_controls()
 
+    def _remember_place(self, value: int):
+        """Keep where this page was left. Hiding the bubble pins its scroll area back to the top, so the place has to
+        live outside the scroll area to survive a close."""
+        if self.kind and self.isVisible() and self._growth is None:
+            self._scroll_page, self._scroll_place = (self.kind, self.full_text), value
+
     def _update_fade(self, *_args):
         """Fade the text over the first and last stretch of the view, on the sides where it goes on."""
         height = self._scroll.height()
@@ -1221,7 +1235,7 @@ class BubbleWindow(QWidget):
         """The look changed (glass on or off): draw it again."""
         self._chrome_key = None
         if self.kind and self._geom:
-            if not glass.enabled():
+            if not glass.blurs():
                 glass.clear(self)
             self._layout_children(self._paint_chrome())
 
@@ -1383,12 +1397,21 @@ class BubbleWindow(QWidget):
         with keep_scroll the same page is shown again, where it was. A thought is followed down as it
         grows, until you scroll up in it."""
         bar = self._scroll.verticalScrollBar()
+        text = block_text(blocks)
+        visible = self.isVisible()
+        # The same words again (the field came or went, a poll, the bubble reopened after it slid away): stay where
+        # you were reading. A closed bubble has no scroll area to ask, so the place is kept aside.
+        same_page = ((kind, text) == self._scroll_page and not self._dots_lines) or keep_scroll
         # While the cloud is still growing the bar says little about where you are: keep what was.
-        self._follow = kind == "think" and (self.kind != "think" or not self.isVisible()
+        self._follow = kind == "think" and (self.kind != "think" or not visible
                                             or (self._follow and self._growth is not None)
                                             or bar.value() >= bar.maximum() - FOLLOW_SLACK)
-        self._scroll_target = bar.value() if keep_scroll or (kind == "think" and not self._follow) else 0
-        visible = self.isVisible()
+        if same_page:
+            self._scroll_target = self._scroll_place
+        elif kind == "think" and not self._follow and visible:
+            self._scroll_target = bar.value()  # a thought you scrolled up in stays where you left it
+        else:
+            self._scroll_target = 0
         if visible and self.kind and ((kind == "think") != (self.kind == "think")
                                       or (kind == "think" and input != self._input)):
             # A speech bubble and a thinking cloud do not grow into each other, nor do the dots and the thought with
@@ -1429,7 +1452,7 @@ class BubbleWindow(QWidget):
         self._link_row.setText(" &nbsp;·&nbsp; ".join(
             f'<a href="{url}" style="color:{SAND_ACCENT}">{label} ↗</a>' for label, url in self._links))
         self.blocks = blocks
-        self.full_text = block_text(blocks)
+        self.full_text = text
         # A new thought updates the cloud that is already open. It does not start the open again.
         same_think = visible and self.kind == "think" and kind == "think"
         if not same_think:
