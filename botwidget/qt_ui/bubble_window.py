@@ -909,6 +909,16 @@ class BubbleWindow(QWidget):
         """The user is busy with this bubble: a bubble that opened by itself gives way to it."""
         return self.face.pinned or self.holding() or self.face.pointer_near(self)
 
+    def rank(self) -> int:
+        """How much the user is with this bubble: pointing at its face asks for it (it wins from everything, and the
+        other bubbles then close), typing or a pin comes next, then the pointer near it, then a bubble that opened
+        by itself."""
+        if self.face._pointer_on_head():
+            return 3
+        if self.face.pinned or self.holding():
+            return 2
+        return 1 if self.user_owned() else 0
+
     def _others(self) -> list:
         faces = getattr(self.face.faces, "faces", {})
         return [face.bubble for face in faces.values() if face.bubble is not self and face.bubble.seen()]
@@ -954,8 +964,8 @@ class BubbleWindow(QWidget):
         """Every place covers another bubble: the one the user is busy with wins, else the older one."""
         if not desktops.face_here(self.face):
             return True  # the face is on another desktop: its sound is enough until you go there
-        mine = self.user_owned()
-        return any(o.user_owned() and not mine or o.user_owned() == mine and o._opened <= self._opened
+        mine = self.rank()
+        return any(o.rank() > mine or o.rank() == mine and o._opened <= self._opened
                    for o in self._covering(*self._spot))
 
     def takes_input(self) -> bool:

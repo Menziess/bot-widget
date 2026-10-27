@@ -3685,6 +3685,33 @@ class BubbleHover(unittest.TestCase):
         self.assertFalse(bubble._more_open)
         self.assertEqual(self.window._depth, 1)
 
+    def test_pointing_at_another_face_that_lies_under_the_border_of_an_open_bubble_opens_its_bubble(self):
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        active = mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive)
+        active.start()
+        self.addCleanup(active.stop)
+        other = self.second_face()
+        self.hover()
+        mine = self.window.bubble
+        self.assertTrue(mine.isVisible())
+        card = mine.card()
+        other.move(card.right() + 10 - 34, card.center().y() - 34)
+        self.where["at"] = (other.x() + 34, other.y() + 34)
+        self.assertFalse(card.contains(self.where["at"][0], self.where["at"][1]), "outside the card, inside the border")
+        self.assertTrue(self.window.pointer_near(mine), "the border of the open bubble")
+        # A screen so cramped that the bubble of the other face would lie on this one wherever it goes.
+        other.bubble._covering = lambda *_spot: [mine] if mine.isVisible() else []
+        other._check_hover()
+        for _ in range(3):
+            other.bubble._tick()
+            mine._tick()
+        other.bubble._slide.stop()
+        other.bubble._growth_done()
+        self.assertTrue(other.bubble.isVisible(), "the face under the border is pointed at")
+        self.assertFalse(mine.isVisible(), "one at a time")
+
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
