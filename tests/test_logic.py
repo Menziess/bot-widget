@@ -3712,6 +3712,31 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(other.bubble.isVisible(), "the face under the border is pointed at")
         self.assertFalse(mine.isVisible(), "one at a time")
 
+    def test_after_sending_the_cloud_stays_at_its_dots_until_the_pointer_leaves_and_comes_back(self):
+        self.window._pump_outbox = lambda: None
+        self.hover()
+        self.window.pin()
+        self.finish_growth()
+        bubble = self.window.bubble
+        bubble.type_text("Hallo")
+        bubble._send()
+        self.window._sync_bubble(self.window._latest(), force=True)
+        self.assertEqual(bubble.kind, "think")
+        self.assertFalse(bubble._input, "the pointer is still on it, but you just sent: no field")
+        self.assertTrue(self.window._think_held)
+        self.window._sync_bubble(self.window._latest(), force=True)
+        self.assertFalse(bubble._input)
+        self.where["at"] = (5000, 5000)
+        self.window._think_expanded()
+        self.assertFalse(self.window._think_held, "the pointer left")
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.assertTrue(self.window._think_expanded(), "back on it: the thought and the field open")
+
+    def test_clicking_the_face_after_sending_opens_the_chat_again(self):
+        self.window._think_held = True
+        self.window.pin()
+        self.assertFalse(self.window._think_held)
+
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest

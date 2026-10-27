@@ -1549,6 +1549,7 @@ class BubbleWindow(QWidget):
             # face.pointer_near(self) being true, which is caught above.
             if self.kind == "think" and self.face.shrink_think():
                 self.changed = now
+                self._was_near = False
                 return
             if self.close_bubble("left"):
                 return

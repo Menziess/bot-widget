@@ -184,6 +184,9 @@ class FaceWindow(QWidget):
         self._faces = ("neutral", "neutral")  # the face the eyes come from and go to
         self._asked = False  # a message went out: the next answer is its reply
         self._think_quiet = False  # the cloud closed itself: a new thought does not open it again
+        # You just sent something: the cloud stays at its dots, also with the pointer on it, until the pointer has
+        # left and comes back, or you click the face. Only then do the thought and the field open.
+        self._think_held = False
         self._last_bot = None
         self._answer_pending = False
         self._happy_on = False
@@ -660,14 +663,20 @@ class FaceWindow(QWidget):
 
     def shrink_think(self) -> bool:
         """The pointer left the thought: back to the dots while the turn lasts. False when there is nothing to shrink."""
-        if self.pinned or self._chat is None or not self._show_think() or not getattr(self, "_think_on_bot", False):
+        if self.pinned or self._chat is None or not self._show_think():
             return False
-        self._sync_bubble(self._chat, force=True)
-        return self.bubble.kind == "think" and not self._think_on_bot
+        if getattr(self, "_think_on_bot", False):
+            self._sync_bubble(self._chat, force=True)
+        return self.bubble.kind == "think" and not getattr(self, "_think_on_bot", False)
 
     def _think_expanded(self) -> bool:
         """Thought text and the field, while the pointer is on the bot or its bubble."""
-        return self._pointer_on_head() or self.pointer_near(self.bubble)
+        near = self._pointer_on_head() or self.pointer_near(self.bubble)
+        if self._think_held:
+            if not near:
+                self._think_held = False
+            return False
+        return near
 
     def _pointer_on_head(self) -> bool:
         if not global_pointer():
@@ -893,6 +902,7 @@ class FaceWindow(QWidget):
     def pin(self):
         """Click on the face: the speech bubble stays, with an input field."""
         self.pinned = True
+        self._think_held = False
         self._menu_page = None
         self.has_pending = False
         self._refused = False
@@ -1218,6 +1228,7 @@ class FaceWindow(QWidget):
         """What can keep a bubble from opening: a pin nobody can take off, a quiet thought, a hover pause."""
         self.pinned = False
         self._think_quiet = False
+        self._think_held = False
         self._hover_blocked_until = 0.0
         self._hover_retry = 0.0
 
@@ -1353,6 +1364,8 @@ class FaceWindow(QWidget):
             # A new message is a fresh attempt: the link that stopped tries again.
             self.hermes.resume()
         self.pinned = False
+        # Not for a message that waits in the queue: the cloud is open for that and shows the queue.
+        self._think_held = True
         text = attachments.message_with(text, files)
         day = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
         cid = hashlib.sha256(f"{self.agent_id}\n{text}\n{day}".encode()).hexdigest()[:32]
