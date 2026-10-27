@@ -107,12 +107,15 @@ def sign_windows(path: str):
 def windows():
     folder = os.path.join(DIST, NAME)
     exe = os.path.join(folder, f"{NAME}.exe")
+    icon = os.path.join(BUILD, "icons", "icon.ico")
+    if os.path.isfile(icon):
+        shutil.copy(icon, os.path.join(folder, "icon.ico"))
     if os.path.isfile(exe):
         sign_windows(exe)
     iscc = shutil.which("iscc")
     if iscc:
         run(iscc, f"/DVersion={version()}", f"/DSourceDir={folder}", f"/DOutputDir={DIST}",
-            os.path.join(ROOT, "packaging", "windows.iss"))
+            f"/DIconFile={icon}", os.path.join(ROOT, "packaging", "windows.iss"))
         installer = os.path.join(DIST, "BotWidget-Windows-Setup.exe")
         sign_windows(installer)
         return installer
