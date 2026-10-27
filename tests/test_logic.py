@@ -479,13 +479,6 @@ class BubbleLayout(unittest.TestCase):
         self.assertEqual(huge, BUBBLE_LINGER_MAX)
         self.assertEqual(bubble.reading_seconds(""), BUBBLE_LINGER)
 
-    def test_the_opening_shadow_starts_clear(self):
-        """Should not draw the shadow on the first sliver, where the blur is a black bar."""
-        from botwidget.theme import SHADOW_ALPHA
-        self.assertEqual(bubble.opening_shadow_alpha(0.0, True), 0.0)
-        self.assertEqual(bubble.opening_shadow_alpha(1.0, True), SHADOW_ALPHA)
-        self.assertEqual(bubble.opening_shadow_alpha(0.0, False), SHADOW_ALPHA)
-
     def test_the_blur_leaves_the_margin_clear(self):
         """Should keep the area outside the shadow transparent, not black."""
         from PySide6.QtGui import QColor, QImage, QPixmap
@@ -1680,20 +1673,24 @@ class BubbleHover(unittest.TestCase):
         self.window.show_older()
         self.assertEqual(self.window._depth, 2, "nothing older to load")
 
-    def test_a_bubble_grows_out_of_a_small_one_when_it_opens(self):
+    def test_a_bubble_opens_at_its_full_size_fading_in_and_sliding_out_from_the_face(self):
         import time
         self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
         self.window._animate()
         bubble = self.window.bubble
         self.assertIsNotNone(bubble._growth)
-        start = (bubble.width(), bubble.height())
+        full = (bubble.width(), bubble.height())
         self.assertLess(bubble.windowOpacity(), 1.0, "it fades in")
+        bubble._growth_step(0.0)
+        near_face = (bubble.x(), bubble.y())
+        self.assertEqual((bubble.width(), bubble.height()), full, "the text does not wrap again while it opens")
+        self.assertTrue(bubble._entry.isVisibleTo(bubble), "the field is there from the first frame")
         deadline = time.monotonic() + 3
         while bubble._growth is not None and time.monotonic() < deadline:
             self.app.processEvents()
         self.assertIsNone(bubble._growth)
-        self.assertGreater(bubble.width(), start[0])
-        self.assertGreater(bubble.height(), start[1])
+        self.assertEqual((bubble.width(), bubble.height()), full)
+        self.assertNotEqual((bubble.x(), bubble.y()), near_face, "it came from the face")
         self.assertEqual(bubble.windowOpacity(), 1.0)
 
     def test_a_bubble_near_the_top_edge_picks_its_side_for_its_final_size(self):
@@ -1792,15 +1789,6 @@ class BubbleHover(unittest.TestCase):
             bubble._growth_step(t)
             self.assertLessEqual(abs(bubble.x() + bubble._tip[0] - (self.window.x() + 34)), 1)
         self.finish_growth()
-
-    def test_the_field_waits_until_the_bubble_has_grown_a_bit(self):
-        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
-        self.window._animate()
-        bubble = self.window.bubble
-        bubble._growth_step(0.1)
-        self.assertFalse(bubble._entry.isVisibleTo(bubble))
-        bubble._growth_step(0.6)
-        self.assertTrue(bubble._entry.isVisibleTo(bubble))
 
     def test_growing_stays_inside_the_tail_and_the_final_size_is_the_normal_one(self):
         self.where["at"] = (self.window.x() + 34, self.window.y() + 34)

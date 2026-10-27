@@ -34,7 +34,6 @@ from botwidget.bubble import (
     bubble_deco_svg,
     bubble_height_cap,
     menu_height_cap,
-    opening_shadow_alpha,
     bubble_shadow_svg,
     bubble_width,
     cloud_body_svg,
@@ -106,6 +105,8 @@ MIN_INTERACTIVE_W = 240
 SCROLLBAR_W = 6
 NOTICE_MS = 1600
 GROW_MS = 240
+OPEN_SLIDE = 14  # a new bubble starts this many pixels toward its face
+OPEN_TOWARD = {"above": (0, 1), "below": (0, -1), "right": (-1, 0), "left": (1, 0)}
 OLDER_PAUSE_S = 0.3
 # Wheel events closer together than this are one flick; a new flick is needed to load the message before.
 WHEEL_FLICK_GAP_S = 0.25
@@ -119,8 +120,6 @@ LOAD_PUSH_PX = 14
 LOAD_PULL = 40
 LOAD_PULL_AFTER_BOUNCE = 360
 LOAD_PUSH_MS = 160
-# Where a bubble starts when it grows out of nothing: the text width and the white height.
-SEED_W, SEED_H = 36, 22
 TAIL_LENGTH = 7
 THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the balls on their arc
 
@@ -1125,9 +1124,7 @@ class BubbleWindow(QWidget):
         if (self.kind, args) == self._chrome_key:
             return self._chrome_pix
         cloud = self.kind == "think"
-        opening = self._growth is not None and self._growth.opening
-        alpha = opening_shadow_alpha(self._growth.progress if opening else 1.0, opening)
-        shadow_svg = cloud_shadow_svg(*args, alpha=alpha) if cloud else bubble_shadow_svg(*args, alpha=alpha)
+        shadow_svg = cloud_shadow_svg(*args) if cloud else bubble_shadow_svg(*args)
         body_svg = cloud_body_svg(*args) if cloud else bubble_body_svg(*args)
         pix = stacked(blurred(svg_pixmap(shadow_svg), SHADOW_BLUR * 3), svg_pixmap(body_svg))
         self._chrome.setPixmap(pix)
@@ -1168,8 +1165,8 @@ class BubbleWindow(QWidget):
         # Not while the bubble is still tiny: a field alone looks odd.
         # Not while the bubble is still tiny, but never taken away from a field that is already there:
         # hiding it would drop the cursor at every new thought.
-        self._entry.setVisible(self._input and (self._growth is None or self._growth.progress >= 0.35
-                                                or self._entry.isVisible()))
+        self._entry.setVisible(self._input and (self._growth is None or self._growth.opening
+                                                or self._growth.progress >= 0.35 or self._entry.isVisible()))
         if self._wants_keys and self._entry.isVisible():
             self._wants_keys = False
             self._entry.setFocus()
@@ -1269,7 +1266,7 @@ class BubbleWindow(QWidget):
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
             self.changed = time.monotonic()
             if not visible and not self._yielding:
-                self._growth = Growth(SEED_W, SEED_H, opening=True)
+                self._growth = self._opening_growth()
                 self.setWindowOpacity(0.0)
                 self.place(kind)
                 self._slide.start()
@@ -1302,13 +1299,13 @@ class BubbleWindow(QWidget):
         if self._dots_lines and not self._dots_on:
             self._dots_on = True
             self._dots.start()
-        start = start or (SEED_W, SEED_H)
         # same_think skips a fresh open. A longer thought still grows the cloud that is already there.
-        if start != (self._geom[1], self._body_h(self._geom[2])) and not self._yielding:
+        if not visible and not self._yielding:
+            self._growth = self._opening_growth()
+            self.setWindowOpacity(0.0)
+        elif start != (self._geom[1], self._body_h(self._geom[2])) and not self._yielding:
             added = max(0, self._geom[2] - old_inner) if older and visible else 0
-            self._growth = Growth(*start, added=added, opening=not visible)
-            if not visible:
-                self.setWindowOpacity(0.0)
+            self._growth = Growth(*start, added=added)
         pix = self._paint_chrome()
         self._layout_children(pix)
         self._set_text()
@@ -1366,6 +1363,12 @@ class BubbleWindow(QWidget):
         self._loading_lines = []
         self._scroll.set_loading(False)
 
+    def _opening_growth(self) -> Growth:
+        """A bubble that opens has its full size at once: the text does not wrap again at every step and the shadow
+        is drawn once. It fades in and slides out from the face."""
+        self._growth = None
+        return Growth(self._geom[1], self._body_h(self._geom[2]), opening=True)
+
     def _growth_step(self, progress):
         """The bubble grows to its size: upward from the face, the older message sliding in from the top."""
         growth = self._growth
@@ -1376,6 +1379,10 @@ class BubbleWindow(QWidget):
         size = (self._shown_w(self._geom[1]) + 2 * PAD_BODY + 2 * PAD_SVG,
                 self._body_h(self._geom[2]) + PAD_SVG + TAIL_ROOM)
         tx, ty, self._tip = self._goal(size)
+        if growth.opening:
+            toward_x, toward_y = OPEN_TOWARD.get(self._tip[1], (0, 0))
+            tx += toward_x * OPEN_SLIDE * (1 - growth.progress)
+            ty += toward_y * OPEN_SLIDE * (1 - growth.progress)
         self._layout_children(self._paint_chrome())
         self._vx = self._vy = 0.0
         self._put(tx, ty)
@@ -1383,7 +1390,7 @@ class BubbleWindow(QWidget):
         bar.setValue(min(bar.maximum(), round(growth.added * (1 - progress))) if getattr(growth, "older", False)
                      else self._scroll_value())
         if growth.opening:
-            self.setWindowOpacity(min(1.0, progress * 3))
+            self.setWindowOpacity(min(1.0, progress * 1.25))
 
     def _growth_done(self):
         if self._growth is None:
@@ -1530,7 +1537,7 @@ class BubbleWindow(QWidget):
             return
         if was_yielding:
             # There is room now: it opens the way a new bubble does, not with a jump.
-            self._growth = Growth(SEED_W, SEED_H, opening=True)
+            self._growth = self._opening_growth()
             self.setWindowOpacity(0.0)
             self._show_at(tx, ty)
             self._slide.start()

@@ -30,7 +30,7 @@ botwidget
 - Scrolling up past the top of a message bounces once, and only a new pull loads the one before, with dots in place of the arrow while it loads
 - Names only show above the messages when there are several
 - The bubble sits above the face, or to the right of it when there is no room above, then to the left, and below only when nothing else fits
-- The bubble grows out of the face, and closes as soon as the pointer leaves or you click into another window with nothing typed
+- The bubble opens at its full size, fading in and sliding out from the face, and closes as soon as the pointer leaves or you click into another window with nothing typed
 - After you send a message the bubble stays, with moving dots, until the bot has answered
 - A new answer opens it by itself and it stays for as long as it takes to read, unless you point at it
 - It also stays while you have typed words or selected words

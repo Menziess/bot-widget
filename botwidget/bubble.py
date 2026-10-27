@@ -231,13 +231,6 @@ def _bubble_tip(side: str, body_w: int, body_h: int, tip: float | None) -> float
     return PAD_SVG + length / 2 if tip is None else min(max(tip, PAD_SVG + TAIL_TIP_MARGIN), PAD_SVG + length - TAIL_TIP_MARGIN)
 
 
-def opening_shadow_alpha(progress: float, opening: bool) -> float:
-    """The blurred shadow is a black bar while the bubble is still a sliver."""
-    if not opening:
-        return SHADOW_ALPHA
-    return SHADOW_ALPHA * min(1.0, max(0.0, progress) * 2)
-
-
 def bubble_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above",
                       alpha: float | None = None) -> str:
     """The shadow, drawn sharp; the toolkit blurs it itself (SVG filters
