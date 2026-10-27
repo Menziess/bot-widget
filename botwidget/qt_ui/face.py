@@ -183,6 +183,7 @@ class FaceWindow(QWidget):
         self.motion = Motion(seed=f"{agent_id}:{time.time_ns()}:{random.random()}")
         self._faces = ("neutral", "neutral")  # the face the eyes come from and go to
         self._asked = False  # a message went out: the next answer is its reply
+        self._activate_until = 0.0  # the key combination asked for the front: allowed until then
         self._think_quiet = False  # the cloud closed itself: a new thought does not open it again
         # You just sent something: the cloud stays at its dots, also with the pointer on it, until the pointer has
         # left and comes back, or you click the face. Only then do the thought and the field open.
@@ -276,6 +277,27 @@ class FaceWindow(QWidget):
         self.apply_desktops()
         if self.faces is not None:
             self.faces.raise_bubbles()
+
+    def windows(self) -> list:
+        """Every window of the widget that shows: faces, their bubbles and the catcher of the arc."""
+        faces = {id(face): face for face in [self, *getattr(self.faces, "faces", {}).values(),
+                                              *getattr(self.faces, "_arc_guests", {}).values()]}.values()
+        windows = [window for face in faces for window in (face, face.bubble)]
+        catcher = getattr(self.faces, "_catcher", None)
+        return windows + ([catcher] if catcher is not None else [])
+
+    def activation_safe(self) -> bool:
+        """macOS takes you to the desktop of another window of ours when the app is brought to the front, so that
+        only happens when all of them are on this desktop, or you asked for it with the key combination."""
+        return time.monotonic() < self._activate_until or desktops.all_here(self.windows())
+
+    def allow_activation(self, seconds: float):
+        self._activate_until = time.monotonic() + seconds
+
+    def activate(self):
+        """The app to the front, so that typing goes to the field; not when that would move you to another desktop."""
+        if self.activation_safe():
+            activate_app()
 
     def bring_here(self) -> bool:
         """The face, and the bubble if it is open, to the desktop you are on; True when the face moved."""
@@ -731,7 +753,7 @@ class FaceWindow(QWidget):
             # Typing starts at once, but only when the pointer stays: passing over the face is not asking.
             self._hover_since = 0.0
             if self.bubble.isVisible() and self.bubble.takes_input() and self.bubble.kind == "say":
-                activate_app()
+                self.activate()
                 self.bubble.focus_entry()
 
     def _animate(self):
@@ -872,7 +894,7 @@ class FaceWindow(QWidget):
             self._depth = 1
             self._sync_bubble(self._latest(), force=True)
         self._claim_bubble()
-        activate_app()
+        self.activate()
         self.bubble.focus_entry()
 
     def _keep_bubble_here(self):
@@ -1394,7 +1416,7 @@ class FaceWindow(QWidget):
         self._queue.remove(item)
         self._sync_bubble(self._chat or self._latest(), force=True)
         self.bubble.edit_text(item["text"], item["files"])
-        activate_app()
+        self.activate()
         self.bubble.focus_entry()
 
     # ── Mute ────────────────────────────────────────────────────

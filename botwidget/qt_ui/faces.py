@@ -310,6 +310,9 @@ class Faces(QObject):
         if face.pinned and not moved:
             face.unpin()
         else:
+            # Asked for with the keys, and the faces were just pulled here: the move may not show yet.
+            for other in self.faces.values():
+                other.allow_activation(1.5)
             activate_app()
             face.pin()
 

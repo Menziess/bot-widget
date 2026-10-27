@@ -190,6 +190,12 @@ class BubbleEntry(QPlainTextEdit):
         self.document().setDocumentMargin(0)
         self.setTabChangesFocus(True)
         self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+        # Spaces at the end of a line hang outside the width by default, and the cursor behind them then pulls the
+        # text sideways and hides its left part. Counted in the width they wrap like any letter.
+        option = self.document().defaultTextOption()
+        option.setFlags(option.flags() | QTextOption.IncludeTrailingSpaces)
+        self.document().setDefaultTextOption(option)
+        self.horizontalScrollBar().valueChanged.connect(self._stay_left)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.document().documentLayout().documentSizeChanged.connect(self._document_resized)
@@ -207,6 +213,11 @@ class BubbleEntry(QPlainTextEdit):
         self.resized.emit()
         # The field grows a moment later: until then the cursor may sit below what is shown.
         QTimer.singleShot(0, self._show_cursor)
+
+    def _stay_left(self, value: int):
+        """The text wraps, so it never needs to scroll sideways."""
+        if value:
+            self.horizontalScrollBar().setValue(0)
 
     def line_count(self) -> int:
         """The lines on screen, wrapped ones too: a paragraph that wraps over six lines is six lines, not one block.
@@ -825,7 +836,8 @@ class BubbleWindow(QWidget):
         """The cursor into the field, asked for by the user. A field that is not there yet (the bubble is still
         growing) gets it as soon as it shows: Qt drops focus given to a hidden widget."""
         if self._input:
-            self.activateWindow()
+            if self.face.activation_safe():
+                self.activateWindow()
             self._entry.setFocus()
             self._wants_keys = self.focusWidget() is not self._entry
 

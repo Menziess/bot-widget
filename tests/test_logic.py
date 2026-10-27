@@ -3737,6 +3737,59 @@ class BubbleHover(unittest.TestCase):
         self.window.pin()
         self.assertFalse(self.window._think_held)
 
+    def test_spaces_at_the_end_of_a_line_do_not_push_the_text_sideways(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui.face import conversation_blocks
+        bubble = self.window.bubble
+        bubble.show_blocks(conversation_blocks([{"role": "bot", "text": "Ja"}], "T"), "say", input=True)
+        self.finish_growth()
+        entry = bubble._entry
+        for pattern in ("abcdefgh  ", "mmmmmm   ", "ii   "):
+            entry.clear()
+            for i in range(160):
+                QTest.keyClick(entry, pattern[i % len(pattern)])
+                QApplication.processEvents()
+                self.assertEqual(entry.horizontalScrollBar().value(), 0, f"{pattern!r} after {i} letters")
+
+    def test_the_app_only_comes_to_the_front_when_that_does_not_take_you_to_another_desktop(self):
+        from unittest import mock
+        from botwidget.qt_ui import desktops, face as face_module
+        window = self.window
+        with mock.patch.object(face_module, "activate_app") as front:
+            with mock.patch.object(desktops, "all_here", return_value=False):
+                window.activate()
+                window.bubble.focus_entry()
+            self.assertEqual(front.call_count, 0, "a window of ours is on another desktop")
+            with mock.patch.object(desktops, "all_here", return_value=False):
+                window.allow_activation(5)
+                window.activate()
+            self.assertEqual(front.call_count, 1, "the key combination asked for it")
+            window._activate_until = 0.0
+            with mock.patch.object(desktops, "all_here", return_value=True):
+                window.activate()
+            self.assertEqual(front.call_count, 2)
+
+    def test_a_window_that_did_not_come_along_is_shown_again_to_land_on_this_desktop(self):
+        from types import SimpleNamespace
+        from unittest import mock
+        from botwidget.qt_ui import desktops
+        calls = []
+        stub = SimpleNamespace(isVisible=lambda: True, hide=lambda: calls.append("hide"),
+                               show=lambda: calls.append("show"))
+        with mock.patch.object(desktops, "native_id", return_value=1), \
+                mock.patch.object(desktops, "on_active_space", return_value=False), \
+                mock.patch.object(desktops, "move_to_active_space", side_effect=lambda _id: calls.append("move")):
+            desktops._insist(stub)
+        self.assertEqual(calls, ["move", "hide", "show"])
+        calls.clear()
+        with mock.patch.object(desktops, "native_id", return_value=1), \
+                mock.patch.object(desktops, "on_active_space", return_value=True), \
+                mock.patch.object(desktops, "move_to_active_space", side_effect=lambda _id: calls.append("move")):
+            desktops._insist(stub)
+        self.assertEqual(calls, [], "it came along: nothing to do")
+
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
@@ -4281,7 +4334,7 @@ class Hotkey(unittest.TestCase):
         from types import SimpleNamespace
         calls = []
         face = SimpleNamespace(pinned=False, pin=lambda: calls.append("pin"), unpin=lambda: calls.append("unpin"),
-                               bring_here=lambda: False)
+                               bring_here=lambda: False, allow_activation=lambda seconds: None)
         me = SimpleNamespace(faces={"a": face})
         old = self.faces.activate_app
         self.addCleanup(setattr, self.faces, "activate_app", old)
@@ -4327,7 +4380,7 @@ class Hotkey(unittest.TestCase):
         from types import SimpleNamespace
         calls = []
         face = SimpleNamespace(pinned=True, pin=lambda: calls.append("pin"), unpin=lambda: calls.append("unpin"),
-                               bring_here=lambda: True)
+                               bring_here=lambda: True, allow_activation=lambda seconds: None)
         old = self.faces.activate_app
         self.addCleanup(setattr, self.faces, "activate_app", old)
         self.faces.activate_app = lambda: None
@@ -4404,7 +4457,7 @@ class Desktops(unittest.TestCase):
 
     def test_a_face_on_another_desktop_comes_to_this_one_and_stays_here(self):
         try:
-            self.assertEqual(self.bring(everywhere=False, here=False), (True, 1, 1, 0))
+            self.assertEqual(self.bring(everywhere=False, here=False), (True, 1, 2, 0), "two timers: look again, and pin it here")
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
 

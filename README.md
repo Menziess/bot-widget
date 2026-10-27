@@ -56,6 +56,8 @@ botwidget
 - A field that was typed in keeps the bubble open, also when you emptied it again, until you send, press Escape or click the face
 - The field grows to five lines, then scrolls with the cursor, wrapped lines included, so what you type stays in view
 - With Show on all desktops off, a bubble only opens on the desktop of its face; elsewhere you only hear the sound, and the bubble opens when you go there
+- With Show on all desktops off, the app only comes to the front (so that typing goes to the field) when none of its windows is on another desktop, because macOS would take you there; the key combination always brings every face to the desktop you are on, and shows a face again that did not come along
+- Spaces at the end of a line wrap with the text in the field, so it never scrolls sideways
 - A bubble that opens by itself (another bot answers) never covers the one you are busy with: it takes another side, or waits out of sight and comes back once yours is gone
 - Shift+Enter starts a new line in the field, and the field grows with its lines
 - Paste a file or a picture in the field to send it along, it shows as a chip that you can remove, and the message gets a list of the files under the shared folder of OpenBot
