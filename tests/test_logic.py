@@ -3679,6 +3679,29 @@ class BubbleHover(unittest.TestCase):
         bar = bubble._scroll.verticalScrollBar()
         self.assertGreater(bar.value(), bar.maximum() // 2, "at the end of the message that came in, not its top")
 
+    def test_a_bubble_that_was_prepared_opens_without_laying_the_text_out_again(self):
+        from unittest import mock
+        from botwidget.qt_ui.face import conversation_blocks
+        bubble = self.window.bubble
+        blocks = conversation_blocks(self.MESSAGES, "Test")
+        self.assertTrue(bubble.prepare(blocks, "say", True))
+        self.assertFalse(bubble.isVisible(), "prepared, not shown")
+        self.assertEqual(bubble.kind, "", "it is still closed")
+        self.assertFalse(bubble.prepare(blocks, "say", True), "once is enough")
+        with mock.patch.object(bubble, "_parts", side_effect=AssertionError("laid out again")):
+            bubble.show_blocks(blocks, "say", input=True)
+        self.assertEqual(bubble.kind, "say")
+        self.assertTrue(bubble.isVisible())
+        self.assertIn("Ja.", bubble.full_text)
+
+    def test_a_bubble_is_not_prepared_while_it_is_open(self):
+        from botwidget.qt_ui.face import conversation_blocks
+        self.hover()
+        bubble = self.window.bubble
+        self.assertTrue(bubble.isVisible())
+        self.assertFalse(bubble.prepare(conversation_blocks([{"role": "bot", "text": "Nieuw."}], "Test"), "say", True))
+        self.assertNotIn("Nieuw", bubble.full_text)
+
     def test_scrolling_back_down_shrinks_the_line_again(self):
         self.hover()
         bubble = self.window.bubble

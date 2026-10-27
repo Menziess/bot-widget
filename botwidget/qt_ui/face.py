@@ -1177,6 +1177,7 @@ class FaceWindow(QWidget):
         if first and not force and not self.pinned:
             # The conversation as it was when the widget started is old news: only what comes after opens the bubble.
             self._shown_text = text
+            self._prepare_bubble(blocks)
             return
         if self.pinned:
             self._shown_text = text
@@ -1189,6 +1190,14 @@ class FaceWindow(QWidget):
         elif not blocks and self.bubble.kind and not self.bubble._list_only:
             # The conversation is gone (a new chat): the bubble goes too, unless the pointer is engaged with it.
             self.bubble.close_bubble("empty")
+        else:
+            self._prepare_bubble(blocks)
+
+    def _prepare_bubble(self, blocks: list):
+        """The bubble that pointing at the face opens next, laid out while nobody waits for it, so opening it is
+        instant. Later, in an idle moment: this runs in the middle of a poll."""
+        if blocks and not self.bubble.kind:
+            QTimer.singleShot(0, lambda: self.bubble.prepare(blocks, "say", True))
 
     def open_feedback(self):
         """Open a prefilled GitHub issue in the browser. The user logs in there.

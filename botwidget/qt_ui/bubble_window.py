@@ -1296,6 +1296,30 @@ class BubbleWindow(QWidget):
         panels, box_w, _inner = self._geom
         fill_document(self._doc.document(), panels, box_w)
 
+    def _content_key(self, blocks: list, kind: str, input: bool, links: list | None) -> tuple:
+        return (kind, block_text(blocks), input, tuple(links or []), self._height_cap(), self._more_open)
+
+    def prepare(self, blocks: list, kind: str = "say", input: bool = True) -> bool:
+        """Lay out a closed bubble in advance: the text, the glass and the shadow, for the spot it will open at. Showing
+        the same blocks later is then only the opening. False when it was already there, or could not be."""
+        if self.isVisible() or self.kind or self._yielding or self._list_only or not blocks:
+            return False
+        if any(block.get("kind") == "dots" for block in blocks) or self._content_key(blocks, kind, input, None) \
+                == self._built:
+            return False
+        self._toggling = False
+        try:
+            self._show_blocks(blocks, kind, input, silent=True)
+            self.kind = kind
+            self._paint_chrome()
+            _x, _y, tip = self._goal()
+            if tip != self._tip:
+                self._tip = tip
+            self._layout_children(self._paint_chrome())
+        finally:
+            self.kind = ""
+        return True
+
     def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
                     older: bool = False, keep_scroll: bool = False):
         """New content; a bubble that gets smaller under the pointer keeps the area it covered, see _hold_after."""
@@ -1306,7 +1330,7 @@ class BubbleWindow(QWidget):
             self._hold_after(old)
 
     def _show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
-                     older: bool = False, keep_scroll: bool = False):
+                     older: bool = False, keep_scroll: bool = False, silent: bool = False):
         """Put blocks in the bubble, read from the top. With older, a message was added above;
         with keep_scroll the same page is shown again, where it was. A thought is followed down as it
         grows, until you scroll up in it."""
@@ -1335,7 +1359,7 @@ class BubbleWindow(QWidget):
         self._list_only = False
         if not self._toggling:
             self._more_open = False  # new content: the arrow for the message before shows again when asked for
-        key = (kind, block_text(blocks), input, tuple(links or []), self._height_cap(), self._more_open)
+        key = self._content_key(blocks, kind, input, links)
         if key == self._built and not self._dots_lines:
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
             self.changed = time.monotonic()
@@ -1369,7 +1393,9 @@ class BubbleWindow(QWidget):
             self._dots_on = True
             self._dots.start()
         # same_think skips a fresh open. A longer thought still grows the cloud that is already there.
-        if not visible and not self._yielding:
+        if silent:
+            pass
+        elif not visible and not self._yielding:
             self._growth = self._opening_growth()
             self.setWindowOpacity(0.0)
         elif start != (self._geom[1], self._body_h(self._geom[2])) and not self._yielding:
@@ -1388,6 +1414,8 @@ class BubbleWindow(QWidget):
         else:
             self._notice_from_end = 0
             self._notice.dismiss()
+        if silent:
+            return
         if restyle or not visible:
             self.place(kind)
         if self._growth is not None:
