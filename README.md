@@ -26,7 +26,7 @@ botwidget
 - Point at the face to open the bubble, also when the pointer was already there: the latest message, and a field to type in
 - After a restart the old conversation does not open the bubble by itself; only a message that comes after does
 - The field is focused once the pointer stays on the face for a moment, press Enter to send
-- Earlier messages load one at a time. Scroll up at the top of the bubble, or point at its top edge, and a faint strip across the top of the bubble appears, running out into an oval in the middle with an arrow in it (the bubble grows by it, the text moves down). The pointer on it makes it stronger and lifts the arrow. Click anywhere on it, or keep scrolling for half a second while blue spreads from the middle outwards (it is solid blue when it is done), and the message before slides in
+- Earlier messages load one at a time. Scroll up at the top of the bubble, or point at its top edge, and a thin line across the top of the bubble appears (the bubble grows by it, the text moves down). The pointer on it makes the middle swell a little. Click anywhere on it, or keep scrolling for half a second: the further you pull, the more the middle swells into a soft blue glow with an arrow in it, and when it is full the message before slides in
 - Names only show above the messages when there are several
 - The bubble sits above the face, or to the right of it when there is no room above, then to the left, and below only when nothing else fits
 - The bubble opens at its full size, fading in and sliding out from the face, and closes as soon as the pointer leaves or you click into another window with nothing typed

@@ -21,7 +21,6 @@ from botwidget.theme import (
     MORE_H,
     MORE_OVAL_HALF_W,
     MORE_PAD,
-    MORE_STRIP_H,
     PAD_BODY,
     PAD_PANEL_X,
     PAD_PANEL_Y,
@@ -178,33 +177,39 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0, spots: lis
 
 
 def more_svg(x: float, y: float, width: float, progress: float = 0.0, hover: bool = False) -> str:
-    """A faint strip across the top of the bubble that runs out into an oval in the middle, with a chevron pointing
-    up in the oval: there is more above. The pointer on it makes it stronger and lifts the chevron; while you hold
-    on, a blue fill spreads from the middle outwards, and when it is full the message before comes in."""
-    mid, band, drop = x + width / 2, MORE_STRIP_H, MORE_H
-    reach, near = MORE_OVAL_HALF_W, MORE_OVAL_HALF_W * 0.5
-    shape = (f'M{x:.1f} {y:.1f} H{x + width:.1f} V{y + band:.1f} H{mid + reach:.1f}'
-             f' C{mid + reach * 0.62:.1f} {y + band:.1f} {mid + near * 0.62:.1f} {y + drop:.1f} {mid:.1f} {y + drop:.1f}'
-             f' C{mid - near * 0.62:.1f} {y + drop:.1f} {mid - reach * 0.62:.1f} {y + band:.1f} {mid - reach:.1f} {y + band:.1f}'
-             f' H{x:.1f} Z')
+    """A thin line across the top of the bubble: there is more above. The further you pull (scroll up, or hold on),
+    the more the middle of the line swells into a soft blob of light, like the glow at the edge of a list you
+    overscroll; a chevron shows in it as it fills. The pointer on the line gives it a first swell."""
+    mid, base = x + width / 2, y + 2
     progress = min(1.0, max(0.0, progress))
     done = progress >= 0.999
-    active = hover or progress > 0.01
-    top_a, bottom_a = (0.12, 0.05) if active else (0.07, 0.02)
-    lift = 0.8 if active else 0.0
-    cy = y + band + 1.5
-    out = [f'<defs><linearGradient id="strip" x1="0" y1="0" x2="0" y2="1">'
-           f'<stop offset="0" stop-color="{SAND_INK}" stop-opacity="{top_a}"/>'
-           f'<stop offset="1" stop-color="{SAND_INK}" stop-opacity="{bottom_a}"/></linearGradient>'
-           f'<clipPath id="spread"><rect x="{mid - progress * width / 2:.1f}" y="{y - 1:.1f}"'
-           f' width="{progress * width:.1f}" height="{drop + 2}"/></clipPath></defs>',
-           f'<path d="{shape}" fill="url(#strip)"/>']
-    if progress > 0.01:
-        out.append(f'<path d="{shape}" fill="{SAND_ACCENT}" opacity="{0.9 if done else 0.4}" clip-path="url(#spread)"/>')
-    ink = "#ffffff" if done else (SAND_INK if active else SAND_INK_SOFT)
-    out.append(f'<path d="M{mid - 3.6:.1f} {cy + 1.8 - lift:.1f} L{mid:.1f} {cy - 1.8 - lift:.1f}'
-               f' L{mid + 3.6:.1f} {cy + 1.8 - lift:.1f}" fill="none" stroke="{ink}" stroke-width="1.8"'
-               f' stroke-linecap="round" stroke-linejoin="round"/>')
+    swell = max(progress, 0.22 if hover else 0.0)
+    depth = swell * (MORE_H - 4)
+    reach = MORE_OVAL_HALF_W * (0.5 + 0.9 * swell)
+    line_a = 0.30 if swell else 0.22
+    colour = SAND_ACCENT if swell else SAND_INK
+    path = (f'M{x:.1f} {base:.1f} H{mid - reach:.1f}'
+            f' C{mid - reach * 0.45:.1f} {base:.1f} {mid - reach * 0.4:.1f} {base + depth:.1f} {mid:.1f} {base + depth:.1f}'
+            f' C{mid + reach * 0.4:.1f} {base + depth:.1f} {mid + reach * 0.45:.1f} {base:.1f} {mid + reach:.1f} {base:.1f}'
+            f' H{x + width:.1f}')
+    out = [f'<defs><linearGradient id="rule" x1="0" y1="0" x2="1" y2="0">'
+           f'<stop offset="0" stop-color="{colour}" stop-opacity="0"/>'
+           f'<stop offset="0.25" stop-color="{colour}" stop-opacity="{line_a}"/>'
+           f'<stop offset="0.75" stop-color="{colour}" stop-opacity="{line_a}"/>'
+           f'<stop offset="1" stop-color="{colour}" stop-opacity="0"/></linearGradient>'
+           f'<radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">'
+           f'<stop offset="0" stop-color="{SAND_ACCENT}" stop-opacity="{0.55 if done else 0.38}"/>'
+           f'<stop offset="0.55" stop-color="{SAND_ACCENT}" stop-opacity="{0.16 if done else 0.10}"/>'
+           f'<stop offset="1" stop-color="{SAND_ACCENT}" stop-opacity="0"/></radialGradient></defs>']
+    if swell:
+        out.append(f'<ellipse cx="{mid:.1f}" cy="{base:.1f}" rx="{reach * 1.25:.1f}" ry="{depth * 1.7 + 3:.1f}"'
+                   f' fill="url(#glow)"/>')
+    out.append(f'<path d="{path}" fill="none" stroke="url(#rule)" stroke-width="1.6" stroke-linecap="round"/>')
+    if swell > 0.3:
+        cy = base + depth * 0.5
+        out.append(f'<path d="M{mid - 3.4:.1f} {cy + 1.6:.1f} L{mid:.1f} {cy - 1.6:.1f} L{mid + 3.4:.1f} {cy + 1.6:.1f}"'
+                   f' fill="none" stroke="{SAND_ACCENT}" stroke-width="1.7" stroke-linecap="round"'
+                   f' stroke-linejoin="round" opacity="{min(1.0, swell * 1.4):.2f}"/>')
     return "".join(out)
 
 

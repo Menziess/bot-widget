@@ -57,8 +57,7 @@ MORE_PAD = 2
 MORE_GAP = -8  # a white message under it can sit closer ...
 MORE_GAP_DARK = -1  # ... a dark panel starts right below the arrow
 MORE_H = 18
-MORE_STRIP_H = 7  # the faint strip across the top, which runs out into an oval of MORE_H in the middle
-MORE_OVAL_HALF_W = 40
+MORE_OVAL_HALF_W = 40  # how far the swell in the middle of the line reaches to each side, at rest
 # A form element in the bubble: its row, and what it needs next to its label (switch, or button padding).
 CONTROL_H = 36
 CONTROL_SWITCH_W = 46
