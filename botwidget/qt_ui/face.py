@@ -876,9 +876,12 @@ class FaceWindow(QWidget):
 
     def open_input(self):
         """Click on the face: the bubble is there and the cursor is in the field."""
-        if not self.bubble.isVisible():
+        menu = self._menu_page is not None or self.bubble._list_only
+        if menu or not self.bubble.isVisible():
+            # Clicking the face from a page of the menu, or its command list, is asking for the chat again.
+            self._menu_page = None
             self._depth = 1
-            self._sync_bubble(self._latest(), force=True)
+            self._sync_bubble(self._latest(), force=True, replace_menu=menu)
         self._claim_bubble()
         activate_app()
         self.bubble.focus_entry()
@@ -1079,7 +1082,7 @@ class FaceWindow(QWidget):
                 "Install one and I'll come alive.")
         return conversation_blocks([{"role": "bot", "text": text}], self.bot_name)
 
-    def _sync_bubble(self, chat: dict, force: bool = False):
+    def _sync_bubble(self, chat: dict, force: bool = False, replace_menu: bool = False):
         """Cloud during a running turn, the conversation as long as the bubble is pinned or fresh."""
         self._working = bool(chat.get("activity")) or self._has_attention()
         # OpenBot: the last turn failed (a spent provider, say). The face shows it like Grok Bot offline.
@@ -1114,7 +1117,7 @@ class FaceWindow(QWidget):
             if self.bubble.isVisible():
                 return  # a page of the menu is open: the conversation waits
             self._menu_page = None
-        if self.bubble._list_only and self.bubble.isVisible():
+        if self.bubble._list_only and self.bubble.isVisible() and not replace_menu:
             return  # the right-click menu is open: a busy bot's thinking cloud must not replace it
         if not (openbot_installed() or gbot_installed()):
             if self.pinned or force or not self._hint_shown:

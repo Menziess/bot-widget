@@ -1501,6 +1501,26 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble._entry.isVisible())
         self.assertIs(bubble.focusWidget(), bubble._entry)
 
+    def test_clicking_the_face_from_a_page_of_the_menu_opens_the_chat_again(self):
+        bubble = self.open_settings()
+        self.assertIsNotNone(self.window._menu_page)
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.window.open_input()  # what a click on the face does
+        self.finish_growth()
+        self.assertIsNone(self.window._menu_page)
+        self.assertIn("Ja.", bubble.full_text)
+        self.assertNotIn("Settings", bubble.full_text)
+
+    def test_clicking_the_face_from_the_command_list_opens_the_chat_again(self):
+        self.window.open_commands()
+        bubble = self.window.bubble
+        self.assertTrue(bubble._list_only)
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        self.click_face()
+        self.finish_growth()
+        self.assertFalse(bubble._list_only)
+        self.assertIn("Ja.", bubble.full_text)
+
     def test_a_conversation_that_has_not_started_greets_you_with_the_field(self):
         self.MESSAGES = []
         self.hover()
@@ -3986,6 +4006,7 @@ class BubbleHover(unittest.TestCase):
                 with mock.patch.object(glass, "widget_config", return_value={"glass_clear": percent}):
                     values.append(glass.alpha())
         self.assertEqual(values[0], 1.0)
+        self.assertEqual(values[2], 0.2, "at 100 hardly any paint is left")
         self.assertGreater(values[0], values[1])
         self.assertGreater(values[1], values[2])
         self.assertEqual(values[3], values[2], "more than 100 is 100")

@@ -33,6 +33,7 @@ botwidget
 - When the turn for your message fails (a provider that is signed out or spent, say), the thinking stops at once and the bubble says why; a failure from before you asked does not count
 - Markdown tables are shown as columns (the header in bold with a line under it); the bubble gets wider for a table when it may, and words that still do not fit are cut short with an ellipsis
 - The field for a message only shows while the pointer is on the bubble or its face (a bubble that opens by itself has none); it goes a moment after the pointer left, and stays while you have words in it
+- Clicking the face while a page of the menu (or the command list) is open brings the chat bubble back
 - The bubble opens at its full size, fading in and sliding out from the face, and closes as soon as the pointer leaves or you click into another window with nothing typed
 - The bubble and the thinking cloud are glass: a white that turns faintly cool towards the bottom, with a bright inner edge, a faint outer line and a soft shadow that stays outside the shape. On macOS what is behind the bubble is blurred (frosted glass; the Glass transparency slider on the /settings page sets how much of it shows through, live), elsewhere the glass is almost opaque so the text stays easy to read
 - Text that scrolls out of the bubble fades away at the edge instead of being cut off, on the sides where there is more of it

@@ -21,7 +21,7 @@ SAND_GLASS_BOTTOM = "#eef3fb"
 SAND_GLASS_EDGE = "#ffffff"
 GLASS_ALPHA = 0.74  # over a blurred background, with the setting where it starts
 GLASS_CLEAR_DEFAULT = 40  # the setting, 0 to 100: how see-through the glass is
-GLASS_CLEAR_RANGE = 0.65  # the paint that 100 takes away: 1 - 0.65 x 40% = GLASS_ALPHA
+GLASS_ALPHA_CLEAR = 0.2  # the paint left at 100
 GLASS_ALPHA_FLAT = 0.95  # where nothing can be blurred, the text must still be read
 GLASS_FADE = 16  # the text fades away over this many pixels where it scrolls out of the bubble
 SAND_PANEL_USER = "#2a2a2a"

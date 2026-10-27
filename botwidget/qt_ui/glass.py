@@ -6,7 +6,7 @@ from PySide6.QtGui import QGuiApplication
 from botwidget.config import widget_config
 from botwidget.qt_ui.native import native_id
 from botwidget.system.current import CAN_BLUR, clear_backdrop, set_backdrop
-from botwidget.theme import GLASS_ALPHA_FLAT, GLASS_CLEAR_DEFAULT, GLASS_CLEAR_RANGE
+from botwidget.theme import GLASS_ALPHA, GLASS_ALPHA_CLEAR, GLASS_ALPHA_FLAT, GLASS_CLEAR_DEFAULT
 
 
 def available() -> bool:
@@ -27,7 +27,13 @@ def clear_percent() -> int:
 def alpha() -> float:
     """How much of the glass is paint: where it can blur, as much as the setting leaves; elsewhere it stays almost
     solid, so the text can be read."""
-    return round(1 - GLASS_CLEAR_RANGE * clear_percent() / 100, 3) if enabled() else GLASS_ALPHA_FLAT
+    if not enabled():
+        return GLASS_ALPHA_FLAT
+    percent = clear_percent()
+    if percent <= GLASS_CLEAR_DEFAULT:
+        return round(1 - (1 - GLASS_ALPHA) * percent / GLASS_CLEAR_DEFAULT, 3)
+    return round(GLASS_ALPHA - (GLASS_ALPHA - GLASS_ALPHA_CLEAR) * (percent - GLASS_CLEAR_DEFAULT)
+                 / (100 - GLASS_CLEAR_DEFAULT), 3)
 
 
 def png(pixmap) -> bytes:
