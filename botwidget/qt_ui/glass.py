@@ -6,25 +6,28 @@ from PySide6.QtGui import QGuiApplication
 from botwidget.config import widget_config
 from botwidget.qt_ui.native import native_id
 from botwidget.system.current import CAN_BLUR, clear_backdrop, set_backdrop
-from botwidget.theme import GLASS_ALPHA, GLASS_ALPHA_FLAT
+from botwidget.theme import GLASS_ALPHA_FLAT, GLASS_CLEAR_DEFAULT, GLASS_CLEAR_RANGE
 
 
 def available() -> bool:
     return CAN_BLUR and QGuiApplication.platformName() == "cocoa"
 
 
-def wanted() -> bool:
-    """The setting: on unless it was turned off."""
-    return widget_config().get("glass") is not False
-
-
 def enabled() -> bool:
-    return available() and wanted()
+    return available()
+
+
+def clear_percent() -> int:
+    """How see-through the glass is, as set in the settings: 0 is solid white, 100 is mostly clear."""
+    value = widget_config().get("glass_clear")
+    return min(100, max(0, value)) if isinstance(value, (int, float)) and not isinstance(value, bool) \
+        else GLASS_CLEAR_DEFAULT
 
 
 def alpha() -> float:
-    """How much of the glass is paint: less over a blurred background than over one that shows as it is."""
-    return GLASS_ALPHA if enabled() else GLASS_ALPHA_FLAT
+    """How much of the glass is paint: where it can blur, as much as the setting leaves; elsewhere it stays almost
+    solid, so the text can be read."""
+    return round(1 - GLASS_CLEAR_RANGE * clear_percent() / 100, 3) if enabled() else GLASS_ALPHA_FLAT
 
 
 def png(pixmap) -> bytes:

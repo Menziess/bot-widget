@@ -149,7 +149,8 @@ def text_block(size: int, indent: int, prefix: str, grey: bool, chunks: list) ->
 
 
 def control_block(control: str, label: str, command: str, on: bool | None = None) -> dict:
-    """A real form element in the bubble: a "toggle" with a state, or a "button". The window draws the widget."""
+    """A real form element in the bubble: a "toggle" with a state, a "slider" with a value (0 to 100), or a "button".
+    The window draws the widget."""
     return {"kind": "control", "control": control, "label": label, "command": command, "on": on,
             "size": 15, "indent": 0, "prefix": "", "grey": False, "chunks": []}
 
@@ -185,7 +186,8 @@ def block_text(blocks: list) -> str:
             continue
         if block.get("kind") == "control":
             on = block.get("on")
-            out.append(f"{'' if on is None else ('☑ ' if on else '☐ ')}{block['label']}")
+            mark = "" if on is None else (f"{on}% " if block["control"] == "slider" else "☑ " if on else "☐ ")
+            out.append(f"{mark}{block['label']}")
             continue
         if block.get("kind") != "text":
             continue

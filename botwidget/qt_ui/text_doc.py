@@ -77,9 +77,11 @@ def fill_document(doc, panels: list, box_w: int):
     # Without this the new text is inserted above the old text, which then sits below the new
     # panels: white words (made for the dark user panel) on the white bubble.
     doc.clear()
+    doc.setUndoRedoEnabled(False)  # no history to keep: it made every piece of text cost more
     doc.setDocumentMargin(0)
     doc.setTextWidth(box_w)
     cursor = QTextCursor(doc)
+    cursor.beginEditBlock()  # the document lays out once, not after every piece
     first = True
     for pi, panel in enumerate(panels):
         user = panel["role"] == "user"
@@ -105,6 +107,7 @@ def fill_document(doc, panels: list, box_w: int):
                     fmt.setAnchor(True)
                     fmt.setAnchorHref(url)
                 cursor.insertText(text, fmt)
+    cursor.endEditBlock()
     return doc
 
 

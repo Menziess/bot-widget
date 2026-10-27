@@ -3904,11 +3904,43 @@ class BubbleHover(unittest.TestCase):
         bar.setValue(bar.maximum())
         self.assertEqual(ends(), (0, 255))
 
-    def test_the_settings_offer_the_glass_only_where_it_can_blur(self):
+    def test_the_settings_offer_the_glass_slider_only_where_it_can_blur(self):
         from botwidget import menu_pages
-        state = {**self.settings_state(), "glass": True}
-        self.assertNotIn("toggle/glass", [c for c in self.window_commands(menu_pages.settings(state))])
-        self.assertIn("toggle/glass", self.window_commands(menu_pages.settings({**state, "can_glass": True})))
+        state = {**self.settings_state(), "glass_clear": 40}
+        self.assertNotIn("slider/glass", self.window_commands(menu_pages.settings(state)))
+        blocks = menu_pages.settings({**state, "can_glass": True})
+        self.assertIn("slider/glass", self.window_commands(blocks))
+        slider = next(block for block in blocks if block.get("control") == "slider")
+        self.assertEqual(slider["on"], 40)
+
+    def test_the_glass_slider_sets_how_much_paint_the_glass_has(self):
+        from unittest import mock
+        from botwidget.qt_ui import glass
+        from botwidget.theme import GLASS_ALPHA
+        with mock.patch.object(glass, "enabled", return_value=True), \
+                mock.patch.object(glass, "widget_config", return_value={}):
+            self.assertEqual(glass.alpha(), GLASS_ALPHA, "the default is where it started")
+        with mock.patch.object(glass, "enabled", return_value=True):
+            values = []
+            for percent in (0, 50, 100, 250, -5):
+                with mock.patch.object(glass, "widget_config", return_value={"glass_clear": percent}):
+                    values.append(glass.alpha())
+        self.assertEqual(values[0], 1.0)
+        self.assertGreater(values[0], values[1])
+        self.assertGreater(values[1], values[2])
+        self.assertEqual(values[3], values[2], "more than 100 is 100")
+        self.assertEqual(values[4], values[0], "less than 0 is 0")
+
+    def test_moving_the_glass_slider_saves_it_and_draws_the_bubbles_again_without_a_new_page(self):
+        from unittest import mock
+        from botwidget.qt_ui.faces import Faces
+        faces = Faces.__new__(Faces)
+        faces.faces, faces._arc_guests = {"t": self.window}, {}
+        with mock.patch("botwidget.qt_ui.faces.save_widget_config") as save, \
+                mock.patch.object(self.window.bubble, "restyle") as restyle:
+            self.assertIsNone(faces.menu_command("slider/glass/65", "settings"))
+        save.assert_called_once_with(glass_clear=65)
+        restyle.assert_called()
 
     def window_commands(self, blocks):
         return [block["command"] for block in blocks if block.get("kind") == "control"]

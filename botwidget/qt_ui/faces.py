@@ -393,7 +393,7 @@ class Faces(QObject):
             "staged_update": self.update.version if self.staged and self.update else "",
             "sound": config.get("sound") is True, "quiet_hours": config.get("quiet_hours") is True,
             "always_on_top": always_on_top(), "can_pick_desktops": CAN_PICK_DESKTOPS,
-            "can_glass": glass.available(), "glass": glass.wanted(),
+            "can_glass": glass.available(), "glass_clear": glass.clear_percent(),
             "all_desktops": all_desktops(), "login": startup.is_enabled(), "check_updates": check_updates(),
             "can_install_updates": can_install_update() or startup.from_checkout(), "auto_update": auto_update(),
             "bots": [{"id": bot["id"], "name": bot["name"], "on": bot["id"] in self.faces,
@@ -410,7 +410,6 @@ class Faces(QObject):
         "quiet_hours": lambda faces, on: save_widget_config(quiet_hours=on),
         "always_on_top": lambda faces, on: faces._set_always_on_top(on),
         "all_desktops": lambda faces, on: faces._set_all_desktops(on),
-        "glass": lambda faces, on: faces._set_glass(on),
         "login": lambda faces, on: startup.set_enabled(on),
         "check_updates": lambda faces, on: save_widget_config(check_updates=on),
         "auto_update": lambda faces, on: save_widget_config(auto_update=on),
@@ -427,6 +426,8 @@ class Faces(QObject):
             state = self.menu_state()
             self.TOGGLES[name](self, not state[name])
             return page  # re-render the page to show the new state
+        elif kind == "slider" and name.startswith("glass/") and name[6:].isdigit():
+            self._set_glass(min(100, int(name[6:])))
         elif kind == "bot":
             self.toggle(name, name not in self.faces)
         elif kind == "mute":
@@ -452,8 +453,8 @@ class Faces(QObject):
             QApplication.quit()
         return None
 
-    def _set_glass(self, on: bool):
-        save_widget_config(glass=on)
+    def _set_glass(self, percent: int):
+        save_widget_config(glass_clear=percent)
         for face in [*self.faces.values(), *self._arc_guests.values()]:
             face.bubble.restyle()
 

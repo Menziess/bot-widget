@@ -19,7 +19,9 @@ SAND_BUBBLE = "#ffffff"
 SAND_GLASS_TOP = "#ffffff"
 SAND_GLASS_BOTTOM = "#eef3fb"
 SAND_GLASS_EDGE = "#ffffff"
-GLASS_ALPHA = 0.74  # over a blurred background
+GLASS_ALPHA = 0.74  # over a blurred background, with the setting where it starts
+GLASS_CLEAR_DEFAULT = 40  # the setting, 0 to 100: how see-through the glass is
+GLASS_CLEAR_RANGE = 0.65  # the paint that 100 takes away: 1 - 0.65 x 40% = GLASS_ALPHA
 GLASS_ALPHA_FLAT = 0.95  # where nothing can be blurred, the text must still be read
 GLASS_FADE = 16  # the text fades away over this many pixels where it scrolls out of the bubble
 SAND_PANEL_USER = "#2a2a2a"
@@ -61,6 +63,7 @@ MORE_OVAL_HALF_W = 40  # how far the swell in the middle of the line reaches to 
 # A form element in the bubble: its row, and what it needs next to its label (switch, or button padding).
 CONTROL_H = 36
 CONTROL_SWITCH_W = 46
+CONTROL_SLIDER_W = 130  # the track of a slider, next to its label
 CONTROL_BUTTON_PAD = 28
 # Thinking dots in the bubble: three circles with a wave running through them.
 DOTS_W = 62

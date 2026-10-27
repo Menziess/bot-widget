@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
-from PySide6.QtWidgets import QAbstractButton, QPushButton, QWidget
+from PySide6.QtWidgets import QAbstractButton, QPushButton, QSlider, QWidget
 
 from botwidget.qt_ui.text_doc import color
 from botwidget.theme import BUBBLE_FONT, CONTROL_SWITCH_W, SAND_ACCENT, SAND_INK, SAND_INK_SOFT, SAND_SANS
@@ -148,3 +148,38 @@ class SlashList(QWidget):
             room = max(0, self.width() - note_x - self.PAD_X)
             painter.drawText(QRectF(note_x, top, room, self.ROW_H), Qt.AlignVCenter | Qt.AlignLeft,
                              notes.elidedText(note, Qt.ElideRight, room))
+
+
+class ValueSlider(QWidget):
+    """A label with a slider from 0 to 100 next to it; changed says the value at every step."""
+
+    changed = Signal(int)
+    STYLE = (f"QSlider::groove:horizontal {{ height: 4px; border-radius: 2px; background: rgba(28, 28, 28, 38); }}"
+             f" QSlider::sub-page:horizontal {{ background: {SAND_ACCENT}; border-radius: 2px; }}"
+             f" QSlider::handle:horizontal {{ background: #ffffff; border: 1px solid rgba(28, 28, 28, 56);"
+             f" width: 16px; height: 16px; margin: -7px 0; border-radius: 9px; }}")
+
+    def __init__(self, label: str, value: int, parent=None):
+        super().__init__(parent)
+        self._label = label
+        self.slider = QSlider(Qt.Horizontal, self)
+        self.slider.setRange(0, 100)
+        self.slider.setValue(int(value))
+        self.slider.setFocusPolicy(Qt.NoFocus)
+        self.slider.setCursor(Qt.PointingHandCursor)
+        self.slider.setStyleSheet(self.STYLE)
+        self.slider.valueChanged.connect(self.changed.emit)
+
+    def resizeEvent(self, _event):
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        label_w = QFontMetrics(font).horizontalAdvance(self._label)
+        self.slider.setGeometry(label_w + 14, 0, max(40, self.width() - label_w - 14), self.height())
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        painter.setFont(font)
+        painter.setPen(color(SAND_INK))
+        painter.drawText(QRectF(0, 0, self.width(), self.height()), Qt.AlignVCenter | Qt.AlignLeft, self._label)

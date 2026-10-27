@@ -69,7 +69,7 @@ from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
-from botwidget.qt_ui.controls import ActionButton, SlashList, Switch
+from botwidget.qt_ui.controls import ActionButton, SlashList, Switch, ValueSlider
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, cut_out, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document, selected_text
@@ -1281,6 +1281,10 @@ class BubbleWindow(QWidget):
             widget.show()
 
     def _make_control(self, line: dict):
+        if line["control"] == "slider":
+            widget = ValueSlider(line["label"], int(line["on"]), self._text)
+            widget.changed.connect(lambda value, command=line["command"]: self.command.emit(f"{command}/{value}"))
+            return widget
         if line["control"] == "toggle":
             widget = Switch(line["label"], bool(line["on"]), self._text)
         else:

@@ -8,6 +8,7 @@ from botwidget.theme import (
     BUBBLE_MAX_W,
     CODE_INDENT,
     CONTROL_BUTTON_PAD,
+    CONTROL_SLIDER_W,
     CONTROL_SWITCH_W,
     DOTS_W,
     MEET_SLACK,
@@ -80,13 +81,19 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
                 broken.append((word, style, lead))
         tokens = broken
         rows, cur = [], []
+        size, prefix = block["size"], block["prefix"]
+        started = measure(prefix, "", size) if prefix else 0
+        space_w = measure(" ", "", size)
+        total = started  # the row so far, added up in the order the pieces come, as width() does
         for tok in tokens:
-            trial = cur + [tok]
-            if cur and fit(pieces_of(trial, block["prefix"]), block["size"]) > room:
+            word, style, lead = tok
+            trial = (total + space_w if cur and lead else total) + measure(word, style, size)
+            if cur and int(round(trial) * MEET_SLACK) + 1 > room:
                 rows.append(cur)
-                cur = [tok]
+                cur, total = [tok], started + measure(word, style, size)
             else:
-                cur = trial
+                cur.append(tok)
+                total = trial
         if cur:
             rows.append(cur)
         for i, row in enumerate(rows):
@@ -118,8 +125,8 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
             continue
         if kind == "control":
             label_w = width([(block["label"], "")], SMALL_FONT)
-            laid.append({**block, "words": [], "xs": [], "ws": [], "head": False,
-                         "width": label_w + (CONTROL_SWITCH_W if block["control"] == "toggle" else CONTROL_BUTTON_PAD)})
+            extra = {"toggle": CONTROL_SWITCH_W, "slider": CONTROL_SLIDER_W}.get(block["control"], CONTROL_BUTTON_PAD)
+            laid.append({**block, "words": [], "xs": [], "ws": [], "head": False, "width": label_w + extra})
             widest = max(widest, laid[-1]["width"] + block.get("indent", 0))
             continue
         if kind == "more":
