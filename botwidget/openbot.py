@@ -278,15 +278,15 @@ def latest_chat(thread_id: str, limit: int = 20) -> dict:
         if line and ("bearer " in line.lower() or "authorization" in line.lower()):
             line = "working…"
         activity = line
-    failed = ""
+    failed = failed_at = ""
     if turn is not None:
-        active, status, error = turn
+        active, status, error, completed = turn
         if not active:
             # No turn runs: commentary without a final answer is what a failed turn leaves behind, not work.
             activity = ""
             if status == "failed":
-                failed = failure_note(error)
-    return {"messages": messages, "activity": activity, "failed": failed}
+                failed, failed_at = failure_note(error), completed or ""
+    return {"messages": messages, "activity": activity, "failed": failed, "failed_at": failed_at}
 
 
 USAGE_LIMIT_WORDS = ("usage limit", "quota", "rate limit", "insufficient", "credit", "billing", "out of tokens")
@@ -305,14 +305,15 @@ def failure_note(error: str | None) -> str:
 
 
 def _last_turn(con, thread_id: str) -> tuple | None:
-    """(a turn runs now, status of the latest turn, its delivery error), or None for a store without turns."""
+    """(a turn runs now, status of the latest turn, its delivery error, when it ended), or None for a store without
+    turns."""
     try:
         active = con.execute("SELECT active_turn_id FROM projection_threads WHERE thread_id = ?",
                              (thread_id,)).fetchone()
         last = con.execute(
             """
             SELECT t.status, (SELECT d.error FROM projection_deliveries d
-                              WHERE d.turn_id = t.turn_id AND d.error IS NOT NULL LIMIT 1)
+                              WHERE d.turn_id = t.turn_id AND d.error IS NOT NULL LIMIT 1), t.completed_at
             FROM projection_turns t WHERE t.thread_id = ? ORDER BY t.rowid DESC LIMIT 1
             """,
             (thread_id,),
@@ -321,4 +322,4 @@ def _last_turn(con, thread_id: str) -> tuple | None:
         return None
     if active is None or last is None:
         return None
-    return bool(active[0]), last[0], last[1]
+    return bool(active[0]), last[0], last[1], last[2]

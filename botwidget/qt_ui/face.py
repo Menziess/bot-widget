@@ -183,6 +183,7 @@ class FaceWindow(QWidget):
         self.motion = Motion(seed=f"{agent_id}:{time.time_ns()}:{random.random()}")
         self._faces = ("neutral", "neutral")  # the face the eyes come from and go to
         self._asked = False  # a message went out: the next answer is its reply
+        self._asked_at = 0.0  # when, as a time since the epoch
         self._think_quiet = False  # the cloud closed itself: a new thought does not open it again
         # You just sent something: the cloud stays at its dots, also with the pointer on it, until the pointer has
         # left and comes back, or you click the face. Only then do the thought and the field open.
@@ -828,6 +829,13 @@ class FaceWindow(QWidget):
                 return ""
         return getattr(self, "_failed_note", "")
 
+    def _failed_since_asked(self, ended: str | None) -> bool:
+        """Did the failed turn end after the message went out? An older failure says nothing about this one."""
+        try:
+            return datetime.datetime.fromisoformat(str(ended).replace("Z", "+00:00")).timestamp() >= self._asked_at - 2
+        except ValueError:
+            return False
+
     def _has_grok_or_hermes(self) -> bool:
         return bool(self.grok or self.hermes)
 
@@ -1076,6 +1084,10 @@ class FaceWindow(QWidget):
         self._working = bool(chat.get("activity")) or self._has_attention()
         # OpenBot: the last turn failed (a spent provider, say). The face shows it like Grok Bot offline.
         self._failed_note = chat.get("failed") or ""
+        if self._asked and self._failed_note and not self._working and self._failed_since_asked(chat.get("failed_at")):
+            # The turn for the message that went out ended in failure: no answer is coming, so no more thinking.
+            self._asked = False
+            self.react("error")
         self.bubble.set_queueing(self._working, len(self._queue), answering=self._open_question() is not None)
         self._next_queued()
         stored = chat.get("messages") or []
@@ -1583,6 +1595,7 @@ class FaceWindow(QWidget):
             self._send_status = ""
             self._refused = False
             self._asked = True
+            self._asked_at = time.time()
             self.react("sent")
             # Grok Bot keeps the line the user sent itself.
             if item is not None and not self.grok and not self.hermes:

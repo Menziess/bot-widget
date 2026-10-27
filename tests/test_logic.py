@@ -4287,14 +4287,14 @@ class FailedTurn(unittest.TestCase):
         con = sqlite3.connect(path)
         con.execute("CREATE TABLE projection_thread_messages (thread_id, author, item_type, message_json, created_at)")
         con.execute("CREATE TABLE projection_threads (thread_id, active_turn_id)")
-        con.execute("CREATE TABLE projection_turns (turn_id, thread_id, status)")
+        con.execute("CREATE TABLE projection_turns (turn_id, thread_id, status, completed_at)")
         con.execute("CREATE TABLE projection_deliveries (turn_id, error)")
         con.execute("INSERT INTO projection_thread_messages VALUES ('t', 'user', 'message', ?, '2026-01-01T10:00')",
                     (json.dumps({"text": "Are you alive?"}),))
         con.execute("INSERT INTO projection_thread_messages VALUES ('t', 'bot', 'commentary', ?, '2026-01-01T10:01')",
                     (json.dumps({"text": "Looking at it"}),))
         con.execute("INSERT INTO projection_threads VALUES ('t', ?)", (active,))
-        con.execute("INSERT INTO projection_turns VALUES ('u1', 't', ?)", (status,))
+        con.execute("INSERT INTO projection_turns VALUES ('u1', 't', ?, '2026-10-27T15:24:25.734Z')", (status,))
         con.execute("INSERT INTO projection_deliveries VALUES ('u1', ?)", (error,))
         con.commit()
         con.close()
@@ -4334,6 +4334,42 @@ class FailedTurn(unittest.TestCase):
         self.assertFalse(window._working)
         self.assertEqual(window._motion_mood(), "offline")
         self.assertIn("Out of tokens", window.bubble.full_text)
+
+
+    def failed_face(self):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui import face
+        QApplication.instance() or QApplication([])
+        window = face.FaceWindow("t", "Test", spot=(300, 400))
+        window._poll_timer.stop()
+        self.addCleanup(window.close_face)
+        for name in ("automation_ready", "openbot_installed", "gbot_installed"):
+            self.addCleanup(setattr, face, name, getattr(face, name))
+            setattr(face, name, lambda: True)
+        return window
+
+    def test_a_turn_that_failed_after_you_asked_ends_the_thinking(self):
+        import time
+        window = self.failed_face()
+        window._asked, window._asked_at = True, time.time() - 30
+        ended = time.strftime("%Y-%m-%dT%H:%M:%S.000+00:00", time.gmtime(time.time() - 5))
+        chat = {"messages": [{"role": "user", "text": "Ping"}], "activity": "",
+                "failed": "The last turn failed: no sign-in", "failed_at": ended}
+        window._sync_bubble(chat, force=True)
+        self.assertFalse(window._asked, "no answer is coming")
+        self.assertIn("no sign-in", window.bubble.full_text)
+        self.assertEqual(window.bubble.kind, "say", "not the thinking cloud")
+
+    def test_an_older_failure_does_not_end_the_thinking_of_a_new_question(self):
+        import time
+        window = self.failed_face()
+        window._asked, window._asked_at = True, time.time()
+        old = time.strftime("%Y-%m-%dT%H:%M:%S.000+00:00", time.gmtime(time.time() - 600))
+        chat = {"messages": [{"role": "user", "text": "Ping"}], "activity": "",
+                "failed": "The last turn failed: old", "failed_at": old}
+        window._sync_bubble(chat, force=True)
+        self.assertTrue(window._asked, "this question has not been answered, or failed, yet")
 
 
 class NewFlagsNewWindow(unittest.TestCase):
