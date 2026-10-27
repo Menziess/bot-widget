@@ -127,6 +127,7 @@ GROW_MS = 240
 OPEN_SLIDE = 14  # a new bubble starts this many pixels toward its face
 OPEN_TOWARD = {"above": (0, 1), "below": (0, -1), "right": (-1, 0), "left": (1, 0)}
 OLDER_PAUSE_S = 0.3
+OLDER_END_SHARE = 0.4  # a message that came in above is shown from its end, with this share of the view below it
 # The line for the message before shows when you scroll up at the top, or the pointer is in the top MORE_ZONE_PX of
 # the bubble; it stays while the pointer is within MORE_KEEP_PX of the top (the bubble grew by it, so the zone moved
 # with it), and goes MORE_LINGER_S after that. Scrolling on at the top pulls it: it swells with the distance you
@@ -680,6 +681,10 @@ class BubbleWindow(QWidget):
             self.setGeometry(area)
         self._card.move(card.topLeft() - area.topLeft())
         self._shape(area, card)
+        if self._glass_mask:
+            # The card moves in its window when the bubble trails its face or the held area changes: the blur has to
+            # go with it, or it stays behind as a second, smaller bubble.
+            glass.update(self, card, area, self._glass_mask)
 
     def _shape(self, area: QRect, card: QRect):
         """A held area takes no clicks meant for a face: those spots are cut out of the window."""
@@ -1142,8 +1147,6 @@ class BubbleWindow(QWidget):
         self._chrome.setGeometry(0, 0, size.width(), size.height())
         self._card.resize(size)
         self._fit_window()
-        if self._glass_mask:
-            glass.update(self, self.card(), self.geometry(), self._glass_mask)
         x, y = PAD_SVG + PAD_BODY, PAD_SVG + PAD_BODY
         if self._list_only:
             self._scroll.hide()
@@ -1373,6 +1376,10 @@ class BubbleWindow(QWidget):
         self._set_text()
         self._set_doc()
         if older:
+            # The message that came in is read from its end, the way you came to it: its last lines are in view,
+            # with the start of what followed it below.
+            inserted = max(0, self._geom[2] - old_inner) if visible else 0
+            self._scroll_target = max(0, inserted - round(self._scroll.height() * OLDER_END_SHARE))
             self._move_notice()
         else:
             self._notice_from_end = 0
@@ -1381,6 +1388,7 @@ class BubbleWindow(QWidget):
             self.place(kind)
         if self._growth is not None:
             self._growth.older = older and visible
+            self._growth.target = self._scroll_target
             self._slide.start()
             return
         self._scroll_to_top()
@@ -1533,8 +1541,11 @@ class BubbleWindow(QWidget):
         self._vx = self._vy = 0.0
         self._put(tx, ty)
         bar = self._scroll.verticalScrollBar()
-        bar.setValue(min(bar.maximum(), round(growth.added * (1 - progress))) if getattr(growth, "older", False)
-                     else self._scroll_value())
+        if getattr(growth, "older", False):
+            target = getattr(growth, "target", 0)
+            bar.setValue(min(bar.maximum(), round(growth.added - (growth.added - target) * progress)))
+        else:
+            bar.setValue(self._scroll_value())
         if growth.opening:
             self.setWindowOpacity(min(1.0, progress * 1.25))
 

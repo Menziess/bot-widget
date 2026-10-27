@@ -3665,6 +3665,20 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble._more_open, "a new scroll does")
         self.assertEqual(self.window._depth, 2)
 
+    def test_a_message_that_came_in_above_is_read_from_its_end(self):
+        self.MESSAGES = [{"role": "bot", "text": "Een lange regel met woorden. " * 120}, self.MESSAGES[-1]]
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up_at(bubble, 100.0)
+        self.finish_growth()
+        for step in range(4):
+            self.wheel_up_at(bubble, 100.1 + step * 0.01)
+        self.assertEqual(self.window._depth, 2)
+        self.finish_growth()
+        bar = bubble._scroll.verticalScrollBar()
+        self.assertGreater(bar.value(), bar.maximum() // 2, "at the end of the message that came in, not its top")
+
     def test_scrolling_back_down_shrinks_the_line_again(self):
         self.hover()
         bubble = self.window.bubble
