@@ -108,14 +108,23 @@ def set_muted(agent_id: str, muted: bool):
     save_widget_config(muted_bots=others + [agent_id] if muted else others)
 
 
+_config_read: list = [None, {}]
+
+
 def widget_config() -> dict:
     """widget.json, or empty if the file is missing or broken."""
+    # Read on every animation frame by some callers, so only again when the file changed.
     try:
-        with open(CONFIG_PATH) as fh:
-            data = json.load(fh)
+        stat = os.stat(CONFIG_PATH)
+        stamp = (CONFIG_PATH, stat.st_mtime_ns, stat.st_size)
+        if _config_read[0] != stamp:
+            with open(CONFIG_PATH) as fh:
+                _config_read[:] = [stamp, json.load(fh)]
     except (OSError, ValueError):
+        _config_read[:] = [None, {}]
         return {}
-    return data if isinstance(data, dict) else {}
+    data = _config_read[1]
+    return dict(data) if isinstance(data, dict) else {}
 
 
 def save_widget_config(**values) -> dict:

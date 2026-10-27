@@ -5,6 +5,7 @@ The face stays below normal windows, through the system's window level.
 
 import ctypes
 import ctypes.util
+import functools
 import os
 import platform
 import plistlib
@@ -50,6 +51,7 @@ def data_home() -> str:
     return os.path.expanduser("~/Library/Application Support")
 
 
+@functools.cache
 def _objc():
     objc = ctypes.cdll.LoadLibrary(ctypes.util.find_library("objc"))
     objc.sel_registerName.restype = ctypes.c_void_p

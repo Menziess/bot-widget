@@ -50,6 +50,7 @@ from botwidget.avatar import AVATAR_SIZE, CIRCLE_R
 from botwidget.bubble import (
     bubble_body_svg,
     bubble_deco_svg,
+    dots_patch_svg,
     bubble_height_cap,
     menu_height_cap,
     bubble_shadow_svg,
@@ -525,6 +526,9 @@ class BubbleWindow(QWidget):
         self._dots_on = False
         self._dots_phase = 0.0
         self._dots_lines = []
+        self._spots = []  # where the dots are, and how they look now
+        self._dot_labels = []
+        self._dot_frames = {}  # one picture per step of the wave: it comes round again and again
 
         # Everything that shows sits on the card; the window around it can be bigger (see _hold_after).
         self._card = QWidget(self)
@@ -1166,6 +1170,12 @@ class BubbleWindow(QWidget):
         if height <= 2 * GLASS_FADE:
             return
         bar = self._scroll.verticalScrollBar()
+        # The effect redraws the whole view on every repaint: it only runs where there is an edge to fade, and
+        # not while the dots pulse (that was a quarter of a core).
+        scrolls = bar.maximum() > bar.minimum() and not self._dots_lines
+        self._fade.setEnabled(scrolls)
+        if not scrolls:
+            return
         edge = GLASS_FADE / height
         top = 255 if bar.value() <= bar.minimum() else 0
         bottom = 255 if bar.value() >= bar.maximum() else 0
@@ -1185,8 +1195,10 @@ class BubbleWindow(QWidget):
     def _set_text(self):
         """The shapes behind the text; the words themselves are the text document."""
         panels, box_w, inner = self._geom
-        pix = svg_pixmap(bubble_deco_svg(panels, box_w))
+        spots = []
+        pix = svg_pixmap(bubble_deco_svg(panels, box_w, spots))
         self._text.setPixmap(pix)
+        self._spots = spots
         size = pix.deviceIndependentSize().toSize()
         if size != self._text.size():
             # Resizing puts the text back in the corner of the scroll area, which would undo a bounce.
@@ -1195,7 +1207,30 @@ class BubbleWindow(QWidget):
         top = panel_pad(panels[0]) if panels else 0
         self._doc.setGeometry(0, top, box_w, max(1, inner - top))
         self._doc.setVisible(self.kind != "")
+        self._draw_dots()
         self._place_controls()
+
+    def _draw_dots(self):
+        """The dots are drawn on their own, so a frame of them does not draw the whole bubble again."""
+        while len(self._dot_labels) < len(self._spots):
+            label = QLabel(self._text)
+            label.setAttribute(Qt.WA_TranslucentBackground)
+            label.setAttribute(Qt.WA_TransparentForMouseEvents)
+            self._dot_labels.append(label)
+        for index, label in enumerate(self._dot_labels):
+            if index >= len(self._spots):
+                label.hide()
+                continue
+            svg, left, top = dots_patch_svg(*self._spots[index])
+            pix = self._dot_frames.get(svg)
+            if pix is None:
+                pix = self._dot_frames[svg] = svg_pixmap(svg)
+                if len(self._dot_frames) > 256:
+                    self._dot_frames.clear()
+            label.setPixmap(pix)
+            label.setGeometry(round(left), round(top), *(round(v) for v in (pix.deviceIndependentSize().width(),
+                                                                          pix.deviceIndependentSize().height())))
+            label.show()
 
     def _place_controls(self):
         """Real switches and buttons over the lines the menu page reserved for them."""
@@ -1474,12 +1509,15 @@ class BubbleWindow(QWidget):
         if not self._dots_lines:
             self._dots_on = False
             self._dots.stop()
+            self._update_fade()
             return
+        self._fade.setEnabled(False)
         self._dots_phase = (self._dots_phase + DOTS_MS / 1000 / DOTS_CYCLE_S) % 1.0
         for line in self._dots_lines:
             line["phase"] = self._dots_phase
         if self._geom:
-            self._set_text()
+            self._spots = [(x, y, ink, self._dots_phase) for x, y, ink, _ in self._spots]
+            self._draw_dots()
 
     # ── Position and movement ───────────────────────────────────
 

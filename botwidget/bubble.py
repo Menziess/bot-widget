@@ -130,11 +130,12 @@ def bubble_width(panels: list) -> int:
     return max((panel["text_w"] for panel in panels), default=16) + 2 * PAD_PANEL_X
 
 
-def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
+def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0, spots: list | None = None) -> str:
     """The shapes behind the text: the dark user panel, rules and the thinking dots.
 
     The words themselves are not drawn here: a real text surface draws them, so they
-    can be selected and their links clicked.
+    can be selected and their links clicked. With spots, the dots are not drawn but their (x, y, ink, phase) is
+    added to it, so they can be drawn on their own: they move, the rest does not.
     """
     out, y = [], oy
     for index, panel in enumerate(panels):
@@ -155,8 +156,11 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
         for n, line in enumerate(lines):
             if line["kind"] == "dots":
                 # The group is two gaps wide; its middle dot sits in the middle of the cloud.
-                out.append(dots_svg(ox + box_w / 2 - DOTS_GAP, tops[n] + line_height(line) / 2,
-                                    line.get("phase", 0.0), ink))
+                spot = (ox + box_w / 2 - DOTS_GAP, tops[n] + line_height(line) / 2, ink, line.get("phase", 0.0))
+                if spots is None:
+                    out.append(dots_svg(*spot))
+                else:
+                    spots.append(spot)
             elif line["kind"] == "more":
                 out.append(more_svg(ox + box_w / 2, tops[n] + MORE_H / 2, line.get("progress", 0.0)))
             elif line["kind"] == "rule":
@@ -203,12 +207,20 @@ def dots_svg(x: float, y: float, phase: float, ink: str) -> str:
     return "".join(out)
 
 
-def bubble_deco_svg(panels: list, box_w: int) -> str:
+def bubble_deco_svg(panels: list, box_w: int, spots: list | None = None) -> str:
     """What scrolls: the panel shapes, rules and dots on a transparent background."""
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{box_w}"'
-        f' height="{content_height(panels)}">' + panel_svg(panels, box_w) + "</svg>"
+        f' height="{content_height(panels)}">' + panel_svg(panels, box_w, spots=spots) + "</svg>"
     )
+
+
+def dots_patch_svg(x: float, y: float, ink: str, phase: float) -> tuple[str, float, float]:
+    """The dots alone, in a small picture; with the position of its top left corner in the bubble."""
+    left, top = x - DOTS_R - 1, y - DOTS_R - 4
+    width, height = 2 * DOTS_GAP + 2 * DOTS_R + 2, 2 * DOTS_R + 8
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.0f}" height="{height:.0f}">'
+            f'<g transform="translate({-left:.2f} {-top:.2f})">{dots_svg(x, y, phase, ink)}</g></svg>', left, top)
 
 
 def _bubble_canvas(body_w: int, body_h: int, inner: str) -> str:
