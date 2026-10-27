@@ -1,10 +1,13 @@
 ; Inno Setup script; the build passes Version, SourceDir and OutputDir.
 [Setup]
 AppName=Bot Widget
+AppPublisher=Bot Widget
 AppVersion={#Version}
 DefaultDirName={localappdata}\Programs\Bot Widget
 DefaultGroupName=Bot Widget
 PrivilegesRequired=lowest
+DisableWelcomePage=yes
+Uninstallable=yes
 OutputDir={#OutputDir}
 OutputBaseFilename=BotWidget-Windows-Setup
 Compression=lzma2
