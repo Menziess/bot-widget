@@ -26,6 +26,7 @@ from botwidget.theme import (
     PAD_PANEL_Y,
     PAD_SVG,
     GLASS_ALPHA_FLAT,
+    SAND_ACCENT,
     SAND_BUBBLE,
     SAND_GLASS_BOTTOM,
     SAND_GLASS_EDGE,
@@ -162,7 +163,7 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0, spots: lis
                 else:
                     spots.append(spot)
             elif line["kind"] == "more":
-                out.append(more_svg(ox + box_w / 2, tops[n] + MORE_H / 2, line.get("progress", 0.0)))
+                out.append(more_svg(ox + box_w / 2, tops[n] + MORE_H / 2, line.get("progress", 0.0), line.get("hover", False)))
             elif line["kind"] == "rule":
                 out.append(f'<rect x="{ox + PAD_PANEL_X}" y="{tops[n] + 6}"'
                            f' width="{box_w - 2 * PAD_PANEL_X}" height="1" fill="{hair}"/>')
@@ -175,23 +176,26 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0, spots: lis
     return shapes
 
 
-def more_svg(x: float, y: float, progress: float = 0.0) -> str:
-    """A small ring with a chevron pointing up: there is more above. While you hold on, an arc runs round the ring;
-    when it is closed the message before comes in."""
+def more_svg(x: float, y: float, progress: float = 0.0, hover: bool = False) -> str:
+    """A small glass disc with a chevron pointing up: there is more above. The pointer on it makes it brighter and
+    lifts the chevron; while you hold on, an accent arc runs round it, and when it is closed the disc fills and the
+    message before comes in."""
     r = MORE_RING_R
-    out = [f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="none" stroke="{SAND_INK_SOFT}" opacity="0.4"'
-           f' stroke-width="1.5"/>',
-           f'<path d="M{x - 3.2:.1f} {y + 1.6:.1f} L{x:.1f} {y - 1.6:.1f} L{x + 3.2:.1f} {y + 1.6:.1f}"'
-           f' fill="none" stroke="{SAND_INK_SOFT}" stroke-width="1.6" stroke-linecap="round"'
-           f' stroke-linejoin="round"/>']
     progress = min(1.0, max(0.0, progress))
-    if progress >= 0.999:
-        out.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="none" stroke="{SAND_INK_SOFT}" stroke-width="1.8"/>')
-    elif progress > 0.01:
+    done = progress >= 0.999
+    lift = 0.8 if hover or progress > 0.01 else 0.0
+    ink = "#ffffff" if done else (SAND_INK if hover or progress > 0.01 else SAND_INK_SOFT)
+    out = [f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="{SAND_ACCENT if done else "#ffffff"}"'
+           f' opacity="{1 if done else (0.9 if hover else 0.6)}"/>',
+           f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r - 0.5}" fill="none" stroke="{SAND_GLASS_EDGE}" opacity="0.9"/>',
+           f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="none" stroke="{SAND_INK}" opacity="0.12"/>',
+           f'<path d="M{x - 3.4:.1f} {y + 1.8 - lift:.1f} L{x:.1f} {y - 1.8 - lift:.1f} L{x + 3.4:.1f} {y + 1.8 - lift:.1f}"'
+           f' fill="none" stroke="{ink}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>']
+    if 0.01 < progress < 0.999:
         angle = math.tau * progress
         end_x, end_y = x + r * math.sin(angle), y - r * math.cos(angle)
         out.append(f'<path d="M{x:.1f} {y - r:.1f} A{r} {r} 0 {1 if progress > 0.5 else 0} 1 {end_x:.2f} {end_y:.2f}"'
-                   f' fill="none" stroke="{SAND_INK_SOFT}" stroke-width="1.8" stroke-linecap="round"/>')
+                   f' fill="none" stroke="{SAND_ACCENT}" stroke-width="2.2" stroke-linecap="round"/>')
     return "".join(out)
 
 

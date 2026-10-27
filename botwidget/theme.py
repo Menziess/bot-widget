@@ -57,7 +57,7 @@ MORE_PAD = 2
 MORE_GAP = -8  # a white message under it can sit closer ...
 MORE_GAP_DARK = -1  # ... a dark panel starts right below the arrow
 MORE_H = 18
-MORE_RING_R = 7.5  # the ring round the arrow, and the arc that runs along it while you hold on
+MORE_RING_R = 8.5  # the disc round the arrow, and the arc that runs along it while you hold on
 # A form element in the bubble: its row, and what it needs next to its label (switch, or button padding).
 CONTROL_H = 36
 CONTROL_SWITCH_W = 46

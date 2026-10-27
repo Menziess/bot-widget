@@ -17,10 +17,10 @@ from PySide6.QtCore import (
     QIODevice,
     QPoint,
     QRect,
-    Qt,
     QTimer,
     QUrl,
     QVariantAnimation,
+    Qt,
     Signal,
 )
 from PySide6.QtGui import (
@@ -520,6 +520,7 @@ class BubbleWindow(QWidget):
         self._pull_since = self._pull_last = 0.0  # a run of scrolling at the top: its start and its latest event
         self._more_engaged = 0.0
         self._more_progress = 0.0
+        self._more_hover = False  # the pointer is on the arrow
         self._tip = None
         self._vx = self._vy = 0.0
         self._physics_on = False
@@ -1414,6 +1415,7 @@ class BubbleWindow(QWidget):
         if on == self._more_open or not self._has_older or self.kind != "say" or not self.isVisible():
             return
         self._more_open = on
+        self._more_hover = False
         self._pull_since = self._pull_last = 0.0
         self._toggling = True
         try:
@@ -1424,13 +1426,24 @@ class BubbleWindow(QWidget):
     def _set_progress(self, progress: float):
         """How far the hold on the arrow has come, drawn as an arc round it."""
         self._more_progress = progress
+        self._set_arrow(progress=progress)
+
+    def _set_arrow(self, **look):
         for panel in self._geom[0] if self._geom else []:
             if panel["role"] == "more" and not panel.get("back"):
                 for line in panel["lines"]:
                     if line["kind"] == "more":
-                        line["progress"] = progress
+                        line.update(look)
         if self._geom:
             self._set_text()
+
+    def _pointer_on_arrow(self) -> bool:
+        if not self.face.pointer_known():
+            return False
+        px, py = self.face._pointer()
+        spot = self._doc.mapFromGlobal(QPoint(int(px), int(py)))
+        panel = self._message_at(spot.x(), spot.y())
+        return bool(panel and panel["role"] == "more")
 
     def _watch_arrow(self, now: float):
         """The pointer in the top of the bubble brings the arrow; away from it, it goes again."""
@@ -1452,6 +1465,10 @@ class BubbleWindow(QWidget):
         if self._more_open:
             holding = bool(self._pull_since) and now - self._pull_last < WHEEL_RUN_GAP_S
             progress = min(1.0, (now - self._pull_since) / HOLD_LOAD_S) if holding else 0.0
+            hover = self._pointer_on_arrow()
+            if hover != self._more_hover:
+                self._more_hover = hover
+                self._set_arrow(hover=hover)
             if abs(progress - self._more_progress) >= 0.03 or (progress == 0.0 and self._more_progress):
                 self._set_progress(progress)
 
