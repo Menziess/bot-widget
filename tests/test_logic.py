@@ -1494,6 +1494,7 @@ class BubbleHover(unittest.TestCase):
         bubble = self.window.bubble
         del bubble.focus_entry  # the real one: this test is about focus
         self.assertFalse(bubble.isVisible())
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
         self.click_face()
         self.assertTrue(bubble.isVisible())
         self.finish_growth()
@@ -2097,10 +2098,15 @@ class BubbleHover(unittest.TestCase):
         self.click_at(bubble._shown_w(bubble._geom[1]) // 2, y)
         self.assertEqual(sent, ["page/commands"])
 
-    def test_scrolling_past_the_top_of_a_page_goes_back_too(self):
+    def test_pulling_the_line_of_a_page_far_enough_goes_back_too(self):
         bubble = self.open_settings()
         sent = []
         bubble.command.connect(sent.append)
+        self.wheel_up(bubble)
+        self.assertEqual(sent, [], "one notch only pulls the line")
+        self.assertGreater(bubble._pull_px, 0)
+        self.wheel_up(bubble)
+        self.wheel_up(bubble)
         self.wheel_up(bubble)
         self.assertEqual(sent, ["page/commands"])
 
@@ -3595,8 +3601,7 @@ class BubbleHover(unittest.TestCase):
         self.assertGreater(bubble.height(), before)
         self.assertEqual(self.window._depth, 1, "showing the arrow loads nothing")
 
-    def test_pointing_at_the_top_of_the_bubble_shows_the_arrow_and_it_goes_when_you_leave(self):
-        import time
+    def test_pointing_at_the_top_of_the_bubble_shows_the_line_and_it_stays(self):
         from unittest import mock
         self.hover()
         bubble = self.window.bubble
@@ -3607,14 +3612,11 @@ class BubbleHover(unittest.TestCase):
             self.assertEqual(bubble._geom[0][0]["role"], "more")
             self.finish_growth()
             card = bubble.card()
-            self.where["at"] = (card.center().x(), card.top() + 50)
-            bubble._tick()
-            self.assertTrue(bubble._more_open, "still near: the bubble grew, the zone grew with it")
             self.where["at"] = (card.center().x(), card.bottom() - 4)
-            bubble._more_engaged = time.monotonic() - 5
-            bubble._tick()
-            self.assertFalse(bubble._more_open)
-            self.assertNotEqual(bubble._geom[0][0]["role"], "more")
+            for _ in range(5):
+                bubble._tick()
+            self.assertTrue(bubble._more_open, "once it showed, it stays")
+            self.assertEqual(bubble._geom[0][0]["role"], "more")
 
     def test_a_click_on_the_arrow_loads_the_message_before_at_once(self):
         self.hover()
@@ -3678,6 +3680,41 @@ class BubbleHover(unittest.TestCase):
         self.finish_growth()
         bar = bubble._scroll.verticalScrollBar()
         self.assertGreater(bar.value(), bar.maximum() // 2, "at the end of the message that came in, not its top")
+
+    def test_the_field_for_a_message_only_shows_while_the_pointer_is_with_the_bubble(self):
+        from unittest import mock
+        from botwidget.qt_ui.face import conversation_blocks
+        bubble = self.window.bubble
+        blocks = conversation_blocks(self.MESSAGES, "Test")
+        self.where["at"] = (-5000, -5000)
+        bubble.show_blocks(blocks, "say", input=True, hover_field=True)
+        self.finish_growth()
+        self.assertTrue(bubble.isVisible())
+        self.assertFalse(bubble._input, "opened by itself: no field")
+        self.assertFalse(bubble._entry.isVisible())
+        self.hover()
+        bubble._tick()
+        self.finish_growth()
+        self.assertTrue(bubble._input, "the pointer is on the face: the field shows")
+        bubble._entry.setPlainText("een halve zin")
+        self.where["at"] = (-5000, -5000)
+        for _ in range(3):
+            bubble._tick()
+        self.assertTrue(bubble._input, "words you typed keep it")
+
+    def test_the_field_goes_a_moment_after_the_pointer_left(self):
+        from unittest import mock
+        self.hover()
+        bubble = self.window.bubble
+        self.assertTrue(bubble._input)
+        self.where["at"] = (-5000, -5000)
+        with mock.patch.object(self.window, "pointer_near", return_value=False):
+            bubble._sync_field(100.0)
+            self.assertTrue(bubble._input, "not at once")
+            bubble._sync_field(100.5)
+            self.assertTrue(bubble._input)
+            bubble._sync_field(101.0)
+        self.assertFalse(bubble._input)
 
     def test_a_bubble_that_was_prepared_opens_without_laying_the_text_out_again(self):
         from unittest import mock
@@ -4370,6 +4407,42 @@ class FailedTurn(unittest.TestCase):
                 "failed": "The last turn failed: old", "failed_at": old}
         window._sync_bubble(chat, force=True)
         self.assertTrue(window._asked, "this question has not been answered, or failed, yet")
+
+
+class Tables(unittest.TestCase):
+    TEXT = "Voor\n\n| Naam | Waarde |\n|---|:--:|\n| a | **1** |\n| lange naam hier | `2` |\n\nNa"
+
+    def test_markdown_tables_become_a_table_block(self):
+        from botwidget.markdown import md_blocks
+        blocks = md_blocks(self.TEXT)
+        self.assertEqual([block["kind"] for block in blocks], ["text", "gap", "table", "gap", "text"])
+        rows = blocks[2]["rows"]
+        self.assertEqual(len(rows), 3, "the line of dashes is not a row")
+        self.assertEqual(rows[0][0], [("Naam", "")])
+        self.assertEqual(rows[1][1], [("1", "b")])
+
+    def test_a_line_with_a_bar_and_no_dashes_under_it_is_no_table(self):
+        from botwidget.markdown import md_blocks
+        self.assertEqual([block["kind"] for block in md_blocks("a | b\nc | d")], ["text", "text"])
+
+    def test_a_table_is_a_line_per_row_with_tabs_between_the_cells_and_a_rule_under_the_header(self):
+        from botwidget.bubble_layout import md_layout
+        laid, widest = md_layout(lambda text, style, size: 7.0 * len(text), self.TEXT, 400)
+        rows = [line for line in laid if line.get("tabs")]
+        self.assertEqual(len(rows), 3)
+        self.assertEqual([line["kind"] for line in laid].count("rule"), 1)
+        self.assertEqual("".join(word for word, _style, _lead in rows[0]["words"]), "Naam\tWaarde")
+        self.assertEqual(rows[0]["tabs"], rows[2]["tabs"], "the columns line up")
+        self.assertGreaterEqual(rows[0]["tabs"][0], 7 * len("lange naam hier"), "wide enough for the longest cell")
+
+    def test_a_table_wider_than_the_bubble_cuts_its_words_short_and_says_it_is_cramped(self):
+        from botwidget.bubble_layout import md_layout
+        text = "| A | B |\n|--|--|\n| " + "woord " * 30 + "| kort |"
+        laid, widest = md_layout(lambda text, style, size: 7.0 * len(text), text, 300)
+        row = [line for line in laid if line.get("tabs")][1]
+        self.assertIn("…", "".join(word for word, _style, _lead in row["words"]))
+        self.assertGreater(row["natural"], row["width"])
+        self.assertLessEqual(widest, 300)
 
 
 class NewFlagsNewWindow(unittest.TestCase):

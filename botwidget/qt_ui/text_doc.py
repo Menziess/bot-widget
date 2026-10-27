@@ -4,7 +4,7 @@ The panel lines come from bubble_layout, so the text breaks exactly where the me
 layout says and the shapes drawn behind it stay in place.
 """
 
-from PySide6.QtGui import QColor, QFont, QTextBlockFormat, QTextCharFormat, QTextCursor
+from PySide6.QtGui import QColor, QFont, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextOption
 
 from botwidget.bubble import line_height, panel_gap, panel_pad
 from botwidget.markdown import anchor_url, command_href
@@ -93,6 +93,9 @@ def fill_document(doc, panels: list, box_w: int):
             block.setLeftMargin(PAD_PANEL_X + line["indent"])
             block.setLineHeight(float(line_height(line)),
                                 QTextBlockFormat.LineHeightTypes.FixedHeight.value)
+            if line.get("tabs"):
+                block.setTabPositions([QTextOption.Tab(PAD_PANEL_X + line["indent"] + x, QTextOption.LeftTab)
+                                       for x in line["tabs"]])
             if first:
                 cursor.setBlockFormat(block)
                 first = False

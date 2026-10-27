@@ -17,6 +17,17 @@ MD_BULLET_RE = re.compile(r"^[-*+]\s+(.*)$")
 MD_NUM_RE = re.compile(r"^(\d+)[.)]\s+(.*)$")
 MD_QUOTE_RE = re.compile(r"^>\s?(.*)$")
 MD_RULE_RE = re.compile(r"^([-*_]\s*){3,}$")
+MD_TABLE_SEP_RE = re.compile(r"^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?$")
+
+
+def table_cells(line: str) -> list:
+    """The cells of one row of a markdown table, as inline pieces."""
+    inner = line.strip()
+    if inner.startswith("|"):
+        inner = inner[1:]
+    if inner.endswith("|") and not inner.endswith("\\|"):
+        inner = inner[:-1]
+    return [md_inline(cell.strip().replace("\\|", "|")) for cell in re.split(r"(?<!\\)\|", inner)]
 
 
 def url_host(url: str) -> str:
@@ -92,8 +103,23 @@ def md_inline(text: str) -> list:
 def md_blocks(text: str) -> list:
     """Markdown to blocks of one logical line."""
     out, code, code_lines = [], False, []
-    for raw in text.split("\n"):
+    lines = text.split("\n")
+    skip = 0
+    for number, raw in enumerate(lines):
+        if skip:
+            skip -= 1
+            continue
         line = raw.rstrip()
+        # A table: a row with bars, then the line of dashes under the header, then the rows.
+        if (not code and "|" in line and number + 1 < len(lines) and MD_TABLE_SEP_RE.match(lines[number + 1].strip())
+                and "|" in lines[number + 1] + line):
+            rows, follow = [table_cells(line)], number + 2
+            while follow < len(lines) and "|" in lines[follow] and lines[follow].strip():
+                rows.append(table_cells(lines[follow]))
+                follow += 1
+            out.append(table_block(rows))
+            skip = follow - number - 1
+            continue
         if line.strip().startswith("```"):
             if code:
                 if code_lines:
@@ -143,6 +169,12 @@ def md_blocks(text: str) -> list:
     return out
 
 
+def table_block(rows: list) -> dict:
+    """A table: rows of cells (inline pieces), the first row the header. The layout makes the columns."""
+    return {"kind": "table", "rows": rows, "size": BUBBLE_FONT, "indent": 0, "prefix": "", "grey": False,
+            "chunks": []}
+
+
 def text_block(size: int, indent: int, prefix: str, grey: bool, chunks: list) -> dict:
     return {"kind": "text", "size": size, "indent": indent, "prefix": prefix,
             "grey": grey, "head": False, "chunks": chunks}
@@ -188,6 +220,9 @@ def block_text(blocks: list) -> str:
             on = block.get("on")
             mark = "" if on is None else (f"{on}% " if block["control"] == "slider" else "☑ " if on else "☐ ")
             out.append(f"{mark}{block['label']}")
+            continue
+        if block.get("kind") == "table":
+            out.append(" | ".join("".join(piece for piece, _style in cell) for row in block["rows"] for cell in row))
             continue
         if block.get("kind") != "text":
             continue

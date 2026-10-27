@@ -1194,11 +1194,11 @@ class FaceWindow(QWidget):
         if self.pinned:
             self._shown_text = text
             if not self.bubble.shows("say", text, True):
-                self.bubble.show_blocks(blocks, "say", input=True, older=older)
+                self.bubble.show_blocks(blocks, "say", input=True, older=older, hover_field=True)
         elif blocks and (force or text != self._shown_text):
             # Only new text brings the bubble back by itself; after it slid away it stays away.
             self._shown_text = text
-            self.bubble.show_blocks(blocks, "say", input=True, older=older)
+            self.bubble.show_blocks(blocks, "say", input=True, older=older, hover_field=True)
         elif not blocks and self.bubble.kind and not self.bubble._list_only:
             # The conversation is gone (a new chat): the bubble goes too, unless the pointer is engaged with it.
             self.bubble.close_bubble("empty")

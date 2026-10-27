@@ -37,6 +37,8 @@ SAND_RADIUS_PANEL = 12
 SAND_RADIUS_CODE = 8
 BUBBLE_FONT = 15
 BUBBLE_CODE_FONT = 13
+TABLE_FONT = 14  # a table is set a little smaller, so it fits more
+TABLE_GAP = 18  # between the columns of a table
 BUBBLE_CODE_LINES = 6
 BUBBLE_MAX_W = 300
 # A long answer gets a wider bubble, in these steps, so it scrolls less; never wider than this share of the screen.

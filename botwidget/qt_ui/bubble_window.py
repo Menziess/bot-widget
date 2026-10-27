@@ -17,6 +17,7 @@ from PySide6.QtCore import (
     QIODevice,
     QPoint,
     QRect,
+    QRectF,
     QTimer,
     QUrl,
     QVariantAnimation,
@@ -86,10 +87,10 @@ from botwidget.theme import (
     PAD_PANEL_X,
     PAD_SVG,
     SAND_ACCENT,
-    SAND_BUBBLE,
     SAND_INK,
     SAND_ON_USER,
-    SAND_PANEL_USER,
+    SAND_PANEL_USER_BOTTOM,
+    SAND_PANEL_USER_TOP,
     SAND_RADIUS_PANEL,
     SAND_SANS,
     GLASS_FADE,
@@ -129,13 +130,11 @@ OPEN_TOWARD = {"above": (0, 1), "below": (0, -1), "right": (-1, 0), "left": (1, 
 OLDER_PAUSE_S = 0.3
 OLDER_END_SHARE = 0.4  # a message that came in above is shown from its end, with this share of the view below it
 # The line for the message before shows when you scroll up at the top, or the pointer is in the top MORE_ZONE_PX of
-# the bubble; it stays while the pointer is within MORE_KEEP_PX of the top (the bubble grew by it, so the zone moved
-# with it), and goes MORE_LINGER_S after that. Scrolling on at the top pulls it: it swells with the distance you
-# scrolled (PULL_PX pixels loads the message), shrinks again when you scroll back down, and when you let go it
-# shoots back up. A click loads the message at once.
+# the bubble, and then it stays. Scrolling on at the top pulls it: it swells with the distance you scrolled (PULL_PX
+# pixels loads the message), shrinks again when you scroll back down, and when you let go it shoots back up. A click
+# loads the message at once. On a page of the menu the same line is on top, and going back works the same way.
 MORE_ZONE_PX = 28
-MORE_KEEP_PX = 70
-MORE_LINGER_S = 0.8
+FIELD_LINGER_S = 0.8  # the field for a message stays this long after the pointer left
 PULL_PX = 140
 WHEEL_PX = 40  # one notch of a mouse wheel, which has no pixel distance of its own
 LET_GO_S = 0.15  # without a finger on a trackpad, the wheel stopping this long is letting go
@@ -352,12 +351,21 @@ class CopyNotice(QWidget):
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        ground = QColor(SAND_PANEL_USER if self.dark else SAND_BUBBLE)
-        ground.setAlphaF(0.94 * self.level)
+        # The dark glass of the message you wrote, on any message: a white label would sit on the glass as a lump.
+        gradient = QLinearGradient(0, 0, 0, self.height())
+        for at, name in ((0.0, SAND_PANEL_USER_TOP), (1.0, SAND_PANEL_USER_BOTTOM)):
+            colour = QColor(name)
+            colour.setAlphaF(0.94 * self.level)
+            gradient.setColorAt(at, colour)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(ground)
+        painter.setBrush(QBrush(gradient))
         painter.drawRoundedRect(self.rect(), SAND_RADIUS_PANEL, SAND_RADIUS_PANEL)
-        ink = QColor(SAND_ON_USER if self.dark else SAND_INK)
+        edge = QColor("#ffffff")
+        edge.setAlphaF(0.18 * self.level)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(edge)
+        painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), SAND_RADIUS_PANEL, SAND_RADIUS_PANEL)
+        ink = QColor(SAND_ON_USER)
         ink.setAlphaF(self.level)
         painter.setPen(ink)
         font = QFont(SAND_SANS)
@@ -529,8 +537,9 @@ class BubbleWindow(QWidget):
         self._more_open = False  # their arrow is showing
         self._toggling = False
         self._pull_last = 0.0  # the latest wheel event at the top
-        self._more_engaged = 0.0
         self._more_progress = 0.0
+        self._hover_field = False  # the field for a message comes and goes with the pointer
+        self._field_off_since = 0.0
         self._pull_px = 0.0  # how far the line is pulled
         self._pull_spent = False  # it loaded a message: the scrolling that is still going on pulls nothing
         self._pull_held = False  # a finger is still on the pad
@@ -955,10 +964,16 @@ class BubbleWindow(QWidget):
         screen_w = screens.rect_at(fx + AVATAR_SIZE // 2, fy + AVATAR_SIZE // 2)[2]
         room = self._ceiling() - PAD_SVG - TAIL_ROOM - 2 * PAD_BODY - self._extras()
         for width in BUBBLE_WIDER:
-            if content_height(panels) <= room or width > screen_w * BUBBLE_MAX_SCREEN_SHARE:
+            if (content_height(panels) <= room and not self._cramped(panels)) \
+                    or width > screen_w * BUBBLE_MAX_SCREEN_SHARE:
                 break
             panels = bubble_panels(measure, blocks, width)
         return panels
+
+    @staticmethod
+    def _cramped(panels: list) -> bool:
+        """A table whose words had to be cut short: the bubble gets wider for it, as far as it may."""
+        return any(line.get("natural", 0) > line["width"] for panel in panels for line in panel["lines"])
 
     def _entry_h(self) -> int:
         return self._entry.wanted_height()
@@ -1296,6 +1311,34 @@ class BubbleWindow(QWidget):
         panels, box_w, _inner = self._geom
         fill_document(self._doc.document(), panels, box_w)
 
+    def _field_wanted(self) -> bool:
+        """Is the pointer with this bubble, or the user busy with it: then its field for a message shows."""
+        face = self.face
+        if face.pinned or self.holding() or self._entry.hasFocus() or face._pointer_on_head():
+            return True
+        return self.isVisible() and bool(face.pointer_near(self))
+
+    def _sync_field(self, now: float):
+        """The field comes when the pointer comes and goes a moment after it left, the words you typed stay."""
+        if not (self._hover_field and self.kind == "say" and self.isVisible() and self._growth is None
+                and self.blocks and not self._toggling):
+            return
+        want = self._field_wanted()
+        if want:
+            self._field_off_since = 0.0
+        elif self._input:
+            self._field_off_since = self._field_off_since or now
+            if now - self._field_off_since < FIELD_LINGER_S:
+                return
+        if want == self._input:
+            return
+        self._field_off_since = 0.0
+        self._toggling = True
+        try:
+            self.show_blocks(self.blocks, "say", want, self._links, keep_scroll=True, hover_field=True)
+        finally:
+            self._toggling = False
+
     def _content_key(self, blocks: list, kind: str, input: bool, links: list | None) -> tuple:
         return (kind, block_text(blocks), input, tuple(links or []), self._height_cap(), self._more_open)
 
@@ -1308,6 +1351,7 @@ class BubbleWindow(QWidget):
                 == self._built:
             return False
         self._toggling = False
+        self._hover_field = True
         try:
             self._show_blocks(blocks, kind, input, silent=True)
             self.kind = kind
@@ -1321,9 +1365,13 @@ class BubbleWindow(QWidget):
         return True
 
     def show_blocks(self, blocks: list, kind: str, input: bool = False, links: list | None = None,
-                    older: bool = False, keep_scroll: bool = False):
-        """New content; a bubble that gets smaller under the pointer keeps the area it covered, see _hold_after."""
+                    older: bool = False, keep_scroll: bool = False, hover_field: bool = False):
+        """New content; a bubble that gets smaller under the pointer keeps the area it covered, see _hold_after.
+        With hover_field the field for a message is only there while the pointer is on the bubble (or on its face, or
+        it has the focus or words in it), and comes and goes with it."""
         old = self._area_under_pointer()
+        self._hover_field = hover_field
+        input = input and (not hover_field or self._field_wanted())
         try:
             self._show_blocks(blocks, kind, input, links, older, keep_scroll)
         finally:
@@ -1426,17 +1474,16 @@ class BubbleWindow(QWidget):
         self._scroll_to_top()
         QTimer.singleShot(0, self._scroll_to_top)
 
+    def _back_command(self) -> str:
+        """The command of the line on top of a page of the menu, which goes back; empty in the chat."""
+        return next((panel["back"] for panel in self._geom[0] if panel.get("back")), "") if self._geom else ""
+
     def _on_pulled(self, pixels: float, momentum: bool, held: bool):
-        """Scrolling at the top. On a page of the menu that goes back; in the chat it shows the line for the message
-        before, pulls it by the distance, and far enough loads it."""
+        """Scrolling at the top. In the chat it shows the line for the message before, pulls it by the distance, and
+        far enough loads it; on a page of the menu the line is always there, and far enough goes back."""
         now = time.monotonic()
-        back = next((panel["back"] for panel in self._geom[0] if panel.get("back")), "") if self._geom else ""
-        if back:
-            if pixels > 0 and self._growth is None and now >= self._older_until:
-                self._older_until = now + OLDER_PAUSE_S
-                self.command.emit(back)
-            return
-        if self.kind != "say" or not self._has_older:
+        back = self._back_command()
+        if self.kind != "say" or not (self._has_older or back):
             return
         if self._pull_spent:
             # The message came in: what is left of this scrolling, coasting included, does nothing. A new scroll
@@ -1446,8 +1493,7 @@ class BubbleWindow(QWidget):
             if not quiet:
                 return
             self._pull_spent = False
-        self._more_engaged = now
-        if not self._more_open and pixels > 0:
+        if not self._more_open and pixels > 0 and not back:
             self._set_more(True)
         self._pull_held = held
         if momentum:
@@ -1456,8 +1502,21 @@ class BubbleWindow(QWidget):
         self._pull_px = min(float(PULL_PX), max(0.0, self._pull_px + pixels))
         self._pull_last = now
         self._show_pull()
-        if self._pull_px >= PULL_PX and self._growth is None:
+        if self._pull_px >= PULL_PX and self._growth is None and now >= self._older_until:
+            self._pull_done()
+
+    def _pull_done(self):
+        """Pulled all the way: the message before comes in, or the page goes back."""
+        back = self._back_command()
+        if not back:
             self._load_older()
+            return
+        self._pull_px = 0.0
+        self._pull_last = time.monotonic()
+        self._pull_spent = True
+        self._older_until = time.monotonic() + OLDER_PAUSE_S
+        self._set_progress(0.0)
+        self.command.emit(back)
 
     def _show_pull(self):
         progress = self._pull_px / PULL_PX
@@ -1471,7 +1530,7 @@ class BubbleWindow(QWidget):
         self._show_pull()
 
     def _arrow_clicked(self):
-        back = next((panel["back"] for panel in self._geom[0] if panel.get("back")), "") if self._geom else ""
+        back = self._back_command()
         if back:
             if self._growth is None and time.monotonic() >= self._older_until:
                 self._older_until = time.monotonic() + OLDER_PAUSE_S
@@ -1507,7 +1566,7 @@ class BubbleWindow(QWidget):
 
     def _set_arrow(self, **look):
         for panel in self._geom[0] if self._geom else []:
-            if panel["role"] == "more" and not panel.get("back"):
+            if panel["role"] == "more":
                 for line in panel["lines"]:
                     if line["kind"] == "more":
                         line.update(look)
@@ -1523,23 +1582,21 @@ class BubbleWindow(QWidget):
         return bool(panel and panel["role"] == "more")
 
     def _watch_arrow(self, now: float):
-        """The pointer in the top of the bubble brings the arrow; away from it, it goes again."""
-        if self.kind != "say" or not self._has_older or self._growth is not None:
+        """The pointer in the top of the bubble brings the line for the message before, or a scroll up does; once it is
+        there it stays, until new content takes it away. On a page of the menu it is always there."""
+        back = self._back_command()
+        if self.kind != "say" or not (self._has_older or back) or self._growth is not None:
             return
-        bar = self._scroll.verticalScrollBar()
-        card = self.card()
-        reach = MORE_KEEP_PX if self._more_open else MORE_ZONE_PX
-        near = False
-        if bar.value() <= 0 and self.face.pointer_known():
-            px, py = self.face._pointer()
-            near = card.left() <= px <= card.right() and card.top() - 6 <= py <= card.top() + reach
-        if near or self._pull_px > 0:
-            self._more_engaged = now
-            if not self._more_open:
+        if not self._more_open and not back:
+            bar = self._scroll.verticalScrollBar()
+            card = self.card()
+            near = False
+            if bar.value() <= 0 and self.face.pointer_known():
+                px, py = self.face._pointer()
+                near = card.left() <= px <= card.right() and card.top() - 6 <= py <= card.top() + MORE_ZONE_PX
+            if near or self._pull_px > 0:
                 self._set_more(True)
-        elif self._more_open and bar.value() <= 0 and now - self._more_engaged > MORE_LINGER_S:
-            self._set_more(False)
-        if self._more_open:
+        if self._more_open or back:
             let_go = not self._pull_held and now - self._pull_last > LET_GO_S
             if self._pull_px > 0 and let_go:
                 self._recoil(now)
@@ -1764,6 +1821,7 @@ class BubbleWindow(QWidget):
             if self.close_bubble("unread"):
                 return
         self._watch_arrow(now)
+        self._sync_field(now)
         if tip != self._tip:
             self._tip = tip
             self._layout_children(self._paint_chrome())

@@ -19,6 +19,8 @@ from botwidget.theme import (
     PAD_BODY,
     PAD_PANEL_X,
     SMALL_FONT,
+    TABLE_FONT,
+    TABLE_GAP,
 )
 
 
@@ -111,6 +113,61 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
             laid.append({**block, "words": row, "prefix": prefix, "width": w,
                          "xs": xs, "ws": ws, "cont": i > 0})
 
+    def clipped(pieces: list, size: int, room: float) -> list:
+        """The pieces of a cell cut to fit, with an ellipsis where they were cut."""
+        if width(pieces, size) <= room:
+            return pieces
+        out, used = [], 0.0
+        ellipsis = measure("…", "", size)
+        for text, style in pieces:
+            for ch in text:
+                w = measure(ch, style, size)
+                if used + w + ellipsis > room:
+                    return out + [("…", "")]
+                out.append((ch, style))
+                used += w
+        return out
+
+    def lay_table(block: dict):
+        """A table as one line per row: the cells are separated by tabs, which the text surface sets to the columns.
+        Columns take what their words need; when the table is wider than the bubble, the widest give way and their
+        words are cut short."""
+        nonlocal widest
+        size, gap = TABLE_FONT, TABLE_GAP
+        rows = [[[(t, "b" if st == "" and n == 0 else st) for t, st in cell] for cell in row]
+                for n, row in enumerate(block["rows"])]
+        count = max(len(row) for row in rows)
+        rows = [row + [[("", "")]] * (count - len(row)) for row in rows]
+        natural = [max(width(row[c], size) for row in rows) for c in range(count)]
+        room = max(MIN_TEXT_ROOM, max_w - block["indent"]) - gap * (count - 1)
+        cols, left, open_ = [0] * count, room, set(range(count))
+        while open_:
+            share = left / len(open_)
+            small = {c for c in open_ if natural[c] <= share}
+            if not small:
+                for c in open_:
+                    cols[c] = share
+                break
+            for c in small:
+                cols[c] = natural[c]
+                left -= natural[c]
+            open_ -= small
+        xs = [sum(cols[:c]) + gap * c for c in range(count)]
+        total = round(sum(cols) + gap * (count - 1))
+        widest = max(widest, total + block["indent"])
+        for n, row in enumerate(rows):
+            words = []
+            for c, cell in enumerate(row):
+                if c:
+                    words.append(("\t", "", False))
+                words += [(t, st, False) for t, st in clipped(cell, size, cols[c]) if t]
+            laid.append({**block, "kind": "text", "size": size, "words": words, "prefix": "", "width": total,
+                         "xs": [], "ws": [], "cont": False, "tabs": [round(x) for x in xs[1:]],
+                         "natural": round(sum(natural) + gap * (count - 1))})
+            if n == 0:
+                laid.append({"kind": "rule", "size": 0, "indent": 0, "prefix": "", "grey": False, "chunks": [],
+                             "words": [], "width": 0})
+
     for block in (md_blocks(text) if isinstance(text, str) else text):
         kind = block.get("kind")
         if kind in ("gap", "rule"):
@@ -132,6 +189,9 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
         if kind == "more":
             laid.append({"kind": "more", "size": SMALL_FONT, "indent": 0, "prefix": "", "grey": False,
                          "head": False, "words": [], "xs": [], "ws": [], "width": MORE_W})
+            continue
+        if kind == "table":
+            lay_table(block)
             continue
         if kind == "code":
             for code_line in block["lines"]:
