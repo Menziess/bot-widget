@@ -1176,31 +1176,9 @@ class BubbleHover(unittest.TestCase):
         self.click(1)
         self.assertEqual(self.clipboard(), "Ja.\n\nZal ik pushen?")
 
-    def test_clicking_the_arrow_loads_the_message_before(self):
-        from PySide6.QtCore import Qt
-        self.hover()
-        self.assertEqual(self.window._depth, 1)
-        _x, y = self.message_point(0, down=4)
-        x = self.window.bubble._shown_w(self.window.bubble._geom[1]) // 2
-        self.assertEqual(self.window.bubble._geom[0][0]["role"], "more")
-        self.send_mouse("move", 40, y)
-        self.assertEqual(self.window.bubble._doc.viewport().cursor().shape(), Qt.ArrowCursor, "beside the arrow")
-        self.click_at(40, y)
-        self.assertEqual(self.window._depth, 1)
-        self.send_mouse("move", x, y)
-        self.assertEqual(self.window.bubble._doc.viewport().cursor().shape(), Qt.PointingHandCursor)
-        self.click_at(x, y)
-        self.assertEqual(self.window._depth, 1, "it loads first")
-        self.load_older()
-        self.assertEqual(self.window._depth, 2)
-
     def load_older(self):
-        import time
-        bubble = self.window.bubble
-        bubble._load_older()
-        deadline = time.monotonic() + 3
-        while bubble._scroll.loading and time.monotonic() < deadline:
-            self.app.processEvents()
+        self.window.bubble._load_older()
+        self.finish_growth()
 
     def click_at(self, x, y):
         from PySide6.QtCore import Qt
@@ -1661,7 +1639,8 @@ class BubbleHover(unittest.TestCase):
         text = self.window.bubble.full_text
         self.assertIn("Zal ik pushen?", text)
         self.assertNotIn("Klaar?", text)
-        self.assertEqual(self.window.bubble._geom[0][0]["role"], "more", "an arrow on top says there is more")
+        self.assertTrue(self.window.bubble._has_older)
+        self.assertNotEqual(self.window.bubble._geom[0][0]["role"], "more", "the arrow takes no room until asked for")
 
     def test_scrolling_up_adds_the_message_before_and_the_hint_goes_when_there_is_no_more(self):
         self.hover()
@@ -1830,22 +1809,6 @@ class BubbleHover(unittest.TestCase):
         self.assertGreater(bubble.height(), before, "grown to hold the older message")
         self.assertEqual(bubble._scroll.verticalScrollBar().value(), 0, "the new message is at the top")
 
-    def test_the_mouse_wheel_at_the_top_loads_the_message_before_once_per_pause(self):
-        from PySide6.QtCore import QPoint, QPointF, Qt
-        from PySide6.QtGui import QWheelEvent
-        from PySide6.QtWidgets import QApplication
-        self.hover()
-        bubble = self.window.bubble
-        up = lambda: QApplication.sendEvent(bubble._scroll.viewport(), QWheelEvent(
-            QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, 120), Qt.NoButton, Qt.NoModifier,
-            Qt.NoScrollPhase, False))
-        up()
-        self.load_older()
-        self.assertEqual(self.window._depth, 2)
-        up()
-        self.load_older()
-        self.assertEqual(self.window._depth, 2, "no flood of messages from one flick")
-
     def wheel_up(self, bubble, phase=None, delta=120):
         from PySide6.QtCore import QPoint, QPointF, Qt
         from PySide6.QtGui import QWheelEvent
@@ -1853,22 +1816,6 @@ class BubbleHover(unittest.TestCase):
         QApplication.sendEvent(bubble._scroll.viewport(), QWheelEvent(
             QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, delta), Qt.NoButton, Qt.NoModifier,
             Qt.NoScrollPhase if phase is None else phase, False))
-
-    def test_the_momentum_after_a_lifted_finger_never_loads_but_a_light_pull_at_the_top_does(self):
-        from unittest import mock
-        from PySide6.QtCore import Qt
-        self.MESSAGES = [{"role": "user", "text": "Klaar?"}, {"role": "bot", "text": "Ja."}]
-        self.hover()
-        bubble = self.window.bubble
-        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=100.0):
-            for _ in range(10):
-                self.wheel_up(bubble, Qt.ScrollMomentum)
-        self.assertFalse(bubble._scroll.loading)
-        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=101.0):
-            self.wheel_up(bubble, Qt.ScrollUpdate, delta=15)
-            self.assertFalse(bubble._scroll.loading, "not pulled far enough yet")
-            self.wheel_up(bubble, Qt.ScrollUpdate, delta=30)
-        self.assertTrue(bubble._scroll.loading, "a light pull from the top is enough")
 
     def test_the_pulsing_dots_do_not_pull_the_text_back_to_the_top_while_you_scroll(self):
         self.MESSAGES = [{"role": "user", "text": "Klaar?"}, {"role": "bot", "text": "Een lange regel. " * 200}]
@@ -1883,68 +1830,10 @@ class BubbleHover(unittest.TestCase):
         bubble._tick_dots()
         self.assertEqual(bar.value(), 40)
 
-    def test_scrolling_up_pauses_at_the_top_of_the_message_and_a_new_flick_loads_the_one_before(self):
-        from unittest import mock
-        self.MESSAGES = [{"role": "user", "text": "Klaar?"}, {"role": "bot", "text": "Een lange regel. " * 200}]
-        self.hover()
-        bubble = self.window.bubble
-        bar = bubble._scroll.verticalScrollBar()
-        bar.setValue(30)
-        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=100.0):
-            self.wheel_up(bubble)
-        bar.setValue(0)
-        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=100.05):
-            self.wheel_up(bubble)
-            self.assertEqual(self.window._depth, 1, "the same flick only bounces at the top")
-        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=101.0):
-            self.wheel_up(bubble)
-            self.load_older()
-            self.assertEqual(self.window._depth, 2, "a new flick asks for the message before")
-
-    def test_while_the_message_before_loads_the_arrow_is_dots_the_text_hangs_lower_and_scrolling_is_ignored(self):
-        self.hover()
-        bubble = self.window.bubble
-        self.wheel_up(bubble)
-        self.assertTrue(bubble._scroll.loading)
-        self.assertTrue(all(line.get("loading") for line in bubble._loading_lines) and bubble._loading_lines)
-        self.assertIn("<circle", __import__("botwidget.bubble", fromlist=["x"]).bubble_deco_svg(*bubble._geom[:2]),
-                      "dots where the arrow was")
-        bubble._scroll._pull.setCurrentTime(bubble._scroll._pull.duration())
-        self.assertGreater(bubble._scroll.widget().y(), 0, "the text hangs a little lower")
-        self.wheel_up(bubble)
-        self.wheel_up(bubble)
-        self.assertEqual(self.window._depth, 1, "scroll events do nothing while loading")
-        self.load_older()
-        self.assertFalse(bubble._scroll.loading)
-        self.assertEqual(self.window._depth, 2)
-        self.assertEqual(bubble._scroll.widget().y(), 0)
-
-    def test_a_new_message_ends_the_loading_of_the_message_before(self):
-        self.hover()
-        bubble = self.window.bubble
-        self.wheel_up(bubble)
-        self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Nog iets."}], "activity": ""})
-        self.assertFalse(bubble._scroll.loading)
-        self.load_older()
-        self.assertEqual(self.window._depth, 1)
-
-    def test_a_flick_that_runs_into_the_top_bounces_once(self):
-        from unittest import mock
-        self.MESSAGES = [{"role": "user", "text": "Klaar?"}, {"role": "bot", "text": "Een lange regel. " * 200}]
-        self.hover()
-        bubble = self.window.bubble
-        bubble._scroll.verticalScrollBar().setValue(30)
-        with mock.patch.object(bubble._scroll._bounce, "start") as bounce:
-            for step in range(8):
-                with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=100.0 + step * 0.1):
-                    self.wheel_up(bubble)
-                    bubble._scroll.verticalScrollBar().setValue(0)
-        self.assertEqual(bounce.call_count, 1)
-
     def test_a_copied_notice_stays_on_its_message_when_an_older_one_loads_above(self):
         self.hover()
         bubble = self.window.bubble
-        self.click(1)
+        self.click(0)
         self.window.show_older()
         self.finish_growth()
         from botwidget.bubble import panel_rects
@@ -1955,7 +1844,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_new_message_takes_the_notice_away(self):
         self.hover()
-        self.click(1)
+        self.click(0)
         self.assertTrue(self.window.bubble._notice.isVisible())
         self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Nog iets."}], "activity": ""})
         self.assertFalse(self.window.bubble._notice.isVisible())
@@ -2150,29 +2039,6 @@ class BubbleHover(unittest.TestCase):
         self.assertIsNotNone(bubble._growth, "the cloud is growing again")
         self.assertEqual(bubble._growth.progress, 0.0)
         self.assertTrue(bubble._entry.isVisibleTo(bubble), "hiding the field would take the cursor away")
-
-    def test_the_text_does_not_twitch_back_while_it_hangs_lower_during_loading(self):
-        self.hover()
-        bubble = self.window.bubble
-        self.wheel_up(bubble)
-        self.assertTrue(bubble._scroll.loading)
-        bubble._scroll._pull.setCurrentTime(bubble._scroll._pull.duration())
-        hanging = bubble._scroll.widget().y()
-        self.assertGreater(hanging, 0)
-        for _ in range(5):
-            bubble._tick_dots()
-            self.assertEqual(bubble._scroll.widget().y(), hanging)
-
-    def test_the_text_is_back_in_place_before_the_older_message_slides_in(self):
-        self.hover()
-        bubble = self.window.bubble
-        self.wheel_up(bubble)
-        bubble._scroll._pull.setCurrentTime(bubble._scroll._pull.duration())
-        self.assertGreater(bubble._scroll.widget().y(), 0)
-        seen = []
-        bubble.older.connect(lambda: seen.append(bubble._scroll.widget().y()))
-        self.load_older()
-        self.assertEqual(seen, [0], "no jump when the message slides in")
 
     def settings_state(self):
         return {"sound": True, "quiet_hours": False, "always_on_top": True, "all_desktops": False, "login": False,
@@ -3710,6 +3576,114 @@ class BubbleHover(unittest.TestCase):
             self.window._check_hover()
         self.assertEqual(bubble.kind, "think", "the mouse went back to the work: only the dots are left")
         self.assertFalse(bubble._input)
+
+    def wheel_up_at(self, bubble, moment, phase=None, delta=120):
+        from unittest import mock
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=moment):
+            self.wheel_up(bubble, phase, delta)
+
+    def test_the_arrow_for_the_message_before_takes_no_room_until_you_scroll_up(self):
+        self.hover()
+        bubble = self.window.bubble
+        before = bubble.height()
+        self.assertTrue(bubble._has_older)
+        self.assertNotEqual(bubble._geom[0][0]["role"], "more")
+        self.wheel_up(bubble)
+        self.assertEqual(bubble._geom[0][0]["role"], "more", "the arrow is there, the content below it")
+        self.assertIsNotNone(bubble._growth, "the bubble grows by the arrow")
+        self.finish_growth()
+        self.assertGreater(bubble.height(), before)
+        self.assertEqual(self.window._depth, 1, "showing the arrow loads nothing")
+
+    def test_pointing_at_the_top_of_the_bubble_shows_the_arrow_and_it_goes_when_you_leave(self):
+        import time
+        from unittest import mock
+        self.hover()
+        bubble = self.window.bubble
+        card = bubble.card()
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=True):
+            self.where["at"] = (card.center().x(), card.top() + 8)
+            bubble._tick()
+            self.assertEqual(bubble._geom[0][0]["role"], "more")
+            self.finish_growth()
+            card = bubble.card()
+            self.where["at"] = (card.center().x(), card.top() + 50)
+            bubble._tick()
+            self.assertTrue(bubble._more_open, "still near: the bubble grew, the zone grew with it")
+            self.where["at"] = (card.center().x(), card.bottom() - 4)
+            bubble._more_engaged = time.monotonic() - 5
+            bubble._tick()
+            self.assertFalse(bubble._more_open)
+            self.assertNotEqual(bubble._geom[0][0]["role"], "more")
+
+    def test_a_click_on_the_arrow_loads_the_message_before_at_once(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up(bubble)
+        self.finish_growth()
+        self.assertEqual(bubble._geom[0][0]["role"], "more")
+        x = bubble._shown_w(bubble._geom[1]) // 2
+        _x, y = self.message_point(0, down=4)
+        self.click_at(40, y)
+        self.assertEqual(self.window._depth, 1, "beside the arrow nothing happens")
+        self.click_at(x, y)
+        self.assertEqual(self.window._depth, 2)
+        self.finish_growth()
+        self.assertIn("Klaar?", bubble.full_text)
+        self.assertFalse(bubble._more_open, "the arrow went with the loading")
+
+    def test_holding_the_scroll_at_the_top_loads_the_message_before_but_a_flick_does_not(self):
+        from PySide6.QtCore import Qt
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up_at(bubble, 100.0)
+        self.finish_growth()
+        self.wheel_up_at(bubble, 100.1)
+        self.assertEqual(self.window._depth, 1, "a flick only shows the arrow")
+        self.assertTrue(bubble._more_open)
+        self.wheel_up_at(bubble, 100.2)
+        self.wheel_up_at(bubble, 100.4)
+        self.assertEqual(self.window._depth, 1, "not long enough yet")
+        self.wheel_up_at(bubble, 100.6)
+        self.assertEqual(self.window._depth, 2, "kept scrolling for half a second")
+
+    def test_the_momentum_after_a_lifted_finger_shows_the_arrow_but_never_loads(self):
+        from PySide6.QtCore import Qt
+        self.hover()
+        bubble = self.window.bubble
+        for step in range(12):
+            self.wheel_up_at(bubble, 100.0 + step * 0.1, Qt.ScrollMomentum)
+        self.assertTrue(bubble._more_open)
+        self.assertEqual(self.window._depth, 1)
+
+    def test_a_run_of_scrolling_that_stops_starts_again_from_nothing(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up_at(bubble, 100.0)
+        self.wheel_up_at(bubble, 100.2)
+        self.wheel_up_at(bubble, 100.4)
+        self.wheel_up_at(bubble, 101.0)
+        self.assertEqual(self.window._depth, 1, "the pause ended the run")
+        self.assertLess(bubble._pull_since, 101.5)
+
+    def test_the_hold_shows_as_an_arc_round_the_arrow(self):
+        from botwidget.bubble import bubble_deco_svg
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up_at(bubble, 100.0)
+        self.finish_growth()
+        plain = bubble_deco_svg(*bubble._geom[:2])
+        bubble._set_progress(0.5)
+        self.assertNotEqual(bubble_deco_svg(*bubble._geom[:2]), plain)
+
+    def test_a_new_message_takes_the_arrow_away(self):
+        self.hover()
+        bubble = self.window.bubble
+        self.wheel_up(bubble)
+        self.finish_growth()
+        self.window._sync_bubble({"messages": self.MESSAGES + [{"role": "bot", "text": "Nog iets."}], "activity": ""})
+        self.assertFalse(bubble._more_open)
+        self.assertEqual(self.window._depth, 1)
 
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt

@@ -20,6 +20,7 @@ from botwidget.theme import (
     MORE_GAP_DARK,
     MORE_H,
     MORE_PAD,
+    MORE_RING_R,
     PAD_BODY,
     PAD_PANEL_X,
     PAD_PANEL_Y,
@@ -151,11 +152,7 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
                 out.append(dots_svg(ox + box_w / 2 - DOTS_GAP, tops[n] + line_height(line) / 2,
                                     line.get("phase", 0.0), ink))
             elif line["kind"] == "more":
-                if line.get("loading"):
-                    # The arrow turns into the dots while the message before is on its way.
-                    out.append(dots_svg(ox + box_w / 2 - DOTS_GAP, tops[n] + MORE_H / 2 + 3, line.get("phase", 0.0), ink))
-                else:
-                    out.append(more_svg(ox + box_w / 2, tops[n] + MORE_H / 2))
+                out.append(more_svg(ox + box_w / 2, tops[n] + MORE_H / 2, line.get("progress", 0.0)))
             elif line["kind"] == "rule":
                 out.append(f'<rect x="{ox + PAD_PANEL_X}" y="{tops[n] + 6}"'
                            f' width="{box_w - 2 * PAD_PANEL_X}" height="1" fill="{hair}"/>')
@@ -163,11 +160,24 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0) -> str:
     return "".join(out)
 
 
-def more_svg(x: float, y: float) -> str:
-    """A slim chevron pointing up: there is more above."""
-    return (f'<path d="M{x - 5:.1f} {y + 2.5:.1f} L{x:.1f} {y - 2.5:.1f} L{x + 5:.1f} {y + 2.5:.1f}"'
-            f' fill="none" stroke="{SAND_INK_SOFT}" stroke-width="1.8" stroke-linecap="round"'
-            f' stroke-linejoin="round"/>')
+def more_svg(x: float, y: float, progress: float = 0.0) -> str:
+    """A small ring with a chevron pointing up: there is more above. While you hold on, an arc runs round the ring;
+    when it is closed the message before comes in."""
+    r = MORE_RING_R
+    out = [f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="none" stroke="{SAND_INK_SOFT}" opacity="0.4"'
+           f' stroke-width="1.5"/>',
+           f'<path d="M{x - 3.2:.1f} {y + 1.6:.1f} L{x:.1f} {y - 1.6:.1f} L{x + 3.2:.1f} {y + 1.6:.1f}"'
+           f' fill="none" stroke="{SAND_INK_SOFT}" stroke-width="1.6" stroke-linecap="round"'
+           f' stroke-linejoin="round"/>']
+    progress = min(1.0, max(0.0, progress))
+    if progress >= 0.999:
+        out.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r}" fill="none" stroke="{SAND_INK_SOFT}" stroke-width="1.8"/>')
+    elif progress > 0.01:
+        angle = math.tau * progress
+        end_x, end_y = x + r * math.sin(angle), y - r * math.cos(angle)
+        out.append(f'<path d="M{x:.1f} {y - r:.1f} A{r} {r} 0 {1 if progress > 0.5 else 0} 1 {end_x:.2f} {end_y:.2f}"'
+                   f' fill="none" stroke="{SAND_INK_SOFT}" stroke-width="1.8" stroke-linecap="round"/>')
+    return "".join(out)
 
 
 def dots_svg(x: float, y: float, phase: float, ink: str) -> str:

@@ -46,7 +46,8 @@ GAP_PANEL = 10
 MORE_PAD = 2
 MORE_GAP = -8  # a white message under it can sit closer ...
 MORE_GAP_DARK = -1  # ... a dark panel starts right below the arrow
-MORE_H = 12
+MORE_H = 18
+MORE_RING_R = 7.5  # the ring round the arrow, and the arc that runs along it while you hold on
 # A form element in the bubble: its row, and what it needs next to its label (switch, or button padding).
 CONTROL_H = 36
 CONTROL_SWITCH_W = 46
@@ -81,7 +82,7 @@ LINE_TEXT_PAD = 10
 MIN_TEXT_W = 16
 MIN_TEXT_ROOM = 60
 SMALL_FONT = 15
-MORE_W = 12
+MORE_W = 16
 MIN_CONTENT_W = 80
 # Tail tip margin: the tail stays this far from the bubble's corners.
 TAIL_TIP_MARGIN = 20

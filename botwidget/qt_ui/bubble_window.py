@@ -107,18 +107,15 @@ GROW_MS = 240
 OPEN_SLIDE = 14  # a new bubble starts this many pixels toward its face
 OPEN_TOWARD = {"above": (0, 1), "below": (0, -1), "right": (-1, 0), "left": (1, 0)}
 OLDER_PAUSE_S = 0.3
-# Wheel events closer together than this are one flick; a new flick is needed to load the message before.
-WHEEL_FLICK_GAP_S = 0.25
-BOUNCE_PX = 10
-BOUNCE_MS = 320
-# While the message before loads, the arrow is dots and the text hangs this far down; no scrolling meanwhile.
-OLDER_LOAD_MS = 700
-LOAD_PUSH_PX = 14
-# How far a flick must pull past the top, in wheel units (a mouse notch is 120), to load the message before:
-# a flick that starts at the top needs little; one that ran into the top first bounces and needs a new pull.
-LOAD_PULL = 40
-LOAD_PULL_AFTER_BOUNCE = 360
-LOAD_PUSH_MS = 160
+# The arrow for the message before shows when you scroll up at the top, or the pointer is in the top MORE_ZONE_PX of
+# the bubble; it stays while the pointer is within MORE_KEEP_PX of the top (the bubble grew by the arrow, so the
+# zone moved with it), and goes MORE_LINGER_S after that. A click loads the message at once, scrolling on at the top
+# for HOLD_LOAD_S does too; wheel events less than WHEEL_RUN_GAP_S apart are one run of scrolling.
+MORE_ZONE_PX = 28
+MORE_KEEP_PX = 70
+MORE_LINGER_S = 0.8
+HOLD_LOAD_S = 0.5
+WHEEL_RUN_GAP_S = 0.25
 TAIL_LENGTH = 7
 THINK_GAP = 12  # the extra distance of a thinking cloud from the face, for the balls on their arc
 
@@ -343,89 +340,17 @@ class Growth:
 
 
 class OlderScroll(QScrollArea):
-    """Scrolling up past the top bounces; only a new flick after that asks for the message before."""
+    """Scrolling up at the top says so (pulled, with whether it is only the momentum after a lifted finger); what
+    the bubble does with that is up to the bubble."""
 
-    older = Signal()
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._last_wheel = 0.0
-        self._bounced = False
-        self._pulled = 0
-        self._started_at_top = True
-        self._bounce = QVariantAnimation(self)
-        self._bounce.setDuration(BOUNCE_MS)
-        self._bounce.setEasingCurve(QEasingCurve.InOutSine)
-        for at, level in ((0.0, 0.0), (0.3, 1.0), (1.0, 0.0)):
-            self._bounce.setKeyValueAt(at, level)
-        self._bounce.valueChanged.connect(self._push)
-        self.loading = False
-        self._pull = QVariantAnimation(self)
-        self._pull.setDuration(LOAD_PUSH_MS)
-        self._pull.setStartValue(0.0)
-        self._pull.setEndValue(float(LOAD_PUSH_PX) / BOUNCE_PX)
-        self._pull.setEasingCurve(QEasingCurve.OutCubic)
-        self._pull.valueChanged.connect(self._push)
-        self._pull.finished.connect(self._pulled_back)
-        self._after_release = None
-
-    def _push(self, level):
-        if self.verticalScrollBar().value() <= 0 and self.widget():
-            self.widget().move(0, round(float(level) * BOUNCE_PX))
-
-    def set_loading(self, loading: bool):
-        """While loading, the text hangs a little lower and every scroll event is ignored."""
-        self.loading = loading
-        self._after_release = None
-        self._bounce.stop()
-        self._pull.stop()
-        self._pull.setDirection(QAbstractAnimation.Forward)
-        if loading:
-            self._pull.start()
-        elif self.widget():
-            self.widget().move(0, 0)
-
-    def release(self, done):
-        """The text comes smoothly back up, and only then does done run: no jump when the message slides in."""
-        self._bounce.stop()
-        self._after_release = done
-        self._pull.stop()
-        self._pull.setDirection(QAbstractAnimation.Backward)
-        self._pull.start()
-
-    def _pulled_back(self):
-        if self._pull.direction() != QAbstractAnimation.Backward or self._after_release is None:
-            return
-        done, self._after_release = self._after_release, None
-        self.set_loading(False)
-        done()
+    pulled = Signal(bool)
 
     def wheelEvent(self, event):
         bar = self.verticalScrollBar()
-        now = time.monotonic()
-        if self.loading:
-            self._last_wheel = now
+        if event.angleDelta().y() > 0 and bar.value() <= bar.minimum():
+            self.pulled.emit(event.phase() == Qt.ScrollMomentum)
             event.accept()
             return
-        new_flick = now - self._last_wheel > WHEEL_FLICK_GAP_S
-        self._last_wheel = now
-        if new_flick:
-            self._bounced, self._pulled = False, 0
-            self._started_at_top = bar.value() <= bar.minimum()
-        delta = event.angleDelta().y()
-        if delta > 0 and bar.value() <= bar.minimum():
-            # The momentum after a lifted finger only bounces; the pull of a finger on the pad or a wheel loads.
-            if event.phase() != Qt.ScrollMomentum:
-                self._pulled += delta
-            if self._pulled >= (LOAD_PULL if self._started_at_top else LOAD_PULL_AFTER_BOUNCE):
-                self._pulled = 0
-                self.older.emit()
-            elif not self._started_at_top and not self._bounced:
-                self._bounced = True
-                self._bounce.start()
-            event.accept()
-            return
-        self._pulled = 0
         super().wheelEvent(event)
 
 
@@ -555,16 +480,18 @@ class BubbleWindow(QWidget):
         self._wait_since = 0.0
         self._growth = None
         self._older_until = 0.0
+        self._has_older = False  # earlier messages wait above
+        self._more_open = False  # their arrow is showing
+        self._toggling = False
+        self._pull_since = self._pull_last = 0.0  # a run of scrolling at the top: its start and its latest event
+        self._more_engaged = 0.0
+        self._more_progress = 0.0
         self._tip = None
         self._vx = self._vy = 0.0
         self._physics_on = False
         self._dots_on = False
         self._dots_phase = 0.0
         self._dots_lines = []
-        self._loading_lines = []
-        self._load_timer = QTimer(self)
-        self._load_timer.setSingleShot(True)
-        self._load_timer.timeout.connect(self._load_older)
 
         # Everything that shows sits on the card; the window around it can be bigger (see _hold_after).
         self._card = QWidget(self)
@@ -578,7 +505,7 @@ class BubbleWindow(QWidget):
         self._doc.command.connect(self.command)
         self._doc.selected.connect(self._on_selected)
         self._scroll = OlderScroll(self._card)
-        self._scroll.older.connect(self._wheel_older)
+        self._scroll.pulled.connect(self._on_pulled)
         self._scroll.setWidget(self._text)
         self._scroll.setFrameShape(QScrollArea.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -771,7 +698,6 @@ class BubbleWindow(QWidget):
         self._commands_forced = True
         # The dots of a thought before belong to text that is gone; ticking them on would draw nothing.
         self._dots_lines = []
-        self._loading_lines = []
         self._slash.show_rows(list(menu_pages.COMMANDS))
         # As wide as the commands and their notes need, so nothing is cut; never wider than a chat bubble.
         self._geom = ([], max(MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60)), 0)
@@ -855,7 +781,7 @@ class BubbleWindow(QWidget):
         """Click on the arrow loads the message before; on a message it copies it, shift+click as markdown."""
         panel = self._message_at(x, y)
         if panel and panel["role"] == "more":
-            self._wheel_older()
+            self._arrow_clicked()
         elif panel and panel.get("queued"):
             self.edit_queued.emit(panel["queued"])
         elif panel and shift:
@@ -947,6 +873,10 @@ class BubbleWindow(QWidget):
     def _parts(self):
         """Panels, width of the text area and height of the content."""
         blocks = self.blocks or md_blocks("…")
+        # The arrow for the message before only takes room while it shows.
+        self._has_older = len(blocks) > 1 and blocks[0].get("role") == "more" and not blocks[0].get("back")
+        if self._has_older and not self._more_open:
+            blocks = blocks[2:]
         panels = self._panels(blocks) or bubble_panels(measure, md_blocks("…"))
         self._dots_lines = [line for panel in panels for line in panel["lines"]
                             if line["kind"] == "dots"]
@@ -1266,7 +1196,9 @@ class BubbleWindow(QWidget):
             self._entry.commands_open = False
             self._commands_forced = False
         self._list_only = False
-        key = (kind, block_text(blocks), input, tuple(links or []), self._height_cap())
+        if not self._toggling:
+            self._more_open = False  # new content: the arrow for the message before shows again when asked for
+        key = (kind, block_text(blocks), input, tuple(links or []), self._height_cap(), self._more_open)
         if key == self._built and not self._dots_lines:
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
             self.changed = time.monotonic()
@@ -1296,11 +1228,6 @@ class BubbleWindow(QWidget):
         restyle = kind != self.kind
         self.kind = kind
         self._geom = self._parts()
-        if self._scroll.loading:
-            if content_changed and not older:
-                self._cancel_loading()
-            else:
-                self._mark_loading()
         if self._dots_lines and not self._dots_on:
             self._dots_on = True
             self._dots.start()
@@ -1329,44 +1256,89 @@ class BubbleWindow(QWidget):
         self._scroll_to_top()
         QTimer.singleShot(0, self._scroll_to_top)
 
-    def _wheel_older(self):
+    def _on_pulled(self, momentum: bool):
+        """Scrolling up at the top. On a page of the menu that goes back; in the chat it shows the arrow for the
+        message before, and holding on loads it."""
         now = time.monotonic()
         back = next((panel["back"] for panel in self._geom[0] if panel.get("back")), "") if self._geom else ""
         if back:
-            # On a menu page the arrow, and scrolling past the top, go back.
             if self._growth is None and now >= self._older_until:
                 self._older_until = now + OLDER_PAUSE_S
                 self.command.emit(back)
             return
-        if self._growth is None and now >= self._older_until and self.kind == "say" and not self._scroll.loading:
-            self._older_until = now + OLDER_PAUSE_S
-            self._scroll.set_loading(True)
-            self._mark_loading()
-            self._set_text()
-            self._load_timer.start(OLDER_LOAD_MS)
+        if self.kind != "say" or not self._has_older:
+            return
+        self._more_engaged = now
+        if not self._more_open:
+            self._set_more(True)
+        if momentum:
+            return
+        if now - self._pull_last > WHEEL_RUN_GAP_S:
+            self._pull_since = now
+        self._pull_last = now
+        if now - self._pull_since >= HOLD_LOAD_S and self._growth is None:
+            self._load_older()
 
-    def _mark_loading(self):
-        """The arrow becomes pulsing dots."""
-        self._loading_lines = [line for panel in self._geom[0] for line in panel["lines"] if line["kind"] == "more"]
-        for line in self._loading_lines:
-            line["loading"] = True
-        if not self._dots_on:
-            self._dots_on = True
-            self._dots.start()
+    def _arrow_clicked(self):
+        back = next((panel["back"] for panel in self._geom[0] if panel.get("back")), "") if self._geom else ""
+        if back:
+            if self._growth is None and time.monotonic() >= self._older_until:
+                self._older_until = time.monotonic() + OLDER_PAUSE_S
+                self.command.emit(back)
+        elif self.kind == "say" and self._growth is None:
+            self._load_older()
 
     def _load_older(self):
-        self._load_timer.stop()
-        if self._scroll.loading:
-            self._scroll.release(self._older_arrived)
-
-    def _older_arrived(self):
-        self._loading_lines = []
+        """The message before comes in above, sliding down from the top; the arrow has done its job."""
+        self._pull_since = self._pull_last = 0.0
+        self._set_progress(0.0)
         self.older.emit()
 
-    def _cancel_loading(self):
-        self._load_timer.stop()
-        self._loading_lines = []
-        self._scroll.set_loading(False)
+    def _set_more(self, on: bool):
+        """Show or hide the arrow for the message before: the bubble grows or shrinks by its row."""
+        if on == self._more_open or not self._has_older or self.kind != "say" or not self.isVisible():
+            return
+        self._more_open = on
+        self._pull_since = self._pull_last = 0.0
+        self._toggling = True
+        try:
+            self.show_blocks(self.blocks, self.kind, self._input, self._links, keep_scroll=True)
+        finally:
+            self._toggling = False
+
+    def _set_progress(self, progress: float):
+        """How far the hold on the arrow has come, drawn as an arc round it."""
+        self._more_progress = progress
+        for panel in self._geom[0] if self._geom else []:
+            if panel["role"] == "more" and not panel.get("back"):
+                for line in panel["lines"]:
+                    if line["kind"] == "more":
+                        line["progress"] = progress
+        if self._geom:
+            self._set_text()
+
+    def _watch_arrow(self, now: float):
+        """The pointer in the top of the bubble brings the arrow; away from it, it goes again."""
+        if self.kind != "say" or not self._has_older or self._growth is not None:
+            return
+        bar = self._scroll.verticalScrollBar()
+        card = self.card()
+        reach = MORE_KEEP_PX if self._more_open else MORE_ZONE_PX
+        near = False
+        if bar.value() <= 0 and self.face.pointer_known():
+            px, py = self.face._pointer()
+            near = card.left() <= px <= card.right() and card.top() - 6 <= py <= card.top() + reach
+        if near or (self._pull_last and now - self._pull_last < WHEEL_RUN_GAP_S):
+            self._more_engaged = now
+            if not self._more_open:
+                self._set_more(True)
+        elif self._more_open and bar.value() <= 0 and now - self._more_engaged > MORE_LINGER_S:
+            self._set_more(False)
+        if self._more_open:
+            holding = bool(self._pull_since) and now - self._pull_last < WHEEL_RUN_GAP_S
+            progress = min(1.0, (now - self._pull_since) / HOLD_LOAD_S) if holding else 0.0
+            if abs(progress - self._more_progress) >= 0.03 or (progress == 0.0 and self._more_progress):
+                self._set_progress(progress)
 
     def _opening_growth(self) -> Growth:
         """A bubble that opens has its full size at once: the text does not wrap again at every step and the shadow
@@ -1419,12 +1391,12 @@ class BubbleWindow(QWidget):
 
     def _tick_dots(self):
         """Make the thinking dots pulse for as long as the bot is thinking."""
-        if not self._dots_lines and not self._loading_lines:
+        if not self._dots_lines:
             self._dots_on = False
             self._dots.stop()
             return
         self._dots_phase = (self._dots_phase + DOTS_MS / 1000 / DOTS_CYCLE_S) % 1.0
-        for line in self._dots_lines + self._loading_lines:
+        for line in self._dots_lines:
             line["phase"] = self._dots_phase
         if self._geom:
             self._set_text()
@@ -1574,6 +1546,7 @@ class BubbleWindow(QWidget):
             # Nobody pointed at it and nothing new came: it goes away after a while.
             if self.close_bubble("unread"):
                 return
+        self._watch_arrow(now)
         if tip != self._tip:
             self._tip = tip
             self._layout_children(self._paint_chrome())
