@@ -82,7 +82,6 @@ from botwidget.theme import (
     DOTS_CYCLE_S,
     DOTS_GAP,
     DOTS_MS,
-    MORE_HIT_HALF_W,
     PAD_BODY,
     PAD_PANEL_X,
     PAD_SVG,
@@ -815,8 +814,7 @@ class BubbleWindow(QWidget):
             if not top <= content_y < top + height:
                 continue
             if panel["role"] == "more":
-                if abs(x - self._shown_w(self._geom[1]) / 2) <= MORE_HIT_HALF_W:
-                    return panel
+                return panel
             elif panel.get("queued") or (panel.get("copy") and self.kind == "say"):
                 return panel
         return None

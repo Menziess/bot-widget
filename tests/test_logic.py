@@ -3622,11 +3622,8 @@ class BubbleHover(unittest.TestCase):
         self.wheel_up(bubble)
         self.finish_growth()
         self.assertEqual(bubble._geom[0][0]["role"], "more")
-        x = bubble._shown_w(bubble._geom[1]) // 2
         _x, y = self.message_point(0, down=4)
         self.click_at(40, y)
-        self.assertEqual(self.window._depth, 1, "beside the arrow nothing happens")
-        self.click_at(x, y)
         self.assertEqual(self.window._depth, 2)
         self.finish_growth()
         self.assertIn("Klaar?", bubble.full_text)
