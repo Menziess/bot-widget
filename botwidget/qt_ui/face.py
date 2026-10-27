@@ -658,6 +658,13 @@ class FaceWindow(QWidget):
             return False
         return True
 
+    def shrink_think(self) -> bool:
+        """The pointer left the thought: back to the dots while the turn lasts. False when there is nothing to shrink."""
+        if self.pinned or self._chat is None or not self._show_think() or not getattr(self, "_think_on_bot", False):
+            return False
+        self._sync_bubble(self._chat, force=True)
+        return self.bubble.kind == "think" and not self._think_on_bot
+
     def _think_expanded(self) -> bool:
         """Thought text and the field, while the pointer is on the bot or its bubble."""
         return self._pointer_on_head() or self.pointer_near(self.bubble)

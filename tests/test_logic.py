@@ -2040,9 +2040,11 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble._entry.isVisibleTo(bubble))
         self.assertEqual(bubble._entry.placeholderText(), "Queue a message…")
 
-    def test_a_thinking_cloud_closes_at_once_when_the_pointer_leaves(self):
+    def test_a_thinking_cloud_shrinks_to_its_dots_when_the_pointer_leaves(self):
         """Busy bot, cloud open by itself: point at it, then leave (also straight onto another app)."""
+        import time
         from unittest import mock
+        from botwidget.bubble import reading_seconds
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         active = mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive)
@@ -2057,6 +2059,7 @@ class BubbleHover(unittest.TestCase):
             self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
             bubble._tick()
             self.assertEqual(bubble.kind, "think", "the pointer is on it")
+            self.window._pointer_on_head = lambda: False
             if leave_onto_other_app:
                 with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
                         mock.patch.object(type(self.window), "underMouse", return_value=True), \
@@ -2066,7 +2069,13 @@ class BubbleHover(unittest.TestCase):
             else:
                 self.where["at"] = (5000, 5000)
                 bubble._tick()
-            self.assertEqual(bubble.kind, "", "gone at once, not after a reading time")
+            self.assertEqual(bubble.kind, "think", "back to the dots")
+            self.assertFalse(bubble._input)
+            self.assertNotIn("reading", bubble.full_text)
+            self.where["at"] = (5000, 5000)
+            bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) - 1
+            bubble._tick()
+            self.assertEqual(bubble.kind, "", "and they go after a while")
             self.window._think_quiet = False
 
     def start_working(self):
@@ -3644,6 +3653,27 @@ class BubbleHover(unittest.TestCase):
         Faces.toggle(registry, "t", False)
         self.assertEqual(other._menu_page, "bots")
         self.assertTrue(other.bubble.isVisible() or other.bubble._growth is not None)
+
+    def test_a_message_sent_from_the_chat_swaps_it_for_the_dots_cloud_that_opens_like_a_new_bubble(self):
+        from botwidget.qt_ui.face import conversation_blocks, role_panel, plain_block
+        bubble = self.window.bubble
+        bubble.show_blocks(conversation_blocks([{"role": "bot", "text": "Klaar?"}], "T"), "say", input=True)
+        self.finish_growth()
+        bubble.show_blocks([role_panel("bot"), plain_block("dots")], "think")
+        self.assertEqual(bubble.kind, "think")
+        self.assertTrue(bubble._growth is not None and bubble._growth.opening, "not a speech bubble that shrinks")
+        self.assertLess(bubble.windowOpacity(), 1.0)
+
+    def test_a_thought_that_grows_the_cloud_is_read_from_the_top_until_it_has_grown(self):
+        from botwidget.qt_ui.face import role_panel, plain_block, thought_blocks
+        bubble = self.window.bubble
+        bubble.show_blocks([role_panel("bot"), plain_block("dots")], "think")
+        self.finish_growth()
+        long = [role_panel("bot")] + thought_blocks("Een lange gedachte over de bestanden. " * 30) + [role_panel("bot"), plain_block("dots")]
+        bubble.show_blocks(long, "think", input=True)
+        self.assertIsNotNone(bubble._growth)
+        bubble._growth_step(0.5)
+        self.assertEqual(bubble._scroll.verticalScrollBar().value(), 0, "no flying past the text while it grows")
 
     def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
         from PySide6.QtCore import Qt

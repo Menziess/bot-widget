@@ -1251,6 +1251,12 @@ class BubbleWindow(QWidget):
                                             or bar.value() >= bar.maximum() - FOLLOW_SLACK)
         self._scroll_target = bar.value() if keep_scroll or (kind == "think" and not self._follow) else 0
         visible = self.isVisible()
+        if visible and self.kind and ((kind == "think") != (self.kind == "think")
+                                      or (kind == "think" and input != self._input)):
+            # A speech bubble and a thinking cloud do not grow into each other, nor do the dots and the thought with
+            # its field: the old one goes, the new one opens.
+            self.hide()
+            visible = False
         # The size it has on screen now, the command list included: a new page grows from there. Measured after
         # _list_only went off it was a sliver, which left the pointer outside and closed the bubble at once.
         start = (self._shown_w(self._geom[1]), self._body_h(self._geom[2])) if self._geom and visible else None
@@ -1406,7 +1412,8 @@ class BubbleWindow(QWidget):
 
     def _scroll_value(self) -> int:
         """Where the text sits: at the top of a message, or at the end of a thought that is being followed."""
-        return self._scroll.verticalScrollBar().maximum() if self._follow else self._scroll_target
+        return self._scroll.verticalScrollBar().maximum() if self._follow and self._growth is None \
+            else self._scroll_target
 
     def _scroll_to_top(self):
         self._scroll.verticalScrollBar().setValue(self._scroll_value())
@@ -1555,10 +1562,13 @@ class BubbleWindow(QWidget):
             if pointer:
                 self._near_at = now
         elif self._was_near:
-            # The pointer left the bubble: close it straight away, a thinking cloud too. It stays quiet
-            # until the face is pointed at again.
+            # The pointer left the bubble: close it straight away. A thinking cloud of a bot that is still busy
+            # shrinks back to its dots instead, which go by themselves after a while.
             # Moving from the face onto its own bubble is already handled by
             # face.pointer_near(self) being true, which is caught above.
+            if self.kind == "think" and self.face.shrink_think():
+                self.changed = now
+                return
             if self.close_bubble("left"):
                 return
         elif self.changed and now - self.changed > reading_seconds(self.full_text):
