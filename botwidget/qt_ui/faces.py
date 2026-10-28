@@ -3,11 +3,12 @@
 import json
 import math
 import os
+import sys
 import threading
 import time
 
 from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QDesktopServices, QGuiApplication, QPainter
+from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter
 from PySide6.QtWidgets import QApplication, QWidget
 
 from botwidget import __version__, channel, checkout, grokbot, hermesbot, startup, updates
@@ -222,6 +223,12 @@ class Faces(QObject):
         self._semicircle_hide_timer = QTimer(self)
         self._semicircle_hide_timer.setInterval(500)
         self._semicircle_hide_timer.timeout.connect(self._semicircle_hide)
+        if sys.platform == "darwin":
+            # macOS keeps windows below the menu bar, so the catcher never gets the pointer at the top edge.
+            self._edge_timer = QTimer(self)
+            self._edge_timer.setInterval(100)
+            self._edge_timer.timeout.connect(self._edge_tick)
+            self._edge_timer.start()
         self.grok_probed.connect(self._take_grok_avatar)
         threading.Thread(target=self._probe_grok, daemon=True).start()
         self._probed = 0.0
@@ -484,6 +491,12 @@ class Faces(QObject):
         """The pointer opens the arc from the whole top-middle, not only the 120px dome."""
         cx, cy = self._hotspot()
         return abs(px - cx) < ARC_CATCH_X and cy <= py <= cy + ARC_CATCH_Y
+
+    def _edge_tick(self):
+        pos = QCursor.pos()
+        if self._pointer_over_arc(pos.x(), pos.y()):
+            self.show_semicircle()
+            self._semicircle_hide_timer.stop()
 
     def _place_catcher(self, *_args):
         cx, cy = self._hotspot()
