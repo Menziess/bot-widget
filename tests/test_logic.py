@@ -4503,6 +4503,13 @@ class BubbleHover(unittest.TestCase):
                     break
         self.assertGreater(rests[1], 2 * motion.MOOD_REST_S[0] - 0.001)
 
+    def test_the_dots_start_with_none_of_them_at_its_biggest(self):
+        from botwidget import bubble
+        from botwidget.theme import DOTS_R, DOTS_START_PHASE
+        import re
+        sizes = [float(r) for r in re.findall(r'r="([\d.]+)"', bubble.dots_svg(0, 0, DOTS_START_PHASE, "#000"))]
+        self.assertLess(max(sizes), DOTS_R * 0.9, "the first frame has no big dot")
+
     def test_at_rest_all_three_dots_are_small(self):
         from botwidget import bubble
         import re

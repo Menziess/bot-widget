@@ -10,6 +10,7 @@ from botwidget.theme import (
     CONTROL_BUTTON_PAD,
     CONTROL_SLIDER_W,
     CONTROL_SWITCH_W,
+    DOTS_START_PHASE,
     DOTS_W,
     MEET_SLACK,
     MIN_CONTENT_W,
@@ -184,7 +185,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
             # Thinking dots: three circles that the widget itself makes pulse.
             laid.append({"kind": "dots", "size": SMALL_FONT, "indent": 0, "prefix": "",
                          "grey": False, "head": False, "words": [], "xs": [], "ws": [],
-                         "width": DOTS_W, "phase": 0.0})
+                         "width": DOTS_W, "phase": DOTS_START_PHASE})
             widest = max(widest, DOTS_W)
             continue
         if kind == "control":

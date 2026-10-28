@@ -89,6 +89,7 @@ from botwidget.theme import (
     DOTS_GAP,
     DOTS_MS,
     DOTS_REST_S,
+    DOTS_START_PHASE,
     PAD_BODY,
     PAD_PANEL_X,
     PAD_SVG,
@@ -760,7 +761,7 @@ class BubbleWindow(QWidget):
         self._vx = self._vy = 0.0
         self._physics_on = False
         self._dots_on = False
-        self._dots_phase = 0.0
+        self._dots_phase = DOTS_START_PHASE
         self._dots_lines = []
         self._spots = []  # where the dots are, and how they look now
         self._dot_labels = []
@@ -1978,7 +1979,7 @@ class BubbleWindow(QWidget):
     def _resume_dots(self):
         if self._dots_lines and not self._dots.isActive():
             self._dots_on = True
-            self._dots_phase = 0.0
+            self._dots_phase = DOTS_START_PHASE
             self._dots.start()
 
     def _tick_dots(self):

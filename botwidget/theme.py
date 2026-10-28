@@ -83,6 +83,7 @@ DOTS_MS = 32
 DOTS_CYCLE_S = 1.2
 DOTS_BURST_CYCLES = 2  # the dots pulse this many times, then rest, so the screen is not redrawn all the time
 DOTS_REST_S = 3.0
+DOTS_START_PHASE = 0.18  # where the wave starts: all three small, none of them already at its biggest
 # A bubble nobody points at goes away after the time to read it: this many seconds plus a bit per
 # word, never longer than the maximum. One that was pointed at closes as soon as the pointer leaves.
 BUBBLE_LINGER = 4.0
