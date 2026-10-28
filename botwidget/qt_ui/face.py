@@ -1030,7 +1030,12 @@ class FaceWindow(QWidget):
     def _latest(self) -> dict:
         """The latest chat of this bot: from Grok Bot or from the local OpenBot."""
         self._cleanup_local()
-        return self.grok.chat() if self.grok else (self.hermes.chat() if self.hermes else latest_chat(thread_id=self.thread_id))
+        chat = self.grok.chat() if self.grok else (self.hermes.chat() if self.hermes else latest_chat(thread_id=self.thread_id))
+        if self._debug:
+            # /debug: the bot looks busy with a thought, and a click shows a message with every piece of markdown.
+            chat = {**chat, "activity": menu_pages.DEBUG_THOUGHT,
+                    "messages": [*(chat.get("messages") or []), {"role": "bot", "text": menu_pages.DEBUG_MESSAGE}]}
+        return chat
 
     def _poll_pending(self):
         """Check whether a question or approval is waiting and refresh the bubble.
@@ -1438,6 +1443,13 @@ class FaceWindow(QWidget):
         if not files and text.strip().lower() == "/feedback":
             self.open_feedback()
             return
+        if not files and text.strip().lower() == "/debug" and any(c[0] == "/debug" for c in menu_pages.commands()):
+            self._debug = not self._debug
+            self.pinned = False
+            self._answer_view = False
+            self.bubble.close_bubble("debug")  # the list of commands it was chosen from goes with it
+            self._sync_bubble(self._latest(), force=True, replace_menu=True)
+            return
         if not files and text.strip().lower() == "/pin":
             # Toggle pin: pinned keeps the bubble open, unpinned lets it close naturally.
             self.toggle_pin()
@@ -1451,7 +1463,7 @@ class FaceWindow(QWidget):
         if open_question:
             self._give_answer(*open_question, [text])
             return
-        if self._working:
+        if self._working and not self._debug:
             self._queue.append({"text": text, "files": files, "id": uuid.uuid4().hex[:8]})
             self._sync_bubble(self._latest(), force=True)
             self._poll_timer.start(300)

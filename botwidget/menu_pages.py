@@ -18,6 +18,45 @@ SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"
 COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
             ("/connections", "what was found"), ("/refresh", "reload every bot"),
             ("/feedback", "open a GitHub issue"))
+DEBUG_COMMAND = ("/debug", "pretend to think; click for a sample message")
+
+
+def commands() -> tuple:
+    """The commands the list offers. /debug only in a copy that runs from a checkout, never in an installed one."""
+    from botwidget.startup import from_checkout
+    return (*COMMANDS, DEBUG_COMMAND) if from_checkout() else COMMANDS
+
+
+DEBUG_THOUGHT = "Debug: this is what a thought looks like while the bot works…"
+DEBUG_MESSAGE = """# Header one
+## Header two
+### Header three
+
+Plain text with **bold**, *italic*, `inline code`, a [link](https://openbot.run/) and a bare URL https://example.com/page.
+
+> A quote that goes on for a while, so you can see how a quoted line wraps over more than one line.
+
+- A bullet with **bold** in it
+- A second bullet
+1. A numbered line
+2. Another numbered line
+
+---
+
+| Name | Kind | Notes |
+|--|--|--|
+| Short | text | fits in one line |
+| A long cell | markdown | this cell has so many words in it that it has to wrap over several lines in the table |
+| `code` | **bold** | *italic* and a [link](https://x.ai/bot) |
+
+```python
+def greet(name):
+    return f"Hi, {name}!"
+
+print(greet("world"))
+```
+
+A file path: ~/Projects/private/bot-widget/README.md"""
 FEEDBACK_ISSUE = "https://github.com/Menziess/bot-widget/issues/new"
 
 

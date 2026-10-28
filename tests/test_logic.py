@@ -2420,6 +2420,10 @@ class BubbleHover(unittest.TestCase):
             frames(3)
             self.assertTrue(bubble.isVisible(), f"pointing at the face opened nothing, after {log[-6:]}")
 
+        from botwidget import menu_pages
+        patch = mock.patch.object(menu_pages, "commands", lambda: menu_pages.COMMANDS)  # an installed copy: no /debug
+        patch.start()
+        self.addCleanup(patch.stop)
         ops = ["hover", "on_bubble", "edge", "leave", "left_click", "right_click", "choose", "back", "refresh",
                "answer", "poll", "new_chat", "focus_elsewhere", "move_face", "wait", "escape"]
         automatic = {"poll", "answer", "new_chat", "wait", "focus_elsewhere"}
@@ -2641,7 +2645,7 @@ class BubbleHover(unittest.TestCase):
                                                  return_value=Qt.ApplicationInactive), \
                 mock.patch("PySide6.QtGui.QDesktopServices.openUrl", return_value=True), \
                 mock.patch("botwidget.qt_ui.face.api_get", side_effect=OSError("no network in tests")):
-            for command, _note in menu_pages.COMMANDS:
+            for command, _note in menu_pages.commands():
                 with self.subTest(command=command):
                     menu, frames = self.choose_from_the_menu(command)
                     self.one_content(bubble, f"after {command}")
@@ -3494,8 +3498,8 @@ class BubbleHover(unittest.TestCase):
         bubble._entry.setText("/")
         self.app.processEvents()
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
-        self.assertEqual([c for c, _n in bubble._slash.rows],
-                         ["/settings", "/bots", "/connections", "/refresh", "/feedback"])
+        from botwidget import menu_pages
+        self.assertEqual([c for c, _n in bubble._slash.rows], [c for c, _n in menu_pages.commands()])
         self.assertLess(bubble._slash.geometry().bottom(), bubble._entry.geometry().top(), "above the field")
         self.assertGreater(bubble.height(), height, "the bubble makes room for the list")
         bubble._entry.setText("/b")
@@ -4177,11 +4181,11 @@ class BubbleHover(unittest.TestCase):
 
     def test_every_command_in_the_list_opens_a_page(self):
         from botwidget import menu_pages
-        for command, _note in menu_pages.COMMANDS:
-            if command in ("/refresh", "/feedback"):
+        for command, _note in menu_pages.commands():
+            if command in ("/refresh", "/feedback", "/debug"):
                 continue
             self.assertIn(command, menu_pages.SLASH)
-        self.assertNotIn("/home", [command for command, _note in menu_pages.COMMANDS],
+        self.assertNotIn("/home", [command for command, _note in menu_pages.commands()],
                          "gone: the back arrow and a right-click show the list")
         self.assertNotIn("/refresh", menu_pages.SLASH, "reload, not a menu page")
         self.assertNotIn("/feedback", menu_pages.SLASH, "a browser page, not a menu page")
@@ -4357,6 +4361,46 @@ class BubbleHover(unittest.TestCase):
         bubble._entry.hasFocus = lambda: False
         bubble._tick()
         self.assertEqual(bubble.kind, "", "the keyboard is gone again: it may go")
+
+    def test_debug_is_only_offered_in_a_local_copy(self):
+        from unittest import mock
+        from botwidget import menu_pages
+        with mock.patch("botwidget.startup.from_checkout", return_value=True):
+            self.assertIn("/debug", [c for c, _n in menu_pages.commands()])
+        with mock.patch("botwidget.startup.from_checkout", return_value=False):
+            self.assertNotIn("/debug", [c for c, _n in menu_pages.commands()])
+            self.window.on_user_message("/debug")
+        self.assertFalse(self.window._debug, "an installed copy does not know the command")
+
+    def test_debug_makes_the_bot_think_and_a_click_shows_a_sample_message(self):
+        from unittest import mock
+        from botwidget import menu_pages
+        with mock.patch("botwidget.startup.from_checkout", return_value=True):
+            self.window.on_user_message("/debug")
+        self.assertTrue(self.window._debug)
+        chat = self.window._latest()
+        self.assertEqual(chat["activity"], menu_pages.DEBUG_THOUGHT)
+        self.window._sync_bubble(chat, force=True)
+        self.assertTrue(self.window._working, "it looks busy")
+        self.assertTrue(self.window._toggle_answer_view())
+        self.assertIn("Header one", self.window.bubble.full_text)
+        self.assertIn("```python", menu_pages.DEBUG_MESSAGE)
+        with mock.patch("botwidget.startup.from_checkout", return_value=True):
+            self.window.on_user_message("/debug")
+        self.assertFalse(self.window._debug, "a toggle")
+        self.assertEqual(self.window._latest().get("activity", ""), "")
+
+    def test_debug_chosen_from_the_menu_while_in_debug_mode_does_not_leave_an_empty_bubble(self):
+        from unittest import mock
+        with mock.patch("botwidget.startup.from_checkout", return_value=True):
+            self.window.on_user_message("/debug")
+            self.window.open_command_menu()
+            bubble = self.window.bubble
+            self.assertTrue(bubble._list_only)
+            bubble._run_command("/debug")
+        self.assertFalse(self.window._debug)
+        self.assertFalse(bubble._list_only, "the list went with the choice")
+        self.assertTrue(not bubble.isVisible() or bubble.full_text.strip(), "never an empty bubble")
 
     def test_the_balls_hang_together_as_a_chain_and_go_with_the_bubble(self):
         from unittest import mock
@@ -5379,7 +5423,7 @@ class MenuInBubble(unittest.TestCase):
         self.assertTrue(bubble.isVisible())
         self.assertEqual(bubble._entry.text(), "")
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
-        self.assertEqual(bubble._slash.rows, list(menu_pages.COMMANDS))
+        self.assertEqual(bubble._slash.rows, list(menu_pages.commands()))
         self.assertEqual(self.text(), "")
         self.assertFalse(bubble._entry.isVisibleTo(bubble))
 
@@ -5411,7 +5455,7 @@ class MenuInBubble(unittest.TestCase):
             self.window._check_hover()
         self.assertTrue(bubble._list_only, "the menu stays")
         bubble._tick_dots()  # the dots of the thought before must not trip over a bubble without text
-        self.assertEqual(bubble._slash.rows, list(menu_pages.COMMANDS))
+        self.assertEqual(bubble._slash.rows, list(menu_pages.commands()))
         self.window.on_user_message("/settings")
         self.assertIn("Sound on a new answer", self.text())
 
@@ -5460,7 +5504,7 @@ class MenuInBubble(unittest.TestCase):
         self.assertIn("Settings", self.text())
         window._menu_command("page/commands")
         self.assertFalse(window.pinned, "the arrow back does not pin")
-        self.assertEqual(bubble._slash.rows, list(menu_pages.COMMANDS))
+        self.assertEqual(bubble._slash.rows, list(menu_pages.commands()))
         with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=time.monotonic() + 60):
             bubble._tick()
         self.assertFalse(bubble.isVisible(), "the pointer is not on it: it goes")
@@ -5513,7 +5557,7 @@ class MenuInBubble(unittest.TestCase):
         self.right_click()
         self.assertEqual(bubble._entry.text(), "Een bericht dat bijna af is")
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
-        self.assertEqual(bubble._slash.rows, list(menu_pages.COMMANDS), "the whole list, the text is no filter")
+        self.assertEqual(bubble._slash.rows, list(menu_pages.commands()), "the whole list, the text is no filter")
 
     def test_picking_a_command_leaves_the_message_in_the_field_also_after_coming_back(self):
         self.window.pin()

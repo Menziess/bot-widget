@@ -863,7 +863,7 @@ class BubbleWindow(QWidget):
         """A message that starts with a slash gets the commands that fit it, in a list above the field."""
         self._commands_forced = False
         text = self._entry.text().strip().lower()
-        fitting = [row for row in menu_pages.COMMANDS if row[0].startswith(text)] \
+        fitting = [row for row in menu_pages.commands() if row[0].startswith(text)] \
             if text.startswith("/") and " " not in text else []
         self._show_commands(fitting)
 
@@ -874,7 +874,7 @@ class BubbleWindow(QWidget):
             self._update_commands()
             return
         self._commands_forced = True
-        self._show_commands(list(menu_pages.COMMANDS))
+        self._show_commands(list(menu_pages.commands()))
 
     def show_command_menu(self):
         """Right-click: the command list on its own, without the conversation."""
@@ -986,7 +986,7 @@ class BubbleWindow(QWidget):
         self._commands_forced = True
         # The dots of a thought before belong to text that is gone; ticking them on would draw nothing.
         self._dots_lines = []
-        self._slash.show_rows(list(menu_pages.COMMANDS))
+        self._slash.show_rows(list(menu_pages.commands()))
         # As wide as the commands and their notes need, so nothing is cut; never wider than a chat bubble.
         self._geom = ([], max(MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60)), 0)
         self._built = ("commands",)
