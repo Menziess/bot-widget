@@ -1087,6 +1087,11 @@ class FaceWindow(QWidget):
         if self._alive:
             self.grok_polled.emit()
 
+    def warn(self, note: str):
+        """A line under the conversation for a few seconds."""
+        self._refresh_note, self._refresh_note_until = note, time.monotonic() + REFRESH_NOTE_S
+        self._sync_bubble(self._latest(), force=True)
+
     def _refreshed(self, note: str):
         """The refresh is done: the chat comes back with one line on how it went."""
         if not self._refreshing:

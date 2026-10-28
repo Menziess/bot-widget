@@ -131,6 +131,7 @@ ENTRY_PAD = 18  # the field's padding and border, above and below its lines
 ENTRY_GAP = 8
 LINKS_H = 26
 MIN_INTERACTIVE_W = 240
+MESSAGE_MAX_CHARS = 100_000  # what the widget sends; OpenBot took 200 000 in a test and refused 2 000 000
 SCROLLBAR_W = 6
 NOTICE_MS = 1600
 GROW_MS = 240
@@ -866,6 +867,9 @@ class BubbleWindow(QWidget):
     def _send(self):
         self.changed = time.monotonic()
         text, files = self._entry.text().strip(), self._attachments
+        if len(text) > MESSAGE_MAX_CHARS:
+            self.face.warn(f"Too long to send: {len(text):,} of {MESSAGE_MAX_CHARS:,} characters.")
+            return  # what you wrote stays in the field
         if text or files:
             self._entry.clear()
             self._draft_timer.stop()

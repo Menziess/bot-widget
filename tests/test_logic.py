@@ -4460,6 +4460,17 @@ class BubbleHover(unittest.TestCase):
         sent = [item["text"] for item in self.window._outbox.items]
         self.assertEqual(sent, [text], "not cut off after 500 characters")
 
+    def test_a_message_that_is_too_long_is_not_sent_and_stays_in_the_field(self):
+        from botwidget.qt_ui.bubble_window import MESSAGE_MAX_CHARS
+        self.window._pump_outbox = lambda: None
+        self.hover()
+        bubble = self.window.bubble
+        bubble._entry.setText("a" * (MESSAGE_MAX_CHARS + 1))
+        bubble._send()
+        self.assertEqual(self.window._outbox.items, [])
+        self.assertEqual(len(bubble._entry.text()), MESSAGE_MAX_CHARS + 1)
+        self.assertIn("Too long to send", self.window._refresh_note)
+
     def test_the_app_is_not_activated_while_its_bubble_sits_on_another_desktop(self):
         from unittest import mock
         from botwidget.qt_ui import desktops, face
