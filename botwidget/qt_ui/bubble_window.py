@@ -81,9 +81,11 @@ from botwidget.theme import (
     BUBBLE_MAX_W,
     BUBBLE_WAIT_MAX,
     BUBBLE_WIDER,
+    DOTS_BURST_CYCLES,
     DOTS_CYCLE_S,
     DOTS_GAP,
     DOTS_MS,
+    DOTS_REST_S,
     PAD_BODY,
     PAD_PANEL_X,
     PAD_SVG,
@@ -551,6 +553,12 @@ class BubbleWindow(QWidget):
         self.full_text = ""
         self.blocks = []
         self.changed = 0.0
+        self._shadow_key = None
+        self._shadow_pix = None
+        self._trail = None
+        self._dots_cycles = 0
+        self._blur_mask = b""
+        self._keep_draft = False  # opened with words in the field: stays until the field has had the keyboard
         self._input = False
         self._list_only = False
         self._links = []
@@ -1712,6 +1720,11 @@ class BubbleWindow(QWidget):
     def _scroll_to_top(self):
         self._scroll.verticalScrollBar().setValue(self._scroll_value())
 
+    def _resume_dots(self):
+        if self._dots_lines and not self._dots.isActive():
+            self._dots_on = True
+            self._dots.start()
+
     def _tick_dots(self):
         """Make the thinking dots pulse for as long as the bot is thinking."""
         if not self._dots_lines:
@@ -1720,7 +1733,16 @@ class BubbleWindow(QWidget):
             self._update_fade()
             return
         self._fade.setEnabled(False)
+        before = self._dots_phase
         self._dots_phase = (self._dots_phase + DOTS_MS / 1000 / DOTS_CYCLE_S) % 1.0
+        if self._dots_phase < before:
+            self._dots_cycles += 1
+            if self._dots_cycles >= DOTS_BURST_CYCLES:
+                # Rest: still dots for a while, no timer running; they pulse again afterwards.
+                self._dots_cycles, self._dots_phase = 0, 0.0
+                self._dots_on = False
+                self._dots.stop()
+                QTimer.singleShot(round(DOTS_REST_S * 1000), self._resume_dots)
         for line in self._dots_lines:
             line["phase"] = self._dots_phase
         if self._geom:

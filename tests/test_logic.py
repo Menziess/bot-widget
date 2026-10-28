@@ -4264,6 +4264,23 @@ class BubbleHover(unittest.TestCase):
         self.window._hover_retry = 0.0
         self.hover()
         self.assertTrue(bubble.isVisible())
+    def test_the_thinking_dots_pulse_in_bursts_and_rest_in_between(self):
+        from unittest import mock
+        from botwidget.theme import DOTS_BURST_CYCLES, DOTS_CYCLE_S, DOTS_MS
+        self.hover()
+        bubble = self.window.bubble
+        bubble._dots_lines = [{"phase": 0.0}]
+        bubble._dots_on = True
+        bubble._dots.start()
+        with mock.patch("botwidget.qt_ui.bubble_window.QTimer.singleShot") as later:
+            for _ in range(round(DOTS_BURST_CYCLES * DOTS_CYCLE_S * 1000 / DOTS_MS) + 2):
+                bubble._tick_dots()
+        self.assertFalse(bubble._dots.isActive(), "no timer runs while the dots rest")
+        later.assert_called_once()
+        bubble._resume_dots()
+        self.assertTrue(bubble._dots.isActive(), "and they pulse again after the rest")
+        bubble._dots.stop()
+
     def test_a_mood_clip_plays_once_and_then_rests(self):
         from botwidget import motion
         move = motion.Motion(seed=1)
