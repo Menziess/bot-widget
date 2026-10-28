@@ -227,7 +227,7 @@ def latest_chat(thread_id: str, limit: int = 20) -> dict:
     commentary lines come in; the newest of those is the sign that the turn is
     still running.
     """
-    empty = {"messages": [], "activity": ""}
+    empty = {"messages": [], "activity": "", "waiting": ""}
     try:
         con = sqlite3.connect(f"file:{DB_FILE}?mode=ro", uri=True, timeout=2)
     except sqlite3.Error:
@@ -258,6 +258,16 @@ def latest_chat(thread_id: str, limit: int = 20) -> dict:
             (thread_id, thread_id),
         ).fetchone()
         turn = _last_turn(con, thread_id)
+        try:
+            wait = con.execute(
+                """
+                SELECT w.note FROM agent_waits w JOIN projection_agents a ON a.agent_id = w.agent_id
+                WHERE a.thread_id = ? AND w.woken_at IS NULL ORDER BY w.created_at DESC LIMIT 1
+                """,
+                (thread_id,),
+            ).fetchone()
+        except sqlite3.Error:
+            wait = None  # an OpenBot store from before waits existed
     except sqlite3.Error:
         return empty
     finally:
@@ -286,7 +296,8 @@ def latest_chat(thread_id: str, limit: int = 20) -> dict:
             activity = ""
             if status == "failed":
                 failed, failed_at = failure_note(error), completed or ""
-    return {"messages": messages, "activity": activity, "failed": failed, "failed_at": failed_at}
+    waiting = ("Waiting: " + " ".join(wait[0].split())[:ACTIVITY_MAX_CHARS]) if wait else ""
+    return {"messages": messages, "activity": activity, "waiting": waiting, "failed": failed, "failed_at": failed_at}
 
 
 USAGE_LIMIT_WORDS = ("usage limit", "quota", "rate limit", "insufficient", "credit", "billing", "out of tokens")

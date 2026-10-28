@@ -81,6 +81,7 @@ AUTOMATION_NOTE = ("OpenBot's local API is off for {name}. In OpenBot open {name
                    '"Local scripts"; messages wait here until then.')
 WELCOME_S = 9.0
 FOCUS_DWELL_S = 0.25
+HOVER_FOCUS_MOVE_S = 1.0
 # After a queued message went out, the next one waits at most this long for the bot to start on it.
 QUEUE_HOLD_S = 30.0
 BUBBLE_HOVER_MARGIN = 24  # the pointer counts as on the bubble this far outside it
@@ -180,6 +181,8 @@ class FaceWindow(QWidget):
         self._wall_kick = (0.0, 0.0)
         self._coasting = False
         self._working = False
+        self._waiting = False
+        self._answer_view = False  # a click while it thinks: the last answer instead of the cloud, until blur or click
         # Calm idle, and Grok Bot's clips when something happens (botwidget.motion).
         # Every face its own seed, so that faces started together never move in step.
         self.motion = Motion(seed=f"{agent_id}:{time.time_ns()}:{random.random()}")
@@ -195,6 +198,7 @@ class FaceWindow(QWidget):
         self._happy_on = False
         self._hovered = False
         self._hover_since = 0.0
+        self._pointer_seen = ((0, 0), 0.0)  # pointer position, and when it last moved
         self._hover_blocked_until = 0.0  # closed on purpose while the pointer is on the face
         self._hover_retry = 0.0
         self._menu_page = None  # a page of the menu is in the bubble
@@ -538,7 +542,8 @@ class FaceWindow(QWidget):
             pass
         elif click:
             self.react("click")
-            self.open_input()
+            if not self._toggle_answer_view():
+                self.open_input()
             # The happy eyes stay a moment; then the cycle picks up again.
             QTimer.singleShot(600, self._happy_off)
         else:
@@ -704,7 +709,7 @@ class FaceWindow(QWidget):
         if self._semicircle_visible:
             return
         on_bot = self._think_expanded()
-        pending = self._show_think()
+        pending = self._show_think() and not self._answer_view and not self._reading()
         if pending and not self.pinned and on_bot != getattr(self, "_think_on_bot", False):
             self._think_on_bot = on_bot
             if self._chat is not None:
@@ -719,6 +724,9 @@ class FaceWindow(QWidget):
             hovered = (px - cx) ** 2 + (py - cy) ** 2 <= ON_FACE ** 2
         self._hovered = hovered
         now = time.monotonic()
+        here = self._pointer()
+        if here != self._pointer_seen[0]:
+            self._pointer_seen = (here, now)
         if hovered:
             self.bubble.heal()
         if not hovered:
@@ -737,7 +745,9 @@ class FaceWindow(QWidget):
               and FOCUS_ON_HOVER):
             # Typing starts at once, but only when the pointer stays: passing over the face is not asking.
             self._hover_since = 0.0
-            if self.bubble.isVisible() and self.bubble.takes_input() and self.bubble.kind == "say":
+            # A pointer that merely rests on the face (you are typing elsewhere) must not pull the focus away.
+            moved_lately = now - self._pointer_seen[1] < HOVER_FOCUS_MOVE_S
+            if moved_lately and self.bubble.isVisible() and self.bubble.takes_input() and self.bubble.kind == "say":
                 activate_app()
                 self.bubble.focus_entry()
 
@@ -849,7 +859,7 @@ class FaceWindow(QWidget):
         """What the face shows while it lasts: a question waits, the bot thinks, there is no route."""
         if self.has_pending:
             return "ask"
-        if self._working:
+        if self._working or self._waiting:
             return "thinking"
         if self._send_status or self._send_status_or_note():
             return "offline"
@@ -892,6 +902,35 @@ class FaceWindow(QWidget):
         activate_app()
         self.bubble.focus_entry()
 
+    def prompt_history(self) -> list:
+        """What you sent before, oldest first, for the arrow keys in the field."""
+        prompts = [m["text"] for m in (self._chat or {}).get("messages") or [] if m.get("role") == "user"]
+        return [text for index, text in enumerate(prompts) if text and (index == 0 or text != prompts[index - 1])]
+
+    def _reading(self) -> bool:
+        """The bubble holds an answer you are reading, not one you just asked for."""
+        asking = self._asked or self._sending or bool(self._outbox.items)
+        return self.bubble.kind == "say" and not asking and self.bubble.engaged()
+
+    def _toggle_answer_view(self) -> bool:
+        """Click on a thinking face: the last answer shows, with the field. Click again: the cloud is back.
+        False when nothing thinks or there is no answer yet, so the click does what it always did."""
+        if self._answer_view:
+            self._answer_view = False
+            self._sync_bubble(self._latest(), force=True)
+            return True
+        if not self._working or self.pinned or not self._show_think():
+            return False
+        if not any(m.get("role") == "bot" for m in (self._chat or {}).get("messages") or []):
+            return False
+        self._answer_view = True
+        self._depth = 1
+        self._sync_bubble(self._latest(), force=True)
+        self._claim_bubble()
+        activate_app()
+        self.bubble.focus_entry()
+        return True
+
     def _keep_bubble_here(self):
         """A bubble that Qt calls open but that is not on the screen, because macOS took it off or it stayed on
         the desktop you left, never opens again by itself: take it away so that it can open here."""
@@ -930,6 +969,7 @@ class FaceWindow(QWidget):
 
     def unpin(self):
         self.pinned = False
+        self._answer_view = False
         if self._hovered:
             self._hover_blocked_until = time.monotonic() + REOPEN_AFTER_S
         if self._working:
@@ -1091,6 +1131,9 @@ class FaceWindow(QWidget):
     def _sync_bubble(self, chat: dict, force: bool = False, replace_menu: bool = False):
         """Cloud during a running turn, the conversation as long as the bubble is pinned or fresh."""
         self._working = bool(chat.get("activity")) or self._has_attention()
+        self._waiting = bool(chat.get("waiting"))
+        if not (self._working or self._waiting):
+            self._answer_view = False
         # OpenBot: the last turn failed (a spent provider, say). The face shows it like Grok Bot offline.
         self._failed_note = chat.get("failed") or ""
         if self._asked and self._failed_note and not self._working and self._failed_since_asked(chat.get("failed_at")):
@@ -1138,7 +1181,9 @@ class FaceWindow(QWidget):
             # Something new came in: the latest message alone again, the older ones a scroll away.
             self._conversation = newest
             self._depth = 1
-        pending = self._show_think()
+        # A bubble you are reading or scrolling is not swapped for the cloud by a new thought.
+        reading = not force and self._reading()
+        pending = self._show_think() and not self._answer_view and not reading
         # Clear _asked so the conversation can appear even when the bot's answer
         # has the same text as the last one (so _answer_pending never fires).
         if self._asked and self.grok and self.grok.stopped:
@@ -1188,7 +1233,7 @@ class FaceWindow(QWidget):
         if self._asked and self.hermes and self.hermes.stopped:
             self._asked = False
         # Do not clear _asked here: keep the dots showing until an answer arrives or _answer_pending clears it.
-        if (self._working or self._sending or self._outbox.items or self._asked) and not self.pinned:
+        if (self._working or self._sending or self._outbox.items or self._asked) and not (self.pinned or self._answer_view or reading):
             # The cloud closed itself. The chat stays away until this turn is over.
             return
         blocks = self._chat_blocks(messages, greet=force or self.pinned)

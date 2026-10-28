@@ -529,13 +529,13 @@ class BubbleLayout(unittest.TestCase):
         self.assertGreater(rects[1][0], rects[0][0] + rects[0][1], "a gap between the panels")
         self.assertEqual(rects[-1][0] + rects[-1][1], content_height(panels))
 
-    def test_bubble_height_cap_is_three_face_heights_plus_chrome(self):
+    def test_bubble_height_cap_is_four_face_heights_plus_chrome(self):
         from botwidget.avatar import AVATAR_SIZE
         from botwidget.theme import PAD_SVG, TAIL_ROOM
-        self.assertEqual(bubble.bubble_height_cap(AVATAR_SIZE), PAD_SVG + TAIL_ROOM + 3 * AVATAR_SIZE + 16)
-        self.assertEqual(bubble.bubble_height_cap(40), PAD_SVG + TAIL_ROOM + 3 * AVATAR_SIZE + 16)
-        self.assertEqual(bubble.bubble_height_cap(120), PAD_SVG + TAIL_ROOM + 376)
-        self.assertLess(bubble.bubble_height_cap(AVATAR_SIZE), int(1080 * 0.4))
+        self.assertEqual(bubble.bubble_height_cap(AVATAR_SIZE), PAD_SVG + TAIL_ROOM + 4 * AVATAR_SIZE + 16)
+        self.assertEqual(bubble.bubble_height_cap(40), PAD_SVG + TAIL_ROOM + 4 * AVATAR_SIZE + 16)
+        self.assertEqual(bubble.bubble_height_cap(120), PAD_SVG + TAIL_ROOM + 496)
+        self.assertLess(bubble.bubble_height_cap(AVATAR_SIZE), int(1080 * 0.5))
 
     def test_long_text_breaks_within_the_width(self):
         lines, widest = bubble_layout.md_layout(self.measure, "word " * 40, 200)
@@ -1040,6 +1040,20 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "")
 
+    def test_an_open_wait_does_not_hide_a_new_message_behind_the_cloud(self):
+        import time
+        from botwidget.bubble import reading_seconds
+        self.window._seeded = True
+        chat = {"messages": self.MESSAGES, "activity": "", "waiting": "Waiting: build"}
+        self.window._sync_bubble(chat)
+        bubble = self.window.bubble
+        self.assertNotEqual(bubble.kind, "think")
+        self.assertEqual(self.window._motion_mood(), "thinking")
+        bubble._tick()
+        bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) - 1
+        bubble._tick()
+        self.assertEqual(bubble.kind, "")
+
     def test_showing_the_same_bubble_again_does_not_build_it_again(self):
         self.hover()
         bubble = self.window.bubble
@@ -1191,7 +1205,7 @@ class BubbleHover(unittest.TestCase):
         self.assertFalse(self.window.bubble._doc.textCursor().hasSelection())
         self.assertTrue(self.window.bubble.isVisible())
 
-    def test_dragging_selects_with_the_text_cursor_and_copies_the_selection_on_release(self):
+    def test_dragging_selects_with_the_text_cursor_and_does_not_copy(self):
         from PySide6.QtCore import Qt
         self.MESSAGES = [{"role": "bot", "text": "Een lange regel met woorden die vanzelf over twee regels loopt in de bubbel."}]
         self.hover()
@@ -1204,9 +1218,33 @@ class BubbleHover(unittest.TestCase):
         self.send_mouse("release", 240, y, Qt.NoButton, Qt.LeftButton)
         selected = bubble._doc.textCursor().selectedText()
         self.assertTrue(selected)
-        self.assertEqual(self.clipboard(), selected.replace("\u2029", "\n"))
-        self.assertTrue(bubble._notice.isVisibleTo(bubble))
-        self.assertEqual(bubble._notice.text, "Copied")
+        self.assertNotEqual(self.clipboard(), selected.replace("\u2029", "\n"), "selecting leaves the copying to you")
+        self.assertFalse(bubble._notice.isVisibleTo(bubble))
+
+    def test_up_and_down_walk_through_earlier_prompts_and_back_to_the_draft(self):
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        self.hover()
+        entry = self.window.bubble._entry
+        entry.history = lambda: ["een", "twee", "drie"]
+
+        def press(key):
+            entry.keyPressEvent(QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier))
+
+        entry.setText("concept")
+        press(Qt.Key_Up)
+        self.assertEqual(entry.text(), "drie")
+        press(Qt.Key_Up)
+        self.assertEqual(entry.text(), "twee")
+        press(Qt.Key_Down)
+        self.assertEqual(entry.text(), "drie")
+        press(Qt.Key_Down)
+        self.assertEqual(entry.text(), "concept", "past the newest prompt is the draft again")
+        press(Qt.Key_Up)
+        press(Qt.Key_Up)
+        press(Qt.Key_Up)
+        press(Qt.Key_Up)
+        self.assertEqual(entry.text(), "een", "the oldest stays")
 
     def test_the_notice_fades_the_words_behind_it_and_then_goes(self):
         import time

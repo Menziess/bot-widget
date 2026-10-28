@@ -97,13 +97,13 @@ def content_height(panels: list) -> int:
 
 
 def bubble_height_cap(face_h: int) -> int:
-    """Max bubble window height: this face plus one extra face of chat, plus chrome.
+    """Max bubble window height: this face plus two extra faces of chat, plus chrome.
 
     Longer copy and menu pages scroll inside that band. Width can still grow.
     The cap is not a share of the screen, so a bubble cannot dwarf its face.
     """
     band = max(AVATAR_SIZE, int(face_h))
-    return PAD_SVG + TAIL_ROOM + 3 * band + 16
+    return PAD_SVG + TAIL_ROOM + 4 * band + 16
 
 
 # A page of the menu (settings, bots, connections) is a place to work in, not a chat line: it grows to this

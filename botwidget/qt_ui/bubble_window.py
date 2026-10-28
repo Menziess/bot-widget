@@ -34,6 +34,7 @@ from PySide6.QtGui import (
     QLinearGradient,
     QPainter,
     QRegion,
+    QTextCursor,
     QTextOption,
 )
 from PySide6.QtWidgets import (
@@ -73,7 +74,7 @@ from botwidget.system.current import before_show, pointer_window, send_behind_wi
 from botwidget.qt_ui.controls import ActionButton, SlashList, Switch, ValueSlider
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, cut_out, stacked, svg_pixmap
-from botwidget.qt_ui.text_doc import fill_document, selected_text
+from botwidget.qt_ui.text_doc import fill_document
 from botwidget.theme import (
     BUBBLE_FONT,
     BUBBLE_MAX_SCREEN_SHARE,
@@ -211,6 +212,11 @@ class BubbleEntry(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.commands_open = False
+        self.history = lambda: []  # earlier prompts, oldest first
+        self._recall = None  # index into the history while Up/Down walk through it
+        self._draft = ""
+        self._recalling = False
+        self.textChanged.connect(self._typed)
         self.document().setDocumentMargin(0)
         self.setTabChangesFocus(True)
         self.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
@@ -286,6 +292,35 @@ class BubbleEntry(QPlainTextEdit):
         lines = min(ENTRY_MAX_LINES, self.line_count())
         return max(ENTRY_H, lines * self.fontMetrics().lineSpacing() + ENTRY_PAD + 2)
 
+    def _typed(self):
+        if not self._recalling:
+            self._recall = None
+
+    def _walk_history(self, step: int) -> bool:
+        """Up: the prompt before. Down: the one after, and at the end what was typed before Up. False when the key
+        is just a cursor move."""
+        cursor = self.textCursor()
+        if step < 0 and cursor.blockNumber() > 0 or step > 0 and cursor.blockNumber() < self.document().blockCount() - 1:
+            return False
+        prompts = self.history()
+        if step < 0:
+            if not prompts or self._recall == 0:
+                return self._recall is not None
+            if self._recall is None:
+                self._draft, self._recall = self.text(), len(prompts)
+            self._recall -= 1
+        else:
+            if self._recall is None:
+                return False
+            self._recall += 1
+        self._recalling = True
+        self.setText(self._draft if self._recall >= len(prompts) else prompts[self._recall])
+        self._recalling = False
+        if self._recall >= len(prompts):
+            self._recall = None
+        self.moveCursor(QTextCursor.End)
+        return True
+
     def keyPressEvent(self, event):
         """Escape closes the bubble without sending anything and keeps what was typed; with the list of commands open it
         closes that."""
@@ -300,6 +335,9 @@ class BubbleEntry(QPlainTextEdit):
                 return
         if event.key() == Qt.Key_Escape:
             self.dismissed.emit()
+            return
+        if (event.key() in (Qt.Key_Up, Qt.Key_Down) and not event.modifiers() & ~Qt.KeypadModifier
+                and self._walk_history(-1 if event.key() == Qt.Key_Up else 1)):
             return
         if (sys.platform == "darwin" and event.key() == Qt.Key_Backspace
                 and event.modifiers() == Qt.ControlModifier):
@@ -410,7 +448,6 @@ class BubbleText(QTextBrowser):
 
     clicked = Signal(float, float, bool)  # where in the text, and whether shift was held
     command = Signal(str)  # a menu row was clicked
-    selected = Signal(str, float)  # the selected words, and where the pointer was let go
     SLOP = 4
 
     def __init__(self, parent=None):
@@ -484,10 +521,7 @@ class BubbleText(QTextBrowser):
         pos = event.position().toPoint()
         if event.button() == Qt.LeftButton and self._press is not None:
             if self._dragging:
-                cursor = self.textCursor()
-                text = selected_text(self.document(), cursor.selectionStart(), cursor.selectionEnd())
-                if text.strip():
-                    self.selected.emit(text, pos.y())
+                pass
             elif not self.anchorAt(self._press):
                 cursor = self.textCursor()
                 cursor.clearSelection()
@@ -567,7 +601,6 @@ class BubbleWindow(QWidget):
         self._doc.message_at = self._message_at
         self._doc.clicked.connect(self._on_click)
         self._doc.command.connect(self.command)
-        self._doc.selected.connect(self._on_selected)
         self._scroll = OlderScroll(self._card)
         self._scroll.pulled.connect(self._on_pulled)
         self._scroll.pull_active = lambda: self._pull_px > 0
@@ -591,6 +624,7 @@ class BubbleWindow(QWidget):
         self._scroll.verticalScrollBar().valueChanged.connect(self._move_notice)
         self._entry = BubbleEntry(self._card)
         self._entry.setPlaceholderText("Send a message…")
+        self._entry.history = self.face.prompt_history
         self._entry.returnPressed.connect(self._send)
         self._entry.resized.connect(self._entry_resized)
         self._entry.attached.connect(self._attach)
@@ -865,9 +899,6 @@ class BubbleWindow(QWidget):
             self._copied_to_clipboard(panel["copy"], "Copied markdown", y)
         elif panel:
             self._copied_to_clipboard(plain_text(panel["copy"]), "Copied", y)
-
-    def _on_selected(self, text: str, y: float):
-        self._copied_to_clipboard(text, "Copied", y)
 
     def _copied_to_clipboard(self, text: str, notice: str, y: float):
         """Copy, and say so over the message: its words fade out behind the notice, which fades away too."""
@@ -1897,6 +1928,7 @@ class BubbleWindow(QWidget):
             return False
         if reason in ("left", "unread"):
             self.face.pinned = False
+            self.face._answer_view = False
         self.place("")
         return True
 
