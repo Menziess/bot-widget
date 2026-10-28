@@ -24,6 +24,7 @@ from botwidget.config import (
     auto_update,
     automation_ready,
     check_updates,
+    save_battery,
     muted_bots,
     save_widget_config,
     set_muted,
@@ -404,6 +405,7 @@ class Faces(QObject):
             "always_on_top": always_on_top(), "can_pick_desktops": CAN_PICK_DESKTOPS,
             "can_glass": glass.available(), "glass_clear": glass.clear_percent(),
             "all_desktops": all_desktops(), "login": startup.is_enabled(), "check_updates": check_updates(),
+            "save_battery": save_battery(),
             "can_install_updates": can_install_update() or startup.from_checkout(), "auto_update": auto_update(),
             "bots": [{"id": bot["id"], "name": bot["name"], "on": bot["id"] in self.faces,
                       "muted": bot["id"] in muted_bots(), "source": bot_source(bot["id"])} for bot in bots],
@@ -421,6 +423,7 @@ class Faces(QObject):
         "all_desktops": lambda faces, on: faces._set_all_desktops(on),
         "login": lambda faces, on: startup.set_enabled(on),
         "check_updates": lambda faces, on: save_widget_config(check_updates=on),
+        "save_battery": lambda faces, on: save_widget_config(save_battery=on),
         "auto_update": lambda faces, on: save_widget_config(auto_update=on),
     }
     CONNECTIONS = {"openbot": "openbot", "grokbot": "gbot", "hermesbot": "hermes"}

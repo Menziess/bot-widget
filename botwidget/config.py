@@ -65,7 +65,7 @@ WORK_POLL_INTERVAL = 1  # second, while the turn is running
 CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
-SETTING_KEYS = ("drafts", "sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied",
+SETTING_KEYS = ("drafts", "save_battery", "sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied",
                 "local_command", "muted_bots", "glass_clear", "grokbot_target", "hermesbot_target")
 
 
@@ -90,6 +90,11 @@ def always_on_top() -> bool:
 def check_updates() -> bool:
     """By default ask once per start whether there is a newer version."""
     return widget_config().get("check_updates") is not False
+
+
+def save_battery() -> bool:
+    """Fewer animations while the computer runs on its battery; on unless the user switched it off."""
+    return widget_config().get("save_battery") is not False
 
 
 def auto_update() -> bool:

@@ -60,7 +60,7 @@ from botwidget.openbot import (
     latest_chat,
     openbot_installed,
 )
-from botwidget import attachments, grokbot, hermesbot, menu_pages, __version__
+from botwidget import attachments, grokbot, hermesbot, menu_pages, power, __version__
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.bubble_window import BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window
 from botwidget.qt_ui.native import native_id, set_flags
@@ -771,6 +771,8 @@ class FaceWindow(QWidget):
         dt, self._last_tick = now - self._last_tick, now
         interval = frame_ms(held=self._drag_origin is not None or self._coasting or self._happy_on,
                             moving=self._moving, pointer_near=self._pointer_on_head(), playing=self.motion.active)
+        if interval > frame_ms(held=True, moving=False, pointer_near=False) and power.reduced():
+            interval = max(interval, power.REDUCED_FRAME_MS)  # what plays by itself on battery; never a drag
         if self._anim_timer.interval() != interval:
             self._anim_timer.setInterval(interval)
         self._aim(dt * 1000)
@@ -802,6 +804,7 @@ class FaceWindow(QWidget):
         """Where the face wants to go: dragging, happy, looking at the mouse, or what motion plays."""
         a = self.anim
         self.motion.set_mood(self._motion_mood())
+        self.motion.calm = power.reduced()
         pose = self.motion.step(dt_ms / 1000)
         lift, shift = offsets(pose, CIRCLE_R)
         moved = {"shift": shift, "lift": lift, "zoom": pose["zoom"]}

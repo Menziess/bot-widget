@@ -113,6 +113,7 @@ def settings(state: dict) -> list:
         _toggle("Sound on a new answer", "toggle/sound", state["sound"]),
         _toggle(f"No sound from {QUIET_FROM}:00 to {QUIET_TO:02d}:00", "toggle/quiet_hours", state["quiet_hours"]),
         _toggle("Face stays above other windows", "toggle/always_on_top", state["always_on_top"]),
+        _toggle("Fewer animations on battery or in low power mode", "toggle/save_battery", state["save_battery"]),
     ]
     if state.get("can_pick_desktops"):
         blocks.append(_toggle("Show on all desktops", "toggle/all_desktops", state["all_desktops"]))

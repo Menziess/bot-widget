@@ -42,3 +42,8 @@ def _run_clean(self, result=None):
 
 
 unittest.TestCase.run = _run_clean
+
+# Whether the computer that runs the tests is on its battery must not change what they find.
+from botwidget import power as _power  # noqa: E402
+
+_power._probe = lambda: False

@@ -2155,7 +2155,7 @@ class BubbleHover(unittest.TestCase):
 
     def settings_state(self):
         return {"sound": True, "quiet_hours": False, "always_on_top": True, "all_desktops": False, "login": False,
-                "check_updates": True, "auto_update": False, "channel": "local", "version": "0.2.0",
+                "check_updates": True, "save_battery": True, "auto_update": False, "channel": "local", "version": "0.2.0",
                 "can_pick_desktops": True, "can_install_updates": False, "hotkey": "", "switch_label": None,
                 "update": "", "staged_update": "", "bots": []}
 
@@ -2176,9 +2176,9 @@ class BubbleHover(unittest.TestCase):
         bubble = self.open_settings()
         switches = [w for w in bubble._control_widgets if isinstance(w, Switch)]
         buttons = [w for w in bubble._control_widgets if isinstance(w, ActionButton)]
-        self.assertEqual(len(switches), 6)
+        self.assertEqual(len(switches), 7)
         self.assertEqual([w.text() for w in buttons], ["Quit Bot Widget"])
-        self.assertEqual([w.isChecked() for w in switches], [True, False, True, False, False, True])
+        self.assertEqual([w.isChecked() for w in switches], [True, False, True, True, False, False, True])
         rows = [w.geometry().top() for w in switches]
         self.assertEqual(rows, sorted(rows), "in the order of the page")
         self.assertEqual(len(set(rows)), len(rows), "each in a row of its own")
@@ -2717,6 +2717,7 @@ class BubbleHover(unittest.TestCase):
         from PySide6.QtCore import QPoint, QRect, Qt
         from PySide6.QtGui import QGuiApplication
         window = self.window
+        window.move(300, 520)  # low on the screen: the settings page is tall and must not cover the face
         window.show()
         with self.x_pointer(), mock.patch.object(QGuiApplication, "applicationState",
                                                  return_value=Qt.ApplicationInactive):
@@ -4471,6 +4472,37 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(len(bubble._entry.text()), MESSAGE_MAX_CHARS + 1)
         self.assertIn("Too long to send", self.window._refresh_note)
 
+    def test_fewer_animations_only_on_battery_and_only_when_the_setting_is_on(self):
+        from unittest import mock
+        from botwidget import config, power
+        self.assertTrue(config.save_battery(), "on unless switched off")
+        with mock.patch.object(power, "constrained", return_value=True):
+            self.assertTrue(power.reduced())
+            config.save_widget_config(save_battery=False)
+            self.assertFalse(power.reduced(), "the setting wins")
+        config.save_widget_config(save_battery=True)
+        with mock.patch.object(power, "constrained", return_value=False):
+            self.assertFalse(power.reduced())
+        self.assertTrue(power.parse_pmset("Now drawing from 'Battery Power'"))
+        self.assertFalse(power.parse_pmset("Now drawing from 'AC Power'"))
+        self.assertTrue(power.parse_low_power("Currently in use:\n lowpowermode         1\n"))
+        self.assertFalse(power.parse_low_power("Currently in use:\n lowpowermode         0\n"))
+
+    def test_on_battery_the_face_rests_twice_as_long(self):
+        from botwidget import motion
+        calm, plain = motion.Motion(seed=3), motion.Motion(seed=3)
+        calm.calm = True
+        for move in (calm, plain):
+            move.set_mood("thinking")
+        rests = []
+        for move in (plain, calm):
+            for _ in range(60 * 30):
+                move.step(1 / 60)
+                if move.rest > 0:
+                    rests.append(move.rest)
+                    break
+        self.assertGreater(rests[1], 2 * motion.MOOD_REST_S[0] - 0.001)
+
     def test_the_app_is_not_activated_while_its_bubble_sits_on_another_desktop(self):
         from unittest import mock
         from botwidget.qt_ui import desktops, face
@@ -5263,7 +5295,7 @@ class MenuPages(unittest.TestCase):
 
     STATE = {"version": "0.2.0", "channel": "local", "switch_label": "Switch to stable version", "hotkey": "⌃⌥Space",
              "update": "", "staged_update": "", "sound": True, "quiet_hours": False, "always_on_top": True,
-             "can_pick_desktops": True, "all_desktops": True, "login": False, "check_updates": True,
+             "can_pick_desktops": True, "all_desktops": True, "login": False, "check_updates": True, "save_battery": True,
              "can_install_updates": False, "auto_update": True,
              "bots": [{"id": "a", "name": "Fritsie", "on": True}, {"id": "b", "name": "Robo", "on": False}],
              "openbot": True, "automation_ready": False, "gbot": False, "grok": "no route"}

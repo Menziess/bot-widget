@@ -49,7 +49,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from botwidget import attachments, menu_pages
+from botwidget import attachments, menu_pages, power
 from botwidget.avatar import AVATAR_SIZE, CIRCLE_R
 from botwidget.bubble import (
     bubble_body_svg,
@@ -1989,7 +1989,10 @@ class BubbleWindow(QWidget):
             return
         self._fade.setEnabled(False)
         before = self._dots_phase
-        self._dots_phase = (self._dots_phase + DOTS_MS / 1000 / DOTS_CYCLE_S) % 1.0
+        calm = 2 if power.reduced() else 1
+        if self._dots.interval() != DOTS_MS * calm:
+            self._dots.setInterval(DOTS_MS * calm)
+        self._dots_phase = (self._dots_phase + self._dots.interval() / 1000 / DOTS_CYCLE_S) % 1.0
         if self._dots_phase < before:
             self._dots_cycles += 1
             if self._dots_cycles >= DOTS_BURST_CYCLES:
@@ -1997,7 +2000,7 @@ class BubbleWindow(QWidget):
                 self._dots_cycles, self._dots_phase = 0, 0.0
                 self._dots_on = False
                 self._dots.stop()
-                QTimer.singleShot(round(DOTS_REST_S * 1000), self._resume_dots)
+                QTimer.singleShot(round(DOTS_REST_S * calm * 1000), self._resume_dots)
         for line in self._dots_lines:
             line["phase"] = self._dots_phase
         if self._geom:
@@ -2098,6 +2101,9 @@ class BubbleWindow(QWidget):
             self._physics.stop()
             return
         now = time.monotonic()
+        want = 33 if power.reduced() else 16  # on battery the bubble moves at half the frames
+        if self._physics.interval() != want:
+            self._physics.setInterval(want)
         self._wait_since = (self._wait_since or now) if self.face.awaiting() else 0.0
         awaiting = bool(self._wait_since) and now - self._wait_since < BUBBLE_WAIT_MAX
         if self._input and self._entry.hasFocus():

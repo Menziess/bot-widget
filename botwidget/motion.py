@@ -144,12 +144,13 @@ class Motion:
         self.playing = None      # (clip or poke name, seconds in, loops, face while it plays)
         self.after = None        # (face, seconds left) held once a clip is over
         self.rest = 0.0          # seconds a mood holds still before its clip plays again
+        self.calm = False        # on battery: rests and gaps twice as long
         self.blink = None        # seconds since an idle blink began
         self.wait = self.rng.uniform(*FIRST_WAIT_S)  # seconds to the next idle blink or look
         self.history = []        # what the idle did, for the curious
 
     def _gap(self) -> float:
-        return self.rng.uniform(*IDLE_GAP_S)
+        return self.rng.uniform(*IDLE_GAP_S) * (2 if self.calm else 1)
 
     @property
     def active(self) -> bool:
@@ -230,7 +231,7 @@ class Motion:
             t += dt * self.rate
             if t >= length and loops:
                 self.playing = None
-                self.rest = self.rng.uniform(*MOOD_REST_S)
+                self.rest = self.rng.uniform(*MOOD_REST_S) * (2 if self.calm else 1)
             elif t >= length:
                 self.playing = None
                 self._loop_mood()
