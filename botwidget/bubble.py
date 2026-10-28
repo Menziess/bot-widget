@@ -291,18 +291,18 @@ def _bubble_tip(side: str, body_w: int, body_h: int, tip: float | None) -> float
 
 
 def bubble_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above",
-                      alpha: float | None = None) -> str:
+                      alpha: float | None = None, tail: bool = True) -> str:
     """The shadow, drawn sharp; the toolkit blurs it itself (SVG filters
     are not supported everywhere).
     """
     x0, y0 = PAD_SVG, PAD_SVG
     edge = _tail_edge(side, body_w, body_h)[0]
-    tail = _bubble_tail(_bubble_tip(side, body_w, body_h, tip), edge, side, 3)
+    tail_path = _bubble_tail(_bubble_tip(side, body_w, body_h, tip), edge, side, 3)
     return _bubble_canvas(body_w, body_h, (
         f'<rect x="{x0 - SHADOW_GROW}" y="{y0 - SHADOW_GROW + 2}"'
         f' width="{body_w + 2 * SHADOW_GROW}" height="{body_h + 2 * SHADOW_GROW}"'
         f' rx="{SAND_RADIUS}" fill="#000" opacity="{SHADOW_ALPHA if alpha is None else alpha}"/>'
-        f'<path d="{tail}" fill="#000" opacity="{SHADOW_ALPHA if alpha is None else alpha}"/>'))
+        + (f'<path d="{tail_path}" fill="#000" opacity="{SHADOW_ALPHA if alpha is None else alpha}"/>' if tail else "")))
 
 
 def _glass(shape: str, height: float, alpha: float) -> str:
@@ -315,7 +315,7 @@ def _glass(shape: str, height: float, alpha: float) -> str:
 
 
 def bubble_body_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above",
-                    alpha: float = GLASS_ALPHA_FLAT, mask: bool = False) -> str:
+                    alpha: float = GLASS_ALPHA_FLAT, mask: bool = False, tail: bool = True) -> str:
     """The glass area with a bright inner edge, a faint outer line and the tail toward the face.
 
     tip is the face in image coordinates, along the edge the tail comes out of (x above or below the
@@ -323,9 +323,9 @@ def bubble_body_svg(body_w: int, body_h: int, tip: float | None = None, side: st
     """
     x0, y0 = PAD_SVG, PAD_SVG
     edge = _tail_edge(side, body_w, body_h)[0]
-    tail = _bubble_tail(_bubble_tip(side, body_w, body_h, tip), edge, side, 0)
+    tail_path = _bubble_tail(_bubble_tip(side, body_w, body_h, tip), edge, side, 0)
     shape = (f'<rect x="{x0}" y="{y0}" width="{body_w}" height="{body_h}" rx="{SAND_RADIUS}"/>'
-             f'<path d="{tail}"/>')
+             + (f'<path d="{tail_path}"/>' if tail else ""))
     if mask:
         return _bubble_canvas(body_w, body_h, f'<g fill="#000">{shape}</g>')
     edges = (f'<rect x="{x0 + 0.5}" y="{y0 + 0.5}" width="{body_w - 1}" height="{body_h - 1}" rx="{SAND_RADIUS - 0.5}"'
@@ -341,13 +341,6 @@ def bubble_body_svg(body_w: int, body_h: int, tip: float | None = None, side: st
 CLOUD_PUFF_W = 24.0  # about how wide one puff is along the edge
 CLOUD_PUFF_ROUND = 0.62  # the puff's radius as a share of its width; 0.5 is a half circle
 CLOUD_CORNER = 24.0
-# The balls between the cloud and the face lie on an arc: (radius, how far along the arc, 0 to 1). The arc
-# leaves the cloud at CLOUD_ARC_FROM, ends CLOUD_ARC_TO out from its edge (the canvas margin is PAD_SVG)
-# and bows CLOUD_ARC_BOW sideways halfway.
-CLOUD_TRAIL = ((5.2, 0.0), (3.5, 0.5), (2.2, 1.0))
-CLOUD_ARC_FROM = 8.0
-CLOUD_ARC_TO = 15.0
-CLOUD_ARC_BOW = 10.0
 
 
 def _edge_point(w: float, h: float, corner: float, distance: float) -> tuple:
@@ -367,9 +360,8 @@ def _edge_point(w: float, h: float, corner: float, distance: float) -> tuple:
     return centre[0] + corner * math.cos(angle), centre[1] + corner * math.sin(angle)
 
 
-def _cloud_parts(body_w: int, body_h: int, tip: float | None, side: str,
-                 grow: float = 0.0):
-    """The cloud outline and the circles of the trail toward the head."""
+def _cloud_path(body_w: int, body_h: int, grow: float = 0.0) -> str:
+    """The outline of the cloud. The balls toward the head are not in it: they follow the bot (see Trail)."""
     corner = min(CLOUD_CORNER, body_w / 2, body_h / 2)
     perimeter = 2 * (body_w - 2 * corner) + 2 * (body_h - 2 * corner) + 2 * math.pi * corner
     puffs = max(8, round(perimeter / CLOUD_PUFF_W))
@@ -381,40 +373,23 @@ def _cloud_parts(body_w: int, body_h: int, tip: float | None, side: str,
     for i in range(puffs):
         x, y = _edge_point(body_w, body_h, corner, i * perimeter / puffs)
         points.append((ox + x * scale_x, oy + y * scale_y))
-    path = f"M{points[0][0]:.2f} {points[0][1]:.2f}" + "".join(
+    return f"M{points[0][0]:.2f} {points[0][1]:.2f}" + "".join(
         f"A{radius:.2f} {radius:.2f} 0 0 1 {x:.2f} {y:.2f}" for x, y in points[1:] + points[:1]) + "Z"
-    tip = _bubble_tip(side, body_w, body_h, tip)
-    edge, sign = _tail_edge(side, body_w, body_h)
-    # A quadratic curve whose middle bows sideways by CLOUD_ARC_BOW.
-    start, end = edge + sign * CLOUD_ARC_FROM, edge + sign * CLOUD_ARC_TO
-    mid_across, mid_along = (start + end) / 2, tip + 2 * CLOUD_ARC_BOW
-    trail = []
-    for r, t in CLOUD_TRAIL:
-        across = (1 - t) ** 2 * start + 2 * (1 - t) * t * mid_across + t ** 2 * end
-        along = (1 - t) ** 2 * tip + 2 * (1 - t) * t * mid_along + t ** 2 * tip
-        trail.append((*_at(side, along, across), r + grow))
-    return path, trail
-
-
-def _circles_svg(circles: list, extra: str) -> str:
-    return "".join(f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r:.2f}" {extra}/>' for cx, cy, r in circles)
 
 
 def cloud_shadow_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above",
                      alpha: float | None = None) -> str:
     """The shadow of the thinking cloud, drawn sharp; the toolkit blurs it."""
-    path, trail = _cloud_parts(body_w, body_h, tip, side, grow=SHADOW_GROW)
+    path = _cloud_path(body_w, body_h, grow=SHADOW_GROW)
     fill = f'fill="#000" opacity="{SHADOW_ALPHA if alpha is None else alpha}"'
-    return _bubble_canvas(body_w, body_h, (
-        f'<g transform="translate(0 2)"><path d="{path}" {fill}/>'
-        + _circles_svg(trail, fill) + "</g>"))
+    # No shadow for the balls of the trail: it reached the edge of the picture and showed as a dark line there.
+    return _bubble_canvas(body_w, body_h, f'<g transform="translate(0 2)"><path d="{path}" {fill}/></g>')
 
 
 def cloud_body_svg(body_w: int, body_h: int, tip: float | None = None, side: str = "above",
                    alpha: float = GLASS_ALPHA_FLAT, mask: bool = False) -> str:
     """The thinking cloud in glass, shaped like the nuage face."""
-    path, trail = _cloud_parts(body_w, body_h, tip, side)
-    shape = f'<path d="{path}"/>' + _circles_svg(trail, "")
+    shape = f'<path d="{_cloud_path(body_w, body_h)}"/>'
     if mask:
         return _bubble_canvas(body_w, body_h, f'<g fill="#000">{shape}</g>')
     # The silhouette is drawn once and used twice: as the glass, and as its faint outline.

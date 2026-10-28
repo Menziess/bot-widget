@@ -5,12 +5,14 @@ and "hint"). A speech bubble can get an input field and a row of links.
 """
 
 import html
+import math
 import os
 import sys
 import time
 
 from PySide6.QtCore import (
     QAbstractAnimation,
+    QPointF,
     QBuffer,
     QByteArray,
     QEasingCurve,
@@ -98,6 +100,8 @@ from botwidget.theme import (
     SAND_RADIUS_PANEL,
     SAND_SANS,
     GLASS_FADE,
+    SAND_GLASS_BOTTOM,
+    SAND_GLASS_TOP,
     SHADOW_BLUR,
     TAIL_ROOM,
 )
@@ -534,6 +538,144 @@ class BubbleText(QTextBrowser):
         self._press, self._dragging = None, False
         self._cursor_for(pos)
 
+class Trail(QWidget):
+    """The balls between a thinking cloud and its bot, a chain: each is a spring toward its own place, and no ball may
+    stray far from the next. The one next to the bot follows the bot closely, the one next to the cloud follows the
+    cloud closely, the one between lags behind both. Their own see-through window, because they reach from the cloud
+    to the bot and move every frame."""
+
+    travels = True
+    RADII = (5.2, 3.5, 2.2)  # the biggest, next to the cloud, first
+    STIFFNESS = (240.0, 140.0, 280.0)
+    DAMPING = (1.0, 0.9, 1.0)
+    BOW = 8.0  # how far the middle of the chain bows sideways
+    GAP = 1.0  # between two balls that hang together
+    SLACK = 2.5  # how far a link may stretch
+    BULGE = 7.0  # the puffs of the cloud stick out of its rectangle
+    PAD = 6
+
+    def __init__(self, bubble):
+        super().__init__()
+        self.bubble = bubble
+        layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
+        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint
+                  | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._balls = []  # [x, y, vx, vy] per ball, in screen px
+        self._at = 0.0
+
+    def setVisible(self, visible: bool):
+        if visible and not self.isVisible():
+            mark_before_show(self)
+        super().setVisible(visible)
+        if not visible:
+            self._balls = []
+            drop_hidden(self)
+
+    def ends(self, cloud: QRectF, bot: QPointF) -> tuple:
+        """Where the chain is fastened: on the edge of the cloud and on the edge of the bot, and the way between."""
+        centre = cloud.center()
+        dx, dy = bot.x() - centre.x(), bot.y() - centre.y()
+        length = math.hypot(dx, dy) or 1.0
+        ux, uy = dx / length, dy / length
+        reach = min(cloud.width() / 2 / abs(ux) if ux else math.inf, cloud.height() / 2 / abs(uy) if uy else math.inf)
+        reach += self.BULGE
+        return ((centre.x() + ux * reach, centre.y() + uy * reach),
+                (bot.x() - ux * (CIRCLE_R + 2), bot.y() - uy * (CIRCLE_R + 2)), (ux, uy))
+
+    def targets(self, cloud: QRectF, bot: QPointF) -> list:
+        """Where each ball would hang: the first against the cloud, the last against the bot, the middle one between
+        them with a little bow."""
+        (ax, ay), (bx, by), (ux, uy) = self.ends(cloud, bot)
+        r0, r2 = self.RADII[0], self.RADII[2]
+        first, last = (ax + ux * r0, ay + uy * r0), (bx - ux * r2, by - uy * r2)
+        bow = min(self.BOW, math.hypot(last[0] - first[0], last[1] - first[1]) / 4)
+        middle = ((first[0] + last[0]) / 2 - uy * bow, (first[1] + last[1]) / 2 + ux * bow)
+        return [first, middle, last]
+
+    def _hold(self, balls: list, ends: tuple):
+        """Keep it a chain: the two ends stay fastened, but neighbours never overlap and never drift far apart, and
+        that comes last: when the bot is thrown the chain trails behind it in one piece instead of tearing."""
+        for ball, (px, py), r in ((balls[0], ends[0], self.RADII[0]), (balls[2], ends[1], self.RADII[2])):
+            dx, dy = px - ball[0], py - ball[1]
+            d = math.hypot(dx, dy)
+            if d > r + 4:
+                ball[0] += dx * (d - r - 4) / d
+                ball[1] += dy * (d - r - 4) / d
+        for _ in range(12):
+            for i, j in ((0, 1), (1, 2)):
+                a, b = balls[i], balls[j]
+                dx, dy = b[0] - a[0], b[1] - a[1]
+                d = math.hypot(dx, dy) or 1e-6
+                touching = self.RADII[i] + self.RADII[j]
+                if d > touching + self.GAP + self.SLACK:
+                    k = (d - touching - self.GAP - self.SLACK) / d / 2
+                elif d < touching:
+                    k = (d - touching) / d / 2
+                else:
+                    continue
+                a[0] += dx * k
+                a[1] += dy * k
+                b[0] -= dx * k
+                b[1] -= dy * k
+
+    def step(self, cloud: QRectF, bot: QPointF):
+        goals = self.targets(cloud, bot)
+        ends = self.ends(cloud, bot)[:2]
+        now = time.monotonic()
+        dt = min(now - self._at, 1 / 30) if self._at else 0.0
+        self._at = now
+        if not self._balls:
+            self._balls = [[x, y, 0.0, 0.0] for x, y in goals]
+        before = [(b[0], b[1]) for b in self._balls]
+        for ball, (gx, gy), k, z in zip(self._balls, goals, self.STIFFNESS, self.DAMPING):
+            for _ in range(4):
+                h = dt / 4
+                ball[2] += (k * (gx - ball[0]) - 2 * z * math.sqrt(k) * ball[2]) * h
+                ball[3] += (k * (gy - ball[1]) - 2 * z * math.sqrt(k) * ball[3]) * h
+                ball[0] += ball[2] * h
+                ball[1] += ball[3] * h
+        self._hold(self._balls, ends)
+        if dt:
+            for ball, (x, y) in zip(self._balls, before):
+                ball[2], ball[3] = (ball[0] - x) / dt, (ball[1] - y) / dt  # what the chain forced is speed, too
+        edge = max(self.RADII) + self.PAD
+        left = min(b[0] for b in self._balls) - edge
+        top = min(b[1] for b in self._balls) - edge
+        right = max(b[0] for b in self._balls) + edge
+        bottom = max(b[1] for b in self._balls) + edge
+        area = QRect(int(left), int(top), int(right - left) + 1, int(bottom - top) + 1)
+        if self.geometry() != area:
+            self.setGeometry(area)
+        if not self.isVisible():
+            desktops.apply(self)  # before it shows: it opens on this desktop
+            self.show()
+            desktops.apply(self)
+        self.raise_()
+        self.update()
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.translate(-self.x(), -self.y())
+        alpha = round(255 * glass.alpha())
+        for (x, y, _vx, _vy), r in zip(self._balls, self.RADII):
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(0, 0, 0, 38))
+            painter.drawEllipse(QPointF(x, y + 1.5), r + 1, r + 1)
+            fill = QLinearGradient(x, y - r, x, y + r)
+            for at, colour in ((0.0, SAND_GLASS_TOP), (1.0, SAND_GLASS_BOTTOM)):
+                tone = QColor(colour)
+                tone.setAlpha(alpha)
+                fill.setColorAt(at, tone)
+            painter.setBrush(QBrush(fill))
+            painter.setPen(QColor(28, 28, 28, 40))
+            painter.drawEllipse(QPointF(x, y), r, r)
+        painter.end()
+
+
 class BubbleWindow(QWidget):
     travels = True  # it belongs to the desktop of its face, wherever that is now, see desktops.apply
     older = Signal()
@@ -929,8 +1071,6 @@ class BubbleWindow(QWidget):
             self._arrow_clicked()
         elif panel and panel.get("queued"):
             self.edit_queued.emit(panel["queued"])
-        elif panel and shift:
-            self._copied_to_clipboard(panel["copy"], "Copied markdown", y)
         elif panel:
             self._ask_copy(panel["copy"] if shift else plain_text(panel["copy"]),
                            "Copied markdown" if shift else "Copied", "Copy markdown" if shift else "Copy", x, y)
@@ -1204,6 +1344,8 @@ class BubbleWindow(QWidget):
     def _height_cap(self) -> int:
         """The face's band for chat; a page of the menu may use most of the screen."""
         cap = bubble_height_cap(self.face.height())
+        fx, fy = self.face.spot()
+        screen_h = screens.rect_at(fx + AVATAR_SIZE // 2, fy + AVATAR_SIZE // 2)[3]
         if getattr(self.face, "_menu_page", None) is None:
             return chat_height_cap(cap, screen_h)
         return menu_height_cap(cap, screen_h)
@@ -1232,24 +1374,62 @@ class BubbleWindow(QWidget):
         _panels, box_w, inner = self._geom
         tip, side = self._tip or (None, "above")
         args = (self._shown_w(box_w) + 2 * PAD_BODY, self._body_h(inner), tip, side)
+        if self.kind == "think":
+            args = (*args[:2], None, "above")  # the cloud has no tail: where its bot is does not change the picture
         alpha = glass.alpha()
         if (self.kind, args, alpha) == self._chrome_key:
             return self._chrome_pix
         cloud = self.kind == "think"
-        shadow_svg = cloud_shadow_svg(*args) if cloud else bubble_shadow_svg(*args)
         body_svg = cloud_body_svg(*args, alpha=alpha) if cloud else bubble_body_svg(*args, alpha=alpha)
-        mask_svg = cloud_body_svg(*args, mask=True) if cloud else bubble_body_svg(*args, mask=True)
-        shape = svg_pixmap(mask_svg)
-        shadow = cut_out(blurred(svg_pixmap(shadow_svg), SHADOW_BLUR * 3), shape)
+        if cloud:
+            shadow = self._shadow(args)
+        else:
+            self._shadow(args)  # the mask for the blur, made once per size
+            shadow = cut_out(blurred(svg_pixmap(bubble_shadow_svg(*args)), SHADOW_BLUR * 3),
+                             svg_pixmap(bubble_body_svg(*args, mask=True)))  # with the shadow of the tail
         pix = stacked(shadow, svg_pixmap(body_svg))
         if not glass.blurs():
             # Nothing behind the window can be blurred here: the grain is what makes it read as frosted glass.
-            pix = glass.frost(pix, shape)
+            mask_svg = cloud_body_svg(*args, mask=True) if cloud else bubble_body_svg(*args, mask=True)
+            pix = glass.frost(pix, svg_pixmap(mask_svg))
         self._chrome.setPixmap(pix)
         if glass.blurs():
-            self._glass_mask = glass.png(shape)
+            self._glass_mask = self._blur_mask
         self._chrome_key, self._chrome_pix = (self.kind, args, alpha), pix
         return pix
+
+    def hideEvent(self, event):
+        if self._trail is not None:
+            self._trail.hide()
+        super().hideEvent(event)
+
+    def _move_trail(self):
+        """The balls between a thinking cloud and its bot follow both, every frame."""
+        if self.kind != "think" or not self.isVisible() or self._yielding:
+            if self._trail is not None and self._trail.isVisible():
+                self._trail.hide()
+            return
+        if self._trail is None:
+            self._trail = Trail(self)
+        face = self.face
+        cloud = QRectF(self.card().adjusted(PAD_SVG, PAD_SVG, -PAD_SVG, -PAD_SVG))
+        self._trail.step(cloud, QPointF(face.x() + AVATAR_SIZE / 2, face.y() + AVATAR_SIZE / 2))
+
+    def _shadow(self, args: tuple):
+        """The shadow of a cloud, and the shape the system blurs behind (without the tail), made once per size.
+        Re-encoding the mask picture and handing it to the system for every step of the tail is what made a big
+        bubble stutter on the Mac."""
+        cloud = self.kind == "think"
+        key = (self.kind, args[0], args[1])
+        if self._shadow_key != key:
+            width, height = args[0], args[1]
+            shape = svg_pixmap(cloud_body_svg(width, height, mask=True) if cloud
+                               else bubble_body_svg(width, height, mask=True, tail=False))
+            self._shadow_key = key
+            self._shadow_pix = (cut_out(blurred(svg_pixmap(cloud_shadow_svg(width, height)), SHADOW_BLUR * 3), shape)
+                                if cloud else None)
+            self._blur_mask = glass.png(shape) if glass.blurs() else b""
+        return self._shadow_pix
 
     def _layout_children(self, pix):
         """Chrome, text area, link row and input field in their places."""
@@ -1954,6 +2134,7 @@ class BubbleWindow(QWidget):
             self._tip = tip
             self._layout_children(self._paint_chrome())
             tx, ty, _tip = self._goal()
+        self._move_trail()
         if self._growth is not None:
             return
         x, y = self._card_at.x(), self._card_at.y()

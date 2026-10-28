@@ -682,10 +682,46 @@ class MutedFace(unittest.TestCase):
 class Clouds(unittest.TestCase):
     """Should give the thinking cloud one lobed silhouette and a tail of shrinking circles."""
 
-    def test_trail_points_toward_the_face_from_every_side(self):
-        clouds = {side: bubble.cloud_body_svg(200, 100, tip=50, side=side) for side in bubble.SIDES}
-        self.assertEqual(len({svg.count("<circle") for svg in clouds.values()}), 1)
-        self.assertEqual(len(set(clouds.values())), 4, "four different tails")
+    def test_the_balls_sit_between_the_cloud_and_the_bot_from_every_side(self):
+        from PySide6.QtCore import QPointF, QRectF
+        from botwidget.qt_ui.bubble_window import Trail
+        cloud = QRectF(100, 100, 200, 100)
+        trail = Trail.__new__(Trail)
+        for bot, side in ((QPointF(400, 150), "right"), (QPointF(0, 150), "left"),
+                          (QPointF(200, 20), "above"), (QPointF(200, 300), "below")):
+            balls = trail.targets(cloud, bot)
+            self.assertEqual(len(balls), 3, side)
+            distance = [((x - bot.x()) ** 2 + (y - bot.y()) ** 2) ** 0.5 for x, y in balls]
+            self.assertEqual(distance, sorted(distance, reverse=True), f"{side}: the smallest is next to the bot")
+
+    def test_the_ball_between_lags_behind_the_ones_next_to_the_cloud_and_the_bot(self):
+        from unittest import mock
+        from PySide6.QtCore import QPointF, QRectF
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui import bubble_window
+        QApplication.instance() or QApplication([])
+        cloud = QRectF(100, 100, 200, 100)
+        clock = [0.0]
+        with mock.patch.object(bubble_window.time, "monotonic", lambda: clock[0]):
+            trail = bubble_window.Trail(None)
+            trail.show = lambda: None
+            trail.raise_ = lambda: None
+            trail.step(cloud, QPointF(380, 150))
+            for n in range(90):  # the bot and its cloud glide on together, the balls trail them
+                clock[0] += 1 / 60
+                bot = QPointF(380, 150 + n * 2)
+                moved = QRectF(cloud.x(), cloud.y() + n * 2, cloud.width(), cloud.height())
+                trail.step(moved, bot)
+            earlier = trail.targets(QRectF(cloud.x(), cloud.y() + 160, cloud.width(), cloud.height()),
+                                    QPointF(380, 150 + 80 * 2))
+            goals = trail.targets(moved, bot)
+        seconds = 10 / 60
+        behind = []  # how long ago each ball's goal was where the ball is now
+        for ball, goal, old in zip(trail._balls, goals, earlier):
+            speed = (((goal[0] - old[0]) ** 2 + (goal[1] - old[1]) ** 2) ** 0.5) / seconds
+            behind.append((((ball[0] - goal[0]) ** 2 + (ball[1] - goal[1]) ** 2) ** 0.5) / (speed or 1))
+        self.assertGreater(behind[1], behind[2], "the smallest follows the bot more closely than the one between")
+        self.assertGreater(behind[1], behind[0], "the biggest follows the cloud more closely than the one between")
 
     def test_the_tail_of_the_chat_bubble_comes_out_of_the_edge_facing_the_face(self):
         # the white area is 200 by 100 at (18, 18); a tail pointing at 50 along its edge ends in these points
@@ -706,30 +742,19 @@ class Clouds(unittest.TestCase):
         svg = bubble.cloud_body_svg(200, 100)
         self.assertEqual(svg.count("<path"), 1, "one silhouette")
         self.assertNotIn("<rect", svg, "no box behind the cloud")
-        self.assertEqual(svg.count("<circle"), len(bubble.CLOUD_TRAIL),
-                         "only the trail toward the head is circles")
-
-    def test_the_balls_between_cloud_and_face_follow_an_arc_inside_the_canvas(self):
-        for side in bubble.SIDES:
-            _path, trail = bubble._cloud_parts(200, 100, 60, side)
-            width, height = 200 + 2 * bubble.PAD_SVG, 100 + bubble.PAD_SVG + bubble.TAIL_ROOM
-            for cx, cy, r in trail:
-                self.assertGreaterEqual(min(cx, cy) - r, 0, side)
-                self.assertLessEqual(max(cx + r - width, cy + r - height), 0, side)
-            (x1, y1, _), (x2, y2, _), (x3, y3, _) = trail
-            bend = abs((x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1))
-            self.assertGreater(bend, 20, f"{side}: not on a straight line")
+        self.assertEqual(svg.count("<circle"), 0, "the balls follow the bot in a window of their own")
 
     def test_a_bigger_cloud_has_more_puffs_and_the_same_text_always_the_same_cloud(self):
         small, large = bubble.cloud_body_svg(120, 60), bubble.cloud_body_svg(320, 160)
         self.assertEqual(small, bubble.cloud_body_svg(120, 60), "the shape does not wobble")
         self.assertGreater(large.count("A"), small.count("A"), "the puffs follow the size, they do not stretch")
 
-    def test_shadow_matches_the_body_shape(self):
+    def test_shadow_matches_the_body_shape_without_a_shadow_for_the_trail(self):
         shadow = bubble.cloud_shadow_svg(200, 100)
         body = bubble.cloud_body_svg(200, 100)
         self.assertEqual(shadow.count("<path"), body.count("<path"))
-        self.assertEqual(shadow.count("<circle"), body.count("<circle"))
+        self.assertEqual(shadow.count("<circle"), 0, "a shadow there reached the edge of the picture and was cut")
+        self.assertEqual(body.count("<circle"), 0, "the balls follow the bot in a window of their own")
 
 
 class FrameRate(unittest.TestCase):
@@ -4332,6 +4357,27 @@ class BubbleHover(unittest.TestCase):
         bubble._entry.hasFocus = lambda: False
         bubble._tick()
         self.assertEqual(bubble.kind, "", "the keyboard is gone again: it may go")
+
+    def test_the_balls_hang_together_as_a_chain_and_go_with_the_bubble(self):
+        from unittest import mock
+        from PySide6.QtCore import QPointF, QRectF
+        from botwidget.qt_ui import bubble_window
+        cloud = QRectF(100, 100, 200, 100)
+        clock = [0.0]
+        with mock.patch.object(bubble_window.time, "monotonic", lambda: clock[0]):
+            trail = bubble_window.Trail(None)
+            trail.show = lambda: None
+            trail.raise_ = lambda: None
+            trail.step(cloud, QPointF(340, 150))
+            for n in range(60):  # the bot is thrown around the cloud
+                clock[0] += 1 / 60
+                trail.step(cloud, QPointF(150 + 200 * (n % 7) / 6, 40 + 220 * ((n * 3) % 5) / 4))
+                for i, j in ((0, 1), (1, 2)):
+                    a, b = trail._balls[i], trail._balls[j]
+                    reach = trail.RADII[i] + trail.RADII[j] + trail.GAP + trail.SLACK
+                    self.assertLessEqual(((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5, reach + 3, f"step {n}")
+            trail.hide()
+        self.assertEqual(trail._balls, [], "gone with the cloud")
 
     def test_the_thinking_dots_pulse_in_bursts_and_rest_in_between(self):
         from unittest import mock
