@@ -4263,9 +4263,9 @@ class BubbleHover(unittest.TestCase):
         bubble = self.window.bubble
         self.assertTrue(bubble.isVisible())
         with mock.patch.object(desktops, "shown_here", return_value=False), \
-                mock.patch.object(desktops, "apply") as apply:
+                mock.patch.object(desktops, "bring_here") as pull:
             self.window._keep_bubble_here()
-        apply.assert_called_once_with(bubble)
+        pull.assert_called_once_with(bubble)
         self.assertFalse(bubble.isVisible(), "gone, so that the next hover opens it where you are")
         self.window._hover_retry = 0.0
         self.hover()
@@ -4298,6 +4298,20 @@ class BubbleHover(unittest.TestCase):
         self.assertLess(played / 60, 20 * 0.6, "it holds still for part of the time")
         self.assertGreater(played, 0)
 
+    def test_the_app_is_not_activated_while_its_bubble_sits_on_another_desktop(self):
+        from unittest import mock
+        from botwidget.qt_ui import desktops, face
+        self.hover()
+        with mock.patch.object(desktops, "shown_here", return_value=False), \
+                mock.patch.object(desktops, "bring_here"), mock.patch.object(face, "activate_app") as activate:
+            self.window._activate_here()
+        activate.assert_not_called()
+        self.window._hover_retry = 0.0
+        self.hover()
+        with mock.patch.object(desktops, "shown_here", return_value=True), \
+                mock.patch.object(face, "activate_app") as activate:
+            self.window._activate_here()
+        activate.assert_called_once()
 
     def test_a_bubble_that_is_where_you_are_is_left_alone(self):
         from unittest import mock
@@ -4405,6 +4419,9 @@ class BubbleHover(unittest.TestCase):
             # Advance time past CROSS_GAP_S so the leave path should fire
             bubble._was_near = True
             bubble._near_at = time.monotonic() - 1.0
+            bubble._tick()
+            self.assertTrue(bubble.kind, "a moment inactive is a switch of desktop, not the user leaving")
+            self.window._inactive_since = time.monotonic() - 5
             bubble._tick()
         self.assertEqual(bubble.kind, "")
 

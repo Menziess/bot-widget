@@ -82,6 +82,7 @@ AUTOMATION_NOTE = ("OpenBot's local API is off for {name}. In OpenBot open {name
 WELCOME_S = 9.0
 FOCUS_DWELL_S = 0.25
 HOVER_FOCUS_MOVE_S = 1.0
+INACTIVE_GRACE_S = 1.0
 # After a queued message went out, the next one waits at most this long for the bot to start on it.
 QUEUE_HOLD_S = 30.0
 BUBBLE_HOVER_MARGIN = 24  # the pointer counts as on the bubble this far outside it
@@ -182,6 +183,8 @@ class FaceWindow(QWidget):
         self._coasting = False
         self._working = False
         self._waiting = False
+        self._debug = False
+        self._inactive_since = 0.0
         self._answer_view = False  # a click while it thinks: the last answer instead of the cloud, until blur or click
         # Calm idle, and Grok Bot's clips when something happens (botwidget.motion).
         # Every face its own seed, so that faces started together never move in step.
@@ -641,9 +644,16 @@ class FaceWindow(QWidget):
         # the bubble open forever. Where X says which window the pointer is on, that answer counts instead:
         # on GNOME our app is inactive whenever another app has the focus (the Grok Bot app, a terminal),
         # and every bubble that hover or a click opened closed again at once.
+        # The app is also inactive for a moment after a switch of desktop, with the pointer still on the bot: only
+        # an app that stays inactive for a while means the user is elsewhere.
         x_knows = not global_pointer() and pointer_on(self) is not None
         if not x_knows and QGuiApplication.applicationState() == Qt.ApplicationInactive:
-            return False
+            now = time.monotonic()
+            self._inactive_since = self._inactive_since or now
+            if now - self._inactive_since > INACTIVE_GRACE_S:
+                return False
+        else:
+            self._inactive_since = 0.0
         if not global_pointer():
             # Wayland: QCursor.pos() is unreliable (stale), so we only trust
             # Qt's own hit-testing.  underMouse() on the face window tells us
@@ -741,6 +751,10 @@ class FaceWindow(QWidget):
             self._claim_bubble()
             self.bubble.shown_by_pointer()
             self._hover_since = now if self.bubble.isVisible() else 0.0
+            if self.bubble.isVisible() and self.bubble.has_draft():
+                # Words wait in the field: it takes the keyboard at once, so the bubble stays while you continue.
+                self._activate_here()
+                self.bubble.focus_entry()
         elif (self._hover_since and now - self._hover_since >= FOCUS_DWELL_S and self._drag_origin is None
               and FOCUS_ON_HOVER):
             # Typing starts at once, but only when the pointer stays: passing over the face is not asking.
@@ -748,7 +762,7 @@ class FaceWindow(QWidget):
             # A pointer that merely rests on the face (you are typing elsewhere) must not pull the focus away.
             moved_lately = now - self._pointer_seen[1] < HOVER_FOCUS_MOVE_S
             if moved_lately and self.bubble.isVisible() and self.bubble.takes_input() and self.bubble.kind == "say":
-                activate_app()
+                self._activate_here()
                 self.bubble.focus_entry()
 
     def _animate(self):
@@ -899,7 +913,7 @@ class FaceWindow(QWidget):
             self._depth = 1
             self._sync_bubble(self._latest(), force=True, replace_menu=menu)
         self._claim_bubble()
-        activate_app()
+        self._activate_here()
         self.bubble.focus_entry()
 
     def prompt_history(self) -> list:
@@ -927,17 +941,24 @@ class FaceWindow(QWidget):
         self._depth = 1
         self._sync_bubble(self._latest(), force=True)
         self._claim_bubble()
-        activate_app()
+        self._activate_here()
         self.bubble.focus_entry()
         return True
 
+    def _activate_here(self):
+        """Take the keyboard for the bubble, but never by activating the app while its bubble sits on another desktop:
+        macOS would take you to that desktop."""
+        self._keep_bubble_here()
+        if self.bubble.isVisible() and desktops.shown_here(self.bubble):
+            activate_app()
+
     def _keep_bubble_here(self):
         """A bubble that Qt calls open but that is not on the screen, because macOS took it off or it stayed on
-        the desktop you left, never opens again by itself: take it away so that it can open here."""
+        the desktop you left: pull it to this desktop, and when that fails take it away so that it can open here."""
         bubble = self.bubble
         if not bubble.isVisible() or desktops.shown_here(bubble):
             return
-        desktops.apply(bubble)
+        desktops.bring_here(bubble)
         if not desktops.shown_here(bubble):
             bubble.close_bubble("other_desktop")
             self._shown_text = ""
@@ -1472,7 +1493,7 @@ class FaceWindow(QWidget):
         self._queue.remove(item)
         self._sync_bubble(self._chat or self._latest(), force=True)
         self.bubble.edit_text(item["text"], item["files"])
-        activate_app()
+        self._activate_here()
         self.bubble.focus_entry()
 
     # ── Mute ────────────────────────────────────────────────────
