@@ -6147,8 +6147,11 @@ class MacBundleSwap(unittest.TestCase):
             for _ in range(60):
                 time.sleep(0.1)
                 running.poll()  # a closed child process otherwise stays a zombie that still "lives"
-                if open(marker).read() == "new":
-                    break
+                try:
+                    if open(marker).read() == "new":
+                        break
+                except FileNotFoundError:
+                    pass  # the folder is between the old app and the new one
             self.assertEqual(open(marker).read(), "new")
             for _ in range(30):  # the cleanup follows right after the swap
                 if os.listdir(os.path.join(home, "Apps")) == ["Bot Widget.app"]:

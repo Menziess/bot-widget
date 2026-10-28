@@ -18,3 +18,27 @@ desktops.set_desktops = lambda *args: None
 desktops.is_shown_here = lambda *args: True
 desktops.on_active_space = lambda *args: True
 desktops.move_to_active_space = lambda *args: None
+
+# The widget's own settings and drafts of a test go to a folder of its own, never to the widget.json of the person
+# running it.
+import tempfile  # noqa: E402
+
+from botwidget import config as _config  # noqa: E402
+
+_config.CONFIG_PATH = os.path.join(tempfile.mkdtemp(prefix="botwidget-tests-"), "widget.json")
+
+# ...and each test starts with no widget.json at all: a draft or setting of one test must not reach the next.
+import unittest  # noqa: E402
+
+_run = unittest.TestCase.run
+
+
+def _run_clean(self, result=None):
+    try:
+        os.remove(_config.CONFIG_PATH)
+    except OSError:
+        pass
+    return _run(self, result)
+
+
+unittest.TestCase.run = _run_clean

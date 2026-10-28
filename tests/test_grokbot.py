@@ -441,10 +441,11 @@ class Sending(FakeGbot):
         self.assertIn("may or may not", link.note())
 
     def test_the_unsure_note_stays_through_a_look_and_goes_with_an_answer(self):
-        self.steps({"sleep": 2.0}, {"stdout": thread([])}, {"stdout": thread([entry("Hoi")], cursor="t1")})
+        self.steps({"sleep": 6.0}, {"stdout": thread([])}, {"stdout": thread([entry("Hoi")], cursor="t1")})
         link = self.link()
-        link.TIMEOUT_S = 0.3
+        link.TIMEOUT_S = 1.5  # long enough for the fake to count its call, shorter than its sleep
         link.send("Hoi")
+        link.TIMEOUT_S = 30  # only the send may time out; a slow start of the fake must not time out the looks
         link.poll()
         self.assertIn("may or may not", link.note(), "a look without an answer keeps it in sight")
         link.poll()
