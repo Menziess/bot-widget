@@ -3270,6 +3270,28 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(calls, [("/v1/agents/t/prompts/r1/answer", {"answers": {"q1": ["Paars"]}})])
         self.assertEqual(self.window._queue, [], "an answer, not a message in the queue")
 
+    def test_the_own_words_twin_of_a_question_does_not_hold_the_answer_back(self):
+        calls = self.posts()
+        prompt = {"requestId": "r3", "requiresOpenBot": False, "questions": [
+            {"id": "q0", "header": "", "question": "Betaalmethode?", "options": [{"label": "Ideal"}]},
+            {"id": "q0_custom", "header": "", "question": "Type your own answer", "options": None}]}
+        self.start_working()
+        self.window._set_attention(self.attention(prompts=[prompt]))
+        self.window.on_user_message("iDeal")
+        self.wait_for(calls)
+        self.assertEqual(calls, [("/v1/agents/t/prompts/r3/answer", {"answers": {"q0_custom": ["iDeal"]}})])
+
+    def test_clicking_an_option_settles_the_own_words_twin(self):
+        calls = self.posts()
+        prompt = {"requestId": "r3", "requiresOpenBot": False, "questions": [
+            {"id": "q0", "header": "", "question": "Betaalmethode?", "options": [{"label": "Ideal"}]},
+            {"id": "q0_custom", "header": "", "question": "Type your own answer", "options": None}]}
+        self.start_working()
+        self.window._set_attention(self.attention(prompts=[prompt]))
+        self.window._menu_command("answer/r3/q0/0")
+        self.wait_for(calls)
+        self.assertEqual(calls, [("/v1/agents/t/prompts/r3/answer", {"answers": {"q0": ["Ideal"]}})])
+
     def test_a_prompt_with_several_questions_goes_out_once_all_are_answered(self):
         calls = self.posts()
         prompt = {"requestId": "r2", "requiresOpenBot": False, "questions": [

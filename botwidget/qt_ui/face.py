@@ -70,6 +70,7 @@ from botwidget.theme import BUBBLE_FONT
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
+CUSTOM_SUFFIX = "_custom"
 RETRY_NOTE = "No connection to OpenBot — retrying…"
 REFUSED_NOTE = "I couldn't send that. OpenBot answered: {why}."
 GROK_REFUSED_NOTE = "I couldn't send that. {why}."
@@ -1461,10 +1462,20 @@ class FaceWindow(QWidget):
         """The first question nobody answered yet, as (request id, question id)."""
         for prompt in self._answerable():
             done = self._answers.get(prompt["requestId"], {})
+            ids = {question["id"] for question in prompt["questions"]}
             for question in prompt["questions"]:
-                if question["id"] not in done:
-                    return prompt["requestId"], question["id"]
+                if not self._settled(question["id"], done):
+                    # Typed text is the free-text twin of a question with options.
+                    return prompt["requestId"], question["id"] if question["id"] + CUSTOM_SUFFIX not in ids \
+                        else question["id"] + CUSTOM_SUFFIX
         return None
+
+    @staticmethod
+    def _settled(question_id: str, answers: dict) -> bool:
+        """OpenBot asks "Qx" with options and "Qx_custom" for your own words; either one answers both."""
+        twin = question_id.removesuffix(CUSTOM_SUFFIX) if question_id.endswith(CUSTOM_SUFFIX) \
+            else question_id + CUSTOM_SUFFIX
+        return question_id in answers or twin in answers
 
     def _attention_blocks(self) -> list:
         """What the bot waits for: its questions with a button per option, and approvals to accept or decline."""
@@ -1527,7 +1538,7 @@ class FaceWindow(QWidget):
             return
         answers = self._answers.setdefault(request_id, {})
         answers[question_id] = values
-        if all(question["id"] in answers for question in prompt["questions"]):
+        if all(self._settled(question["id"], answers) for question in prompt["questions"]):
             self._send_attention(request_id, f"prompts/{request_id}/answer", {"answers": answers})
         else:
             self._sync_bubble(self._chat, force=True)
