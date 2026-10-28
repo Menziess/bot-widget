@@ -4697,13 +4697,16 @@ class Tables(unittest.TestCase):
         self.assertEqual(rows[0]["tabs"], rows[2]["tabs"], "the columns line up")
         self.assertGreaterEqual(rows[0]["tabs"][0], 7 * len("lange naam hier"), "wide enough for the longest cell")
 
-    def test_a_table_wider_than_the_bubble_cuts_its_words_short_and_says_it_is_cramped(self):
+    def test_a_table_wider_than_the_bubble_wraps_its_words_and_says_it_is_cramped(self):
         from botwidget.bubble_layout import md_layout
         text = "| A | B |\n|--|--|\n| " + "woord " * 30 + "| kort |"
         laid, widest = md_layout(lambda text, style, size: 7.0 * len(text), text, 300)
-        row = [line for line in laid if line.get("tabs")][1]
-        self.assertIn("…", "".join(word for word, _style, _lead in row["words"]))
-        self.assertGreater(row["natural"], row["width"])
+        rows = [line for line in laid if line.get("tabs")][1:]
+        said = "".join(word for row in rows for word, _style, _lead in row["words"] if word != "\t")
+        self.assertGreater(len(rows), 1, "the long cell goes over more lines")
+        self.assertNotIn("…", said)
+        self.assertEqual(said.count("woord"), 30)
+        self.assertGreater(rows[0]["natural"], rows[0]["width"])
         self.assertLessEqual(widest, 300)
 
 

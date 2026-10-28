@@ -1008,7 +1008,7 @@ class BubbleWindow(QWidget):
 
     @staticmethod
     def _cramped(panels: list) -> bool:
-        """A table whose words had to be cut short: the bubble gets wider for it, as far as it may."""
+        """A table whose cells had to wrap: the bubble gets wider for it, as far as it may."""
         return any(line.get("natural", 0) > line["width"] for panel in panels for line in panel["lines"])
 
     def _entry_h(self) -> int:

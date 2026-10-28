@@ -113,25 +113,28 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
             laid.append({**block, "words": row, "prefix": prefix, "width": w,
                          "xs": xs, "ws": ws, "cont": i > 0})
 
-    def clipped(pieces: list, size: int, room: float) -> list:
-        """The pieces of a cell cut to fit, with an ellipsis where they were cut."""
-        if width(pieces, size) <= room:
-            return pieces
-        out, used = [], 0.0
-        ellipsis = measure("…", "", size)
+    def wrapped(pieces: list, size: int, room: float) -> list:
+        """The pieces of a cell broken into lines that fit: at spaces, and inside a word that is too long alone."""
+        lines, cur = [], []
         for text, style in pieces:
-            for ch in text:
-                w = measure(ch, style, size)
-                if used + w + ellipsis > room:
-                    return out + [("…", "")]
-                out.append((ch, style))
-                used += w
-        return out
+            for part in re.split(r"(\s+)", text):
+                for chunk in ([part] if part.isspace() or width([(part, style)], size) <= room else part):
+                    if not chunk:
+                        continue
+                    if chunk.isspace():
+                        if cur:
+                            cur.append((" ", ""))
+                    elif cur and width(cur + [(chunk, style)], size) > room:
+                        lines.append(cur)
+                        cur = [(chunk, style)]
+                    else:
+                        cur.append((chunk, style))
+        return lines + [cur] if cur or not lines else lines
 
     def lay_table(block: dict):
         """A table as one line per row: the cells are separated by tabs, which the text surface sets to the columns.
         Columns take what their words need; when the table is wider than the bubble, the widest give way and their
-        words are cut short."""
+        words wrap onto more lines."""
         nonlocal widest
         size, gap = TABLE_FONT, TABLE_GAP
         rows = [[[(t, "b" if st == "" and n == 0 else st) for t, st in cell] for cell in row]
@@ -155,16 +158,20 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
         xs = [sum(cols[:c]) + gap * c for c in range(count)]
         total = round(sum(cols) + gap * (count - 1))
         widest = max(widest, total + block["indent"])
-        for n, row in enumerate(rows):
-            words = []
-            for c, cell in enumerate(row):
-                if c:
-                    words.append(("\t", "", False))
-                words += [(t, st, False) for t, st in clipped(cell, size, cols[c]) if t]
-            laid.append({**block, "kind": "text", "size": size, "words": words, "prefix": "", "width": total,
-                         "xs": [], "ws": [], "cont": False, "tabs": [round(x) for x in xs[1:]],
-                         "natural": round(sum(natural) + gap * (count - 1))})
-            if n == 0:
+        cells = [[wrapped(cell, size, cols[c]) for c, cell in enumerate(row)] for row in rows]
+        tall = any(len(cell) > 1 for row in cells for cell in row)
+        for n, row in enumerate(cells):
+            for i in range(max(len(cell) for cell in row)):
+                words = []
+                for c, cell in enumerate(row):
+                    if c:
+                        words.append(("\t", "", False))
+                    if i < len(cell):
+                        words += [(t, st, False) for t, st in cell[i] if t]
+                laid.append({**block, "kind": "text", "size": size, "words": words, "prefix": "", "width": total,
+                             "xs": [], "ws": [], "cont": i > 0, "tabs": [round(x) for x in xs[1:]],
+                             "natural": round(sum(natural) + gap * (count - 1))})
+            if n == 0 or (tall and n < len(cells) - 1):
                 laid.append({"kind": "rule", "size": 0, "indent": 0, "prefix": "", "grey": False, "chunks": [],
                              "words": [], "width": 0})
 
