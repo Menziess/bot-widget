@@ -4264,6 +4264,17 @@ class BubbleHover(unittest.TestCase):
         self.window._hover_retry = 0.0
         self.hover()
         self.assertTrue(bubble.isVisible())
+    def test_a_mood_clip_plays_once_and_then_rests(self):
+        from botwidget import motion
+        move = motion.Motion(seed=1)
+        move.set_mood("thinking")
+        played = 0
+        for _ in range(20 * 60):  # twenty seconds at sixty frames
+            move.step(1 / 60)
+            played += move.playing is not None
+        self.assertLess(played / 60, 20 * 0.6, "it holds still for part of the time")
+        self.assertGreater(played, 0)
+
 
     def test_a_bubble_that_is_where_you_are_is_left_alone(self):
         from unittest import mock

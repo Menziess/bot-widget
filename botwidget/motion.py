@@ -30,6 +30,7 @@ IDLE_LOOKS = ("Idle_B", "Idle_D", "Idle_A")
 FIRST_WAIT_S = (1.0, IDLE_GAP_S[1])
 RATE_JITTER = 0.06
 EVENT_DELAY_S = 0.25
+MOOD_REST_S = (3.0, 6.0)  # a mood clip plays once and then the face holds still this long: less to draw
 
 # event: (clip or poke, face held while it plays, face held after it, seconds that face stays)
 EVENTS = {
@@ -142,6 +143,7 @@ class Motion:
         self.mood = "idle"
         self.playing = None      # (clip or poke name, seconds in, loops, face while it plays)
         self.after = None        # (face, seconds left) held once a clip is over
+        self.rest = 0.0          # seconds a mood holds still before its clip plays again
         self.blink = None        # seconds since an idle blink began
         self.wait = self.rng.uniform(*FIRST_WAIT_S)  # seconds to the next idle blink or look
         self.history = []        # what the idle did, for the curious
@@ -164,6 +166,7 @@ class Motion:
         if mood == self.mood:
             return
         self.mood = mood
+        self.rest = 0.0
         if self.playing is None or self.playing[2]:
             self.playing = None   # the loop of the mood before ends; an event plays on
             self._loop_mood()
@@ -197,6 +200,10 @@ class Motion:
             face, left = self.after
             pose["face"] = face
             self.after = (face, left - dt) if left - dt > 0 else None
+        if self.playing is None and self.rest > 0:
+            self.rest -= dt
+            if self.rest <= 0:
+                self._loop_mood()
         if self.playing is None and self.mood == "idle" and self.after is None:
             self._idle(dt)
         if self.blink is not None:
@@ -222,7 +229,8 @@ class Motion:
                 length = CLIPS[name]["duration"]
             t += dt * self.rate
             if t >= length and loops:
-                self.playing = (name, t % length, True, face)
+                self.playing = None
+                self.rest = self.rng.uniform(*MOOD_REST_S)
             elif t >= length:
                 self.playing = None
                 self._loop_mood()
