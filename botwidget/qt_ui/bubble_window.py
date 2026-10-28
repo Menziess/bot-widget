@@ -54,6 +54,7 @@ from botwidget.bubble import (
     bubble_deco_svg,
     dots_patch_svg,
     bubble_height_cap,
+    chat_height_cap,
     menu_height_cap,
     bubble_shadow_svg,
     bubble_width,
@@ -1154,9 +1155,8 @@ class BubbleWindow(QWidget):
         """The face's band for chat; a page of the menu may use most of the screen."""
         cap = bubble_height_cap(self.face.height())
         if getattr(self.face, "_menu_page", None) is None:
-            return cap
-        fx, fy = self.face.spot()
-        return menu_height_cap(cap, screens.rect_at(fx + AVATAR_SIZE // 2, fy + AVATAR_SIZE // 2)[3])
+            return chat_height_cap(cap, screen_h)
+        return menu_height_cap(cap, screen_h)
 
     def _apply_flags(self):
         """Same stacking as the face: above normal windows only when the bot is always-on-top.

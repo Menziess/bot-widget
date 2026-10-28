@@ -111,6 +111,14 @@ def bubble_height_cap(face_h: int) -> int:
 MENU_SCREEN_SHARE = 0.7
 
 
+# A long answer grows to this share of the screen before it scrolls, so more of it shows at once.
+CHAT_SCREEN_SHARE = 0.45
+
+
+def chat_height_cap(face_cap: int, screen_h: int) -> int:
+    return max(int(face_cap), int(screen_h * CHAT_SCREEN_SHARE))
+
+
 def menu_height_cap(face_cap: int, screen_h: int) -> int:
     """Max window height of a menu page: as tall as its content, up to most of the screen."""
     return max(int(face_cap), int(screen_h * MENU_SCREEN_SHARE))
