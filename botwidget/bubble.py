@@ -222,11 +222,11 @@ def more_svg(x: float, y: float, width: float, progress: float = 0.0, hover: boo
 
 
 def dots_svg(x: float, y: float, phase: float, ink: str) -> str:
-    """Three thinking dots; phase runs a smooth wave through the dots."""
+    """Three thinking dots; phase runs a smooth wave through the dots. A negative phase is the rest: all three small."""
     out = []
     for i in range(3):
         wave = (phase - i * 0.18) % 1.0
-        lift = (1 - math.cos(math.tau * wave)) / 2
+        lift = 0.0 if phase < 0 else (1 - math.cos(math.tau * wave)) / 2
         r = DOTS_R * (0.6 + 0.4 * lift)
         out.append(f'<circle cx="{x + i * DOTS_GAP:.2f}" cy="{y - 2.5 * lift:.2f}"'
                    f' r="{r:.2f}" fill="{ink}" opacity="{0.35 + 0.6 * lift:.2f}"/>')

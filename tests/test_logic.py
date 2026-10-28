@@ -4503,6 +4503,15 @@ class BubbleHover(unittest.TestCase):
                     break
         self.assertGreater(rests[1], 2 * motion.MOOD_REST_S[0] - 0.001)
 
+    def test_at_rest_all_three_dots_are_small(self):
+        from botwidget import bubble
+        import re
+        sizes = lambda svg: [float(r) for r in re.findall(r'r="([\d.]+)"', svg)]
+        rest = sizes(bubble.dots_svg(0, 0, -1.0, "#000"))
+        self.assertEqual(len(set(rest)), 1, "all the same")
+        self.assertLess(rest[0], bubble.DOTS_R, "and small")
+        self.assertGreater(max(sizes(bubble.dots_svg(0, 0, 0.0, "#000"))), rest[0], "pulsing makes one big")
+
     def test_the_app_is_not_activated_while_its_bubble_sits_on_another_desktop(self):
         from unittest import mock
         from botwidget.qt_ui import desktops, face

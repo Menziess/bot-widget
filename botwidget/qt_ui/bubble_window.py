@@ -1978,6 +1978,7 @@ class BubbleWindow(QWidget):
     def _resume_dots(self):
         if self._dots_lines and not self._dots.isActive():
             self._dots_on = True
+            self._dots_phase = 0.0
             self._dots.start()
 
     def _tick_dots(self):
@@ -1997,7 +1998,7 @@ class BubbleWindow(QWidget):
             self._dots_cycles += 1
             if self._dots_cycles >= DOTS_BURST_CYCLES:
                 # Rest: still dots for a while, no timer running; they pulse again afterwards.
-                self._dots_cycles, self._dots_phase = 0, 0.0
+                self._dots_cycles, self._dots_phase = 0, -1.0  # at rest all three are small
                 self._dots_on = False
                 self._dots.stop()
                 QTimer.singleShot(round(DOTS_REST_S * calm * 1000), self._resume_dots)
