@@ -116,6 +116,7 @@ QPlainTextEdit {{
 }}
 QPlainTextEdit:focus {{ background: rgba(255, 255, 255, 220); border-color: rgba(22, 128, 243, 180); }}
 QLabel#links {{ color: {SAND_ACCENT}; }}
+QLabel#attachments {{ color: {SAND_INK}; }}
 """
 ENTRY_H = 34
 ENTRY_MAX_LINES = 5
