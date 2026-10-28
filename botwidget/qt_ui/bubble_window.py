@@ -400,6 +400,7 @@ class CopyNotice(QWidget):
 
     def show_over(self, rect: QRect, text: str, dark: bool):
         self.asking = False
+        self.level = 0.0
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.unsetCursor()
         self.text, self.dark = text, dark

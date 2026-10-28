@@ -1879,7 +1879,9 @@ class BubbleHover(unittest.TestCase):
         bubble = self.window.bubble
         for t in (0.0, 0.5, 1.0):
             bubble._growth_step(t)
-            self.assertLessEqual(abs(bubble.x() + bubble._tip[0] - (self.window.x() + 34)), 1)
+            self.assertLessEqual(abs(bubble.x() + bubble._tip[0] - (self.window.x() + 34)), 1,
+                                 f"at {t}: bubble {bubble.geometry().getRect()}, tip {bubble._tip}, "
+                                 f"face {self.window.geometry().getRect()}")
         self.finish_growth()
 
     def test_growing_stays_inside_the_tail_and_the_final_size_is_the_normal_one(self):
@@ -2394,7 +2396,10 @@ class BubbleHover(unittest.TestCase):
                 self.one_content(bubble, "on a frame")
                 if held is not None:
                     self.assertTrue(bubble.isVisible() and bubble.engaged(),
-                                    f"the pointer is not on the bubble while it changes, after {held[-6:]}")
+                                    f"the pointer is not on the bubble while it changes, after {held[-6:]}: "
+                                    f"card {bubble.card().getRect()}, window {bubble.geometry().getRect()}, "
+                                    f"face {window.geometry().getRect()}, pointer {self.where['at']}, "
+                                    f"page {window._menu_page}, kind {bubble.kind!r}, list {bubble._list_only}")
                 # A frame as it comes: the bubble as it is drawn now is what the pointer is on or not.
                 inside = bubble.isVisible() and bubble_module.pointer_window() == native_id(bubble)
                 if bubble._physics.isActive():
@@ -2717,12 +2722,13 @@ class BubbleHover(unittest.TestCase):
         from PySide6.QtCore import QPoint, QRect, Qt
         from PySide6.QtGui import QGuiApplication
         window = self.window
-        window.move(300, 520)  # low on the screen: the settings page is tall and must not cover the face
         window.show()
         with self.x_pointer(), mock.patch.object(QGuiApplication, "applicationState",
                                                  return_value=Qt.ApplicationInactive):
             bubble, page = self.back_arrow_leaves_the_pointer_outside()
             self.assertIsNotNone(bubble.holding_area())
+            if bubble.card().intersects(window.frameGeometry()):  # a tall page may reach over the face: beside it
+                bubble._put(window.frameGeometry().right() + 20, bubble.card().y())
             # The area held reaches over the face (as when a tall page sat beside it).
             bubble._held = bubble.holding_area().united(window.frameGeometry())
             bubble._fit_window()
