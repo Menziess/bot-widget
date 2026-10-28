@@ -1879,8 +1879,8 @@ class BubbleHover(unittest.TestCase):
         bubble = self.window.bubble
         for t in (0.0, 0.5, 1.0):
             bubble._growth_step(t)
-            self.assertLessEqual(abs(bubble.x() + bubble._tip[0] - (self.window.x() + 34)), 1,
-                                 f"at {t}: bubble {bubble.geometry().getRect()}, tip {bubble._tip}, "
+            self.assertLessEqual(abs(bubble.card().x() + bubble._tip[0] - (self.window.x() + 34)), 1,
+                                 f"at {t}: card {bubble.card().getRect()}, tip {bubble._tip}, "
                                  f"face {self.window.geometry().getRect()}")
         self.finish_growth()
 
@@ -2399,7 +2399,8 @@ class BubbleHover(unittest.TestCase):
                                     f"the pointer is not on the bubble while it changes, after {held[-6:]}: "
                                     f"card {bubble.card().getRect()}, window {bubble.geometry().getRect()}, "
                                     f"face {window.geometry().getRect()}, pointer {self.where['at']}, "
-                                    f"page {window._menu_page}, kind {bubble.kind!r}, list {bubble._list_only}")
+                                    f"page {window._menu_page}, kind {bubble.kind!r}, list {bubble._list_only}, "
+                                    f"held {bubble._held}, near {bubble._was_near}, log {held[-2:]}")
                 # A frame as it comes: the bubble as it is drawn now is what the pointer is on or not.
                 inside = bubble.isVisible() and bubble_module.pointer_window() == native_id(bubble)
                 if bubble._physics.isActive():
@@ -2488,6 +2489,7 @@ class BubbleHover(unittest.TestCase):
                                             rnd.randint(frame.center().y(), frame.bottom() - 10))
                         frames(1)
                         engaged_before = bubble.isVisible() and bubble.engaged()
+                        log[-1] = f"back from {window._menu_page} {bubble.card().getRect()} held {bubble.holding_area()}"
                         bubble.command.emit("page/commands")
                     elif op == "refresh":
                         window.on_user_message("/refresh")
