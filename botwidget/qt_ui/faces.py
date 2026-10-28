@@ -214,8 +214,9 @@ class Faces(QObject):
         self._catcher = ArcCatcher(self)
         self._place_catcher()
         desktops.apply(self._catcher)
-        self._catcher.show()
-        desktops.apply(self._catcher)
+        if sys.platform != "darwin":
+            self._catcher.show()
+            desktops.apply(self._catcher)
         self.raise_bubbles()
         app = QGuiApplication.instance()
         if app is not None:
@@ -322,7 +323,8 @@ class Faces(QObject):
             return
         # Living on one desktop, the face first comes to the one you are on.
         moved = any([other.bring_here() for other in self.faces.values()])
-        desktops.bring_here(self._catcher)
+        if sys.platform != "darwin":
+            desktops.bring_here(self._catcher)
         if face.pinned and not moved:
             face.unpin()
         else:
@@ -497,6 +499,8 @@ class Faces(QObject):
         if self._pointer_over_arc(pos.x(), pos.y()):
             self.show_semicircle()
             self._semicircle_hide_timer.stop()
+        else:
+            self.semicircle_pointer_left()
 
     def _place_catcher(self, *_args):
         cx, cy = self._hotspot()

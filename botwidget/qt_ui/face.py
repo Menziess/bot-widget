@@ -6,12 +6,13 @@ import math
 import os
 import platform
 import random
+import sys
 import threading
 import time
 import uuid
 
 from PySide6.QtCore import QEasingCurve, QPoint, Qt, QTimer, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter
+from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter, QRegion
 from PySide6.QtWidgets import QWidget
 
 from botwidget.animation import IDLE_MS, FaceAnimator, frame_ms
@@ -313,6 +314,7 @@ class FaceWindow(QWidget):
                 return
             if self._semicircle_visible or getattr(self, "_arc_guest", False):
                 self._semicircle_visible = False
+                self.clearMask()
                 if getattr(self, "_arc_guest", False):
                     self.hide()
                     return
@@ -354,6 +356,9 @@ class FaceWindow(QWidget):
 
     def _set_pixmap(self, pixmap):
         self._pixmap = pixmap
+        if sys.platform == "darwin" and (self._semicircle_visible or getattr(self, "_arc_guest", False)):
+            # On the arc the window is only as big as the drawn bot, so a click beside it goes to what lies behind.
+            self.setMask(QRegion(pixmap.mask().scaled(self.size())))
         self.update()
 
     def spot(self) -> tuple:
