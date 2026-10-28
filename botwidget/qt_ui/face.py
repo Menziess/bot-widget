@@ -1597,6 +1597,7 @@ class FaceWindow(QWidget):
             item = self._outbox.sent(cid)
             self._send_status = ""
             self._refused = False
+            self._local = [m for m in self._local if not m.get("refusal")]
             self._asked = True
             self._asked_at = time.time()
             self.react("sent")
@@ -1612,9 +1613,10 @@ class FaceWindow(QWidget):
                 self._refused = True
                 self.react("error")
                 if item is not None:
-                    self._local.append({"role": "user", "text": item["text"], "until": time.monotonic() + 60})
+                    self._local.append({"role": "user", "text": item["text"], "until": time.monotonic() + 60,
+                                        "refusal": True})
                 note = GROK_REFUSED_NOTE if self.grok else (HERMES_REFUSED_NOTE if self.hermes else REFUSED_NOTE)
-                self._local.append({"role": "bot", "until": time.monotonic() + 60,
+                self._local.append({"role": "bot", "until": time.monotonic() + 60, "refusal": True,
                                     "text": note.format(why=error)})
             else:
                 next_ready = False
