@@ -1653,14 +1653,14 @@ class BubbleHover(unittest.TestCase):
         self.window._animate()
         self.assertEqual(focus, [])
 
-    def test_an_empty_field_does_not_keep_the_bubble_when_the_pointer_leaves(self):
+    def test_a_field_with_the_keyboard_keeps_the_bubble_when_the_pointer_leaves(self):
         self.hover()
         bubble = self.window.bubble
         bubble._tick()
         bubble._entry.hasFocus = lambda: True
         self.where["at"] = (5000, 5000)
         bubble._tick()
-        self.assertEqual(bubble.kind, "")
+        self.assertTrue(bubble.kind)
 
     def test_typed_words_keep_the_bubble_when_the_pointer_leaves(self):
         self.hover()
@@ -3531,13 +3531,14 @@ class BubbleHover(unittest.TestCase):
             Faces.menu_command(faces, "connect/grokbot", "connections")
             self.assertEqual((opened.call_count, faces.wanted), (1, set()), "a found one has nothing to open")
 
-    def test_words_left_in_the_field_keep_the_bubble_when_the_pointer_leaves(self):
+    def test_words_in_a_field_without_the_keyboard_do_not_keep_the_bubble(self):
         self.hover()
         bubble = self.window.bubble
         bubble.type_text("nog niet verstuurd")
+        bubble._entry.hasFocus = lambda: False
         self.where["at"] = (5000, 5000)
         bubble._tick()
-        self.assertTrue(bubble.kind, "the words in the field would be lost")
+        self.assertEqual(bubble.kind, "", "the words stay as a draft")
 
     def test_a_bubble_waiting_on_an_answer_stays_when_the_pointer_leaves(self):
         from unittest import mock
@@ -4270,6 +4271,41 @@ class BubbleHover(unittest.TestCase):
         self.window._hover_retry = 0.0
         self.hover()
         self.assertTrue(bubble.isVisible())
+
+    def test_what_you_typed_and_did_not_send_is_back_after_a_restart(self):
+        self.addCleanup(config.set_draft, "t", "")
+        entry = self.window.bubble._entry
+        entry.setText("nog niet verstuurd")
+        self.window.bubble._save_draft()
+        again = self.face.FaceWindow("t", "Test", spot=(300, 400))
+        self.addCleanup(again.close_face)
+        again._poll_timer.stop()
+        self.assertEqual(again.bubble._entry.text(), "nog niet verstuurd")
+        self.window.bubble._entry.clear()
+        self.window.bubble._save_draft()
+        self.assertEqual(config.draft("t"), "")
+
+    def test_a_bubble_opened_over_a_draft_stays_until_the_field_has_had_the_keyboard(self):
+        self.hover()
+        bubble = self.window.bubble
+        bubble._entry.setText("concept")
+        bubble._entry.hasFocus = lambda: False
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertEqual(bubble.kind, "")
+        self.window._hover_retry = 0.0
+        self.hover()
+        self.assertTrue(bubble._keep_draft)
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertTrue(bubble.kind, "the pointer slipped beside it before the field had the keyboard")
+        bubble._entry.hasFocus = lambda: True
+        bubble._tick()
+        self.assertFalse(bubble._keep_draft)
+        bubble._entry.hasFocus = lambda: False
+        bubble._tick()
+        self.assertEqual(bubble.kind, "", "the keyboard is gone again: it may go")
+
     def test_the_thinking_dots_pulse_in_bursts_and_rest_in_between(self):
         from unittest import mock
         from botwidget.theme import DOTS_BURST_CYCLES, DOTS_CYCLE_S, DOTS_MS

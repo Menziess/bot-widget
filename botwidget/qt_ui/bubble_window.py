@@ -66,7 +66,7 @@ from botwidget.bubble import (
     panel_rects,
     reading_seconds,
 )
-from botwidget.config import always_on_top
+from botwidget.config import always_on_top, draft, set_draft
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, glass, screens
@@ -634,6 +634,12 @@ class BubbleWindow(QWidget):
         self._entry = BubbleEntry(self._card)
         self._entry.setPlaceholderText("Send a message…")
         self._entry.history = self.face.prompt_history
+        self._entry.setText(draft(self.face.agent_id))
+        self._draft_timer = QTimer(self)
+        self._draft_timer.setSingleShot(True)
+        self._draft_timer.setInterval(400)
+        self._draft_timer.timeout.connect(self._save_draft)
+        self._entry.textChanged.connect(self._draft_timer.start)
         self._entry.returnPressed.connect(self._send)
         self._entry.resized.connect(self._entry_resized)
         self._entry.attached.connect(self._attach)
@@ -683,11 +689,16 @@ class BubbleWindow(QWidget):
     def _edited(self):
         self.changed = time.monotonic()
 
+    def _save_draft(self):
+        set_draft(self.face.agent_id, self._entry.text())
+
     def _send(self):
         self.changed = time.monotonic()
         text, files = self._entry.text().strip(), self._attachments
         if text or files:
             self._entry.clear()
+            self._draft_timer.stop()
+            self._save_draft()
             self._attachments = []
             self._show_attachments()
             self.face.on_user_message(text, files=files)
@@ -938,6 +949,9 @@ class BubbleWindow(QWidget):
         if self._notice_from_end and self._notice.isVisible():
             self._notice.setGeometry(self._notice_rect())
 
+    def has_draft(self) -> bool:
+        return self._input and bool(self._entry.text())
+
     def focus_entry(self):
         """The cursor into the field, asked for by the user. A field that is not there yet (the bubble is still
         growing) gets it as soon as it shows: Qt drops focus given to a hidden widget."""
@@ -951,10 +965,12 @@ class BubbleWindow(QWidget):
         return self.kind == kind and self.full_text == text and self._input == input and self.isVisible()
 
     def holding(self) -> bool:
-        """Words in the field that are not sent yet, or words selected to copy: the bubble stays for as long as
-        one of those lasts, and leaves with the pointer once the field is empty again."""
-        return (self._input and bool(self._entry.text())) or (
-            self._doc.hasFocus() and self._doc.textCursor().hasSelection())
+        """The field has the keyboard, or words are selected to copy: the bubble stays for as long as one of those
+        lasts. Words typed in a field you left stay as a draft; the bubble may go."""
+        return (self._input and (self._entry.hasFocus() or self._keep_draft)) or self._selecting()
+
+    def _selecting(self) -> bool:
+        return self._doc.hasFocus() and self._doc.textCursor().hasSelection()
 
     def shown_by_pointer(self):
         """The pointer is on the face, so it has been near: leaving takes the bubble with it, also when it was
@@ -1847,6 +1863,7 @@ class BubbleWindow(QWidget):
         awaiting = bool(self._wait_since) and now - self._wait_since < BUBBLE_WAIT_MAX
         if self._input and self._entry.hasFocus():
             self._had_focus = True
+            self._keep_draft = False  # the field has the keyboard now; losing it again lets the bubble go
         elif (self._had_focus and self._input and not self._entry.text() and not awaiting
               and QApplication.activeWindow() not in (self, self.face) and not self.engaged()):
             # Clicked into another window with nothing typed: the bubble goes, pinned or not. Clicking on its own
@@ -1878,7 +1895,7 @@ class BubbleWindow(QWidget):
         # BUBBLE_HOVER_MARGIN where the pointer is known everywhere) is the slack, and leaving it closes at once.
         if pointer or self.holding():
             self.changed = now
-            self._was_near = self._was_near or bool(pointer) or not awaiting
+            self._was_near = self._was_near or bool(pointer) or (not awaiting and self._selecting())
             if pointer:
                 self._near_at = now
         elif self._was_near:
@@ -1968,6 +1985,8 @@ class BubbleWindow(QWidget):
         self._opened = (self._opened or time.monotonic()) if kind else 0.0
         if self.kind == "think" and kind != "think":
             self.face._think_quiet = True
+        if not self.kind:
+            self._keep_draft = bool(kind) and bool(self._entry.text())
         self.kind = kind
         if kind == "":
             self._release_hold()

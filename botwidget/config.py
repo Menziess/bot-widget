@@ -65,7 +65,7 @@ WORK_POLL_INTERVAL = 1  # second, while the turn is running
 CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
-SETTING_KEYS = ("sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied",
+SETTING_KEYS = ("drafts", "sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied",
                 "local_command", "muted_bots", "glass_clear", "grokbot_target", "hermesbot_target")
 
 
@@ -106,6 +106,20 @@ def muted_bots() -> list:
 def set_muted(agent_id: str, muted: bool):
     others = [item for item in muted_bots() if item != agent_id]
     save_widget_config(muted_bots=others + [agent_id] if muted else others)
+
+
+def draft(agent_id: str) -> str:
+    """What you had typed for a bot and not sent, as it was when the widget last ran."""
+    drafts = widget_config().get("drafts")
+    text = drafts.get(agent_id) if isinstance(drafts, dict) else None
+    return text if isinstance(text, str) else ""
+
+
+def set_draft(agent_id: str, text: str):
+    drafts = {k: v for k, v in (widget_config().get("drafts") or {}).items() if k != agent_id and isinstance(v, str)}
+    if text:
+        drafts[agent_id] = text
+    save_widget_config(drafts=drafts)
 
 
 _config_read: list = [None, {}]
