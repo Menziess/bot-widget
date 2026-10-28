@@ -1122,11 +1122,37 @@ class BubbleHover(unittest.TestCase):
         top, _height = panel_rects(bubble._geom[0])[index]
         return 40, top + down - bubble._doc.y()
 
-    def click(self, index, modifiers=None):
+    def click(self, index, modifiers=None, confirm=True):
+        """A click on a message and, unless told otherwise, a press on the button that asks whether to copy."""
         from PySide6.QtCore import Qt
         x, y = self.message_point(index)
         self.send_mouse("press", x, y, Qt.LeftButton, Qt.LeftButton, modifiers)
         self.send_mouse("release", x, y, Qt.NoButton, Qt.LeftButton, modifiers)
+        if confirm and self.window.bubble._copy_ask.isVisibleTo(self.window.bubble._doc):
+            self.window.bubble._copy_ask.click()
+
+    def test_a_click_on_a_message_only_asks_and_copies_when_the_button_is_pressed(self):
+        from PySide6.QtWidgets import QApplication
+        self.MESSAGES = [{"role": "bot", "text": "Een korte zin."}]
+        self.hover()
+        bubble = self.window.bubble
+        QApplication.clipboard().setText("eerder")
+        self.click(0, confirm=False)
+        self.assertTrue(bubble._copy_ask.isVisibleTo(bubble._doc), "a button asks first")
+        self.assertEqual(self.clipboard(), "eerder", "nothing is copied by the click")
+        self.click(0)
+        bubble._copy_ask.click() if bubble._copy_ask.isVisibleTo(bubble._doc) else None
+        self.assertEqual(self.clipboard(), "Een korte zin.")
+        self.assertFalse(bubble._copy_ask.isVisibleTo(bubble._doc), "and the button goes")
+
+    def test_the_button_that_asks_to_copy_goes_by_itself_and_with_a_scroll(self):
+        self.MESSAGES = [{"role": "bot", "text": "Een korte zin."}]
+        self.hover()
+        bubble = self.window.bubble
+        self.click(0, confirm=False)
+        self.assertTrue(bubble._copy_ask.isVisibleTo(bubble._doc))
+        bubble._copy_ask_timer.timeout.emit()
+        self.assertFalse(bubble._copy_ask.isVisibleTo(bubble._doc))
 
     def clipboard(self):
         from PySide6.QtWidgets import QApplication
@@ -1179,7 +1205,8 @@ class BubbleHover(unittest.TestCase):
         self.assertFalse(self.window.bubble._doc.textCursor().hasSelection(), "not even while the button is down")
         self.send_mouse("release", 200, y + 25, Qt.NoButton, Qt.LeftButton, Qt.ShiftModifier)
         self.assertFalse(self.window.bubble._doc.textCursor().hasSelection(), "shift+click selects nothing")
-        self.assertEqual(self.clipboard(), raw.strip(), "just the markdown")
+        self.window.bubble._copy_ask.click()
+        self.assertEqual(self.clipboard(), raw.strip(), "just the markdown, once the button is pressed")
 
     def test_each_message_copies_its_own_words(self):
         self.hover()

@@ -629,9 +629,22 @@ class BubbleWindow(QWidget):
         self._link_row.setObjectName("links")
         self._link_row.setOpenExternalLinks(True)
         self._link_row.setTextFormat(Qt.RichText)
+        self._copy_ask = ActionButton("Copy", self._doc)  # a click on a message only asks; this button copies
+        self._copy_ask.setStyleSheet("QPushButton { background: rgba(28, 28, 28, 235); color: white; border: none;"
+                                     " border-radius: 13px; padding: 4px 14px; min-height: 0px; font-weight: 600;"
+                                     f" font-family: '{SAND_SANS}'; font-size: 14px; }}"
+                                     " QPushButton:hover { background: rgba(11, 109, 211, 240); }")
+        self._copy_ask.hide()
+        self._copy_ask.clicked.connect(self._confirm_copy)
+        self._copy_ask_timer = QTimer(self)
+        self._copy_ask_timer.setSingleShot(True)
+        self._copy_ask_timer.setInterval(3000)
+        self._copy_ask_timer.timeout.connect(self._copy_ask.hide)
+        self._copy_pending = None
         self._notice = CopyNotice(self._scroll.viewport())
         self._notice_from_end = 0
         self._scroll.verticalScrollBar().valueChanged.connect(self._move_notice)
+        self._scroll.verticalScrollBar().valueChanged.connect(lambda _value: self._copy_ask.hide())
         self._entry = BubbleEntry(self._card)
         self._entry.setPlaceholderText("Send a message…")
         self._entry.history = self.face.prompt_history
@@ -919,7 +932,27 @@ class BubbleWindow(QWidget):
         elif panel and shift:
             self._copied_to_clipboard(panel["copy"], "Copied markdown", y)
         elif panel:
-            self._copied_to_clipboard(plain_text(panel["copy"]), "Copied", y)
+            self._ask_copy(panel["copy"] if shift else plain_text(panel["copy"]),
+                           "Copied markdown" if shift else "Copied", "Copy markdown" if shift else "Copy", x, y)
+        else:
+            self._copy_ask.hide()
+
+    def _ask_copy(self, text: str, notice: str, label: str, x: float, y: float):
+        """A click on a message is easily an accident: a button next to the click asks first, and goes by itself."""
+        self._copy_pending = (text, notice, y)
+        self._copy_ask.setText(label)
+        self._copy_ask.adjustSize()
+        width, height = self._copy_ask.width(), self._copy_ask.height()
+        self._copy_ask.move(max(0, min(int(x - width / 2), self._doc.width() - width)), max(0, int(y - height - 8)))
+        self._copy_ask.show()
+        self._copy_ask.raise_()
+        self._copy_ask_timer.start()
+
+    def _confirm_copy(self):
+        self._copy_ask.hide()
+        if self._copy_pending is not None:
+            self._copied_to_clipboard(*self._copy_pending)
+            self._copy_pending = None
 
     def _copied_to_clipboard(self, text: str, notice: str, y: float):
         """Copy, and say so over the message: its words fade out behind the notice, which fades away too."""
@@ -1541,6 +1574,7 @@ class BubbleWindow(QWidget):
         else:
             self._notice_from_end = 0
             self._notice.dismiss()
+            self._copy_ask.hide()
         if silent:
             return
         if restyle or not visible:
