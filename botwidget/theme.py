@@ -24,6 +24,11 @@ GLASS_CLEAR_DEFAULT = 40  # the setting, 0 to 100: how see-through the glass is
 GLASS_ALPHA_CLEAR = 0.2  # the paint left at 100
 GLASS_ALPHA_FLAT = 0.78  # where nothing can be blurred, the text must still be read
 GLASS_ALPHA_FLAT_CLEAR = 0.45  # the paint left at 100 where nothing can be blurred
+# Where nothing can be blurred the glass gets the pastel tint of the website instead: blue at the top left, pink
+# at the bottom right, and a bright sheen across the top. (colour, alpha 0-255)
+GLASS_TINT_FROM = ("#c9dcff", 90)
+GLASS_TINT_TO = ("#ffd3e2", 80)
+GLASS_SHEEN = 110
 FROST_GRAIN = 0.04  # how strong the grain of the painted frost is, 0 to 1: what reads as frost instead of plastic
 GLASS_FADE = 16  # the text fades away over this many pixels where it scrolls out of the bubble
 SAND_PANEL_USER = "#2a2a2a"

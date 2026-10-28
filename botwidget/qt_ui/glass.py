@@ -4,13 +4,14 @@ frost where it cannot."""
 import random
 
 from PySide6.QtCore import QBuffer, QIODevice, QPoint, QRect, Qt
-from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap
+from PySide6.QtGui import QColor, QGuiApplication, QImage, QLinearGradient, QPainter, QPixmap
 
 from botwidget.config import widget_config
 from botwidget.qt_ui.native import native_id
 from botwidget.system.current import CAN_BLUR, clear_backdrop, set_backdrop
 from botwidget.theme import (FROST_GRAIN, GLASS_ALPHA, GLASS_ALPHA_CLEAR, GLASS_ALPHA_FLAT,
-                             GLASS_ALPHA_FLAT_CLEAR, GLASS_CLEAR_DEFAULT)
+                             GLASS_ALPHA_FLAT_CLEAR, GLASS_CLEAR_DEFAULT, GLASS_SHEEN, GLASS_TINT_FROM,
+                             GLASS_TINT_TO)
 
 FROST_TILE = 64  # one tile of grain, in points
 _tiles: dict = {}
@@ -71,6 +72,12 @@ def _tile(ratio: float) -> QPixmap:
     return tile
 
 
+def _with_alpha(hex_: str, alpha: int) -> QColor:
+    colour = QColor(hex_)
+    colour.setAlpha(alpha)
+    return colour
+
+
 def frost(pixmap: QPixmap, shape: QPixmap) -> QPixmap:
     """The glass with fine grain in it, but only where the shape is: the frost that a system without blur cannot give
     us. Called where the chrome is painted, never per frame."""
@@ -81,6 +88,15 @@ def frost(pixmap: QPixmap, shape: QPixmap) -> QPixmap:
     grain.fill(Qt.transparent)
     painter = QPainter(grain)
     painter.drawTiledPixmap(area, _tile(ratio))
+    w, h = area.width(), area.height()
+    tint, sheen = QLinearGradient(0, 0, w, h), QLinearGradient(0, 0, 0, h * 0.45)
+    for at, hex_, alpha in ((0.0, GLASS_TINT_FROM[0], GLASS_TINT_FROM[1]), (0.55, "#ffffff", 0),
+                            (1.0, GLASS_TINT_TO[0], GLASS_TINT_TO[1])):
+        tint.setColorAt(at, _with_alpha(hex_, alpha))
+    sheen.setColorAt(0.0, _with_alpha("#ffffff", GLASS_SHEEN))
+    sheen.setColorAt(1.0, _with_alpha("#ffffff", 0))
+    painter.fillRect(area, tint)
+    painter.fillRect(area, sheen)
     painter.setCompositionMode(QPainter.CompositionMode_DestinationIn)
     painter.drawPixmap(0, 0, shape)
     painter.end()
