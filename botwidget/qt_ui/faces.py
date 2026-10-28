@@ -795,8 +795,16 @@ class Faces(QObject):
             return
         self.semicircle_pointer_left()
 
+    def hold_arc(self):
+        """Right-click: the hidden bots show on the arc and stay while the command menu is open."""
+        self.show_semicircle()
+        self._semicircle_hide_timer.stop()
+
+    def _command_menu_open(self) -> bool:
+        return any(face.bubble.isVisible() and face.bubble._list_only for face in self.faces.values())
+
     def semicircle_pointer_left(self):
-        if self._drag_in_progress() or self._catcher.underMouse():
+        if self._drag_in_progress() or self._catcher.underMouse() or self._command_menu_open():
             return
         here = list(self._arc_guests.values())
         if any(face.underMouse() for face in here if face.isVisible()):
@@ -805,8 +813,10 @@ class Faces(QObject):
             self._semicircle_hide_timer.start()
 
     def _semicircle_hide(self):
-        """The pointer stayed away: start the upward slide."""
+        """The pointer stayed away: start the upward slide, unless the right-click menu still holds the arc."""
         self._semicircle_hide_timer.stop()
+        if self._command_menu_open():
+            return
         self.hide_semicircle()
 
     def _semicircle_positions(self, ids=None) -> dict:

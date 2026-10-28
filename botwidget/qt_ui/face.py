@@ -1332,6 +1332,8 @@ class FaceWindow(QWidget):
         if self.faces is not None:
             self.faces.close_bubbles_except(self.agent_id)
         self.bubble.show_command_menu()
+        if self.faces is not None:
+            self.faces.hold_arc()
 
     def open_menu(self, page: str = "settings"):
         """A page of the menu in the bubble: /settings, /bots or /connections typed or picked."""

@@ -2110,6 +2110,7 @@ class BubbleHover(unittest.TestCase):
         self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
                                                "menu_command": lambda _self, command, page: page,
                                                "close_bubbles_except": lambda _self, _id: None,
+                                               "hold_arc": lambda _self: None,
                                                "raise_bubbles": lambda _self: None})()
         self.window.open_menu("settings")
         self.finish_growth()
@@ -2325,6 +2326,7 @@ class BubbleHover(unittest.TestCase):
         window.faces = type("Faces", (), {"menu_state": lambda _self: state,
                                           "menu_command": lambda _self, command, page: page,
                                           "close_bubbles_except": lambda _self, _id: None,
+                                          "hold_arc": lambda _self: None,
                                           "raise_bubbles": lambda _self: None})()
         clock = [1000.0]
         screen = QGuiApplication.primaryScreen().geometry()
@@ -2578,6 +2580,7 @@ class BubbleHover(unittest.TestCase):
         window.faces = type("Faces", (), {"menu_state": lambda _self: state,
                                           "menu_command": lambda _self, command, page: page,
                                           "close_bubbles_except": lambda _self, _id: None,
+                                          "hold_arc": lambda _self: None,
                                           "raise_bubbles": lambda _self: None})()
         bubble = window.bubble
         window.move(26, 62)
@@ -2689,6 +2692,7 @@ class BubbleHover(unittest.TestCase):
         window.faces = type("Faces", (), {"menu_state": lambda _self: state,
                                           "menu_command": lambda _self, command, page: page,
                                           "close_bubbles_except": lambda _self, _id: None,
+                                          "hold_arc": lambda _self: None,
                                           "raise_bubbles": lambda _self: None})()
         bubble = window.bubble
         for spot in ((26, 62), (27, 139), (25, 210), (300, 400)):
@@ -3428,6 +3432,7 @@ class BubbleHover(unittest.TestCase):
         self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
                                                "menu_command": lambda _self, command, page: page,
                                                "close_bubbles_except": lambda _self, _id: None,
+                                               "hold_arc": lambda _self: None,
                                                "raise_bubbles": lambda _self: None})()
 
     def test_a_slash_at_the_start_opens_a_list_of_commands_above_the_field(self):
@@ -4138,6 +4143,7 @@ class BubbleHover(unittest.TestCase):
         registry = Faces.__new__(Faces)
         registry.faces = {"t": self.window, "u": other}
         registry._arc_guests = {}
+        registry.hold_arc = lambda: None
         self.window.faces = other.faces = registry
         return other
 
@@ -5214,6 +5220,9 @@ class MenuInBubble(unittest.TestCase):
             menu_command = test.faces.Faces.menu_command
 
             def close_bubbles_except(self, agent_id):
+                pass
+
+            def hold_arc(self):
                 pass
 
             def raise_bubbles(self):
