@@ -1458,7 +1458,6 @@ class FaceWindow(QWidget):
             self.open_settings()
             return
         self._think_quiet = False
-        text = text[:500]
         open_question = None if files else self._open_question()
         if open_question:
             self._give_answer(*open_question, [text])

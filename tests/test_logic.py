@@ -4451,6 +4451,13 @@ class BubbleHover(unittest.TestCase):
         self.assertLess(played / 60, 20 * 0.6, "it holds still for part of the time")
         self.assertGreater(played, 0)
 
+    def test_a_long_message_is_sent_whole(self):
+        self.window._pump_outbox = lambda: None
+        text = "woord " * 400
+        self.window.on_user_message(text)
+        sent = [item["text"] for item in self.window._outbox.items]
+        self.assertEqual(sent, [text], "not cut off after 500 characters")
+
     def test_the_app_is_not_activated_while_its_bubble_sits_on_another_desktop(self):
         from unittest import mock
         from botwidget.qt_ui import desktops, face
