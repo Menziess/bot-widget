@@ -7,7 +7,8 @@
 <meta name="description" content="An animated desktop face for OpenBot and Grok Bot. Click it to chat, watch it think.">
 <meta property="og:title" content="Bot Widget — a face for your bot">
 <meta property="og:description" content="An animated desktop face for OpenBot and Grok Bot. Click it to chat, watch it think.">
-<meta name="theme-color" content="#f6f7fb">
+<meta name="theme-color" content="#f6f7fb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101218" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="face.svg">
 <style>
   :root { --ink: #1c1c1c; --soft: #1c1c1c99; --line: #1c1c1c1f; --accent: #0b6dd3; }
@@ -75,6 +76,23 @@
   ul { padding-left: 20px; } li { margin: 6px 0; }
   a { color: var(--accent); }
   footer { margin-top: 64px; color: var(--soft); font-size: 14px; text-align: center; }
+  :root { color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #ececec; --soft: #ececec99; --line: #ffffff26; --accent: #7ab8ff; }
+    body { background: radial-gradient(900px 520px at 12% -8%, #1d2b49, #0000 70%),
+           radial-gradient(800px 480px at 100% 6%, #3b2030, #0000 70%), #101218; background-attachment: fixed; }
+    #bubble, .download { background: linear-gradient(180deg, #2b2e3ac2, #1c1f29c2);
+      box-shadow: 0 10px 32px #0000008c, 0 0 0 1px #ffffff1f, inset 0 0 0 1px #ffffff14; }
+    #bubble::after { background: #232631e6; }
+    .button { background: var(--ink); color: #101218; }
+    .button:hover { background: #fff; }
+    code { background: #ffffff14; }
+    pre { background: #0a0b0f; box-shadow: 0 0 0 1px #ffffff1a; }
+    #chips button { background: #ffffff14; }
+    #chips button:hover { background: #ffffff26; }
+    #ask-text { background: #ffffff12; }
+    #ask-text:focus { background: #ffffff1f; }
+  }
 </style>
 </head>
 <body>
