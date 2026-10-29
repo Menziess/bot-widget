@@ -69,6 +69,13 @@ def constrained() -> bool:
     return _seen[1]
 
 
+_setting = [-1e9, True]
+
+
 def reduced() -> bool:
-    """Draw less: the setting is on and the computer runs on its battery or in a low power mode."""
-    return save_battery() and constrained()
+    """Draw less: the setting is on and the computer runs on its battery or in a low power mode. Asked on every
+    frame, so the setting file is read once a second, not once per frame."""
+    now = time.monotonic()
+    if now - _setting[0] > 1.0:
+        _setting[0], _setting[1] = now, save_battery()
+    return _setting[1] and constrained()

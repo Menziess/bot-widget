@@ -4483,12 +4483,15 @@ class BubbleHover(unittest.TestCase):
     def test_fewer_animations_only_on_battery_and_only_when_the_setting_is_on(self):
         from unittest import mock
         from botwidget import config, power
+        power._setting[0] = -1e9
         self.assertTrue(config.save_battery(), "on unless switched off")
         with mock.patch.object(power, "constrained", return_value=True):
             self.assertTrue(power.reduced())
             config.save_widget_config(save_battery=False)
+            power._setting[0] = -1e9
             self.assertFalse(power.reduced(), "the setting wins")
         config.save_widget_config(save_battery=True)
+        power._setting[0] = -1e9
         with mock.patch.object(power, "constrained", return_value=False):
             self.assertFalse(power.reduced())
         self.assertTrue(power.parse_pmset("Now drawing from 'Battery Power'"))
