@@ -15,6 +15,7 @@ from PySide6.QtCore import QEasingCurve, QPoint, Qt, QTimer, QVariantAnimation, 
 from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter
 from PySide6.QtWidgets import QWidget
 
+from botwidget import acplink
 from botwidget.animation import IDLE_MS, FaceAnimator, frame_ms
 from botwidget.avatar import (
     AVATAR_SIZE,
@@ -137,6 +138,8 @@ class FaceWindow(QWidget):
         # A Grok Bot face talks to the gbot command instead of the local OpenBot.
         self.grok = grokbot.GrokLink(name) if grokbot.is_grok(agent_id) else None
         self.hermes = hermesbot.HermesLink(name) if hermesbot.is_hermes(agent_id) else None
+        # An ACP agent is one more backend behind the same calls, so nothing below has to know which one it has.
+        self.acp = acplink.AcpLink(acplink.target_for(agent_id)) if acplink.is_acp(agent_id) else None
         self.faces = faces
         self._hue = hue
         self._seed = seed or agent_id
@@ -845,16 +848,16 @@ class FaceWindow(QWidget):
                 a.value[name] -= 360 * round(off / 360)
         self._show_face(pose["face"])
 
+    @property
+    def link(self):
+        """The backend this face talks to, whichever it is; None means OpenBot."""
+        return self.acp or self.grok or self.hermes
+
     def _send_status_or_note(self) -> str:
-        """Send status or bot note (Grok Bot or Hermes Bot)."""
-        if self.grok:
+        """Send status or the note of the bot this face talks to."""
+        if self.link:
             try:
-                return self.grok.note()
-            except Exception:
-                return ""
-        if self.hermes:
-            try:
-                return self.hermes.note()
+                return self.link.note()
             except Exception:
                 return ""
         return getattr(self, "_failed_note", "")
@@ -867,7 +870,7 @@ class FaceWindow(QWidget):
             return False
 
     def _has_grok_or_hermes(self) -> bool:
-        return bool(self.grok or self.hermes)
+        return bool(self.link)
 
     def _motion_mood(self) -> str:
         """What the face shows while it lasts: a question waits, the bot thinks, there is no route."""
@@ -1019,6 +1022,8 @@ class FaceWindow(QWidget):
         glass.clear(self.bubble)
         self.bubble.close()
         self.close()
+        if self.acp:
+            self.acp.close()
 
     # ── Polling ─────────────────────────────────────────────────
 
@@ -1030,7 +1035,7 @@ class FaceWindow(QWidget):
     def _latest(self) -> dict:
         """The latest chat of this bot: from Grok Bot or from the local OpenBot."""
         self._cleanup_local()
-        chat = self.grok.chat() if self.grok else (self.hermes.chat() if self.hermes else latest_chat(thread_id=self.thread_id))
+        chat = self.link.chat() if self.link else latest_chat(thread_id=self.thread_id)
         if self._debug:
             # /debug: the bot looks busy with a thought, and a click shows a message with every piece of markdown.
             chat = {**chat, "activity": menu_pages.DEBUG_THOUGHT,
@@ -1066,6 +1071,16 @@ class FaceWindow(QWidget):
                 self._refreshed(self.hermes.note() or "Refreshed.")
                 return
             self._sync_bubble(self._latest())
+            return
+        if self.acp:
+            # The agent pushes its updates, so there is nothing to poll: draw what came in, and keep
+            # the timer alive only while a turn runs.
+            changed = self._set_attention(self.acp.attention())
+            self._sync_bubble(self._latest(), force=changed)
+            if self._refreshing and not self.acp.active():
+                self._refreshed(self.acp.note() or "Refreshed.")
+            if self.acp.active():
+                self._poll_timer.start(1000)
             return
         try:
             data = api_get(f"/v1/agents/{self.agent_id}/pending")
@@ -1123,13 +1138,22 @@ class FaceWindow(QWidget):
             self.hermes.request_fetch()
             if not self._poll_timer.isActive():
                 self._poll_timer.start(0)
+        if self.acp and self._alive:
+            self._poll_timer.start(0)
+
+    def _attention_command(self, kind: str, rest: str):
+        if kind == "approve" and self.acp:
+            request_id, _, decision = rest.rpartition("/")
+            self.acp.decide(request_id, decision == "accept")
+            self._attention = {"prompts": [], "approvals": [], "browserTakeovers": []}
+            self._sync_bubble(self._latest(), force=True)
+            return
+        self._attention_command_builtin(kind, rest)
 
     def _waiting_note(self, error: str = "") -> str:
         """Why a message is waiting: the switch in OpenBot is off, or the link dropped."""
-        if self.grok:
-            return self.grok.note()
-        if self.hermes:
-            return self.hermes.note()
+        if self.link:
+            return self.link.note()
         if error == AUTOMATION_OFF or not automation_ready():
             return AUTOMATION_NOTE.format(name=self.bot_name)
         return RETRY_NOTE
@@ -1217,10 +1241,7 @@ class FaceWindow(QWidget):
         pending = self._show_think() and not self._answer_view and not reading
         # Clear _asked so the conversation can appear even when the bot's answer
         # has the same text as the last one (so _answer_pending never fires).
-        if self._asked and self.grok and self.grok.stopped:
-            self._asked = False
-            pending = False
-        if self._asked and self.hermes and self.hermes.stopped:
+        if self._asked and self.link and self.link.stopped:
             self._asked = False
             pending = False
         if self._asked and not self.grok and not self.hermes and not self._working and not self._sending and not self._outbox.items and not self._queue:
@@ -1242,10 +1263,8 @@ class FaceWindow(QWidget):
                 blocks += self._attention_blocks()
                 if self._send_status:
                     blocks.append(status_block(self._send_status))
-                elif self.grok and self.grok.note():
-                    blocks.append(status_block(self.grok.note()))
-                elif self.hermes and self.hermes.note():
-                    blocks.append(status_block(self.hermes.note()))
+                elif self.link and self.link.note():
+                    blocks.append(status_block(self.link.note()))
                 if self._queue:
                     blocks.append(status_block("Queued, click one to edit it"))
                     waiting = [{"role": "user", "text": attachments.label_with(item["text"], item["files"]),
@@ -1259,9 +1278,7 @@ class FaceWindow(QWidget):
                 self._shown_text = text
                 self.bubble.show_blocks(blocks, "think", input=expanded)
             return
-        if self._asked and self.grok and self.grok.stopped:
-            self._asked = False
-        if self._asked and self.hermes and self.hermes.stopped:
+        if self._asked and self.link and self.link.stopped:
             self._asked = False
         # Do not clear _asked here: keep the dots showing until an answer arrives or _answer_pending clears it.
         if (self._working or self._sending or self._outbox.items or self._asked) and not (self.pinned or self._answer_view or reading):
@@ -1414,16 +1431,14 @@ class FaceWindow(QWidget):
                                          self.bot_name)
         if not blocks:
             # A Grok face says why it stopped even with nothing in the chat yet.
-            note = self.grok.note() if self.grok else (self.hermes.note() if self.hermes else "")
+            note = self.link.note() if self.link else ""
             return [status_block(note)] if note else blocks
         if self._working or (self._outbox.items and not self._send_status):
             blocks += [role_panel("bot"), plain_block("dots")]
         blocks += self._attention_blocks()
         # Learn at once that sending is not possible yet.
-        if self.grok:
-            status = self._send_status or self.grok.note()
-        elif self.hermes:
-            status = self._send_status or self.hermes.note()
+        if self.link:
+            status = self._send_status or self.link.note()
         else:
             status = (self._send_status or ("" if automation_ready() else self._waiting_note())
                       or getattr(self, "_failed_note", ""))
@@ -1472,12 +1487,9 @@ class FaceWindow(QWidget):
             self._sync_bubble(self._latest(), force=True)
             self._poll_timer.start(300)
             return
-        if self.grok:
+        if self.link:
             # A new message is a fresh attempt: the link that stopped tries again.
-            self.grok.resume()
-        if self.hermes:
-            # A new message is a fresh attempt: the link that stopped tries again.
-            self.hermes.resume()
+            self.link.resume()
         self.pinned = False
         # Not for a message that waits in the queue: the cloud is open for that and shows the queue.
         self._think_held = True
@@ -1606,7 +1618,7 @@ class FaceWindow(QWidget):
             blocks.append(status_block(self._attention_note))
         return blocks
 
-    def _attention_command(self, kind: str, rest: str):
+    def _attention_command_builtin(self, kind: str, rest: str):
         if kind == "approve":
             request_id, _, decision = rest.rpartition("/")
             if any(a["requestId"] == request_id for a in self._attention.get("approvals") or []):
@@ -1668,13 +1680,8 @@ class FaceWindow(QWidget):
                          args=(item["text"], item["cid"])).start()
 
     def _post_message(self, text: str, cid: str):
-        if self.grok:
-            ok, error = self.grok.send(text)
-            if self._alive:
-                self.message_done.emit(cid, ok, False, error)
-            return
-        if self.hermes:
-            ok, error = self.hermes.send(text)
+        if self.link:
+            ok, error = self.link.send(text)
             if self._alive:
                 self.message_done.emit(cid, ok, False, error)
             return
@@ -1726,7 +1733,7 @@ class FaceWindow(QWidget):
                 QTimer.singleShot(int(wait * 1000), self._pump_outbox)
         self.update()
         self._sync_bubble(self._latest())
-        if (self.grok or self.hermes) and (self.grok and self.grok.active() or self.hermes and self.hermes.active()) and not self._poll_timer.isActive():
+        if self.link and self.link.active() and not self._poll_timer.isActive():
             self._poll_timer.start(300)
         if next_ready:
             self._pump_outbox()
