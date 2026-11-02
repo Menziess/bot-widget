@@ -97,10 +97,144 @@ class ChatCompletions:
         return (choices[0].get("message") or {}).get("content", "") if choices else ""
 
 
-def from_environment(env=None) -> ChatCompletions:
-    """The model this bot uses: any OpenAI-compatible base URL, local or hosted."""
+def _anthropic_content(message: dict) -> list[dict]:
+    """One stored message in the shape the Anthropic API reads, tool calls and results included."""
+    role, content = message["role"], message.get("content") or ""
+    if role == "tool":
+        return [{"type": "tool_result", "tool_use_id": message["tool_call_id"], "content": content}]
+    blocks: list[dict] = [{"type": "text", "text": content}] if content else []
+    for call in message.get("tool_calls") or []:
+        try:
+            arguments = json.loads((call.get("function") or {}).get("arguments") or "{}")
+        except json.JSONDecodeError:
+            arguments = {}
+        blocks.append({"type": "tool_use", "id": call["id"],
+                       "name": (call.get("function") or {}).get("name", ""), "input": arguments})
+    return blocks
+
+
+class AnthropicMessages:
+    """The Anthropic Messages API, with a cache mark on the stable prefix and on the newest turn.
+
+    Anthropic caches only what a request marks, and it charges a quarter for a cached read, so the
+    system block (which never changes) and the last message (which makes the whole history a
+    cacheable prefix next time) carry the mark.
+    """
+
+    version = "2023-06-01"
+
+    def __init__(self, model: str, api_key: str, base_url: str = "https://api.anthropic.com",
+                 timeout: float = 300, max_tokens: int = 4096):
+        self.model = model
+        self.api_key = api_key
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.max_tokens = max_tokens
+
+    def _body(self, messages: list[dict], stream: bool, tools: list[dict] | None) -> dict:
+        system, conversation = [], []
+        for message in messages:
+            if message["role"] == "system":
+                system.append({"type": "text", "text": message["content"],
+                               "cache_control": {"type": "ephemeral"}})
+                continue
+            blocks = _anthropic_content(message)
+            role = "assistant" if message["role"] == "assistant" else "user"
+            if conversation and conversation[-1]["role"] == role:
+                conversation[-1]["content"].extend(blocks)
+            else:
+                conversation.append({"role": role, "content": blocks})
+        if conversation:
+            conversation[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
+        body = {"model": self.model, "max_tokens": self.max_tokens, "system": system,
+                "messages": conversation, "stream": stream}
+        if tools:
+            body["tools"] = [{"name": tool["function"]["name"],
+                              "description": tool["function"]["description"],
+                              "input_schema": tool["function"]["parameters"]} for tool in tools]
+        return body
+
+    def _request(self, body: dict) -> urllib.request.Request:
+        headers = {"Content-Type": "application/json", "anthropic-version": self.version}
+        if self.api_key:
+            headers["x-api-key"] = self.api_key
+        return urllib.request.Request(f"{self.base_url}/v1/messages", data=json.dumps(body).encode(),
+                                      headers=headers)
+
+    @staticmethod
+    def _usage(source: dict) -> dict:
+        """The same numbers every adapter reports, so the usage log reads the same for both."""
+        return {"prompt_tokens": (source.get("input_tokens") or 0) + (source.get("cache_read_input_tokens") or 0)
+                                + (source.get("cache_creation_input_tokens") or 0),
+                "completion_tokens": source.get("output_tokens") or 0,
+                "prompt_tokens_details": {"cached_tokens": source.get("cache_read_input_tokens") or 0}}
+
+    def stream(self, messages: list[dict], tools: list[dict] | None = None, stop=None, opened=None):
+        """The same events as the Chat Completions adapter, from Anthropic's SSE shape."""
+        request = self._request(self._body(messages, True, tools))
+        calls: dict[int, dict] = {}
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as reply:
+                if opened is not None:
+                    opened(reply)
+                for raw in reply:
+                    if stop is not None and stop.is_set():
+                        break
+                    line = raw.decode().strip()
+                    if not line.startswith("data:"):
+                        continue
+                    event = json.loads(line[5:].strip())
+                    kind = event.get("type")
+                    if kind == "message_start":
+                        yield "usage", self._usage((event.get("message") or {}).get("usage") or {})
+                    elif kind == "content_block_start":
+                        block = event.get("content_block") or {}
+                        if block.get("type") == "tool_use":
+                            calls[event.get("index", 0)] = {"id": block.get("id", ""), "type": "function",
+                                                            "function": {"name": block.get("name", ""),
+                                                                         "arguments": ""}}
+                    elif kind == "content_block_delta":
+                        delta = event.get("delta") or {}
+                        if delta.get("type") == "text_delta":
+                            yield "text", delta.get("text", "")
+                        elif delta.get("type") == "thinking_delta":
+                            yield "thought", delta.get("thinking", "")
+                        elif delta.get("type") == "input_json_delta":
+                            slot = calls.setdefault(event.get("index", 0),
+                                                    {"id": "", "type": "function",
+                                                     "function": {"name": "", "arguments": ""}})
+                            slot["function"]["arguments"] += delta.get("partial_json") or ""
+                    elif kind == "message_delta":
+                        yield "usage", self._usage(event.get("usage") or {})
+                if calls:
+                    yield "tool_calls", [calls[index] for index in sorted(calls)]
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode(errors="replace")[:300]
+            raise ModelError(f"HTTP {error.code}: {detail}") from error
+        except urllib.error.URLError as error:
+            raise ModelError(f"cannot reach {self.base_url}: {error.reason}") from error
+
+    def complete(self, messages: list[dict]) -> str:
+        request = self._request(self._body(messages, False, None))
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as reply:
+                body = json.loads(reply.read())
+        except urllib.error.HTTPError as error:
+            raise ModelError(f"HTTP {error.code}: {error.read().decode(errors='replace')[:300]}") from error
+        except urllib.error.URLError as error:
+            raise ModelError(f"cannot reach {self.base_url}: {error.reason}") from error
+        return "".join(block.get("text", "") for block in body.get("content") or []
+                       if block.get("type") == "text")
+
+
+def from_environment(env=None):
+    """The model this bot uses: Chat Completions for every provider that speaks it, or Anthropic."""
     import os
     env = env or os.environ
+    if (env.get("HARNESS_MODEL_PROVIDER") or "").lower() == "anthropic":
+        return AnthropicMessages(env.get("HARNESS_MODEL") or "claude-sonnet-4-5",
+                                 env.get("HARNESS_MODEL_API_KEY") or "",
+                                 env.get("HARNESS_MODEL_BASE_URL") or "https://api.anthropic.com")
     base = env.get("HARNESS_MODEL_BASE_URL") or "http://127.0.0.1:11434/v1"
     return ChatCompletions(base, env.get("HARNESS_MODEL") or "qwen2.5:7b",
                            env.get("HARNESS_MODEL_API_KEY") or "")

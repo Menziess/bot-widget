@@ -57,3 +57,19 @@ the choice closest to the roadmap stands until then.
 - **The model stream runs in a thread feeding an asyncio queue**, so a cancel, a permission
   request or a second message is seen while the provider is still thinking; a cancel also sets a
   stop flag and closes the response, so the rest of the answer is not paid for.
+
+## Phase 4, context and caching
+
+- **The request is built from a stable prefix, the summary, the pinned facts and the newest
+  turns.** `pin_fact` writes a fact to the session store so it survives the summary; the meter
+  reports the estimated request size every turn, and the widget says how full the context is at
+  70% or when a summary has just landed.
+- **Anthropic gets its own adapter (`HARNESS_MODEL_PROVIDER=anthropic`)**, because its cache is
+  explicit: the system block and the last content block carry `cache_control: ephemeral`, so the
+  unchanged prefix is a cache read on the next turn. Chat Completions stays the default for every
+  OpenAI-compatible provider.
+- **Both adapters report the same usage shape** (`prompt_tokens`, `completion_tokens`,
+  `prompt_tokens_details.cached_tokens`), so one usage log covers either provider.
+- **The cache claim is measured against a fake Messages API that models prefix caching**, not a
+  paid provider: a 20-turn replay is 0% cached on turn one, over half cached from turn three and
+  over 90% by turn twenty. A hosted run is still untried (no paid credit).

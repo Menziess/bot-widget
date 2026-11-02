@@ -12,6 +12,8 @@ thought or answer chunk, which is a model call and says nothing about the agent'
 | lean agent + hermes link | `AcpLink("hermes-acp")` | 7.8 s | 24 s | end_turn | The phase 1 adapter against the real agent: `send` returned at once, the bubble showed the thought, and the answer "link ok" arrived after 31 s. |
 | lean agent, tool turn | `.venv/bin/python -m harness.agent` | 0.29 s | 5.8 s | end_turn | Ollama `qwen3.8-iq3-32k` was asked to read a file: it called `read_file`, got the text, and answered "Blauw" in 6.7 s over two steps. Usage line: 1096 input (511 cached), 105 output. |
 
+| fake Anthropic, 20-turn replay | `AnthropicMessages` + fake Messages API | — | — | end_turn | Prefix-cache share of input tokens: 0% on turn 1, 54% on turn 3, 70% by turn 5, 95% by turn 20. Two real agent turns through the same adapter logged a non-zero `cached_tokens`, which is the phase 4 done-criterion. Not a paid provider: the fake models the cache. |
+
 Only one real ACP agent is installed on this machine (`hermes-acp`). Pi is installed but speaks
 its own protocol; OpenCode, Claude Code and Codex are not installed. Trying a second real agent
 is still open, and the adapter has to be expected to differ per agent until then.
