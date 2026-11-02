@@ -31,6 +31,21 @@ def start(extra: list = ()) -> subprocess.Popen:
     return subprocess.Popen([sys.executable, "-m", "botwidget", *extra])
 
 
+def needs_restart(current: dict, seen: dict, started_ns: int) -> bool:
+    """A .py file appeared, disappeared, or was written after this child started.
+
+    The snapshot taken after start() used to count a write during startup as already
+    seen, so the child kept the code it had imported a moment earlier.
+    """
+    return current != seen or any(mtime > started_ns for mtime in current.values())
+
+
+def launched(accepted: dict) -> int:
+    """The instant this child may claim those files. A mtime already in the snapshot is not a new write."""
+    newest = max(accepted.values(), default=0)
+    return max(time.time_ns(), newest)
+
+
 def stop(child: subprocess.Popen | None, wait: float = 3.0):
     if child is None or child.poll() is not None:
         return
@@ -45,8 +60,9 @@ def run(folder: str = PACKAGE, poll: float = POLL_S):
     """Keeps the widget running with the newest code. A crash waits for the next change."""
     ensure_single_instance(DEV_PIDFILE, (b"--dev",))
     extra = ["--keep-login"] if "--keep-login" in sys.argv else []
-    child = start(extra)
     seen = snapshot(folder)
+    started = launched(seen)
+    child = start(extra)
     waiting = False
 
     def goodbye(*_):
@@ -59,10 +75,11 @@ def run(folder: str = PACKAGE, poll: float = POLL_S):
         while True:
             time.sleep(poll)
             current = snapshot(folder)
-            if current != seen:
+            if needs_restart(current, seen, started):
                 seen, waiting = current, False
                 print("code changed, restarting", flush=True)
                 stop(child)
+                started = launched(seen)
                 child = start(extra)
             elif child.poll() == HANDOVER_EXIT:
                 print("handed over to the stable version", flush=True)

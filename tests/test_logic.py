@@ -6539,6 +6539,49 @@ class DevRunner(unittest.TestCase):
     def test_stopping_nothing_is_fine(self):
         dev.stop(None)
 
+    def test_a_write_already_in_the_snapshot_still_restarts_when_it_is_newer_than_the_child(self):
+        seen = {"/a.py": 150}
+        self.assertTrue(dev.needs_restart(seen, seen, 100))
+        self.assertFalse(dev.needs_restart(seen, seen, 150))
+        self.assertFalse(dev.needs_restart(seen, seen, 200))
+        self.assertTrue(dev.needs_restart({"/a.py": 1, "/b.py": 2}, {"/a.py": 1}, 10))
+
+    def test_the_child_starts_after_the_snapshot_and_a_write_during_start_restarts_once(self):
+        from unittest import mock
+        order = []
+        files = {"/a.py": 100}
+        pending = {"write": True}
+
+        def snap(_folder=None):
+            order.append("snap")
+            return dict(files)
+
+        def start(_extra=()):
+            order.append("start")
+            if pending["write"]:
+                pending["write"] = False
+                files["/a.py"] = 10 ** 18  # written while the child is starting, after it imported
+            child = mock.Mock()
+            child.poll.return_value = None
+            return child
+
+        sleeps = {"n": 0}
+
+        def sleep(_poll):
+            sleeps["n"] += 1
+            if sleeps["n"] > 2:
+                raise KeyboardInterrupt
+
+        with mock.patch.object(dev, "snapshot", snap), mock.patch.object(dev, "start", start), \
+                mock.patch.object(dev, "stop", lambda *_a, **_k: order.append("stop")), \
+                mock.patch.object(dev, "ensure_single_instance"), \
+                mock.patch.object(dev.time, "sleep", sleep), \
+                mock.patch.object(dev.time, "time_ns", return_value=1000):
+            with self.assertRaises(KeyboardInterrupt):
+                dev.run("/tmp/unused", poll=0.5)
+        self.assertEqual(order[:2], ["snap", "start"])
+        self.assertEqual(order.count("start"), 2)
+
 
 class FirstRun(unittest.TestCase):
     """Should turn on starting at login the first time; after that the user decides."""
