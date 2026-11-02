@@ -88,6 +88,48 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(os.path.exists(target))
         self.assertIn("declined", json.dumps(self.last_messages()))
 
+    async def test_a_declined_write_is_remembered_after_a_restart(self):
+        target = os.path.join(self.folder, "written.txt")
+        self.model.script = [{"tool_calls": [{"name": "write_file",
+                                              "arguments": {"path": target, "content": "x"}}]}, "Oké."]
+        async with self.client(allow=lambda _title: False) as client:
+            await client.start()
+            await client.prompt("Schrijf het bestand")
+        from harness.agent.store import SessionStore
+        store = SessionStore(self.folder)
+        self.addCleanup(store.close)
+        self.assertTrue(any("write_file: declined" in m["text"]
+                            for m in store.messages() if m["role"] == "tool"))
+        # A fresh process, the same folder: the next request carries what the tool did.
+        self.model.script = ["Nee, dat heb ik niet gedaan."]
+        async with self.client() as client:
+            await client.start()
+            session = client.session_id
+            await client.prompt("Heb je het bestand geschreven?")
+        sent = json.dumps(self.model.requests[-1]["messages"])
+        self.assertIn("write_file: declined", sent)
+        self.assertFalse(os.path.exists(target))
+
+    async def test_a_tool_line_is_not_replayed_as_something_the_bot_said(self):
+        asked = []
+        self.model.script = [{"tool_calls": [{"name": "list_dir", "arguments": {"path": self.folder}}]},
+                             "Klaar."]
+        async with self.client() as client:
+            await client.start()
+            session = client.session_id
+            await client.prompt("Wat staat er?")
+        from harness.agent.store import SessionStore
+        store = SessionStore(self.folder)
+        self.addCleanup(store.close)
+        self.assertTrue([m for m in store.messages() if m["role"] == "tool"])
+        async with self.client() as client:
+            await client.start()
+            replayed = []
+            client.on_update = lambda update: replayed.append((update.kind, update.text))
+            await client.conn.load_session(cwd=ROOT, session_id=session, mcp_servers=[])
+        self.assertFalse([text for kind, text in replayed if kind == "user" and "list_dir:" in text],
+                         "the tool line stays out of the visible conversation")
+
     async def test_an_allowed_write_reaches_the_disk(self):
         target = os.path.join(self.folder, "written.txt")
         self.model.script = [{"tool_calls": [{"name": "write_file",

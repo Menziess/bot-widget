@@ -31,7 +31,11 @@ def meter(store, bot: str) -> tuple[int, int]:
 
 
 def build(store, bot: str) -> list[dict]:
-    """The messages to send: system, summary, facts, then the newest turns that fit."""
+    """The messages to send: system, summary, facts, then the newest turns that fit.
+
+    A stored tool line is a system message: what a tool did is a fact about the world, not something
+    the bot said, and it is what keeps a restart from forgetting that a write was declined.
+    """
     messages = [{"role": "system", "text": SYSTEM.format(bot=bot)}]
     if store.summary:
         messages.append({"role": "system", "text": "Earlier in this conversation:\n" + store.summary})
@@ -48,7 +52,8 @@ def build(store, bot: str) -> list[dict]:
     messages.extend(reversed(kept))
     # Instructions, summary and pinned facts are system messages; only the stored turns are a
     # conversation. Sent as assistant text they read as the bot contradicting itself.
-    roles = {"system": "system", "user": "user", "bot": "assistant", "assistant": "assistant"}
+    roles = {"system": "system", "user": "user", "bot": "assistant", "assistant": "assistant",
+             "tool": "system"}
     return [{"role": roles[message["role"]], "content": message["text"]} for message in messages]
 
 

@@ -64,6 +64,8 @@ class LeanAgent:
         """A restart finds the conversation where it was: the same file, replayed to the widget."""
         store = self.stores.setdefault(session_id, SessionStore(self.folder))
         for message in store.messages(limit=context.KEEP_TURNS * 2):
+            if message["role"] == "tool":
+                continue  # a tool line is context for the model, not something the bot said
             await self._chunk(session_id, "user" if message["role"] == "user" else "agent", message["text"])
         return None
 
@@ -120,7 +122,7 @@ class LeanAgent:
                 messages.append({"role": "assistant", "content": "", "tool_calls": calls})
                 for call in calls:
                     messages.append({"role": "tool", "tool_call_id": call["id"],
-                                     "content": TOOL_OUTPUT + "\n" + await self._use_tool(session_id, call)})
+                                     "content": TOOL_OUTPUT + "\n" + await self._use_tool(session_id, store, call)})
         except ModelError as error:
             store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                          "ms": round((time.monotonic() - started) * 1000), "error": str(error)[:300]})
@@ -166,7 +168,7 @@ class LeanAgent:
                              field_meta={"compacted": True} if compacted else None)
         await self.conn.session_update(session_id=session_id, update=update)
 
-    async def _use_tool(self, session_id: str, call: dict) -> str:
+    async def _use_tool(self, session_id: str, store: SessionStore, call: dict) -> str:
         """Run one tool the model asked for; a write waits for the bubble's Accept first."""
         import json
 
@@ -182,16 +184,24 @@ class LeanAgent:
         await self._tool_call(session_id, call["id"], title, "pending", "in_progress")
         if tool.writes and not await self._ask(session_id, call["id"], title):
             await self._tool_call(session_id, call["id"], title, "completed", "failed")
-            return "The user declined this action. Do not try it another way."
+            return self._note_tool(store, name, "declined by the user; nothing was done",
+                                   "The user declined this action. Do not try it another way.")
         try:
             result = tool.run(arguments)
             if inspect.isawaitable(result):
                 result = await result
         except ToolError as error:
             await self._tool_call(session_id, call["id"], title, "completed", "failed")
-            return f"The tool failed: {error}"
+            return self._note_tool(store, name, f"failed: {error}", f"The tool failed: {error}")
         await self._tool_call(session_id, call["id"], title, "completed", "completed")
-        return result
+        return self._note_tool(store, name, "ok", result)
+
+    @staticmethod
+    def _note_tool(store: SessionStore, name: str, outcome: str, answer: str) -> str:
+        """One short line per call in the session, so a restart still knows what a tool did — or that
+        the user said no."""
+        store.add("tool", f"{name}: {' '.join(outcome.split())[:200]}")
+        return answer
 
     async def _ask(self, session_id: str, call_id: str, title: str) -> bool:
         """Accept and Decline in the bubble; anything but an explicit allow counts as no."""

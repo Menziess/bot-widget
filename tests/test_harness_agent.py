@@ -54,9 +54,12 @@ class Store(unittest.TestCase):
         store.add("bot", "Hoi")
         store.set_summary("Zij begroetten elkaar.")
         store.set("facts", "Stefan wil korte antwoorden.")
-        roles = [message["role"] for message in context.build(store, "Test")]
-        self.assertEqual(roles, ["system", "system", "system", "user", "assistant"],
+        store.add("tool", "write_file: declined by the user; nothing was done")
+        built = context.build(store, "Test")
+        self.assertEqual([message["role"] for message in built],
+                         ["system", "system", "system", "user", "assistant", "system"],
                          "only the stored turns are a conversation, not the instructions")
+        self.assertIn("write_file: declined", built[-1]["content"])
 
     def test_a_limited_read_is_the_newest_messages_in_order(self):
         folder = tempfile.mkdtemp()
