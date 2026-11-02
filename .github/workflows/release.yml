@@ -109,10 +109,44 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      # The tag must be a plain version, and the builds must carry that same version.
+      - name: The version matches the tag
+        shell: python
+        run: |
+          import os, plistlib, re, sys, zipfile
+          tag = os.environ["GITHUB_REF_NAME"]
+          if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+              sys.exit(f"tag {tag} is not vX.Y.Z")
+          names = ["BotWidget-macOS.zip", "BotWidget-Windows-Setup.exe", "BotWidget-Linux.tar.gz"]
+          missing = [n for n in names if not os.path.isfile(os.path.join("artifacts", n))]
+          if missing:
+              sys.exit(f"missing builds: {missing}")
+          with zipfile.ZipFile("artifacts/BotWidget-macOS.zip") as z:
+              plist = plistlib.loads(z.read("Bot Widget.app/Contents/Info.plist"))
+          if plist.get("CFBundleShortVersionString") != tag[1:]:
+              sys.exit(f"tag {tag} but the macOS app says {plist.get('CFBundleShortVersionString')}")
+          print(f"{tag}: all builds present, macOS app version matches")
       # The widget checks every downloaded file against this before installing it.
       - name: Checksums
         run: cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
-      - uses: softprops/action-gh-release@v2
+      # First a draft with every file attached, published only at the end: a published
+      # release never changes afterwards, so immutable releases can be switched on.
+      - id: draft
+        uses: softprops/action-gh-release@v2
         with:
+          draft: true
           files: artifacts/*
           generate_release_notes: true
+          fail_on_unmatched_files: true
+      - name: Publish once every file is on the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.draft.outputs.id }}
+        run: |
+          want="$(ls artifacts | sort)"
+          have="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.assets[] | select(.state == "uploaded") | .name' | sort)"
+          if [ "$want" != "$have" ]; then
+            printf 'draft files differ from the build:\nwant:\n%s\nhave:\n%s\n' "$want" "$have"
+            exit 1
+          fi
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false --jq '.html_url'
