@@ -204,10 +204,10 @@ Do not invent a certificate or spend money from this repo. Until those secrets e
 
 ## Code signing policy
 
-Windows releases are to be signed with free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Until SignPath Foundation has approved the project, Windows downloads are unsigned.
+Windows releases are to be signed with free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Until approved, Windows downloads are unsigned.
 
-- Committers and reviewers: [Stefan Schenk](https://github.com/Menziess)
-- Approvers: [Stefan Schenk](https://github.com/Menziess)
+- Committers and reviewers: [Stefan Schenk (Menziess)](https://github.com/Menziess)
+- Approvers: [Stefan Schenk (Menziess)](https://github.com/Menziess)
 
 Every signed file is built by GitHub Actions from this repository (`.github/workflows/release.yml`), and each signing request is approved by hand.
 

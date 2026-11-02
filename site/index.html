@@ -129,6 +129,14 @@
     </p>
   </div>
 
+  <h2 id="code-signing">Code signing</h2>
+  <p>Windows releases are to be signed with free code signing provided by <a href="https://about.signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>. Until approved, Windows downloads are unsigned.</p>
+  <ul>
+    <li>Committers and reviewers: <a href="https://github.com/Menziess">Stefan Schenk (Menziess)</a></li>
+    <li>Approvers: <a href="https://github.com/Menziess">Stefan Schenk (Menziess)</a></li>
+  </ul>
+  <p>Every signed file is built by GitHub Actions from <a href="https://github.com/Menziess/bot-widget">this repository</a> (<code>.github/workflows/release.yml</code>), and each signing request is approved by hand. See also the <a href="/privacy">privacy policy</a>.</p>
+
   <h2>Prefer the command line?</h2>
   <p><a href="https://docs.astral.sh/uv/">uv</a> is for the command line and for development. On Linux the face stays tied to that terminal, so closing the terminal quits the face. For a start from the app menu, use the Linux download and <code>install.sh</code>. That command is <code>bot-widget</code>.</p>
   <pre>uv tool install git+https://github.com/Menziess/bot-widget
@@ -147,7 +155,7 @@ botwidget</pre>
   <h2>What it needs</h2>
   <p>Bot Widget is the face, not the brain. It talks to <a href="https://openbot.run/">OpenBot</a> or <a href="https://x.ai/bot">Grok Bot</a>. Without either, the face tells you so and points you to both.</p>
 
-  <footer><a href="https://github.com/Menziess/bot-widget">Source on GitHub</a> · <a href="https://github.com/Menziess/bot-widget#code-signing-policy">Code signing policy</a></footer>
+  <footer><a href="https://github.com/Menziess/bot-widget">Source on GitHub</a> · <a href="/#code-signing">Code signing policy</a> · <a href="/privacy">Privacy</a></footer>
 </main>
 <div id="bot">
   <canvas id="bot-canvas" aria-hidden="true"></canvas>
