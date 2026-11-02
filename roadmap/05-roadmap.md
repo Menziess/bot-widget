@@ -72,6 +72,12 @@ Run the measurement plan from 04-efficiency.md and write down the result.
 
 Done when a decision is recorded, keep OpenBot for everything, use the lean agent for some bots, or drop the idea.
 
+*Reached on 2 November 2026: the lean agent's prompt is about eighty times smaller and the measured
+turn is short, but with a local model behind both backends no cost per finished task was measured.
+Decision recorded in DECISIONS.md: keep OpenBot for broad work, use the lean agent as one more
+backend where a small prompt and a local model suffice, and settle the cost question with one
+hosted run on both sides.*
+
 ## Order and cut points
 
 Stopping after phase 1 still has value, because the widget then supports many existing agents. Stopping after phase 2 gives a minimal own backend. Phases 3 and 4 are where the savings come from, and also where most of the work and the risk sit.

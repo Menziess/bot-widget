@@ -120,3 +120,38 @@ A result worth acting on is a clear difference in cost per finished task, not in
 - Provider caching differences, https://hidekazu-konishi.com/entry/llm_api_parameter_compatibility_reference.html
 - Anthropic, OpenAI SDK compatibility and caching, https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk
 - ACP, usage and compaction updates, https://agentclientprotocol.com/protocol/prompt-turn
+
+## Measured on 2 November 2026
+
+Two runs on this machine, same local model family where it applies.
+
+**OpenBot, from its own usage records.** `agent_usage_records` in the OpenBot database holds one
+row per turn. The fourteen turns on `llm/local` had a median of 6365 uncached input tokens, 74836
+cached input tokens and 515 output tokens; 95% of their input was a cache read.
+
+**The lean agent, twenty scripted tasks in one session.** The same prompts a short chat would
+send, through `harness.agent` on Ollama `qwen3.8-iq3-32k`, one process, no tools used, twenty
+usage lines, none cancelled or failed:
+
+| | lean agent | OpenBot (`llm/local`) |
+| - | - | - |
+| turns measured | 20 | 14 |
+| median input tokens | 1014 | 81000 (6365 uncached + 75k cached) |
+| cached share of input | 58% | 95% |
+| median output tokens | 64 | 515 |
+| median turn | 2.5 s | not recorded per turn |
+| cost per turn | 0 (local model) | 0 (local model) |
+
+Read the difference carefully.
+
+- The input gap is about eighty times, and it is structural: OpenBot resends the developer
+  instructions, tool guides and memories on every turn, while the lean prefix is one short system
+  message, the summary and the newest turns.
+- The lean agent's cached share is lower because its prompt is small; a cache read on a small
+  prefix is worth less. On the local model both cost nothing, so these numbers are about latency
+  and context room, not money.
+- Output differs because the tasks differed: OpenBot's turns were real work with tools, the lean
+  run was twenty short questions. This is not a like-for-like quality comparison.
+- Cost per finished task, the figure the plan wants, is 0 on both sides with a local model and
+  cannot be measured for a hosted model without paid credit. The comparison that would settle it
+  needs the same model on both backends and a real task set.

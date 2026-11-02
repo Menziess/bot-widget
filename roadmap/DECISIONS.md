@@ -73,3 +73,17 @@ the choice closest to the roadmap stands until then.
 - **The cache claim is measured against a fake Messages API that models prefix caching**, not a
   paid provider: a 20-turn replay is 0% cached on turn one, over half cached from turn three and
   over 90% by turn twenty. A hosted run is still untried (no paid credit).
+
+## Phase 5, the decision
+
+- **Keep OpenBot for the bots that do broad work, and run the lean agent as one more backend in
+  the widget.** The measured difference is real but it is a difference in *context size*, not in
+  cost per finished task: on this machine both backends use a local model, so a turn costs
+  nothing either way, and OpenBot's turns did work the lean run did not. Dropping OpenBot on
+  token counts alone would trade a measured 80x smaller prompt for an unmeasured loss in quality.
+- **Use the lean agent where the small prompt pays off**: a bot that answers short questions,
+  needs one or two read-only tools, and benefits from a 2.5 s median turn instead of a large
+  prefix. That is the case the widget now has a backend for.
+- **The comparison is provisional on one thing**: no hosted provider was run on either side (no
+  paid credit), so cost per finished task is still unmeasured. The next run that settles it needs
+  the same hosted model behind both backends and twenty accepted tasks each.
