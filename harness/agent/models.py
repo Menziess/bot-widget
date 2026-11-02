@@ -20,8 +20,10 @@ class ChatCompletions:
         self.api_key = api_key
         self.timeout = timeout
 
-    def _request(self, messages: list[dict], stream: bool) -> urllib.request.Request:
+    def _request(self, messages: list[dict], stream: bool, tools: list[dict] | None = None):
         payload = {"model": self.model, "messages": messages, "stream": stream}
+        if tools:
+            payload["tools"] = tools
         if stream:
             payload["stream_options"] = {"include_usage": True}
         body = json.dumps(payload).encode()
@@ -30,14 +32,18 @@ class ChatCompletions:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return urllib.request.Request(f"{self.base_url}/chat/completions", data=body, headers=headers)
 
-    def stream(self, messages: list[dict], stop=None, opened=None):
-        """Yield events: ("text", str), ("thought", str), and one ("usage", dict) at the end.
+    def stream(self, messages: list[dict], tools: list[dict] | None = None, stop=None, opened=None):
+        """Yield events: ("text", str), ("thought", str), ("usage", dict) and ("tool_calls", list).
+
+        A tool call streams in pieces too, so the pieces are joined by index and handed over once,
+        when the model has finished the step.
 
         stop is a threading.Event: once set, the stream ends at the next chunk, so a turn that was
         cancelled stops paying for the rest of the answer. opened receives the response, so the
         caller can close the socket from another thread.
         """
-        request = self._request(messages, stream=True)
+        request = self._request(messages, stream=True, tools=tools)
+        calls: dict[int, dict] = {}
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as reply:
                 if opened is not None:
@@ -60,6 +66,17 @@ class ChatCompletions:
                             yield "thought", delta["reasoning_content"]
                         if delta.get("content"):
                             yield "text", delta["content"]
+                        for part in delta.get("tool_calls") or []:
+                            slot = calls.setdefault(part.get("index", 0),
+                                                    {"id": "", "type": "function",
+                                                     "function": {"name": "", "arguments": ""}})
+                            if part.get("id"):
+                                slot["id"] = part["id"]
+                            function = part.get("function") or {}
+                            slot["function"]["name"] += function.get("name") or ""
+                            slot["function"]["arguments"] += function.get("arguments") or ""
+                if calls:
+                    yield "tool_calls", [calls[index] for index in sorted(calls)]
         except urllib.error.HTTPError as error:
             detail = error.read().decode(errors="replace")[:300]
             raise ModelError(f"HTTP {error.code}: {detail}") from error

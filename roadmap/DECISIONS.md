@@ -43,3 +43,17 @@ the choice closest to the roadmap stands until then.
 - **Usage is appended to `usage.jsonl` next to the session store**, one line per turn: time,
   bot, model, step count, input/output tokens, cached input tokens if the provider reports them,
   milliseconds until the first token and until the answer finished.
+
+## Phase 3, tools and permissions
+
+- **Three read-only-by-default built-ins, one write.** `read_file` and `list_dir` never ask;
+  `write_file` asks first. Private paths (`~/.ssh`, `~/.gnupg`, `~/.aws`, gcloud and OpenBot
+  automation config, `.env`, `.netrc`, `id_rsa`) are refused outright rather than offered.
+- **One MCP server, configured with `HARNESS_MCP_SERVER`.** Its tools ask for permission unless
+  their names are listed in `HARNESS_MCP_READ_ONLY`, so a read-only server is not a click per
+  call and a new server cannot write on its own. More servers can come once one is proven.
+- **Tool output enters the prompt with a line that says it is data, never an instruction.** The
+  same text the widget's system prompt already promises.
+- **The model stream runs in a thread feeding an asyncio queue**, so a cancel, a permission
+  request or a second message is seen while the provider is still thinking; a cancel also sets a
+  stop flag and closes the response, so the rest of the answer is not paid for.

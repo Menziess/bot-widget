@@ -7,25 +7,33 @@ turn path ever waits for a summary.
 """
 
 import asyncio
+import inspect
 import os
 import threading
 import time
 
 from acp import PROTOCOL_VERSION
 from acp.schema import (AgentMessageChunk, AgentThoughtChunk, InitializeResponse, NewSessionResponse,
-                        PromptResponse, TextContentBlock)
+                        PermissionOption, PromptResponse, TextContentBlock, ToolCallProgress, ToolCallStart,
+                        ToolCallUpdate)
 
 from harness.agent import context
 from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
+from harness.agent.tools import TOOL_OUTPUT, ToolError, Tools
+
+MAX_STEPS = 6  # a tool loop that never settles must still end the turn
 
 
 class LeanAgent:
     """One bot per process: the widget starts one agent per face, with HARNESS_BOT naming the file."""
 
-    def __init__(self, bot: str, model, folder: str | None = None):
+    def __init__(self, bot: str, model, folder: str | None = None, tools: Tools | None = None):
         self.bot = bot
         self.model = model
+        self.tools = tools or Tools(os.environ.get("HARNESS_MCP_SERVER") or "",
+                                    {name.strip() for name in
+                                     (os.environ.get("HARNESS_MCP_READ_ONLY") or "").split(",") if name.strip()})
         self.folder = folder or os.environ.get("HARNESS_AGENT_DIR") or os.path.expanduser(
             f"~/.local/share/botwidget/harness/agent/{bot}")
         self.stores: dict[str, SessionStore] = {}
@@ -76,27 +84,46 @@ class LeanAgent:
         store = self.stores.setdefault(session_id, SessionStore(self.folder))
         text = "".join(block.text for block in prompt if getattr(block, "text", ""))
         store.add("user", text)
+        await self.tools.start()
         started = time.monotonic()
         first = 0.0
         answer = []
-        usage = {}
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0}
+        messages = context.build(store, self.bot)
+        cancelled = False
+        steps = 0
         try:
-            async for kind, value in self._events(session_id, context.build(store, self.bot)):
-                if kind == "cancelled":
+            for _step in range(MAX_STEPS):
+                steps += 1
+                calls = []
+                async for kind, value in self._events(session_id, messages):
+                    if kind == "cancelled":
+                        cancelled = True
+                        break
+                    if kind == "usage":
+                        usage["prompt_tokens"] += value.get("prompt_tokens") or 0
+                        usage["completion_tokens"] += value.get("completion_tokens") or 0
+                        usage["cached_tokens"] += (value.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+                        continue
+                    if kind == "tool_calls":
+                        calls = value
+                        continue
+                    if not first:
+                        first = time.monotonic()
+                    if kind == "text":
+                        answer.append(value)
+                    await self._chunk(session_id, "agent" if kind == "text" else "thought", value)
+                if cancelled or not calls:
                     break
-                if kind == "usage":
-                    usage = value
-                    continue
-                if not first:
-                    first = time.monotonic()
-                if kind == "text":
-                    answer.append(value)
-                await self._chunk(session_id, "agent" if kind == "text" else "thought", value)
+                messages.append({"role": "assistant", "content": "", "tool_calls": calls})
+                for call in calls:
+                    messages.append({"role": "tool", "tool_call_id": call["id"],
+                                     "content": TOOL_OUTPUT + "\n" + await self._use_tool(session_id, call)})
         except ModelError as error:
             store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                          "ms": round((time.monotonic() - started) * 1000), "error": str(error)[:300]})
             return PromptResponse(stop_reason="refusal")
-        cancelled = session_id in self._cancelled
+        cancelled = cancelled or session_id in self._cancelled
         self._cancelled.discard(session_id)
         said = "".join(answer)
         if said:
@@ -104,15 +131,66 @@ class LeanAgent:
         store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                      "ms": round((time.monotonic() - started) * 1000),
                      "first_ms": round((first - started) * 1000) if first else 0,
-                     "input_tokens": (usage.get("prompt_tokens")
-                                      or sum(context.estimate(m["content"]) for m in context.build(store, self.bot))),
-                     "output_tokens": usage.get("completion_tokens") or context.estimate(said),
-                     "cached_tokens": (usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0),
+                     "steps": steps,
+                     "input_tokens": usage["prompt_tokens"] or sum(context.estimate(m["content"])
+                                                                   for m in messages if m.get("content")),
+                     "output_tokens": usage["completion_tokens"] or context.estimate(said),
+                     "cached_tokens": usage["cached_tokens"],
                      "cancelled": cancelled})
         # Never in the turn path: the answer is out before the summary starts.
         if not cancelled:
             asyncio.create_task(self.summarise(store))
         return PromptResponse(stop_reason="cancelled" if cancelled else "end_turn")
+
+    async def _use_tool(self, session_id: str, call: dict) -> str:
+        """Run one tool the model asked for; a write waits for the bubble's Accept first."""
+        import json
+
+        name = (call.get("function") or {}).get("name") or ""
+        try:
+            arguments = json.loads((call.get("function") or {}).get("arguments") or "{}")
+        except json.JSONDecodeError:
+            return "The arguments were not valid JSON."
+        tool = self.tools.find(name)
+        if tool is None:
+            return f"There is no tool called {name}."
+        title = f"{name} {arguments}"
+        await self._tool_call(session_id, call["id"], title, "pending", "in_progress")
+        if tool.writes and not await self._ask(session_id, call["id"], title):
+            await self._tool_call(session_id, call["id"], title, "completed", "failed")
+            return "The user declined this action. Do not try it another way."
+        try:
+            result = tool.run(arguments)
+            if inspect.isawaitable(result):
+                result = await result
+        except ToolError as error:
+            await self._tool_call(session_id, call["id"], title, "completed", "failed")
+            return f"The tool failed: {error}"
+        await self._tool_call(session_id, call["id"], title, "completed", "completed")
+        return result
+
+    async def _ask(self, session_id: str, call_id: str, title: str) -> bool:
+        """Accept and Decline in the bubble; anything but an explicit allow counts as no."""
+        if self.conn is None:
+            return False
+        response = await self.conn.request_permission(
+            session_id=session_id,
+            tool_call=ToolCallUpdate(tool_call_id=call_id, title=title, kind="edit", status="pending"),
+            options=[PermissionOption(option_id="allow", name="Allow", kind="allow_once"),
+                     PermissionOption(option_id="decline", name="Decline", kind="reject_once")])
+        outcome = response.outcome
+        return getattr(outcome, "outcome", "") == "selected" and getattr(outcome, "option_id", "") == "allow"
+
+    async def _tool_call(self, session_id: str, call_id: str, title: str, status: str, progress: str) -> None:
+        """Tell the bubble what the bot is doing, so the cloud shows the tool instead of a frozen thought."""
+        if self.conn is None:
+            return
+        update = (ToolCallStart(session_update="tool_call", tool_call_id=call_id, title=title,
+                                kind="other", status=status)
+                  if progress == "in_progress"
+                  else ToolCallProgress(session_update="tool_call_update", tool_call_id=call_id,
+                                        title=title, kind="other", status=progress))
+        await self.conn.session_update(session_id=session_id, update=update)
 
     async def _events(self, session_id: str, messages: list[dict]):
         """The model stream, read in a thread: a 56 s wait must not freeze the ACP loop, or a cancel
@@ -127,13 +205,14 @@ class LeanAgent:
 
         def pump() -> None:
             try:
-                for event in self.model.stream(messages, stop=stop,
+                for event in self.model.stream(messages, tools=self.tools.specs(), stop=stop,
                                                opened=lambda reply: self._replies.__setitem__(session_id, reply)):
                     loop.call_soon_threadsafe(queue.put_nowait, event)
             except ModelError as error:
                 loop.call_soon_threadsafe(queue.put_nowait, ("error", error))
-            except Exception:
-                pass  # a closed response is how a cancel ends the stream
+            except Exception as error:
+                if not stop.is_set():
+                    loop.call_soon_threadsafe(queue.put_nowait, ("error", ModelError(f"{type(error).__name__}: {error}")))
             finally:
                 loop.call_soon_threadsafe(queue.put_nowait, done)
 
