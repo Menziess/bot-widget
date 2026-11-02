@@ -180,6 +180,16 @@ gh secret set MACOS_CERTIFICATE < certificate.p12.base64
 - Windows needs WINDOWS_CERTIFICATE (a base64 .pfx) and WINDOWS_CERT_PASSWORD
 - Without these secrets the workflow still builds, just unsigned
 
+### Windows through SignPath
+
+Bot Widget is applying to SignPath Foundation for free code signing of open-source projects. The release workflow is ready for it and does nothing until it is set up:
+
+- Secret `SIGNPATH_API_TOKEN`; variables `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`, `SIGNPATH_FILES_CONFIG_SLUG` and `SIGNPATH_SETUP_CONFIG_SLUG`
+- The two artifact configurations to create in SignPath are in `packaging/signpath/`
+- Request 1 signs `Bot Widget.exe` and Inno Setup's uninstaller, then the installer is built around them; request 2 signs `BotWidget-Windows-Setup.exe`
+- Only our own binaries are signed. Files from other projects (Python, Qt) keep the signature they come with
+- Every signing request is approved by hand in SignPath before the release goes out
+
 ### Windows Authenticode (SmartScreen)
 
 Unsigned Windows builds show SmartScreen. There is no code bypass; a signed installer earns reputation over time.
@@ -190,3 +200,16 @@ Unsigned Windows builds show SmartScreen. There is no code bypass; a signed inst
 4. Push a new tag so the release workflow signs both `Bot Widget.exe` and `BotWidget-Windows-Setup.exe`.
 
 Do not invent a certificate or spend money from this repo. Until those secrets exist, Windows downloads stay unsigned: in SmartScreen choose **More info**, then **Run anyway**.
+
+## Code signing policy
+
+Windows releases are to be signed with free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Until SignPath Foundation has approved the project, Windows downloads are unsigned.
+
+- Committers and reviewers: [Stefan Schenk](https://github.com/Menziess)
+- Approvers: [Stefan Schenk](https://github.com/Menziess)
+
+Every signed file is built by GitHub Actions from this repository (`.github/workflows/release.yml`), and each signing request is approved by hand.
+
+### Privacy
+
+Bot Widget talks to the bot apps on your own computer (OpenBot, Grok Bot). On its own it only asks GitHub (`api.github.com`) whether there is a newer release, and downloads that release from GitHub Releases; Check for updates on the /settings page switches that off. [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement) applies to those requests. Anything else, such as /feedback opening a GitHub issue in your browser, only happens when you ask for it.

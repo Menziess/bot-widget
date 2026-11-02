@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  actions: read  # SignPath reads the unsigned files from this run's artifacts
 
 jobs:
   build:
@@ -91,8 +92,129 @@ jobs:
           tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
           assert botwidget.__version__ == tag, f"tag {tag} but the build says {botwidget.__version__}"
 
+      # SignPath signs the Windows build once the secret SIGNPATH_API_TOKEN and the variables
+      # SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG,
+      # SIGNPATH_FILES_CONFIG_SLUG and SIGNPATH_SETUP_CONFIG_SLUG exist; until then it is the plain build.
+      # The two artifact configurations are in packaging/signpath/.
+      - name: Is SignPath set up
+        id: signpath
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          ORG: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          FILES: ${{ vars.SIGNPATH_FILES_CONFIG_SLUG }}
+          SETUP: ${{ vars.SIGNPATH_SETUP_CONFIG_SLUG }}
+        run: |
+          if [ -n "$TOKEN" ] && [ -n "$ORG" ] && [ -n "$PROJECT" ] && [ -n "$POLICY" ] && [ -n "$FILES" ] && [ -n "$SETUP" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "SignPath is not set up: this Windows build stays unsigned (or uses WINDOWS_CERTIFICATE)."
+          fi
+
       - name: Build
+        if: steps.signpath.outputs.enabled != 'true'
         run: python packaging/build.py
+
+      # SignPath, request 1: our own binaries only, Bot Widget.exe and Inno's uninstaller. SignPath
+      # Foundation signs nothing built by other projects (Python, Qt and so on keep their own signature,
+      # or none); the step lists those that have none.
+      - name: Windows app and uninstaller to sign
+        if: steps.signpath.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          python packaging/build.py --bundle
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python packaging/build.py --uninstaller build/uninstaller
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $version = python -c "import re, botwidget; print(re.match(r'\d+(\.\d+){0,2}', botwidget.__version__).group(0))"
+          "BW_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $app = (Resolve-Path "dist/Bot Widget").Path
+          New-Item -ItemType Directory -Force "signpath-files/app", "signpath-files/uninstaller" | Out-Null
+          Copy-Item (Join-Path $app "Bot Widget.exe") "signpath-files/app/Bot Widget.exe"
+          $e32 = Get-ChildItem build/uninstaller -Filter "uninst-*.e32" | Select-Object -First 1
+          Copy-Item $e32.FullName "signpath-files/uninstaller/uninst.exe"
+          "UNINSTALLER_E32=$($e32.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $unsigned = Get-ChildItem $app -Recurse -File -Include *.exe, *.dll, *.pyd |
+            Where-Object { $_.Name -ne "Bot Widget.exe" -and (Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid' }
+          Write-Output "Files from other projects without a signature of their own: $(@($unsigned).Count)"
+          $unsigned | ForEach-Object { Write-Output "  $($_.FullName.Substring($app.Length + 1))" }
+
+      - id: upload-unsigned-files
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath-windows-files
+          path: signpath-files/
+          if-no-files-found: error
+
+      - name: Sign the app files and the uninstaller
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_FILES_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-files.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-files
+          parameters: |
+            version: ${{ toJSON(env.BW_VERSION) }}
+
+      # Then the installer from the signed files; Inno embeds the signed uninstaller (SignedUninstaller).
+      - name: Installer from the signed files
+        if: steps.signpath.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $app = (Resolve-Path "dist/Bot Widget").Path
+          Copy-Item "signed-files/app/Bot Widget.exe" (Join-Path $app "Bot Widget.exe") -Force
+          Copy-Item "signed-files/uninstaller/uninst.exe" $env:UNINSTALLER_E32 -Force
+          $check = Join-Path $env:RUNNER_TEMP "uninst-check.exe"
+          Copy-Item $env:UNINSTALLER_E32 $check -Force
+          foreach ($file in @((Join-Path $app "Bot Widget.exe"), $check)) {
+            $status = (Get-AuthenticodeSignature $file).Status
+            if ($status -ne 'Valid') { Write-Output "not signed: $file ($status)"; exit 1 }
+          }
+          python packaging/build.py --installer build/uninstaller
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # SignPath, request 2: the installer itself.
+      - id: upload-unsigned-setup
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath-windows-setup
+          path: dist/BotWidget-Windows-Setup.exe
+          if-no-files-found: error
+
+      - name: Sign the installer
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_SETUP_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-setup
+          parameters: |
+            version: ${{ toJSON(env.BW_VERSION) }}
+
+      - name: Use the signed installer
+        if: steps.signpath.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          Copy-Item "signed-setup/BotWidget-Windows-Setup.exe" "dist/BotWidget-Windows-Setup.exe" -Force
+          $status = (Get-AuthenticodeSignature "dist/BotWidget-Windows-Setup.exe").Status
+          if ($status -ne 'Valid') { Write-Output "installer signature: $status"; exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:
@@ -108,6 +230,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: BotWidget-*  # not the signpath-* files that only went to SignPath
           merge-multiple: true
       # The tag must be a plain version, and the builds must carry that same version.
       - name: The version matches the tag
@@ -135,6 +258,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
+          body: "[Code signing policy](https://github.com/Menziess/bot-widget#code-signing-policy)"
           files: artifacts/*
           generate_release_notes: true
           fail_on_unmatched_files: true
