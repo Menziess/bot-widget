@@ -36,6 +36,17 @@ class Store(unittest.TestCase):
         self.assertEqual([m["text"] for m in again.messages()], ["Klaar?", "Ja."])
         self.assertEqual(again.summary, "They agreed on the plan.")
 
+    def test_a_limited_read_is_the_newest_messages_in_order(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        store = SessionStore(folder)
+        self.addCleanup(store.close)
+        for step in range(50):
+            store.add("user" if step % 2 == 0 else "bot", f"line {step}")
+        self.assertEqual([m["text"] for m in store.messages(limit=4)],
+                         ["line 46", "line 47", "line 48", "line 49"])
+        self.assertEqual(len(store.messages()), 50)
+
     def test_a_usage_line_is_one_json_object_per_turn(self):
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)
@@ -141,6 +152,32 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(turn.stop_reason, "end_turn")
         self.assertIn("Van de hosted provider.", "".join(update.text for update in turn.updates))
         self.assertEqual(hosted.headers[-1].get("Authorization"), "Bearer sk-test")
+
+    async def test_a_cancel_ends_the_turn_while_the_model_is_still_thinking(self):
+        self.model.first_delay = 5.0  # a model that has not sent a single token yet
+        async with self.client() as client:
+            await client.start()
+            turn = asyncio.create_task(client.prompt("Hallo"))
+            await asyncio.sleep(0.5)
+            started = time.monotonic()
+            await client.cancel()
+            result = await asyncio.wait_for(turn, timeout=5)
+            took = time.monotonic() - started
+        self.assertEqual(result.stop_reason, "cancelled")
+        self.assertLess(took, 1.0, "a cancel is read while the model stream is still open")
+
+    async def test_a_cancel_mid_stream_stops_the_answer_and_says_cancelled(self):
+        self.model.first_delay = 0.0
+        async with self.client() as client:
+            await client.start()
+            turn = asyncio.create_task(client.prompt("Hallo"))
+            await asyncio.sleep(0.005)
+            started = time.monotonic()
+            await client.cancel()
+            result = await asyncio.wait_for(turn, timeout=5)
+            took = time.monotonic() - started
+        self.assertEqual(result.stop_reason, "cancelled")
+        self.assertLess(took, 1.0)
 
     async def test_a_summary_never_delays_the_turn_that_triggers_it(self):
         self.model.slow_complete = 3.0  # a summary that takes three seconds

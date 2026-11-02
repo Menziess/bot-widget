@@ -8,6 +8,7 @@ turn path ever waits for a summary.
 
 import asyncio
 import os
+import threading
 import time
 
 from acp import PROTOCOL_VERSION
@@ -30,6 +31,9 @@ class LeanAgent:
         self.stores: dict[str, SessionStore] = {}
         self.conn = None
         self._cancelled: set[str] = set()
+        self._stops: dict[str, threading.Event] = {}
+        self._replies: dict[str, object] = {}
+        self._queues: dict[str, asyncio.Queue] = {}
         self._summarising = False
 
     # ── ACP ─────────────────────────────────────────────────────
@@ -56,7 +60,17 @@ class LeanAgent:
         return None
 
     async def cancel(self, session_id: str, **kwargs) -> None:
+        """Stop the turn now: the model stream is read in a thread, so this loop is free to answer."""
         self._cancelled.add(session_id)
+        if stop := self._stops.get(session_id):
+            stop.set()
+        if reply := self._replies.get(session_id):
+            try:
+                reply.close()  # unblocks the reading thread between chunks
+            except Exception:
+                pass
+        if queue := self._queues.get(session_id):
+            queue.put_nowait(("cancelled", ""))
 
     async def prompt(self, session_id: str, prompt, **kwargs) -> PromptResponse:
         store = self.stores.setdefault(session_id, SessionStore(self.folder))
@@ -67,8 +81,8 @@ class LeanAgent:
         answer = []
         usage = {}
         try:
-            for kind, value in self.model.stream(context.build(store, self.bot)):
-                if session_id in self._cancelled:
+            async for kind, value in self._events(session_id, context.build(store, self.bot)):
+                if kind == "cancelled":
                     break
                 if kind == "usage":
                     usage = value
@@ -99,6 +113,43 @@ class LeanAgent:
         if not cancelled:
             asyncio.create_task(self.summarise(store))
         return PromptResponse(stop_reason="cancelled" if cancelled else "end_turn")
+
+    async def _events(self, session_id: str, messages: list[dict]):
+        """The model stream, read in a thread: a 56 s wait must not freeze the ACP loop, or a cancel
+        and a permission request would only be seen after the answer.
+        """
+        queue: asyncio.Queue = asyncio.Queue()
+        loop = asyncio.get_running_loop()
+        stop = threading.Event()
+        done = object()
+        self._stops[session_id] = stop
+        self._queues[session_id] = queue
+
+        def pump() -> None:
+            try:
+                for event in self.model.stream(messages, stop=stop,
+                                               opened=lambda reply: self._replies.__setitem__(session_id, reply)):
+                    loop.call_soon_threadsafe(queue.put_nowait, event)
+            except ModelError as error:
+                loop.call_soon_threadsafe(queue.put_nowait, ("error", error))
+            except Exception:
+                pass  # a closed response is how a cancel ends the stream
+            finally:
+                loop.call_soon_threadsafe(queue.put_nowait, done)
+
+        threading.Thread(target=pump, daemon=True, name="harness-model").start()
+        try:
+            while True:
+                event = await queue.get()
+                if event is done:
+                    return
+                if event[0] == "error":
+                    raise event[1]
+                yield event
+        finally:
+            self._stops.pop(session_id, None)
+            self._queues.pop(session_id, None)
+            self._replies.pop(session_id, None)
 
     async def _chunk(self, session_id: str, role: str, text: str) -> None:
         if not text or self.conn is None:

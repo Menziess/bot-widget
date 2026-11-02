@@ -37,9 +37,13 @@ class SessionStore:
         self.db.commit()
 
     def messages(self, limit: int | None = None) -> list[dict]:
-        rows = self.db.execute("select role, text from messages order by id").fetchall()
-        messages = [{"role": role, "text": text} for role, text in rows]
-        return messages[-limit:] if limit else messages
+        """The newest `limit` messages in order, straight from sqlite; every turn asks twice."""
+        if limit:
+            rows = self.db.execute("select role, text from messages order by id desc limit ?",
+                                   (limit,)).fetchall()[::-1]
+        else:
+            rows = self.db.execute("select role, text from messages order by id").fetchall()
+        return [{"role": role, "text": text} for role, text in rows]
 
     def count(self) -> int:
         return self.db.execute("select count(*) from messages").fetchone()[0]

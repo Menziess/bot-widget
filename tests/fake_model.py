@@ -13,9 +13,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 class FakeModel:
     """One server on a free port; `reply` is what the model says, in words."""
 
-    def __init__(self, reply: str = "Hello from the fake model.", slow_complete: float = 0.0):
+    def __init__(self, reply: str = "Hello from the fake model.", slow_complete: float = 0.0,
+                 first_delay: float = 0.0):
         self.reply = reply
         self.slow_complete = slow_complete  # a summary call, when it must not block a turn
+        self.first_delay = first_delay  # a model that thinks before its first token
         self.requests: list[dict] = []
         self.headers: list[dict] = []
         self._lock = threading.Lock()
@@ -51,6 +53,7 @@ class FakeModel:
                 self.wfile.write(payload)
 
             def _stream(self, body):
+                time.sleep(model.first_delay)
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")
