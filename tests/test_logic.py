@@ -5393,7 +5393,8 @@ class MenuPages(unittest.TestCase):
 
     def test_the_bots_page_has_a_switch_per_bot(self):
         blocks = menu_pages.bots(self.STATE)
-        self.assertEqual(self.commands(blocks), ["page/commands", "bot/a", "mute/a", "bot/b", "mute/b"])
+        self.assertEqual(self.commands(blocks),
+                         ["page/commands", "bot/a", "mute/a", "bot/b", "mute/b", "page/bot", "page/widget-json"])
         self.assertIn("Arrow at the top goes back to commands.", self.text(blocks))
         self.assertIn("☑ Fritsie", self.text(blocks))
         self.assertIn("☐ Robo", self.text(blocks))

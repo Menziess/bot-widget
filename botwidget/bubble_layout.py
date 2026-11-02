@@ -190,7 +190,8 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
             continue
         if kind == "control":
             label_w = width([(block["label"], "")], SMALL_FONT)
-            extra = {"toggle": CONTROL_SWITCH_W, "slider": CONTROL_SLIDER_W}.get(block["control"], CONTROL_BUTTON_PAD)
+            extra = {"toggle": CONTROL_SWITCH_W, "slider": CONTROL_SLIDER_W, "field": 220,
+                     "editor": 420}.get(block["control"], CONTROL_BUTTON_PAD)
             laid.append({**block, "words": [], "xs": [], "ws": [], "head": False, "width": label_w + extra})
             widest = max(widest, laid[-1]["width"] + block.get("indent", 0))
             continue

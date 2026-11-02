@@ -10,7 +10,7 @@ from botwidget.config import QUIET_FROM, QUIET_TO
 from botwidget.markdown import control_block, plain_block, role_panel, text_block
 from botwidget.theme import BUBBLE_FONT
 
-PAGES = ("settings", "bots", "connections")
+PAGES = ("settings", "bots", "connections", "bot", "widget-json")
 # What typing it in the field opens.
 SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"}
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
@@ -90,6 +90,10 @@ def _button(label: str, command: str) -> dict:
     return control_block("button", label, command)
 
 
+def _field(label: str, command: str, value: str) -> dict:
+    return {**control_block("field", label, command), "value": value}
+
+
 def _back() -> list:
     """The arrow on top of a page: the way back to the menu, as scrolling past the top is the way to older messages."""
     return [role_panel("more", back="page/commands"), plain_block("more"), role_panel("bot")]
@@ -132,12 +136,51 @@ def bots(state: dict) -> list:
                         _row(("Shift+click a bot's face to mute or unmute its thinking.", "dim")),
                         plain_block("gap")]
     for bot in state["bots"]:
-        # Where the bot lives: OpenBot, Grok Bot or Hermes.
+        # Where the bot lives: OpenBot, Grok Bot, Hermes or a harness bot.
         label = f"{bot['name']} · {bot['source']}" if bot.get("source") else bot["name"]
         blocks.append(_toggle(label, f"bot/{bot['id']}", bot["on"]))
         blocks.append({**_toggle("Thinking muted", f"mute/{bot['id']}", bot.get("muted", False)), "indent": 44})
+        if bot.get("acp"):
+            blocks.append(_button(f"Edit {bot['name']}", f"page/bot/{bot['id']}"))
+            blocks.append(_button(f"Remove {bot['name']}", f"bot-remove/{bot['id']}"))
     if not state["bots"]:
         blocks.append(_row(("No bots found yet", "dim")))
+    blocks += [plain_block("gap"), _button("New bot", "page/bot"), _button("Edit widget.json", "page/widget-json")]
+    return blocks
+
+
+def bot_form(state: dict) -> list:
+    """Name, face, colour and the model. The key stays in its file."""
+    from botwidget.acp_bots import blank
+    form = state.get("bot_form") or blank()
+    editing = bool(form.get("stored_id"))
+    blocks = _back() + [_heading("Edit bot" if editing else "New bot"), _back_hint()]
+    if state.get("bot_error"):
+        blocks.append(_row((state["bot_error"], "dim")))
+    blocks += [
+        _field("Name", "field/name", form.get("name") or ""),
+        _button(f"Face: {form.get('face') or 'nuage'}", "cycle/face"),
+        _button(f"Colour: {form.get('color') or 'blue'}", "cycle/color"),
+        _field("Model address", "field/base_url", form.get("base_url") or ""),
+        _field("Model", "field/model", form.get("model") or ""),
+        _field("Key file", "field/key_file", form.get("key_file") or ""),
+        plain_block("gap"),
+        _button("Save bot", "action/save-bot"),
+    ]
+    if editing:
+        blocks.append(_button("Remove bot", f"bot-remove/{form['id']}"))
+    return blocks
+
+
+def widget_json(state: dict) -> list:
+    """The whole settings file, for a change the form does not cover. The key is not in the text."""
+    blocks = _back() + [_heading("widget.json"),
+                        _row(("Checked before saving. The previous file is kept as widget.json.bak. "
+                              "A key pasted here is refused; only key_file belongs in this file.", "dim"))]
+    if state.get("json_error"):
+        blocks.append(_row((state["json_error"], "dim")))
+    blocks.append({**control_block("editor", "widget.json", "editor"), "value": state.get("json_text") or ""})
+    blocks += [plain_block("gap"), _button("Save widget.json", "action/save-json")]
     return blocks
 
 
@@ -173,4 +216,8 @@ def connections(state: dict) -> list:
 
 
 def page_blocks(page: str, state: dict) -> list:
+    if page == "widget-json":
+        return widget_json(state)
+    if page == "bot" or (isinstance(page, str) and page.startswith("bot/")):
+        return bot_form(state)
     return {"settings": settings, "bots": bots, "connections": connections}.get(page, settings)(state)

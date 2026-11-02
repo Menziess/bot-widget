@@ -1409,7 +1409,7 @@ class FaceWindow(QWidget):
         if command == "page/commands":
             self.open_commands()
             return
-        page = self.faces.menu_command(command, self._menu_page)
+        page = self.faces.menu_command(command, self._menu_page, self.bubble.control_values())
         if page is not None:
             self.open_menu(page)
 

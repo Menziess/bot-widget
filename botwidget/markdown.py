@@ -236,6 +236,9 @@ def block_text(blocks: list) -> str:
             out.append(" ".join(block.get("lines") or []))
             continue
         if block.get("kind") == "control":
+            if block["control"] in ("field", "editor"):
+                out.append(f"{block['label']}: {block.get('value') or ''}")
+                continue
             on = block.get("on")
             mark = "" if on is None else (f"{on}% " if block["control"] == "slider" else "☑ " if on else "☐ ")
             out.append(f"{mark}{block['label']}")

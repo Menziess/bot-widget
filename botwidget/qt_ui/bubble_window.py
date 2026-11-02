@@ -74,7 +74,7 @@ from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
-from botwidget.qt_ui.controls import ActionButton, SlashList, Switch, ValueSlider
+from botwidget.qt_ui.controls import ActionButton, SlashList, Switch, TextEditor, TextField, ValueSlider
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, cut_out, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document
@@ -1589,7 +1589,8 @@ class BubbleWindow(QWidget):
                     wanted.append((line, QRect(PAD_PANEL_X + line["indent"], y, shown_w - 2 * PAD_PANEL_X,
                                                line_height(line))))
                 y += line_height(line)
-        key = tuple((line["control"], line["label"], line["command"], line["on"]) for line, _rect in wanted)
+        key = tuple((line["control"], line["label"], line["command"], line.get("on"), line.get("value"))
+                    for line, _rect in wanted)
         if key != self._controls_key:
             for widget in self._control_widgets:
                 widget.hide()
@@ -1605,7 +1606,21 @@ class BubbleWindow(QWidget):
             widget.raise_()
             widget.show()
 
+    def control_values(self) -> dict:
+        """What the text fields hold right now, keyed by their command. Save reads this, not a copy."""
+        values = {}
+        for widget in self._control_widgets:
+            if hasattr(widget, "text_value"):
+                values[widget.command] = widget.text_value()
+        return values
+
     def _make_control(self, line: dict):
+        if line["control"] == "field":
+            widget = TextField(line["label"], str(line.get("value") or ""), self._text)
+            widget.command = line["command"]
+            return widget
+        if line["control"] == "editor":
+            return TextEditor(str(line.get("value") or ""), self._text)
         if line["control"] == "slider":
             widget = ValueSlider(line["label"], int(line["on"]), self._text)
             widget.changed.connect(lambda value, command=line["command"]: self.command.emit(f"{command}/{value}"))

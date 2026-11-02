@@ -52,9 +52,16 @@ def configured_bots() -> list[dict]:
         if not name or not command:
             continue
         env = {key: str(value) for key, value in (entry.get("env") or {}).items()
-               if str(key).startswith("HARNESS_")}
-        bots.append({"id": PREFIX + _slug(name), "name": name, "command": command, "env": env,
-                     "key_file": str(entry.get("key_file") or "")})
+               if str(key).startswith("HARNESS_") and str(key) != "HARNESS_MODEL_API_KEY"}
+        stored = str(entry.get("id") or "").strip()
+        if stored.startswith(PREFIX):
+            stored = stored[len(PREFIX):]
+        ident = stored or _slug(name)
+        if any(bot["id"] == PREFIX + ident for bot in bots):
+            continue  # the same id twice would be one face with two agents
+        bots.append({"id": PREFIX + ident, "name": name, "command": command, "env": env,
+                     "key_file": str(entry.get("key_file") or ""),
+                     "face": str(entry.get("face") or ""), "color": str(entry.get("color") or "")})
     return bots
 
 

@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
-from PySide6.QtWidgets import QAbstractButton, QPushButton, QSlider, QWidget
+from PySide6.QtWidgets import QAbstractButton, QLineEdit, QPlainTextEdit, QPushButton, QSlider, QWidget
 
 from botwidget.qt_ui.text_doc import color
 from botwidget.theme import BUBBLE_FONT, CONTROL_SWITCH_W, SAND_ACCENT, SAND_INK, SAND_INK_SOFT, SAND_SANS
@@ -183,3 +183,50 @@ class ValueSlider(QWidget):
         painter.setFont(font)
         painter.setPen(color(SAND_INK))
         painter.drawText(QRectF(0, 0, self.width(), self.height()), Qt.AlignVCenter | Qt.AlignLeft, self._label)
+
+
+FIELD_STYLE = (f"QLineEdit, QPlainTextEdit {{ background: rgba(28, 28, 28, 14); color: {SAND_INK}; border: none;"
+               f" border-radius: 8px; padding: 0px 8px; font-family: '{SAND_SANS}'; font-size: {BUBBLE_FONT}px; }}")
+
+
+class TextField(QWidget):
+    """A labelled line. The page reads it when you save, so a click on Save still sees the last letter."""
+
+    def __init__(self, label: str, value: str, parent=None):
+        super().__init__(parent)
+        self._label = label
+        self.command = ""
+        self.edit = QLineEdit(value, self)
+        self.edit.setStyleSheet(FIELD_STYLE)
+        self.edit.setFocusPolicy(Qt.StrongFocus)
+
+    def text_value(self) -> str:
+        return self.edit.text()
+
+    def resizeEvent(self, _event):
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        label_w = QFontMetrics(font).horizontalAdvance(self._label)
+        self.edit.setGeometry(label_w + 14, 4, max(40, self.width() - label_w - 14), max(16, self.height() - 8))
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        painter.setFont(font)
+        painter.setPen(color(SAND_INK))
+        painter.drawText(QRectF(0, 0, self.width(), self.height()), Qt.AlignVCenter | Qt.AlignLeft, self._label)
+
+
+class TextEditor(QPlainTextEdit):
+    """The widget.json text. Taller than one row; the page reads it on Save."""
+
+    def __init__(self, value: str, parent=None):
+        super().__init__(value, parent)
+        self.command = "editor"
+        self.setStyleSheet(FIELD_STYLE)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setTabChangesFocus(True)
+
+    def text_value(self) -> str:
+        return self.toPlainText()

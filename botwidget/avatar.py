@@ -175,11 +175,14 @@ def avatar_profile(seed: str, hue: float | None, avatar: dict | None = None) -> 
     names = list(EXPRESSIONS)
     expression = names[stable_index(f"{seed}:expression", len(names))]
     tilt = (stable_index(f"{seed}:tilt", 25) - 12) * 0.8
-    # OpenBot and Grok Bot share some shape names (squircle, capsule): only a Grok Bot avatar gets
-    # Grok Bot's mark.
-    grok = isinstance(avatar, dict) and grok_drawn(avatar.get("shape"))
+    # A harness bot picks its own face. OpenBot and Grok Bot share some shape names (squircle,
+    # capsule): only a Grok Bot avatar gets Grok Bot's mark.
+    chosen = avatar.get("shape") if isinstance(avatar, dict) else None
+    if chosen in SUPPORTED_SHAPES:
+        shape = chosen
+    grok = grok_drawn(chosen)
     if grok:
-        shape = avatar["shape"]
+        shape = chosen
         tilt = 0.0  # the mark is already drawn the way Grok Bot draws it; a tilt would skew it
     if isinstance(avatar, dict) and avatar.get("color") in GROK_HEX:
         colour = GROK_HEX[avatar["color"]]

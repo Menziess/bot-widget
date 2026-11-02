@@ -69,7 +69,7 @@ def line_height(block: dict) -> int:
     if block["kind"] == "more":
         return MORE_H
     if block["kind"] == "control":
-        return CONTROL_H
+        return 220 if block.get("control") == "editor" else CONTROL_H
     if block["kind"] == "gap":
         return LINE_GAP_H
     if block["kind"] == "rule":

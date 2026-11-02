@@ -11,7 +11,7 @@ from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter
 from PySide6.QtWidgets import QApplication, QWidget
 
-from botwidget import __version__, acplink, channel, checkout, grokbot, hermesbot, startup, updates
+from botwidget import __version__, acp_bots, acplink, channel, checkout, grokbot, hermesbot, startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -24,6 +24,7 @@ from botwidget.config import (
     auto_update,
     automation_ready,
     check_updates,
+    replace_widget_config,
     save_battery,
     muted_bots,
     save_widget_config,
@@ -91,7 +92,17 @@ def bot_source(bot_id: str) -> str:
         return "Grok Bot"
     if hermesbot.is_hermes(bot_id):
         return "Hermes"
+    if acplink.is_acp(bot_id):
+        return "Harness"
     return "OpenBot"
+
+
+def _avatar(bot: dict):
+    """The face and colour a harness bot asked for. Empty means the seed picks them."""
+    shape, colour = bot.get("face") or "", bot.get("color") or ""
+    if not shape and not colour:
+        return None
+    return {"shape": shape, "color": colour}
 
 
 def _all_bots() -> list:
@@ -107,7 +118,8 @@ def _all_bots() -> list:
                      "hue": None, "seed": hermesbot.face_id(), "status": "ready"})
     for bot in acplink.configured_bots():
         bots.append({"id": bot["id"], "name": bot["name"], "threadId": None,
-                     "hue": None, "seed": bot["id"], "status": "ready"})
+                     "hue": None, "seed": bot["id"], "status": "ready",
+                     "face": bot.get("face") or "", "color": bot.get("color") or ""})
     return bots
 
 
@@ -359,7 +371,7 @@ class Faces(QObject):
         spot = self.pos.get(bot["id"])
         if not (isinstance(spot, (list, tuple)) and len(spot) == 2):
             spot = None
-        avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else None
+        avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else _avatar(bot)
         face = FaceWindow(bot["id"], bot["name"], spot, slot, bot.get("threadId"), self,
                           bot.get("hue"), bot.get("seed"), avatar)
         self.faces[bot["id"]] = face
@@ -412,7 +424,10 @@ class Faces(QObject):
             "save_battery": save_battery(),
             "can_install_updates": can_install_update() or startup.from_checkout(), "auto_update": auto_update(),
             "bots": [{"id": bot["id"], "name": bot["name"], "on": bot["id"] in self.faces,
-                      "muted": bot["id"] in muted_bots(), "source": bot_source(bot["id"])} for bot in bots],
+                      "muted": bot["id"] in muted_bots(), "source": bot_source(bot["id"]),
+                      "acp": acplink.is_acp(bot["id"])} for bot in bots],
+            "bot_form": getattr(self, "_bot_draft", None), "bot_error": getattr(self, "_bot_error", ""),
+            "json_text": getattr(self, "_json_text", ""), "json_error": getattr(self, "_json_error", ""),
             "openbot": openbot_installed(), "automation_ready": automation_ready(),
             "gbot": gbot_installed(), "grok": self.grok_line(),
             "grok_target": grokbot.target(),
@@ -433,11 +448,115 @@ class Faces(QObject):
     CONNECTIONS = {"openbot": "openbot", "grokbot": "gbot", "hermesbot": "hermes"}
     LINKS = {"openbot": OPENBOT_URL, "grokbot": GROKBOT_URL, "hermesbot": updates.DOWNLOAD_URL, "download": updates.DOWNLOAD_URL}
 
-    def menu_command(self, command: str, page: str) -> str | None:
+    def _stop_guest(self, ident: str):
+        guest = self._arc_guests.pop(ident, None)
+        self._semicircle.pop(ident, None)
+        if ident in self._arc_order:
+            self._arc_order.remove(ident)
+        if guest is not None:
+            guest.close_face()
+
+    def _apply_bots(self, before: list):
+        """Open, restyle or restart only the bots this save changed. The widget itself stays up."""
+        after = {bot["id"]: bot for bot in acplink.configured_bots()}
+        for action, ident in acp_bots.plan(before, list(after.values())):
+            if action == "close":
+                if ident in self.faces:
+                    self.toggle(ident, False)
+                self._stop_guest(ident)
+            elif action == "open":
+                self._stop_guest(ident)
+                self.toggle(ident, True)
+            elif action == "restart":
+                # The old process is the face, or a hidden guest. Either way only this bot stops.
+                page = getattr(self.faces.get(ident), "_menu_page", None)
+                if ident in self.faces:
+                    self.toggle(ident, False)
+                self._stop_guest(ident)
+                self.toggle(ident, True)
+                if page and ident in self.faces:
+                    self.faces[ident].open_menu("bots")
+            elif action == "restyle":
+                bot = after[ident]
+                face = self.faces.get(ident) or self._arc_guests.get(ident)
+                if face is None:
+                    continue
+                face.bot_name = bot["name"]
+                face.setWindowTitle(bot["name"])
+                face.set_avatar(_avatar(bot))
+
+    def _take(self, fields: dict | None, page: str):
+        if not fields:
+            return
+        if page == "bot" or (isinstance(page, str) and page.startswith("bot/")):
+            draft = getattr(self, "_bot_draft", None) or acp_bots.blank()
+            for command, value in fields.items():
+                if command.startswith("field/"):
+                    draft[command[len("field/"):]] = value
+            self._bot_draft = draft
+        elif page == "widget-json" and "editor" in fields:
+            self._json_text = fields["editor"]
+
+    def _open_bot_form(self, face_id: str):
+        bots = {bot["id"]: bot for bot in acplink.configured_bots()}
+        self._bot_draft = acp_bots.fields_of(bots[face_id]) if face_id in bots else acp_bots.blank()
+        self._bot_error = ""
+
+    def _commit_bot(self) -> str:
+        previous = acplink.configured_bots()
+        entries, error = acp_bots.commit(self._bot_draft or acp_bots.blank(), widget_config().get("acp_bots"))
+        if error:
+            return error
+        save_widget_config(acp_bots=entries)
+        if widget_config().get("acp_bots") != entries:
+            return "Could not save widget.json."
+        self._apply_bots(previous)
+        return ""
+
+    def _commit_json(self) -> str:
+        data, error = acp_bots.parse_editor(getattr(self, "_json_text", "") or "")
+        if error:
+            return error
+        previous = acplink.configured_bots()
+        error = replace_widget_config(data)
+        if error:
+            return error
+        self._apply_bots(previous)
+        return ""
+
+    def _remove_bot(self, face_id: str):
+        previous = acplink.configured_bots()
+        save_widget_config(acp_bots=acp_bots.without(widget_config().get("acp_bots"), face_id))
+        self._apply_bots(previous)
+
+    def menu_command(self, command: str, page: str, fields: dict | None = None) -> str | None:
         """Do what a menu row asks; the page to show next, or None to leave the bubble as it is."""
         kind, _, name = command.partition("/")
+        if command in ("action/save-bot", "action/save-json") or kind == "cycle":
+            self._take(fields, page)
+        if kind == "page" and (name == "bot" or name.startswith("bot/")):
+            self._open_bot_form(name.split("/", 1)[1] if name.startswith("bot/") else "")
+            return name
+        if kind == "page" and name == "widget-json":
+            self._json_text = acp_bots.public_text(widget_config())
+            self._json_error = ""
+            return name
         if kind == "page":
             return name
+        if kind == "cycle" and name in ("face", "color"):
+            draft = self._bot_draft or acp_bots.blank()
+            draft[name] = acp_bots.cycle(name, draft.get(name) or "")
+            self._bot_draft = draft
+            return page
+        if kind == "action" and name == "save-bot":
+            self._bot_error = self._commit_bot()
+            return page if self._bot_error else "bots"
+        if kind == "action" and name == "save-json":
+            self._json_error = self._commit_json()
+            return page if self._json_error else "bots"
+        if kind == "bot-remove":
+            self._remove_bot(name)
+            return "bots"
         if kind == "toggle" and name in self.TOGGLES:
             state = self.menu_state()
             self.TOGGLES[name](self, not state[name])
@@ -580,7 +699,7 @@ class Faces(QObject):
             face._set_semicircle(self._semicircle)
 
     def _spawn_guest(self, bot: dict):
-        avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else None
+        avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else _avatar(bot)
         face = FaceWindow(bot["id"], bot["name"], None, 0, bot.get("threadId"), self,
                           bot.get("hue"), bot.get("seed"), avatar)
         face._arc_guest = True
