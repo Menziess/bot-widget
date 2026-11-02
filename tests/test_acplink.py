@@ -114,6 +114,36 @@ class AcpTurns(unittest.TestCase):
                          "the replayed history comes before the new message")
         self.assertIn("restored", messages[1]["text"])
 
+    def test_a_model_error_is_shown_in_the_note_instead_of_a_bare_refusal(self):
+        from harness.acp_client import Turn
+        link = self.link()
+
+        class Stub:
+            async def prompt(self, text):
+                return Turn(stop_reason="refusal", error="HTTP 401: invalid api key")
+
+        async def fake_ensure():
+            return Stub()
+
+        link._ensure = fake_ensure
+        link.send("hoi")
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertEqual(link.note(), "HTTP 401: invalid api key")
+
+    def test_a_cancel_with_nothing_running_never_reaches_the_agent(self):
+        link = self.link()
+
+        class Stub:
+            cancels = 0
+
+            async def cancel(self):
+                Stub.cancels += 1
+
+        link._client = Stub()
+        link.cancel()
+        self.assertEqual(Stub.cancels, 0)
+        link._client = None
+
     def test_a_short_turn_still_leaves_the_answer_and_no_activity(self):
         link = self.link()
         link.send("hello")

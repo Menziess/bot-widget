@@ -14,13 +14,14 @@ class FakeModel:
     """One server on a free port; `reply` is what the model says, in words."""
 
     def __init__(self, reply: str = "Hello from the fake model.", slow_complete: float = 0.0,
-                 first_delay: float = 0.0, script: list | None = None):
+                 first_delay: float = 0.0, script: list | None = None, status: int = 200):
         self.reply = reply
         self.slow_complete = slow_complete  # a summary call, when it must not block a turn
         self.first_delay = first_delay  # a model that thinks before its first token
         # A scripted answer per request: a string, or {"tool_calls": [...]} to ask for a tool first.
         self.script = list(script or [])
         self.model = "fake-model"
+        self.status = status  # a server that answers, but not with an answer: a 401, say
         self.requests: list[dict] = []
         self.headers: list[dict] = []
         self._lock = threading.Lock()
@@ -37,6 +38,14 @@ class FakeModel:
                 with model._lock:
                     model.requests.append(body)
                     model.headers.append(dict(self.headers))
+                if model.status != 200:
+                    payload = json.dumps({"error": {"message": "invalid api key"}}).encode()
+                    self.send_response(model.status)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
                 if body.get("stream"):
                     self._stream(body)
                 else:

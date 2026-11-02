@@ -118,6 +118,9 @@ class AcpClient:
         try:
             reply = await self.conn.prompt(session_id=self.session_id, prompt=[text_block(text)])
             turn.stop_reason = reply.stop_reason
+            # An agent with something specific to say about the failure puts it here; a bear "refusal"
+            # alone leaves the bubble guessing whether it was a 401 or a bad prompt.
+            turn.error = str((getattr(reply, "field_meta", None) or {}).get("error") or "")
         except Exception as error:  # a dead agent must read as a failed turn, not a traceback
             turn.error = f"{type(error).__name__}: {error}"
             turn.stop_reason = "error"

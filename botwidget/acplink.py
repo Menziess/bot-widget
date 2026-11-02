@@ -191,7 +191,10 @@ class AcpLink:
             return self._note or self._context
 
     def cancel(self) -> None:
-        """Stop the running turn; the agent ends it with the cancelled stop reason."""
+        """Stop the running turn; the agent ends it with the cancelled stop reason. With nothing
+        running there is nothing to stop, and a cancel sent anyway would end the next turn."""
+        if not self.active():
+            return
         if self._client is not None:
             asyncio.run_coroutine_threadsafe(self._client.cancel(), self._loop)
 
@@ -239,7 +242,7 @@ class AcpLink:
                 self.failed = turn.error
                 self._note = turn.error
             elif turn.stop_reason == "refusal":
-                self.failed = "The model refused to answer."
+                self.failed = turn.error or "The model refused to answer."
                 self._note = self.failed
             elif turn.stop_reason == "cancelled":
                 self._note = "Cancelled."

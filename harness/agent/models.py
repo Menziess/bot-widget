@@ -32,6 +32,21 @@ class ChatCompletions:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return urllib.request.Request(f"{self.base_url}/chat/completions", data=body, headers=headers)
 
+    def ready(self, timeout: float = 3.0) -> None:
+        """Answer now whether anything is at the base URL, so a missing server is a sentence instead
+        of a three-minute hang. Any answer at all counts: a bad key is the turn's error, not this one.
+        """
+        request = urllib.request.Request(f"{self.base_url}/models")
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as reply:
+                reply.read(1)
+        except urllib.error.HTTPError:
+            return
+        except (urllib.error.URLError, OSError) as error:
+            reason = getattr(error, "reason", error)
+            raise ModelError(f"no model server at {self.base_url} ({reason}); start it or set "
+                             f"HARNESS_MODEL_BASE_URL") from error
+
     def stream(self, messages: list[dict], tools: list[dict] | None = None, stop=None, opened=None):
         """Yield events: ("text", str), ("thought", str), ("usage", dict) and ("tool_calls", list).
 

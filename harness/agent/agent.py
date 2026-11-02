@@ -39,6 +39,8 @@ class LeanAgent:
         self.stores: dict[str, SessionStore] = {}
         self.conn = None
         self._cancelled: set[str] = set()
+        self._turns: set[str] = set()  # a session with a turn running: only then does a cancel mean anything
+        self._checked = False  # the model server was reached once already
         self._stops: dict[str, threading.Event] = {}
         self._replies: dict[str, object] = {}
         self._queues: dict[str, asyncio.Queue] = {}
@@ -70,7 +72,10 @@ class LeanAgent:
         return None
 
     async def cancel(self, session_id: str, **kwargs) -> None:
-        """Stop the turn now: the model stream is read in a thread, so this loop is free to answer."""
+        """Stop the turn now. A cancel with no turn running is dropped: it used to arrive before the
+        turn it was meant for, and cancel that one."""
+        if session_id not in self._turns:
+            return
         self._cancelled.add(session_id)
         if stop := self._stops.get(session_id):
             stop.set()
@@ -86,6 +91,15 @@ class LeanAgent:
         store = self.stores.setdefault(session_id, SessionStore(self.folder))
         text = "".join(block.text for block in prompt if getattr(block, "text", ""))
         store.add("user", text)
+        self._cancelled.discard(session_id)
+        self._turns.add(session_id)
+        try:
+            return await self._answer(session_id, store)
+        finally:
+            self._turns.discard(session_id)
+            self._cancelled.discard(session_id)
+
+    async def _answer(self, session_id: str, store: SessionStore) -> PromptResponse:
         await self.tools.start()
         self.tools.add(self._pin(store))
         await self._usage(session_id, store)
@@ -97,6 +111,9 @@ class LeanAgent:
         cancelled = False
         steps = 0
         try:
+            if not self._checked and hasattr(self.model, "ready"):
+                await asyncio.to_thread(self.model.ready)
+                self._checked = True
             for _step in range(MAX_STEPS):
                 steps += 1
                 calls = []
@@ -126,7 +143,8 @@ class LeanAgent:
         except ModelError as error:
             store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                          "ms": round((time.monotonic() - started) * 1000), "error": str(error)[:300]})
-            return PromptResponse(stop_reason="refusal")
+            # The reason travels in _meta: "refusal" alone cannot tell a 401 from a bad prompt.
+            return PromptResponse(stop_reason="refusal", field_meta={"error": str(error)[:300]})
         cancelled = cancelled or session_id in self._cancelled
         self._cancelled.discard(session_id)
         said = "".join(answer)

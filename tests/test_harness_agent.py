@@ -23,6 +23,16 @@ AGENT = f"{sys.executable} -m harness.agent"
 
 
 class Defaults(unittest.TestCase):
+    def test_a_missing_model_server_is_a_sentence_after_seconds_not_a_hang(self):
+        import time as clock
+        from harness.agent.models import ChatCompletions, ModelError
+        model = ChatCompletions("http://127.0.0.1:9/v1", "local")
+        started = clock.monotonic()
+        with self.assertRaises(ModelError) as caught:
+            model.ready(timeout=2.0)
+        self.assertLess(clock.monotonic() - started, 5.0)
+        self.assertIn("no model server", str(caught.exception))
+
     def test_the_default_model_server_is_the_local_llama_cpp_one(self):
         from harness.agent.models import from_environment
         model = from_environment({})
@@ -204,6 +214,35 @@ class Turns(unittest.IsolatedAsyncioTestCase):
             took = time.monotonic() - started
         self.assertEqual(result.stop_reason, "cancelled")
         self.assertLess(took, 1.0)
+
+    async def test_a_cancel_sent_before_the_turn_does_not_cancel_it(self):
+        async with self.client() as client:
+            await client.start()
+            await client.cancel()  # nothing runs yet; this used to land on the next turn
+            turn = await client.prompt("Hallo")
+        self.assertEqual(turn.stop_reason, "end_turn")
+        usage = [json.loads(line) for line in open(os.path.join(self.folder, "usage.jsonl"))]
+        self.assertFalse(usage[-1]["cancelled"], "the turn was not cancelled and its summary is not skipped")
+
+    async def test_a_model_server_that_is_not_there_ends_the_turn_in_seconds(self):
+        client = AcpClient(*AGENT.split(), cwd=ROOT,
+                           env={"HARNESS_BOT": "Test", "HARNESS_MODEL_BASE_URL": "http://127.0.0.1:9/v1",
+                                "HARNESS_MODEL": "local", "HARNESS_AGENT_DIR": self.folder})
+        async with client:
+            await client.start()
+            started = time.monotonic()
+            turn = await client.prompt("Hallo")
+        self.assertEqual(turn.stop_reason, "refusal")
+        self.assertIn("no model server", turn.error)
+        self.assertLess(time.monotonic() - started, 10.0, "a missing server does not hold the bubble for minutes")
+
+    async def test_a_model_error_reaches_the_widget_with_its_reason(self):
+        self.model.status = 401
+        async with self.client() as client:
+            await client.start()
+            turn = await client.prompt("Hallo")
+        self.assertEqual(turn.stop_reason, "refusal")
+        self.assertIn("401", turn.error, "a refusal alone cannot tell a 401 from a bad prompt")
 
     async def test_a_summary_never_delays_the_turn_that_triggers_it(self):
         self.model.slow_complete = 3.0  # a summary that takes three seconds
