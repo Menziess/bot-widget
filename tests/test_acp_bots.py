@@ -259,3 +259,67 @@ class EditPage(unittest.TestCase):
         self.assertIn("Edit bot", bubble.full_text)
         self.assertIn("Name: Local Bot", bubble.full_text)
         self.assertEqual(window._menu_page, "bot/acp:local-bot")
+
+    def test_a_missed_pointer_sample_after_edit_does_not_close_the_page(self):
+        """Should keep Edit bot open when X names no window on the frame after the click.
+
+        The pointer was on the bots page, so the page change counts as touched. XWayland
+        often answers 0 for that next frame. That one miss is not leaving. Once a later
+        frame sees the pointer, leaving still closes at once.
+        """
+        from unittest import mock
+        from PySide6.QtGui import QGuiApplication
+        from botwidget.qt_ui.controls import ActionButton
+        from botwidget.qt_ui.native import native_id
+
+        box = self.Faces.__new__(self.Faces)
+        box.faces = {}
+        box.toggle = lambda *_args: None
+        box.close_bubbles_except = lambda *_args: None
+        box.hold_arc = lambda: None
+
+        def menu_state():
+            return {
+                "version": "0", "channel": "local", "switch_label": None, "hotkey": "",
+                "update": "", "staged_update": "", "sound": False, "quiet_hours": False,
+                "always_on_top": False, "can_pick_desktops": False, "can_glass": False, "glass_clear": 0,
+                "all_desktops": False, "login": False, "check_updates": False, "save_battery": False,
+                "can_install_updates": False, "auto_update": False,
+                "bots": [{"id": "acp:local-bot", "name": "Local Bot", "on": False, "muted": False,
+                          "source": "Harness", "acp": True}],
+                "bot_form": getattr(box, "_bot_draft", None), "bot_error": getattr(box, "_bot_error", ""),
+                "json_text": "", "json_error": "", "openbot": False, "automation_ready": False,
+                "gbot": False, "grok": "", "grok_target": "", "hermes": False, "wanted": [],
+            }
+
+        box.menu_state = menu_state
+        window = self.FaceWindow("t", "Test", spot=(300, 400), faces=box)
+        window._poll_timer.stop()
+        self.addCleanup(window.close_face)
+        window.show()
+        window.open_menu("bots")
+        self.app.processEvents()
+        bubble = window.bubble
+        edit = next(w for w in bubble._control_widgets if isinstance(w, ActionButton) and w.text() == "Edit Local Bot")
+        named = {"id": native_id(bubble)}
+
+        def under_pointer():
+            return named["id"]
+
+        with mock.patch.object(QGuiApplication, "platformName", return_value="xcb"), \
+                mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer):
+            self.assertTrue(window.pointer_near(bubble), "the pointer is on the bots page")
+            edit.click()
+            self.app.processEvents()
+            self.assertTrue(bubble.full_text.startswith("Edit bot"))
+            self.assertTrue(bubble.isVisible())
+            named["id"] = 0  # the frame after the click: X names nothing
+            bubble._tick()
+            self.assertTrue(bubble.isVisible(), "that miss is not leaving")
+            self.assertTrue(bubble.full_text.startswith("Edit bot"))
+            named["id"] = native_id(bubble)
+            bubble._tick()
+            named["id"] = 0
+            bubble._tick()
+            self.assertFalse(bubble.isVisible(), "once the pointer was seen, leaving closes at once")

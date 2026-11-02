@@ -982,12 +982,13 @@ class BubbleWindow(QWidget):
         above the face goes beside it): the window keeps covering the area it had, until the pointer leaves the
         window or comes onto the card.
 
-        The pointer was on the bubble, so it has been touched: leaving closes it at once, not after a while.
+        The pointer was on the bubble. Leaving still closes at once, but only after a later frame
+        has seen the pointer: the frame of the change itself often has no X window under it, and
+        treating that miss as leaving closed the page the click had just opened.
         """
         self._release_hold()
         if old is None or not self.isVisible() or not self.kind:
             return
-        self._was_near = True
         width, height = self._final_size()
         tx, ty, _tip = self._goal()
         final = QRect(int(tx), int(ty), width, height)
