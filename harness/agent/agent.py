@@ -15,12 +15,12 @@ import time
 from acp import PROTOCOL_VERSION
 from acp.schema import (AgentMessageChunk, AgentThoughtChunk, InitializeResponse, NewSessionResponse,
                         PermissionOption, PromptResponse, TextContentBlock, ToolCallProgress, ToolCallStart,
-                        ToolCallUpdate)
+                        ToolCallUpdate, UsageUpdate)
 
 from harness.agent import context
 from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
-from harness.agent.tools import TOOL_OUTPUT, ToolError, Tools
+from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
 
 MAX_STEPS = 6  # a tool loop that never settles must still end the turn
 
@@ -85,6 +85,8 @@ class LeanAgent:
         text = "".join(block.text for block in prompt if getattr(block, "text", ""))
         store.add("user", text)
         await self.tools.start()
+        self.tools.add(self._pin(store))
+        await self._usage(session_id, store)
         started = time.monotonic()
         first = 0.0
         answer = []
@@ -141,6 +143,28 @@ class LeanAgent:
         if not cancelled:
             asyncio.create_task(self.summarise(store))
         return PromptResponse(stop_reason="cancelled" if cancelled else "end_turn")
+
+    def _pin(self, store: SessionStore) -> Tool:
+        """A fact the user wants kept: written to the store, so it rides along after the summary folds
+        the turns it came from."""
+        def pin(arguments: dict) -> str:
+            fact = str(arguments.get("fact") or "").strip()
+            known = [line for line in store.get("facts").splitlines() if line.strip()]
+            if fact and fact not in known:
+                store.set("facts", "\n".join(known + [fact]))
+            return "Remembered." if fact else "Nothing to remember."
+
+        return Tool("pin_fact", "Keep one fact in every later request, even after older turns are summarised.",
+                    {"type": "object", "properties": {"fact": {"type": "string"}}, "required": ["fact"]}, pin)
+
+    async def _usage(self, session_id: str, store: SessionStore, compacted: bool = False) -> None:
+        """The context meter, and a one-line notice when a summary has just landed."""
+        if self.conn is None:
+            return
+        used, size = context.meter(store, self.bot)
+        update = UsageUpdate(session_update="usage_update", used=used, size=size,
+                             field_meta={"compacted": True} if compacted else None)
+        await self.conn.session_update(session_id=session_id, update=update)
 
     async def _use_tool(self, session_id: str, call: dict) -> str:
         """Run one tool the model asked for; a write waits for the bubble's Accept first."""
@@ -255,6 +279,8 @@ class LeanAgent:
             if summary.strip():
                 store.set_summary(summary.strip())
                 store.set("summary_upto", str(len(store.messages()) - context.KEEP_TURNS * 2))
+                for session_id in self.stores:
+                    await self._usage(session_id, store, compacted=True)
         except ModelError:
             pass  # the next turn still works; the summary is simply tried again later
         finally:

@@ -59,6 +59,7 @@ class AcpLink:
         self._lock = threading.Lock()
         self._activity = ""
         self._note = ""
+        self._context = ""
         self._sending = False
         self._said = False  # did this turn put any text in the bubble
         self._asks = 0
@@ -141,9 +142,10 @@ class AcpLink:
             self._note = ""
 
     def note(self) -> str:
-        """A grey line under the conversation: why it stopped, or that a send is unsure."""
+        """A grey line under the conversation: why it stopped, that a send is unsure, or how full the
+        context is."""
         with self._lock:
-            return self._note
+            return self._note or self._context
 
     def cancel(self) -> None:
         """Stop the running turn; the agent ends it with the cancelled stop reason."""
@@ -250,6 +252,14 @@ class AcpLink:
                 self._activity = _bubble_line(update.text)
             elif update.kind == "tool":
                 self._activity = _bubble_line(update.text) or self._activity
+            elif update.kind == "usage":
+                used, size = update.extra.get("used") or 0, update.extra.get("size") or 0
+                if update.extra.get("compacted"):
+                    self._context = "Compacted older turns."
+                elif size and used * 100 // size >= 70:
+                    self._context = f"Context {used * 100 // size}% full."
+                else:
+                    self._context = ""
             elif update.kind == "text" and update.text:
                 self._said = True
                 # shortcut: one answer message per turn; ACP message ids are ignored for now.

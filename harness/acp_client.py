@@ -132,7 +132,8 @@ class AcpClient:
                            extra={"status": getattr(update, "status", "") or ""})
         elif kind == "usage_update":
             event = Update("usage", extra={name: getattr(update, name, None)
-                                           for name in ("used", "size", "cost")})
+                                           for name in ("used", "size", "cost")}
+                           | {"compacted": bool((getattr(update, "field_meta", None) or {}).get("compacted"))})
         else:
             return
         turn = self._turn

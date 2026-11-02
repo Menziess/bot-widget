@@ -80,6 +80,16 @@ class AcpTurns(unittest.TestCase):
         self.assertTrue(wait_for(lambda: not link.active()))
         self.assertEqual(link.chat()["failed"], "The model refused to answer.")
 
+    def test_the_context_meter_and_the_compaction_notice_reach_the_note(self):
+        from harness.acp_client import Update
+        link = self.link()
+        link._updated(Update("usage", extra={"used": 80, "size": 100}))
+        self.assertEqual(link.note(), "Context 80% full.")
+        link._updated(Update("usage", extra={"used": 20, "size": 100}))
+        self.assertEqual(link.note(), "", "a roomy context says nothing")
+        link._updated(Update("usage", extra={"used": 20, "size": 100, "compacted": True}))
+        self.assertEqual(link.note(), "Compacted older turns.")
+
     def test_an_agent_that_cannot_start_does_not_hang_the_face(self):
         link = AcpLink(f"{sys.executable} -c 'raise SystemExit(1)'")
         self.addCleanup(link.close)

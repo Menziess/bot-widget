@@ -138,6 +138,10 @@ class Tools:
             return text
         return run
 
+    def add(self, tool: Tool) -> None:
+        """A tool that needs this session's store, such as pinning a fact."""
+        self.tools[tool.name] = tool
+
     def find(self, name: str) -> Tool | None:
         return self.tools.get(name)
 

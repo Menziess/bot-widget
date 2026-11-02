@@ -34,6 +34,21 @@ class Builtins(unittest.TestCase):
         self.assertEqual(names, {"read_file": False, "list_dir": False, "write_file": True})
 
 
+class ContextMeter(unittest.TestCase):
+    def test_the_meter_reports_the_request_against_the_window(self):
+        from harness.agent import context
+        from harness.agent.store import SessionStore
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        store = SessionStore(folder)
+        self.addCleanup(store.close)
+        store.add("user", "x" * 4000)
+        used, size = context.meter(store, "T")
+        self.assertLess(used, context.CONTEXT_TOKENS)
+        self.assertEqual(size, context.CONTEXT_TOKENS)
+        self.assertGreaterEqual(used, 1000, "the 4000-character turn is counted")
+
+
 class Turns(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.folder = tempfile.mkdtemp()
@@ -108,12 +123,33 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         self.assertIn("write_note", asked[0])
         self.assertFalse(os.path.exists(target))
 
+    async def test_a_pinned_fact_survives_the_summary_that_folds_its_turn(self):
+        self.model.script = [{"tool_calls": [{"name": "pin_fact",
+                                              "arguments": {"fact": "Stefan houdt van korte antwoorden."}}]},
+                             "Bewaard."]
+        async with self.client() as client:
+            await client.start()
+            await client.prompt("Onthoud dat ik korte antwoorden wil")
+        from harness.agent.store import SessionStore
+        store = SessionStore(self.folder)
+        self.addCleanup(store.close)
+        self.assertIn("korte antwoorden", store.get("facts"))
+        # The summary replaces the turns; the fact is still a system line in the next request.
+        store.set_summary("Zij spraken over antwoorden.")
+        self.model.script = ["Kort."]
+        async with self.client() as client:
+            await client.start()
+            await client.prompt("En nu?")
+        sent = json.dumps(self.last_messages())
+        self.assertIn("korte antwoorden", sent)
+        self.assertIn("Zij spraken over antwoorden", sent)
+
     async def test_the_request_offers_the_builtins(self):
         async with self.client() as client:
             await client.start()
             await client.prompt("Hallo")
         offered = {tool["function"]["name"] for tool in self.model.requests[-1]["tools"]}
-        self.assertEqual(offered, {"read_file", "list_dir", "write_file"})
+        self.assertEqual(offered, {"read_file", "list_dir", "write_file", "pin_fact"})
 
 
 if __name__ == "__main__":

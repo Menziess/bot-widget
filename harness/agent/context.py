@@ -15,12 +15,19 @@ SYSTEM = (
 )
 KEEP_TURNS = 12
 BUDGET_CHARS = 24000
+CONTEXT_TOKENS = 32000  # what the meter reports against; the model's own window may be larger
 SUMMARY_AFTER = 40  # messages on disk before the background summary takes the older half
 
 
 def estimate(text: str) -> int:
     """A rough token count: four characters per token is close enough to plan a budget."""
     return max(1, len(text) // 4)
+
+
+def meter(store, bot: str) -> tuple[int, int]:
+    """How full the next request is: estimated tokens used, and the window the meter draws against."""
+    used = sum(estimate(message["content"]) for message in build(store, bot))
+    return used, CONTEXT_TOKENS
 
 
 def build(store, bot: str) -> list[dict]:
