@@ -32,7 +32,7 @@ class Turn:
     stop_reason: str = ""
     updates: list = field(default_factory=list)
     started: float = 0.0
-    first_update: float = 0.0
+    first_update: float = 0.0  # the first text chunk, not the first thing the agent pushes
     ended: float = 0.0
     error: str = ""
 
@@ -154,7 +154,9 @@ class AcpClient:
             return
         turn = self._turn
         if turn is not None:
-            if not turn.first_update:
+            # The number the face cares about is the first word of the answer; a usage update or a
+            # tool call before it is not an answer.
+            if not turn.first_update and event.kind == "text":
                 turn.first_update = time.monotonic()
             turn.updates.append(event)
         self.on_update(event)

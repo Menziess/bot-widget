@@ -22,7 +22,39 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGENT = f"{sys.executable} -m harness.agent"
 
 
+class FirstText(unittest.IsolatedAsyncioTestCase):
+    """The number the face shows is when the answer starts, not when anything arrives."""
+
+    async def test_a_usage_update_is_not_the_first_text(self):
+        from acp.schema import AgentMessageChunk, TextContentBlock, UsageUpdate
+        from harness.acp_client import AcpClient, Turn
+        client = AcpClient("x")
+        client._turn = Turn(started=time.monotonic())
+        await client.session_update(session_id="s", update=UsageUpdate(
+            session_update="usage_update", used=10, size=100))
+        self.assertEqual(client._turn.first_update, 0, "the meter goes out before the model answers")
+        await client.session_update(session_id="s", update=AgentMessageChunk(
+            session_update="agent_message_chunk", content=TextContentBlock(type="text", text="hoi")))
+        self.assertGreater(client._turn.first_update, 0)
+
+
 class Defaults(unittest.TestCase):
+    def test_the_model_server_reports_its_own_context_size(self):
+        from harness.agent.models import ChatCompletions
+        server = FakeModel(context_size=4096)
+        self.addCleanup(server.close)
+        model = ChatCompletions(server.base_url, "fake-model")
+        model.ready(timeout=2.0)
+        self.assertEqual(model.context_size, 4096)
+
+    def test_a_server_without_props_keeps_the_guess(self):
+        from harness.agent.models import ChatCompletions
+        server = FakeModel()
+        self.addCleanup(server.close)
+        model = ChatCompletions(server.base_url, "fake-model")
+        model.ready(timeout=2.0)
+        self.assertEqual(model.context_size, 0)
+
     def test_a_missing_model_server_is_a_sentence_after_seconds_not_a_hang(self):
         import time as clock
         from harness.agent.models import ChatCompletions, ModelError
@@ -214,6 +246,27 @@ class Turns(unittest.IsolatedAsyncioTestCase):
             took = time.monotonic() - started
         self.assertEqual(result.stop_reason, "cancelled")
         self.assertLess(took, 1.0)
+
+    async def test_the_context_meter_uses_the_window_the_server_reports(self):
+        self.model.context_size = 4096
+        seen = []
+        client = AcpClient(*AGENT.split(), cwd=ROOT, on_update=seen.append,
+                           env={"HARNESS_BOT": "Test", "HARNESS_MODEL_BASE_URL": self.model.base_url,
+                                "HARNESS_MODEL": "fake-model", "HARNESS_AGENT_DIR": self.folder})
+        async with client:
+            await client.start()
+            await client.prompt("Hallo")
+        sizes = [update.extra["size"] for update in seen if update.kind == "usage"]
+        self.assertEqual(sizes[0], 4096, "the meter draws against the server's n_ctx, not a fixed 32000")
+
+    async def test_the_usage_line_times_the_first_word(self):
+        self.model.first_delay = 0.3
+        async with self.client() as client:
+            await client.start()
+            await client.prompt("Hallo")
+        usage = [json.loads(line) for line in open(os.path.join(self.folder, "usage.jsonl"))]
+        self.assertGreaterEqual(usage[-1]["first_ms"], 250,
+                                "the first word's delay is measured, not an earlier event")
 
     async def test_a_cancel_sent_before_the_turn_does_not_cancel_it(self):
         async with self.client() as client:

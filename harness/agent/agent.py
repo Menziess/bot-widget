@@ -102,7 +102,6 @@ class LeanAgent:
     async def _answer(self, session_id: str, store: SessionStore) -> PromptResponse:
         await self.tools.start()
         self.tools.add(self._pin(store))
-        await self._usage(session_id, store)
         started = time.monotonic()
         first = 0.0
         answer = []
@@ -114,6 +113,7 @@ class LeanAgent:
             if not self._checked and hasattr(self.model, "ready"):
                 await asyncio.to_thread(self.model.ready)
                 self._checked = True
+            await self._usage(session_id, store)
             for _step in range(MAX_STEPS):
                 steps += 1
                 calls = []
@@ -129,8 +129,8 @@ class LeanAgent:
                     if kind == "tool_calls":
                         calls = value
                         continue
-                    if not first:
-                        first = time.monotonic()
+                    if kind == "text" and not first:
+                        first = time.monotonic()  # the first word, not the first event
                     if kind == "text":
                         answer.append(value)
                     await self._chunk(session_id, "agent" if kind == "text" else "thought", value)
@@ -181,7 +181,7 @@ class LeanAgent:
         """The context meter, and a one-line notice when a summary has just landed."""
         if self.conn is None:
             return
-        used, size = context.meter(store, self.bot)
+        used, size = context.meter(store, self.bot, getattr(self.model, "context_size", 0))
         update = UsageUpdate(session_update="usage_update", used=used, size=size,
                              field_meta={"compacted": True} if compacted else None)
         await self.conn.session_update(session_id=session_id, update=update)

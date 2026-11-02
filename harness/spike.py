@@ -33,7 +33,7 @@ async def run(command: str, prompt: str, cwd: str | None, allow: bool, cancel_af
                 print(f"cancelled after {cancel_after}s", flush=True)
             result = await turn
             print(f"stop {result.stop_reason} after {result.total_ms} ms "
-                  f"(first update {result.first_update_ms} ms, {time.monotonic() - started:.1f}s)",
+                  f"(first text {result.first_update_ms} ms, {time.monotonic() - started:.1f}s)",
                   flush=True)
             if result.error:
                 print(result.error, file=sys.stderr)

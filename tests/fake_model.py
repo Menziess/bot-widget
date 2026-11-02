@@ -14,7 +14,8 @@ class FakeModel:
     """One server on a free port; `reply` is what the model says, in words."""
 
     def __init__(self, reply: str = "Hello from the fake model.", slow_complete: float = 0.0,
-                 first_delay: float = 0.0, script: list | None = None, status: int = 200):
+                 first_delay: float = 0.0, script: list | None = None, status: int = 200,
+                 context_size: int = 0):
         self.reply = reply
         self.slow_complete = slow_complete  # a summary call, when it must not block a turn
         self.first_delay = first_delay  # a model that thinks before its first token
@@ -22,6 +23,7 @@ class FakeModel:
         self.script = list(script or [])
         self.model = "fake-model"
         self.status = status  # a server that answers, but not with an answer: a 401, say
+        self.context_size = context_size  # what /props reports, like llama.cpp does
         self.requests: list[dict] = []
         self.headers: list[dict] = []
         self._lock = threading.Lock()
@@ -32,6 +34,19 @@ class FakeModel:
 
             def log_message(self, *_args):
                 pass
+
+            def do_GET(self):
+                if self.path.endswith("/props") and model.context_size:
+                    payload = json.dumps({"default_generation_settings": {"n_ctx": model.context_size}}).encode()
+                elif self.path.endswith("/models"):
+                    payload = json.dumps({"data": [{"id": model.model}]}).encode()
+                else:
+                    payload = b"{}"
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))

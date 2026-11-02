@@ -35,17 +35,30 @@ class ChatCompletions:
     def ready(self, timeout: float = 3.0) -> None:
         """Answer now whether anything is at the base URL, so a missing server is a sentence instead
         of a three-minute hang. Any answer at all counts: a bad key is the turn's error, not this one.
+        Then ask the server how large its context is, if it tells (llama.cpp does).
         """
         request = urllib.request.Request(f"{self.base_url}/models")
         try:
             with urllib.request.urlopen(request, timeout=timeout) as reply:
                 reply.read(1)
         except urllib.error.HTTPError:
-            return
+            return self._read_props(timeout)
         except (urllib.error.URLError, OSError) as error:
             reason = getattr(error, "reason", error)
             raise ModelError(f"no model server at {self.base_url} ({reason}); start it or set "
                              f"HARNESS_MODEL_BASE_URL") from error
+        self._read_props(timeout)
+
+    def _read_props(self, timeout: float) -> None:
+        """The model's own window, so the context meter is not a made-up 32000."""
+        root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
+        try:
+            with urllib.request.urlopen(urllib.request.Request(f"{root}/props"), timeout=timeout) as reply:
+                props = json.loads(reply.read())
+        except Exception:
+            return  # not a llama.cpp server, or an old one: the guess stays
+        settings = props.get("default_generation_settings") or {}
+        self.context_size = int(settings.get("n_ctx") or props.get("n_ctx") or 0)
 
     def stream(self, messages: list[dict], tools: list[dict] | None = None, stop=None, opened=None):
         """Yield events: ("text", str), ("thought", str), ("usage", dict) and ("tool_calls", list).
@@ -145,6 +158,7 @@ class AnthropicMessages:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.max_tokens = max_tokens
+        self.context_size = 0  # filled from the server's /props, when it has one
 
     def _body(self, messages: list[dict], stream: bool, tools: list[dict] | None) -> dict:
         system, conversation = [], []

@@ -24,10 +24,13 @@ def estimate(text: str) -> int:
     return max(1, len(text) // 4)
 
 
-def meter(store, bot: str) -> tuple[int, int]:
-    """How full the next request is: estimated tokens used, and the window the meter draws against."""
+def meter(store, bot: str, size: int = 0) -> tuple[int, int]:
+    """How full the next request is: estimated tokens used, and the window the model server reports.
+
+    `size` comes from the server (/props n_ctx); without it the built-in guess is used.
+    """
     used = sum(estimate(message["content"]) for message in build(store, bot))
-    return used, CONTEXT_TOKENS
+    return used, size or CONTEXT_TOKENS
 
 
 def build(store, bot: str) -> list[dict]:
