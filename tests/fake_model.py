@@ -26,6 +26,8 @@ class FakeModel:
         self.context_size = context_size  # what /props reports, like llama.cpp does
         self.requests: list[dict] = []
         self.headers: list[dict] = []
+        self.get_headers: list[dict] = []
+        self.require_auth = False
         self._lock = threading.Lock()
         model = self
 
@@ -36,6 +38,13 @@ class FakeModel:
                 pass
 
             def do_GET(self):
+                with model._lock:
+                    model.get_headers.append(dict(self.headers))
+                if model.require_auth and not (self.headers.get("Authorization") or "").startswith("Bearer "):
+                    self.send_response(401)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 if self.path.endswith("/props") and model.context_size:
                     payload = json.dumps({"default_generation_settings": {"n_ctx": model.context_size}}).encode()
                 elif self.path.endswith("/models"):

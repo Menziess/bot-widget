@@ -110,13 +110,24 @@ class AcpLink:
         self._decisions = {}  # request id -> (future on the agent's loop, title)
         self._client = None
         self._closed = False
+        self._booting = True  # history loads at start, before the first message
+        self._gate = None
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
 
     def _serve(self) -> None:
         asyncio.set_event_loop(self._loop)
+        self._gate = asyncio.Lock()
+        self._loop.call_soon(lambda: self._loop.create_task(self._boot()))
         self._loop.run_forever()
+
+    async def _boot(self) -> None:
+        """Load the saved session as the widget starts. A failure here is reported on the first send."""
+        try:
+            await self._ensure()
+        except Exception:
+            pass
 
     # ── the calls the face knows ────────────────────────────────
 
@@ -162,7 +173,7 @@ class AcpLink:
     def active(self) -> bool:
         """Is a turn running? The face then keeps looking, so a pushed answer is drawn at once."""
         with self._lock:
-            return self._sending
+            return self._sending or self._booting
 
     def due(self) -> bool:
         """Nothing to poll: the agent pushes its updates."""
@@ -203,21 +214,23 @@ class AcpLink:
         if self._closed:
             return
         self._closed = True
-        if self._client is not None:
-            async def shutdown():
+
+        async def shutdown():
+            if self._client is not None:
                 try:
                     await self._client.__aexit__(None, None, None)
-                finally:
-                    # The connection leaves reader and sender tasks behind; stopping the loop with
-                    # them still pending prints a warning per task.
-                    rest = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
-                    for task in rest:
-                        task.cancel()
-                    await asyncio.gather(*rest, return_exceptions=True)
-            try:
-                asyncio.run_coroutine_threadsafe(shutdown(), self._loop).result(5)
-            except Exception:
-                pass  # a dead agent has nothing left to close
+                except Exception:
+                    pass
+            # Boot and the connection's reader tasks outlive a quick close otherwise.
+            rest = [task for task in asyncio.all_tasks() if task is not asyncio.current_task()]
+            for task in rest:
+                task.cancel()
+            await asyncio.gather(*rest, return_exceptions=True)
+
+        try:
+            asyncio.run_coroutine_threadsafe(shutdown(), self._loop).result(5)
+        except Exception:
+            pass  # a dead agent has nothing left to close
         self._loop.call_soon_threadsafe(self._loop.stop)
 
     # ── the agent, in the background ────────────────────────────
@@ -283,6 +296,14 @@ class AcpLink:
     async def _ensure(self):
         """Start the agent on first use, then keep it: a session that stays open is what makes a
         second message cheap."""
+        try:
+            async with self._gate:
+                return await self._open()
+        finally:
+            with self._lock:
+                self._booting = False
+
+    async def _open(self):
         if self._client is not None:
             return self._client
         room = self.room()
@@ -308,7 +329,10 @@ class AcpLink:
         self._save_session(info["session"])
         self._client = client
         with self._lock:
-            self._activity = f"{info['name'] or self.target} is awake"
+            self._booting = False
+            # A send that is already waiting keeps the waking line; a startup load stays quiet.
+            if self._sending:
+                self._activity = f"{info['name'] or self.target} is awake"
         return client
 
     async def _ask(self, title: str) -> bool:
@@ -350,8 +374,10 @@ class AcpLink:
                 used, size = update.extra.get("used") or 0, update.extra.get("size") or 0
                 if update.extra.get("compacted"):
                     self._context = "Compacted older turns."
-                elif size and used * 100 // size >= 70:
-                    self._context = f"Context {used * 100 // size}% full."
+                elif size:
+                    percent = used * 100 / size
+                    shown = "<1" if percent < 1 else str(int(percent))
+                    self._context = f"Context {shown}% full."
                 else:
                     self._context = ""
             elif update.kind == "text" and update.text:

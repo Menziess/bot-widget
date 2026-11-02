@@ -135,8 +135,10 @@ def main() -> None:
             sessions[session_id] = params.get("cwd", "")
             answer(request_id, {"sessionId": session_id})
         elif method == "session/load":
-            answer(request_id, {"sessionId": params.get("sessionId", "s1"), "modes": None})
+            # The replay arrives before the result, as a real agent does, so the widget still has
+            # _loading set and can put the history in front of the new message.
             chunk(params.get("sessionId", "s1"), "agent_message_chunk", "restored")
+            answer(request_id, {"sessionId": params.get("sessionId", "s1"), "modes": None})
         elif method == "session/prompt":
             run_prompt(request_id, params)
         elif method == "session/cancel":

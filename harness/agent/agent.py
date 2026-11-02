@@ -67,7 +67,12 @@ class LeanAgent:
         store = self.stores.setdefault(session_id, SessionStore(self.folder))
         for message in store.messages(limit=context.KEEP_TURNS * 2):
             if message["role"] == "tool":
-                continue  # a tool line is context for the model, not something the bot said
+                # An ordinary tool line stays out of the bubble. A decline must still be said,
+                # or a restart looks like the write happened.
+                if "declined" not in message["text"]:
+                    continue
+                await self._chunk(session_id, "agent", message["text"])
+                continue
             await self._chunk(session_id, "user" if message["role"] == "user" else "agent", message["text"])
         return None
 
@@ -150,6 +155,7 @@ class LeanAgent:
         said = "".join(answer)
         if said:
             store.add("bot", said)
+        counted = bool(usage["prompt_tokens"])
         store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                      "ms": round((time.monotonic() - started) * 1000),
                      "first_ms": round((first - started) * 1000) if first else 0,
@@ -158,6 +164,8 @@ class LeanAgent:
                                                                    for m in messages if m.get("content")),
                      "output_tokens": usage["completion_tokens"] or context.estimate(said),
                      "cached_tokens": usage["cached_tokens"],
+                     # A cancel before the first usage chunk has no cache figure; 0 would look measured.
+                     "estimated": not counted,
                      "cancelled": cancelled})
         # Never in the turn path: the answer is out before the summary starts.
         if not cancelled:

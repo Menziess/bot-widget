@@ -47,6 +47,18 @@ class Defaults(unittest.TestCase):
         model.ready(timeout=2.0)
         self.assertEqual(model.context_size, 4096)
 
+    def test_props_sends_the_bearer_key(self):
+        from harness.agent.models import ChatCompletions
+        server = FakeModel(context_size=131072)
+        server.require_auth = True
+        self.addCleanup(server.close)
+        model = ChatCompletions(server.base_url, "fake-model", api_key="sk-test")
+        model.ready(timeout=2.0)
+        self.assertEqual(model.context_size, 131072, "a keyed /props is what fills the meter")
+        bare = ChatCompletions(server.base_url, "fake-model")
+        bare.ready(timeout=2.0)
+        self.assertEqual(bare.context_size, 0, "without the key the server answers 401 and the guess stays")
+
     def test_a_server_without_props_keeps_the_guess(self):
         from harness.agent.models import ChatCompletions
         server = FakeModel()
@@ -99,8 +111,8 @@ class Store(unittest.TestCase):
         store.add("tool", "write_file: declined by the user; nothing was done")
         built = context.build(store, "Test")
         self.assertEqual([message["role"] for message in built],
-                         ["system", "system", "system", "user", "assistant", "system"],
-                         "only the stored turns are a conversation, not the instructions")
+                         ["system", "system", "system", "user", "assistant", "user"],
+                         "a tool outcome rides on a user turn, never as a system line mid-chat")
         self.assertIn("write_file: declined", built[-1]["content"])
 
     def test_a_limited_read_is_the_newest_messages_in_order(self):
@@ -233,6 +245,9 @@ class Turns(unittest.IsolatedAsyncioTestCase):
             took = time.monotonic() - started
         self.assertEqual(result.stop_reason, "cancelled")
         self.assertLess(took, 1.0, "a cancel is read while the model stream is still open")
+        usage = [json.loads(line) for line in open(os.path.join(self.folder, "usage.jsonl"))]
+        self.assertTrue(usage[-1]["estimated"], "a cancel before any usage chunk is an estimate, not a measured 0")
+        self.assertGreater(usage[-1]["input_tokens"], 0)
 
     async def test_a_cancel_mid_stream_stops_the_answer_and_says_cancelled(self):
         self.model.first_delay = 0.0

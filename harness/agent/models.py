@@ -19,6 +19,7 @@ class ChatCompletions:
         self.model = model
         self.api_key = api_key
         self.timeout = timeout
+        self.context_size = 0
 
     def _request(self, messages: list[dict], stream: bool, tools: list[dict] | None = None):
         payload = {"model": self.model, "messages": messages, "stream": stream}
@@ -27,17 +28,23 @@ class ChatCompletions:
         if stream:
             payload["stream_options"] = {"include_usage": True}
         body = json.dumps(payload).encode()
-        headers = {"Content-Type": "application/json"}
+        return urllib.request.Request(f"{self.base_url}/chat/completions", data=body,
+                                      headers=self._headers({"Content-Type": "application/json"}))
+
+    def _headers(self, headers: dict | None = None) -> dict:
+        """llama.cpp (--api-key) answers 401 on /models and /props without the Bearer key, and the
+        meter then falls back to a made-up window."""
+        headers = dict(headers or {})
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        return urllib.request.Request(f"{self.base_url}/chat/completions", data=body, headers=headers)
+        return headers
 
     def ready(self, timeout: float = 3.0) -> None:
         """Answer now whether anything is at the base URL, so a missing server is a sentence instead
         of a three-minute hang. Any answer at all counts: a bad key is the turn's error, not this one.
         Then ask the server how large its context is, if it tells (llama.cpp does).
         """
-        request = urllib.request.Request(f"{self.base_url}/models")
+        request = urllib.request.Request(f"{self.base_url}/models", headers=self._headers())
         try:
             with urllib.request.urlopen(request, timeout=timeout) as reply:
                 reply.read(1)
@@ -53,7 +60,8 @@ class ChatCompletions:
         """The model's own window, so the context meter is not a made-up 32000."""
         root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
         try:
-            with urllib.request.urlopen(urllib.request.Request(f"{root}/props"), timeout=timeout) as reply:
+            with urllib.request.urlopen(urllib.request.Request(f"{root}/props", headers=self._headers()),
+                                         timeout=timeout) as reply:
                 props = json.loads(reply.read())
         except Exception:
             return  # not a llama.cpp server, or an old one: the guess stays

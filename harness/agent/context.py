@@ -36,8 +36,9 @@ def meter(store, bot: str, size: int = 0) -> tuple[int, int]:
 def build(store, bot: str) -> list[dict]:
     """The messages to send: system, summary, facts, then the newest turns that fit.
 
-    A stored tool line is a system message: what a tool did is a fact about the world, not something
-    the bot said, and it is what keeps a restart from forgetting that a write was declined.
+    A stored tool line is folded into the next user turn. A system line in the middle of the
+    conversation is rejected by stricter chat templates, and the next user message is where the
+    model still sees that a write was declined.
     """
     messages = [{"role": "system", "text": SYSTEM.format(bot=bot)}]
     if store.summary:
@@ -52,11 +53,20 @@ def build(store, bot: str) -> list[dict]:
         if room < 0:
             break
         kept.append(message)
-    messages.extend(reversed(kept))
+    pending: list[str] = []
+    for message in reversed(kept):
+        if message["role"] == "tool":
+            pending.append(message["text"])
+            continue
+        if message["role"] == "user" and pending:
+            message = {**message, "text": "Tool outcomes:\n" + "\n".join(pending) + "\n\n" + message["text"]}
+            pending = []
+        messages.append(message)
+    if pending:
+        messages.append({"role": "user", "text": "Tool outcomes:\n" + "\n".join(pending)})
     # Instructions, summary and pinned facts are system messages; only the stored turns are a
     # conversation. Sent as assistant text they read as the bot contradicting itself.
-    roles = {"system": "system", "user": "user", "bot": "assistant", "assistant": "assistant",
-             "tool": "system"}
+    roles = {"system": "system", "user": "user", "bot": "assistant", "assistant": "assistant"}
     return [{"role": roles[message["role"]], "content": message["text"]} for message in messages]
 
 

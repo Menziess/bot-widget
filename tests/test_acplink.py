@@ -109,10 +109,12 @@ class AcpTurns(unittest.TestCase):
         self.addCleanup(second.close)
         second.send("again")
         self.assertTrue(wait_for(lambda: not second.active()))
+        self.assertTrue(wait_for(lambda: any("restored" in message["text"]
+                                             for message in second.chat()["messages"])),
+                        "the saved session is in the bubble before the next message")
         messages = second.chat()["messages"]
-        self.assertEqual([message["role"] for message in messages], ["user", "bot"],
-                         "the replayed history comes before the new message")
-        self.assertIn("restored", messages[1]["text"])
+        self.assertEqual([message["role"] for message in messages], ["bot", "user", "bot"])
+        self.assertIn("restored", messages[0]["text"])
 
     def test_a_model_error_is_shown_in_the_note_instead_of_a_bare_refusal(self):
         from harness.acp_client import Turn
@@ -190,7 +192,9 @@ class AcpTurns(unittest.TestCase):
         link._updated(Update("usage", extra={"used": 80, "size": 100}))
         self.assertEqual(link.note(), "Context 80% full.")
         link._updated(Update("usage", extra={"used": 20, "size": 100}))
-        self.assertEqual(link.note(), "", "a roomy context says nothing")
+        self.assertEqual(link.note(), "Context 20% full.")
+        link._updated(Update("usage", extra={"used": 100, "size": 131072}))
+        self.assertEqual(link.note(), "Context <1% full.")
         link._updated(Update("usage", extra={"used": 20, "size": 100, "compacted": True}))
         self.assertEqual(link.note(), "Compacted older turns.")
 
@@ -218,6 +222,9 @@ class AcpFace(unittest.TestCase):
         from botwidget.qt_ui import face
         with mock.patch.object(face, "latest_chat", return_value={"messages": [], "activity": ""}), \
                 mock.patch.object(face, "automation_ready", return_value=False):
+            # Other tests share this face's folder; a saved session would show up at start now.
+            shutil.rmtree(os.path.expanduser(
+                "~/.local/share/botwidget/harness/" + acplink._slug(FAKE)), ignore_errors=True)
             window = face.FaceWindow("acp:" + FAKE, "T", spot=(300, 400))
             self.addCleanup(window.close_face)
             window._poll_timer.stop()

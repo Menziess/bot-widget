@@ -106,9 +106,19 @@ class Turns(unittest.IsolatedAsyncioTestCase):
             await client.start()
             session = client.session_id
             await client.prompt("Heb je het bestand geschreven?")
-        sent = json.dumps(self.model.requests[-1]["messages"])
-        self.assertIn("write_file: declined", sent)
+        sent = self.model.requests[-1]["messages"]
+        self.assertIn("write_file: declined", json.dumps(sent))
+        self.assertFalse(any(message["role"] == "system" and "declined" in message["content"]
+                             for message in sent),
+                         "the decline is not a system line in the middle of the chat")
         self.assertFalse(os.path.exists(target))
+        async with self.client() as client:
+            await client.start()
+            replayed = []
+            client.on_update = lambda update: replayed.append((update.kind, update.text))
+            await client.conn.load_session(cwd=ROOT, session_id=session, mcp_servers=[])
+        self.assertTrue(any(kind == "text" and "declined" in text for kind, text in replayed),
+                        "after a restart the bubble says the write was declined")
 
     async def test_a_tool_line_is_not_replayed_as_something_the_bot_said(self):
         asked = []
