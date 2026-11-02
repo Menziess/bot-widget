@@ -44,6 +44,20 @@ class Store(unittest.TestCase):
         self.assertEqual([m["text"] for m in again.messages()], ["Klaar?", "Ja."])
         self.assertEqual(again.summary, "They agreed on the plan.")
 
+    def test_instructions_summary_and_facts_are_system_messages(self):
+        from harness.agent import context
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        store = SessionStore(folder)
+        self.addCleanup(store.close)
+        store.add("user", "Hallo")
+        store.add("bot", "Hoi")
+        store.set_summary("Zij begroetten elkaar.")
+        store.set("facts", "Stefan wil korte antwoorden.")
+        roles = [message["role"] for message in context.build(store, "Test")]
+        self.assertEqual(roles, ["system", "system", "system", "user", "assistant"],
+                         "only the stored turns are a conversation, not the instructions")
+
     def test_a_limited_read_is_the_newest_messages_in_order(self):
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)

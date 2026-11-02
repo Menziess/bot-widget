@@ -46,8 +46,10 @@ def build(store, bot: str) -> list[dict]:
             break
         kept.append(message)
     messages.extend(reversed(kept))
-    return [{"role": "user" if message["role"] == "user" else "assistant", "content": message["text"]}
-            for message in messages]
+    # Instructions, summary and pinned facts are system messages; only the stored turns are a
+    # conversation. Sent as assistant text they read as the bot contradicting itself.
+    roles = {"system": "system", "user": "user", "bot": "assistant", "assistant": "assistant"}
+    return [{"role": roles[message["role"]], "content": message["text"]} for message in messages]
 
 
 def to_summarise(store) -> list[dict]:
