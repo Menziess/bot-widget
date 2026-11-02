@@ -198,3 +198,64 @@ class WidgetSave(unittest.TestCase):
         left = json.load(open(config.CONFIG_PATH))["acp_bots"]
         self.assertEqual([row["id"] for row in left], ["second-check"])
         self.assertTrue(os.path.isdir(room), "removing the bot from the widget leaves its session folder")
+
+
+class EditPage(unittest.TestCase):
+    """Should open the edit page when the Edit button is clicked, not only when the command is sent by hand."""
+
+    def setUp(self):
+        try:
+            from PySide6.QtWidgets import QApplication
+            from botwidget.qt_ui.face import FaceWindow
+            from botwidget.qt_ui.faces import Faces
+        except ImportError as error:
+            self.skipTest(f"no Qt: {error}")
+        self.app = QApplication.instance() or QApplication([])
+        self.FaceWindow, self.Faces = FaceWindow, Faces
+        # As stored before a bot had a stable id: the page still has to open on that bot.
+        config.save_widget_config(acp_bots=[{
+            "name": "Local Bot", "command": "python -m harness.agent", "key_file": "/tmp/not-a-key",
+            "env": {"HARNESS_BOT": "Local Bot", "HARNESS_MODEL": "local",
+                    "HARNESS_MODEL_BASE_URL": "http://127.0.0.1:8080/v1"},
+        }])
+
+    def test_clicking_edit_opens_that_bots_page(self):
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        from botwidget.qt_ui.controls import ActionButton
+
+        box = self.Faces.__new__(self.Faces)
+        box.faces = {}
+        box.toggle = lambda *_args: None
+        box.close_bubbles_except = lambda *_args: None
+        box.hold_arc = lambda: None
+
+        def menu_state():
+            return {
+                "version": "0", "channel": "local", "switch_label": None, "hotkey": "",
+                "update": "", "staged_update": "", "sound": False, "quiet_hours": False,
+                "always_on_top": False, "can_pick_desktops": False, "can_glass": False, "glass_clear": 0,
+                "all_desktops": False, "login": False, "check_updates": False, "save_battery": False,
+                "can_install_updates": False, "auto_update": False,
+                "bots": [{"id": "acp:local-bot", "name": "Local Bot", "on": False, "muted": False,
+                          "source": "Harness", "acp": True}],
+                "bot_form": getattr(box, "_bot_draft", None), "bot_error": getattr(box, "_bot_error", ""),
+                "json_text": "", "json_error": "", "openbot": False, "automation_ready": False,
+                "gbot": False, "grok": "", "grok_target": "", "hermes": False, "wanted": [],
+            }
+
+        box.menu_state = menu_state
+        window = self.FaceWindow("t", "Test", spot=(300, 400), faces=box)
+        window._poll_timer.stop()
+        self.addCleanup(window.close_face)
+        window.open_menu("bots")
+        self.app.processEvents()
+        bubble = window.bubble
+        edit = next(w for w in bubble._control_widgets if isinstance(w, ActionButton) and w.text() == "Edit Local Bot")
+        # Where the text window receives the click that was meant for the button.
+        point = QPoint(edit.geometry().center().x() - bubble._doc.x(), edit.geometry().center().y() - bubble._doc.y())
+        QTest.mouseClick(bubble._doc.viewport(), Qt.LeftButton, Qt.NoModifier, point)
+        self.app.processEvents()
+        self.assertIn("Edit bot", bubble.full_text)
+        self.assertIn("Name: Local Bot", bubble.full_text)
+        self.assertEqual(window._menu_page, "bot/acp:local-bot")

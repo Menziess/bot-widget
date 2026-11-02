@@ -5526,6 +5526,21 @@ class MenuInBubble(unittest.TestCase):
         QApplication.sendEvent(self.window, QMouseEvent(QEvent.MouseButtonPress, point, point, Qt.RightButton,
                                                         Qt.RightButton, Qt.NoModifier))
 
+    def test_the_command_list_has_a_line_on_top_that_closes_it(self):
+        """Should show the same line as a page, and a tap on it closes the menu."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.right_click()
+        bubble = self.window.bubble
+        self.assertEqual(bubble._geom[0][0]["role"], "more")
+        self.assertEqual(bubble._back_command(), "close")
+        self.assertTrue(bubble._menu_line.isVisibleTo(bubble))
+        self.assertFalse(bubble._scroll.isVisibleTo(bubble), "the line is not a second page under the list")
+        self.assertLess(bubble._menu_line.geometry().bottom(), bubble._slash.geometry().top() + 2)
+        QTest.mouseClick(bubble._menu_line, Qt.LeftButton)
+        self.assertFalse(bubble.isVisible(), "a tap on the line closes the menu")
+        self.assertEqual(bubble._slash.rows, [])
+
     def test_a_right_click_opens_the_bubble_with_a_slash_and_the_list_of_commands(self):
         self.right_click()
         bubble = self.window.bubble
