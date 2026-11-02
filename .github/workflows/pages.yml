@@ -4,7 +4,7 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "packaging/install-macos.sh", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -24,6 +24,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # bot-widget.com/install.sh is the macOS installer; packaging/install-macos.sh is the only copy in git.
+      - name: The macOS install script
+        run: cp packaging/install-macos.sh site/install.sh
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

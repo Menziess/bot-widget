@@ -36,3 +36,29 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: cd tests && python -c "import botwidget.qt_ui.app"
+
+  # The macOS install script (bot-widget.com/install.sh): lint, and the stubbed tests run on Linux.
+  install-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -s sh packaging/install-macos.sh packaging/test_install_macos.sh
+      - name: Tests with stubbed tools
+        run: sh packaging/test_install_macos.sh
+
+  # The same script for real on a Mac, against the latest release, into a throwaway home.
+  install-script-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          home="$(mktemp -d)"
+          # The tag comes from an authenticated call, so the anonymous API limit cannot make this flaky.
+          version="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          HOME="$home" BOTWIDGET_NO_OPEN=1 BOTWIDGET_VERSION="$version" sh packaging/install-macos.sh
+          test -d "$home/Applications/Bot Widget.app"
+          codesign --verify --deep --strict "$home/Applications/Bot Widget.app"
