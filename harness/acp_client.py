@@ -87,11 +87,24 @@ class AcpClient:
         """Milliseconds from spawn to a session that can take a prompt."""
         return round((self._ready - self.started) * 1000) if getattr(self, "_ready", 0.0) else 0
 
-    async def start(self) -> dict:
-        """Initialize and open a session; returns what the agent says about itself."""
+    async def start(self, load: str = "") -> dict:
+        """Initialize and open a session; returns what the agent says about itself.
+
+        `load` is a session id from an earlier run: the agent then replays that conversation instead
+        of starting an empty one. An agent that cannot load it gets a new session, never an error.
+        """
         info = await self.conn.initialize(protocol_version=PROTOCOL_VERSION, client_capabilities={})
-        session = await self.conn.new_session(cwd=self.cwd or ".", mcp_servers=[])
-        self.session_id = session.session_id
+        session_id = ""
+        if load:
+            try:
+                loaded = await self.conn.load_session(cwd=self.cwd or ".", session_id=load, mcp_servers=[])
+                session_id = getattr(loaded, "session_id", "") or load
+            except Exception:
+                session_id = ""  # nothing stored, or an agent without load: a new session is fine
+        if not session_id:
+            session = await self.conn.new_session(cwd=self.cwd or ".", mcp_servers=[])
+            session_id = session.session_id
+        self.session_id = session_id
         self._ready = time.monotonic()
         return {"protocol": info.protocol_version,
                 "name": getattr(getattr(info, "agent_info", None), "name", ""),

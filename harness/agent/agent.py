@@ -15,7 +15,7 @@ import time
 from acp import PROTOCOL_VERSION
 from acp.schema import (AgentMessageChunk, AgentThoughtChunk, InitializeResponse, NewSessionResponse,
                         PermissionOption, PromptResponse, TextContentBlock, ToolCallProgress, ToolCallStart,
-                        ToolCallUpdate, UsageUpdate)
+                        ToolCallUpdate, UsageUpdate, UserMessageChunk)
 
 from harness.agent import context
 from harness.agent.models import ModelError
@@ -258,8 +258,12 @@ class LeanAgent:
         if not text or self.conn is None:
             return
         content = TextContentBlock(type="text", text=text)
-        update = (AgentMessageChunk(session_update="agent_message_chunk", content=content) if role == "agent"
-                  else AgentThoughtChunk(session_update="agent_thought_chunk", content=content))
+        if role == "agent":
+            update = AgentMessageChunk(session_update="agent_message_chunk", content=content)
+        elif role == "user":
+            update = UserMessageChunk(session_update="user_message_chunk", content=content)
+        else:
+            update = AgentThoughtChunk(session_update="agent_thought_chunk", content=content)
         await self.conn.session_update(session_id=session_id, update=update)
 
     async def summarise(self, store: SessionStore) -> None:

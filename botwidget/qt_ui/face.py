@@ -139,7 +139,8 @@ class FaceWindow(QWidget):
         self.grok = grokbot.GrokLink(name) if grokbot.is_grok(agent_id) else None
         self.hermes = hermesbot.HermesLink(name) if hermesbot.is_hermes(agent_id) else None
         # An ACP agent is one more backend behind the same calls, so nothing below has to know which one it has.
-        self.acp = acplink.AcpLink(acplink.target_for(agent_id)) if acplink.is_acp(agent_id) else None
+        self.acp = (acplink.AcpLink(acplink.target_for(agent_id), **acplink.options_for(agent_id))
+                    if acplink.is_acp(agent_id) else None)
         self.faces = faces
         self._hue = hue
         self._seed = seed or agent_id

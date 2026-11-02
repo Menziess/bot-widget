@@ -8,7 +8,9 @@ runs asyncio in a background thread, so no Qt thread ever waits on the agent.
 
 import asyncio
 import concurrent.futures
+import json
 import os
+import re
 import shlex
 import threading
 import time
@@ -32,12 +34,47 @@ def is_acp(agent_id: str) -> bool:
     return isinstance(agent_id, str) and agent_id.startswith(PREFIX)
 
 
+def _slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+def configured_bots() -> list[dict]:
+    """The ACP faces in widget.json, one entry each: name, command, HARNESS_* env and a key file.
+
+    The key itself is never in widget.json: `key_file` names a file the link reads at start.
+    """
+    entries = widget_config().get("acp_bots")
+    bots = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        name, command = str(entry.get("name") or "").strip(), str(entry.get("command") or "").strip()
+        if not name or not command:
+            continue
+        env = {key: str(value) for key, value in (entry.get("env") or {}).items()
+               if str(key).startswith("HARNESS_")}
+        bots.append({"id": PREFIX + _slug(name), "name": name, "command": command, "env": env,
+                     "key_file": str(entry.get("key_file") or "")})
+    return bots
+
+
 def target_for(agent_id: str) -> str:
-    """The agent command for this face: `acp:hermes-acp` runs hermes-acp, unless the settings say otherwise."""
+    """The agent command for this face: a configured bot's own command, else the settings or the id."""
+    for bot in configured_bots():
+        if bot["id"] == agent_id:
+            return bot["command"]
     configured = widget_config().get("acp_target")
     if isinstance(configured, str) and configured.strip():
         return configured.strip()
     return agent_id[len(PREFIX):] or DEFAULT_TARGET
+
+
+def options_for(agent_id: str) -> dict:
+    """The rest of a configured face: its env, its own folder, and the key file it reads at start."""
+    bot = next((bot for bot in configured_bots() if bot["id"] == agent_id), None)
+    if bot is None:
+        return {}
+    return {"face": agent_id, "env": bot["env"], "key_file": bot["key_file"]}
 
 
 def _bubble_line(text: str) -> str:
@@ -49,8 +86,12 @@ def _bubble_line(text: str) -> str:
 class AcpLink:
     """One bot on an ACP agent: a session that stays open, and one turn at a time."""
 
-    def __init__(self, target: str, now=time.monotonic):
+    def __init__(self, target: str, face: str = "", env: dict | None = None, key_file: str = "",
+                 now=time.monotonic):
         self.target = target
+        self.face = face or face_id(target)
+        self.env = dict(env or {})
+        self.key_file = key_file
         self.now = now
         self.messages = []
         self.stopped = False
@@ -62,6 +103,8 @@ class AcpLink:
         self._context = ""
         self._sending = False
         self._said = False  # did this turn put any text in the bubble
+        self._loading = False  # replaying a stored session: that text goes in front of the new message
+        self._history: list[dict] = []
         self._asks = 0
         self._approvals = {}
         self._decisions = {}  # request id -> (future on the agent's loop, title)
@@ -204,21 +247,62 @@ class AcpLink:
                 # Nothing was said: better a line than a bubble that waits forever.
                 self._note = f"The turn ended ({turn.stop_reason or 'no reason given'}) with no answer."
 
+    def room(self) -> str:
+        """This face's own folder: one session file and a usage log per bot, also after a restart."""
+        return os.path.expanduser(f"~/.local/share/botwidget/harness/{_slug(self.face[len(PREFIX):])}")
+
+    def _saved_session(self) -> str:
+        try:
+            with open(os.path.join(self.room(), "session.json")) as fh:
+                return str(json.load(fh).get("session") or "")
+        except (OSError, ValueError):
+            return ""
+
+    def _save_session(self, session_id: str) -> None:
+        try:
+            os.makedirs(self.room(), exist_ok=True)
+            with open(os.path.join(self.room(), "session.json"), "w") as fh:
+                json.dump({"session": session_id}, fh)
+        except OSError:
+            pass  # the conversation still works; it just starts empty next time
+
+    def _environment(self) -> dict:
+        """The face's own HARNESS_* values, plus the key read from its file: never from widget.json."""
+        env = dict(self.env)
+        if self.key_file:
+            try:
+                with open(os.path.expanduser(self.key_file)) as fh:
+                    env["HARNESS_MODEL_API_KEY"] = fh.read().strip()
+            except OSError as error:
+                raise RuntimeError(f"cannot read the key file {self.key_file}: {error.strerror}") from error
+        return env
+
     async def _ensure(self):
         """Start the agent on first use, then keep it: a session that stays open is what makes a
         second message cheap."""
         if self._client is not None:
             return self._client
-        room = os.path.expanduser(f"~/.local/share/botwidget/harness/{self.target}")
+        room = self.room()
         os.makedirs(room, exist_ok=True)
-        client = AcpClient(*shlex.split(self.target), cwd=room,
+        env = self._environment()
+        client = AcpClient(*shlex.split(self.target), cwd=room, env=env,
                            allow=self._ask, on_update=self._updated)
         await client.__aenter__()
+        with self._lock:
+            self._loading = True
         try:
-            info = await client.start()
+            info = await client.start(load=self._saved_session())
         except BaseException:
             await client.__aexit__(None, None, None)  # a half-started agent still owns a process
             raise
+        finally:
+            with self._lock:
+                self._loading = False
+                # The replayed history belongs before the message that woke the agent.
+                if self._history:
+                    self.messages[:0] = self._history
+                    self._history = []
+        self._save_session(info["session"])
         self._client = client
         with self._lock:
             self._activity = f"{info['name'] or self.target} is awake"
@@ -248,6 +332,13 @@ class AcpLink:
     def _updated(self, update) -> None:
         """One pushed update: a thought is the activity, answer text is the answer, a tool is its title."""
         with self._lock:
+            if self._loading and update.kind in ("text", "user") and update.text:
+                role = "user" if update.kind == "user" else "bot"
+                if self._history and self._history[-1]["role"] == role:
+                    self._history[-1]["text"] += update.text
+                else:
+                    self._history.append({"role": role, "text": update.text})
+                return
             if update.kind == "thought" and update.text.strip():
                 self._activity = _bubble_line(update.text)
             elif update.kind == "tool":

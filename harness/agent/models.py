@@ -235,6 +235,9 @@ def from_environment(env=None):
         return AnthropicMessages(env.get("HARNESS_MODEL") or "claude-sonnet-4-5",
                                  env.get("HARNESS_MODEL_API_KEY") or "",
                                  env.get("HARNESS_MODEL_BASE_URL") or "https://api.anthropic.com")
-    base = env.get("HARNESS_MODEL_BASE_URL") or "http://127.0.0.1:11434/v1"
-    return ChatCompletions(base, env.get("HARNESS_MODEL") or "qwen2.5:7b",
+    # The default is the llama.cpp server the README starts: port 8080, model name "local". A bot
+    # that points elsewhere sets HARNESS_MODEL_BASE_URL; the precheck then says plainly when nothing
+    # answers there, instead of a turn that hangs.
+    base = env.get("HARNESS_MODEL_BASE_URL") or "http://127.0.0.1:8080/v1"
+    return ChatCompletions(base, env.get("HARNESS_MODEL") or "local",
                            env.get("HARNESS_MODEL_API_KEY") or "")

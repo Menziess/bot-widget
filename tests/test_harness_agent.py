@@ -22,6 +22,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AGENT = f"{sys.executable} -m harness.agent"
 
 
+class Defaults(unittest.TestCase):
+    def test_the_default_model_server_is_the_local_llama_cpp_one(self):
+        from harness.agent.models import from_environment
+        model = from_environment({})
+        self.assertEqual(model.base_url, "http://127.0.0.1:8080/v1")
+        self.assertEqual(model.model, "local")
+
+
 class Store(unittest.TestCase):
     def test_a_restart_opens_the_same_conversation(self):
         folder = tempfile.mkdtemp()
@@ -131,9 +139,10 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         async with again:
             await again.start()
             restored = []
-            again.on_update = lambda update: restored.append(update.text)
+            again.on_update = lambda update: restored.append((update.kind, update.text))
             await again.conn.load_session(cwd=ROOT, session_id=session, mcp_servers=[])
-            self.assertIn("Mijn naam is Stefan.", "".join(restored))
+            self.assertIn(("user", "Mijn naam is Stefan."), restored,
+                          "the replayed history keeps the user's lines, so the bubble can show them")
             await again.prompt("En nu?")
         last_request = self.model.requests[-1]
         sent = [message["content"] for message in last_request["messages"]]

@@ -11,7 +11,7 @@ from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter
 from PySide6.QtWidgets import QApplication, QWidget
 
-from botwidget import __version__, channel, checkout, grokbot, hermesbot, startup, updates
+from botwidget import __version__, acplink, channel, checkout, grokbot, hermesbot, startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -95,7 +95,8 @@ def bot_source(bot_id: str) -> str:
 
 
 def _all_bots() -> list:
-    """Every bot the widget can show a face for: the local ones, Grok Bot, and Hermes Bot."""
+    """Every bot the widget can show a face for: the local ones, Grok Bot, Hermes Bot, and the ACP
+    bots the user configured in widget.json."""
     bots = list(list_bots())
     if gbot_installed():
         target = grokbot.target()
@@ -104,6 +105,9 @@ def _all_bots() -> list:
     if hermesbot.is_hermes_installed():
         bots.append({"id": hermesbot.face_id(), "name": "Hermes Bot", "threadId": None,
                      "hue": None, "seed": hermesbot.face_id(), "status": "ready"})
+    for bot in acplink.configured_bots():
+        bots.append({"id": bot["id"], "name": bot["name"], "threadId": None,
+                     "hue": None, "seed": bot["id"], "status": "ready"})
     return bots
 
 

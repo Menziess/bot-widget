@@ -867,6 +867,35 @@ class Rendering(unittest.TestCase):
             window.close()
 
 
+class AcpFace(unittest.TestCase):
+    """A bot in widget.json becomes a face, so the bubble can reach it at all."""
+
+    from unittest import mock as _mock
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from botwidget.qt_ui import faces
+            from botwidget import acplink
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        cls.faces = faces
+        cls.acplink = acplink
+
+    def test_a_configured_acp_bot_is_one_of_the_bots(self):
+        config = {"acp_bots": [{"name": "Local Bot", "command": "python -m harness.agent"}]}
+        mock = self._mock
+        with mock.patch.object(self.acplink, "widget_config", return_value=config), \
+                mock.patch.object(self.faces, "list_bots", return_value=[]), \
+                mock.patch.object(self.faces, "gbot_installed", return_value=False), \
+                mock.patch.object(self.faces, "hermesbot") as hermes:
+            hermes.is_hermes_installed.return_value = False
+            bots = self.faces._all_bots()
+        self.assertEqual([(bot["id"], bot["name"]) for bot in bots if bot["id"].startswith("acp:")],
+                         [("acp:local-bot", "Local Bot")])
+
+
 class UpdateTick(unittest.TestCase):
     """Should restart into a staged update only when no face is in use, and look again for releases now and then."""
 

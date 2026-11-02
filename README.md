@@ -99,6 +99,44 @@ The widget can also talk to one bot of Grok Bot. It does that with the `gbot` co
 - The Grok face wears the avatar Grok Bot gives the bot: its own shape (blob, hex, cloud, clover, sparkle, house, square and the rest) and colour; it moves and blinks like the other faces
 - Without an answer from Grok Bot the face takes `grokbot_avatars` in widget.json, e.g. `{"General": {"shape": "blob", "color": "black"}}`, and else the avatar Grok Bot gave last time
 
+## A bot of your own
+
+The widget can show a face for an agent that speaks ACP, such as the lean agent in `harness/`, with no OpenBot and no Grok Bot behind it. Each bot is one entry in `acp_bots` in `widget.json` (`~/.config/botwidget/widget.json` on Linux).
+
+```json
+{
+  "acp_bots": [
+    {
+      "name": "Local Bot",
+      "command": "env PYTHONPATH=/home/you/Projects/bot-widget /home/you/Projects/bot-widget/.venv/bin/python -m harness.agent",
+      "env": {
+        "HARNESS_BOT": "Local Bot",
+        "HARNESS_MODEL_BASE_URL": "http://127.0.0.1:8080/v1",
+        "HARNESS_MODEL": "local"
+      },
+      "key_file": "~/.config/llm/key"
+    }
+  ]
+}
+```
+
+- `name` is the face and the bot's name; the face id is `acp:` plus that name in lowercase with dashes
+- `command` starts the agent on stdio, from the bot's own folder under `~/.local/share/botwidget/harness/`. The example runs the lean agent from a checkout of this repository; any ACP agent works here
+- `env` holds `HARNESS_*` settings only: the model server, the model name, the bot's name
+- `key_file` is the path to a file with the API key, read at start and passed as `HARNESS_MODEL_API_KEY`. The key itself never goes in `widget.json`
+- The conversation is kept per bot; after a widget restart the face loads the same session and shows the history again
+- A write the bot asks about shows Accept and Decline in the bubble, and a running turn can be cancelled
+- The context meter under the conversation shows how full the context is, and a pin_fact tool keeps a fact through compaction
+
+A model server for the example above is llama.cpp:
+
+```sh
+llama-server -m ~/models/qwen2.5-7b-instruct-q4_k_m.gguf --port 8080 --alias local \
+  --ctx-size 32768 --api-key "$(cat ~/.config/llm/key)"
+```
+
+The server then answers on `http://127.0.0.1:8080/v1`, and the model name to ask for is `local`. Without `--api-key` the same URL works with an empty key file. With no `HARNESS_MODEL_BASE_URL` the widget assumes exactly this server and model; when nothing answers there, the turn stops with a line that says the server could not be reached instead of waiting.
+
 ## Updates
 
 The widget updates itself, and you can switch that off. At each start, and every 6 hours after, it asks GitHub whether a newer release exists.

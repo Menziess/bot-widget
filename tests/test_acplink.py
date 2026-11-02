@@ -1,10 +1,14 @@
 """Phase 1: an ACP agent behind the calls the face already makes, driven by the fake agent."""
 
 import os
+import shutil
 import sys
+import tempfile
 import time
 import unittest
+from unittest import mock
 
+from botwidget import acplink
 from botwidget.acplink import AcpLink
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -21,9 +25,63 @@ def wait_for(condition, timeout: float = 20.0):
     return False
 
 
+CONFIGURED = {"acp_bots": [
+    {"name": "Local Bot", "command": "python -m harness.agent",
+     "env": {"HARNESS_MODEL": "local", "HARNESS_MODEL_BASE_URL": "http://127.0.0.1:8080/v1",
+             "PATH": "/nope", "api_key": "leak"}, "key_file": "~/.config/llm/key"},
+    {"name": "no command"},
+    "not an entry",
+]}
+
+
+class Configured(unittest.TestCase):
+    """A face per bot in widget.json, with its own command, env and key file."""
+
+    def test_a_configured_bot_becomes_a_face_with_its_command_and_its_harness_env(self):
+        with mock.patch.object(acplink, "widget_config", return_value=CONFIGURED):
+            bots = acplink.configured_bots()
+            self.assertEqual([bot["id"] for bot in bots], ["acp:local-bot"])
+            self.assertEqual(bots[0]["name"], "Local Bot")
+            self.assertEqual(acplink.target_for("acp:local-bot"), "python -m harness.agent")
+            options = acplink.options_for("acp:local-bot")
+        self.assertEqual(options["face"], "acp:local-bot")
+        self.assertEqual(options["env"], {"HARNESS_MODEL": "local",
+                                          "HARNESS_MODEL_BASE_URL": "http://127.0.0.1:8080/v1"})
+        self.assertEqual(options["key_file"], "~/.config/llm/key",
+                         "only the path is in widget.json, never the key")
+
+    def test_an_unconfigured_face_falls_back_to_the_settings(self):
+        with mock.patch.object(acplink, "widget_config", return_value={"acp_target": "hermes-acp"}):
+            self.assertEqual(acplink.target_for("acp:whatever"), "hermes-acp")
+            self.assertEqual(acplink.options_for("acp:whatever"), {})
+
+    def test_the_key_is_read_from_its_file_into_the_environment(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        key = os.path.join(folder, "key")
+        with open(key, "w") as fh:
+            fh.write("sk-from-file\n")
+        link = AcpLink("python -m harness.agent", env={"HARNESS_MODEL": "local"}, key_file=key)
+        self.addCleanup(link.close)
+        self.addCleanup(shutil.rmtree, link.room(), True)
+        self.assertEqual(link._environment(),
+                         {"HARNESS_MODEL": "local", "HARNESS_MODEL_API_KEY": "sk-from-file"})
+
+    def test_a_key_file_that_cannot_be_read_says_which_file(self):
+        link = AcpLink("python -m harness.agent", key_file="/nonexistent/llm/key")
+        self.addCleanup(link.close)
+        self.addCleanup(shutil.rmtree, link.room(), True)
+        with self.assertRaises(RuntimeError) as caught:
+            link._environment()
+        self.assertIn("/nonexistent/llm/key", str(caught.exception))
+
+
 class AcpTurns(unittest.TestCase):
-    def link(self) -> AcpLink:
-        link = AcpLink(FAKE)
+    def link(self, **kwargs) -> AcpLink:
+        face = "acp:test-" + next(tempfile._get_candidate_names())
+        kwargs.setdefault("face", face)
+        link = AcpLink(FAKE, **kwargs)
+        self.addCleanup(shutil.rmtree, link.room(), True)
         self.addCleanup(link.close)
         return link
 
@@ -39,6 +97,22 @@ class AcpTurns(unittest.TestCase):
         self.assertEqual(chat["activity"], "")
         self.assertEqual([message["role"] for message in chat["messages"]], ["user", "bot"])
         self.assertIn("part 0", chat["messages"][-1]["text"])
+
+    def test_a_restart_loads_the_saved_session(self):
+        face = "acp:restart-" + next(tempfile._get_candidate_names())
+        first = AcpLink(FAKE, face=face)
+        self.addCleanup(shutil.rmtree, first.room(), True)
+        first.send("hello")
+        self.assertTrue(wait_for(lambda: not first.active()))
+        first.close()
+        second = AcpLink(FAKE, face=face)
+        self.addCleanup(second.close)
+        second.send("again")
+        self.assertTrue(wait_for(lambda: not second.active()))
+        messages = second.chat()["messages"]
+        self.assertEqual([message["role"] for message in messages], ["user", "bot"],
+                         "the replayed history comes before the new message")
+        self.assertIn("restored", messages[1]["text"])
 
     def test_a_short_turn_still_leaves_the_answer_and_no_activity(self):
         link = self.link()
