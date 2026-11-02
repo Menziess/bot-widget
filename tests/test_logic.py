@@ -215,6 +215,13 @@ class AvatarProfile(unittest.TestCase):
         # FNV-1a of "a" is 0xe40c292c; at length 7 that is 4.
         self.assertEqual(avatar.stable_index("a", 7), 0xE40C292C % 7)
 
+    def test_a_triangle_on_openbots_list_stays_a_triangle(self):
+        """OpenBot indexes eleven silhouettes. The eight we draw turn this seed into a circle."""
+        seed = "agent-86c78b65-d935-46c7-b90f-58baa04ef1b7:face:174"
+        drawn = list(avatar.SILHOUETTES)
+        self.assertEqual(drawn[avatar.stable_index(f"{seed}:shape", len(drawn))], "cercle")
+        self.assertEqual(avatar.avatar_profile(seed, 185)["shape"], "triangle")
+
 
 def eye_paths(svg: str) -> list:
     """The points of every eye in a face: the light filled paths."""

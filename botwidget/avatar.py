@@ -86,6 +86,9 @@ SILHOUETTES = {
     "goutte": (0.6151, 0.6442, 0.6737, 0.7041, 0.7351, 0.7658, 0.7954, 0.8249, 0.8515, 0.8773, 0.8995, 0.9201, 0.9363, 0.9499, 0.9596, 0.9653, 0.9679, 0.9653, 0.9596, 0.9499, 0.9363, 0.9201, 0.8995, 0.8773, 0.8515, 0.8249, 0.7954, 0.7658, 0.7351, 0.7041, 0.6737, 0.6442, 0.6151, 0.5879, 0.5661, 0.551, 0.5418, 0.5379, 0.5393, 0.5459, 0.5582, 0.5766, 0.6024, 0.637, 0.6827, 0.7433, 0.8244, 0.9354, 1.04, 0.9354, 0.8244, 0.7433, 0.6827, 0.637, 0.6024, 0.5766, 0.5582, 0.5459, 0.5393, 0.5379, 0.5418, 0.551, 0.5661, 0.5879),
 }
 SUPPORTED_SHAPES = ("cercle", "galet", "squircle", "capsule", "triangle", "hexagone", "nuage")
+# OpenBot's bloub list, in its order. The seed indexes this, not only the shapes we draw:
+# carre, losange and pentagone are on it, and goutte is the one OpenBot itself replaces.
+SHAPE_IDS = SUPPORTED_SHAPES + ("goutte", "carre", "losange", "pentagone")
 # Grok Bot draws a bot's own face from an avatar shape and colour of its own: its colour names are
 # not OpenBot's, and these shapes come from its avatar art instead of a seed.
 GROK_HEX = {"black": "#000000", "brown": "#936439", "red": "#ff263c", "orange": "#ff6700",
@@ -168,8 +171,7 @@ def avatar_profile(seed: str, hue: float | None, avatar: dict | None = None) -> 
     because the widget should show the same face as Grok Bot itself.
     """
     seed = seed or "agent"
-    shapes = list(SILHOUETTES)
-    shape = shapes[stable_index(f"{seed}:shape", len(shapes))]
+    shape = SHAPE_IDS[stable_index(f"{seed}:shape", len(SHAPE_IDS))]
     if shape not in SUPPORTED_SHAPES:
         shape = SUPPORTED_SHAPES[stable_index(f"{seed}:shape:replacement", len(SUPPORTED_SHAPES))]
     names = list(EXPRESSIONS)
