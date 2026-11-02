@@ -12,6 +12,7 @@ uv tool install git+https://github.com/Menziess/bot-widget
 
 uv is for the command line and for development. On Linux the face stays tied to that terminal, so closing the terminal quits the face. For a start from the app menu, use the Linux tar and `install.sh`. That command is `bot-widget`. To leave the terminal and keep the face: `nohup botwidget >/dev/null 2>&1 &`.
 
+- On a Mac with Apple Silicon, `curl -fsSL https://bot-widget.com/install.sh | sh` puts the app in `~/Applications` and opens it. A download from Terminal is not quarantined, so macOS does not show its warning for apps that are not notarized. The script is `packaging/install-macos.sh`: it checks the download against the release's SHA256SUMS.txt and the app's signature, and never asks for sudo. `BOTWIDGET_VERSION=0.2.7` installs that version instead of the latest
 - Instead of uv, `pipx install git+https://github.com/Menziess/bot-widget` works the same way
 - Python 3.10 or newer is the only requirement
 - Linux, macOS and Windows use the same code
