@@ -216,11 +216,22 @@ class AvatarProfile(unittest.TestCase):
         self.assertEqual(avatar.stable_index("a", 7), 0xE40C292C % 7)
 
     def test_a_triangle_on_openbots_list_stays_a_triangle(self):
-        """OpenBot indexes eleven silhouettes. The eight we draw turn this seed into a circle."""
+        """OpenBot indexes eleven silhouettes. The eight we used to draw turn this seed into a circle."""
         seed = "agent-86c78b65-d935-46c7-b90f-58baa04ef1b7:face:174"
-        drawn = list(avatar.SILHOUETTES)
-        self.assertEqual(drawn[avatar.stable_index(f"{seed}:shape", len(drawn))], "cercle")
+        old = ("cercle", "galet", "squircle", "capsule", "triangle", "hexagone", "nuage", "goutte")
+        self.assertEqual(old[avatar.stable_index(f"{seed}:shape", len(old))], "cercle")
         self.assertEqual(avatar.avatar_profile(seed, 185)["shape"], "triangle")
+
+    def test_a_square_a_diamond_and_a_pentagon_stay_themselves(self):
+        """OpenBot draws these three. A goutte is still replaced, as OpenBot replaces it."""
+        for shape, seed in (("carre", "shape-2"), ("losange", "shape-4"), ("pentagone", "shape-13")):
+            self.assertEqual(avatar.avatar_profile(seed, None)["shape"], shape)
+        self.assertEqual(avatar.SILHOUETTES["carre"][8], 1.2)
+        self.assertEqual(avatar.SILHOUETTES["losange"][48], 1.14)
+        self.assertEqual(avatar.SILHOUETTES["pentagone"][48], 1.08)
+        self.assertNotEqual(avatar.avatar_profile("shape-10", None)["shape"], "goutte")
+        self.assertEqual(len(avatar.SHAPE_IDS), 11)
+        self.assertNotIn("goutte", avatar.SUPPORTED_SHAPES)
 
 
 def eye_paths(svg: str) -> list:
