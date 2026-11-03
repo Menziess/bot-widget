@@ -3,7 +3,7 @@
 import re
 
 from PySide6.QtCore import QByteArray, QRectF, Qt
-from PySide6.QtGui import QGuiApplication, QImage, QPainter, QPixmap
+from PySide6.QtGui import QBitmap, QGuiApplication, QImage, QPainter, QPixmap, QRegion
 from PySide6.QtSvg import QSvgRenderer
 
 
@@ -34,6 +34,14 @@ def svg_pixmap(svg: str) -> QPixmap:
     pixmap = QPixmap.fromImage(image)
     pixmap.setDevicePixelRatio(ratio)
     return pixmap
+
+
+def hit_region(pixmap: QPixmap, width: int, height: int) -> QRegion:
+    """The painted face, in widget pixels. The square around it does not take clicks."""
+    image = pixmap.toImage().convertToFormat(QImage.Format_ARGB32)
+    if image.width() != width or image.height() != height:
+        image = image.scaled(max(1, width), max(1, height), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+    return QRegion(QBitmap.fromImage(image.createAlphaMask()))
 
 
 def blurred(pixmap: QPixmap, radius: float) -> QPixmap:

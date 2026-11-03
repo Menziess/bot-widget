@@ -7,8 +7,8 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter
+from PySide6.QtCore import QObject, QPoint, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter, QRegion
 from PySide6.QtWidgets import QApplication, QWidget
 
 from botwidget import __version__, acp_bots, acplink, channel, checkout, grokbot, hermesbot, startup, updates
@@ -86,6 +86,17 @@ def arc_progress(elapsed: float, rank: int, step: float = ARC_STEP_S, move: floa
     return min(1.0, local / move)
 
 
+def arc_catcher_region(width: int, height: int, faces: list) -> QRegion:
+    """The opener still feels the pointer. Gaps between the bots do not take clicks."""
+    whole = QRegion(0, 0, width, height)
+    bots = QRegion()
+    for dx, dy, mask in faces:
+        bots = bots.united(mask.translated(int(dx), int(dy)))
+    if bots.isEmpty():
+        return whole
+    return whole.subtracted(QRegion(bots.boundingRect())).united(bots)
+
+
 def bot_source(bot_id: str) -> str:
     """Which app the bot lives in, as the /bots page shows it."""
     if grokbot.is_grok(bot_id):
@@ -138,20 +149,34 @@ class ArcCatcher(QWidget):
         self._drag = None
 
     def _face_at(self, gx, gy):
-        """The bot under this screen point. A guest wins when it sits on a desktop face."""
+        """The bot shape under this screen point. A guest wins when it sits on a desktop face."""
         hit = None
         for face in list(self.faces.faces.values()) + list(self.faces._arc_guests.values()):
             if not face.isVisible():
                 continue
-            if face.x() <= gx <= face.x() + face.width() and face.y() <= gy <= face.y() + face.height():
-                hit = face
+            local = QPoint(int(gx - face.x()), int(gy - face.y()))
+            if not face.rect().contains(local):
+                continue
+            mask = face.mask()
+            if not mask.isEmpty() and not mask.contains(local):
+                continue
+            hit = face
         return hit
 
     def mousePressEvent(self, event):
         # This window covers the arc, so a press on a small bot arrives here.
+        # A press in a gap never arrives: the mask lets it through.
         if event.button() == Qt.LeftButton:
             point = event.globalPosition()
             self._drag = self._face_at(point.x(), point.y())
+        elif event.button() == Qt.RightButton:
+            point = event.globalPosition()
+            face = self._face_at(point.x(), point.y())
+            if face is not None:
+                face.mousePressEvent(event)
+                return
+            super().mousePressEvent(event)
+            return
         if self._drag is not None:
             self._drag.mousePressEvent(event)
             return
@@ -697,6 +722,26 @@ class Faces(QObject):
         """Tell every face on the arc where it is."""
         for face in list(self.faces.values()) + list(self._arc_guests.values()):
             face._set_semicircle(self._semicircle)
+        self._fit_catcher_mask()
+
+    def _fit_catcher_mask(self):
+        """While the arc is up, only the edge and the bots take clicks. Gaps fall through."""
+        catcher = self._catcher
+        if self._semicircle_phase == "idle":
+            if not catcher.mask().isEmpty():
+                catcher.clearMask()
+            return
+        shapes = []
+        ox, oy = catcher.x(), catcher.y()
+        for face in list(self.faces.values()) + list(self._arc_guests.values()):
+            if not face.isVisible():
+                continue
+            mask = face.mask()
+            shape = mask if not mask.isEmpty() else QRegion(face.rect())
+            shapes.append((face.x() - ox, face.y() - oy, shape))
+        region = arc_catcher_region(catcher.width(), catcher.height(), shapes)
+        if region != catcher.mask():
+            catcher.setMask(region)
 
     def _spawn_guest(self, bot: dict):
         avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else _avatar(bot)

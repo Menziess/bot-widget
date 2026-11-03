@@ -65,7 +65,7 @@ from botwidget import attachments, grokbot, hermesbot, menu_pages, power, __vers
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.bubble_window import BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window
 from botwidget.qt_ui.native import native_id, set_flags
-from botwidget.qt_ui.render import svg_pixmap
+from botwidget.qt_ui.render import hit_region, svg_pixmap
 from botwidget.sound import play_sound
 from botwidget.system.current import FACE_IS_TOOL, FOCUS_ON_HOVER, activate_app, send_behind_windows
 from botwidget.theme import BUBBLE_FONT
@@ -346,7 +346,14 @@ class FaceWindow(QWidget):
             if not getattr(self, "_semicircle_raised", False):
                 self._semicircle_raised = True
                 self.raise_()
+        self._mask_arc()
         self.update()
+
+    def _mask_arc(self):
+        """Only the painted bot takes clicks while it sits on the arc. The square around it does not."""
+        pixmap = getattr(self, "_pixmap", None)
+        if pixmap is not None and not pixmap.isNull():
+            self.setMask(hit_region(pixmap, self.width(), self.height()))
 
     def paintEvent(self, _event):
         painter = QPainter(self)
@@ -367,6 +374,8 @@ class FaceWindow(QWidget):
 
     def _set_pixmap(self, pixmap):
         self._pixmap = pixmap
+        if self._semicircle_visible:
+            self._mask_arc()
         self.update()
 
     def spot(self) -> tuple:

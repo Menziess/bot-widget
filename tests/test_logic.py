@@ -388,6 +388,64 @@ class GrokAvatarFallback(unittest.TestCase):
         self.assertFalse(faces._pointer_over_arc(800, 71), "2px deeper than the catch")
         self.assertFalse(faces._pointer_over_arc(800 + 200, 150))
 
+    def test_a_click_between_arc_bots_is_not_on_a_bot(self):
+        """The square around a bot and the gap between two bots are not the bot."""
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        try:
+            from PySide6.QtCore import QPoint, QRect, Qt
+            from PySide6.QtGui import QColor, QImage, QPainter, QPixmap, QRegion
+            from PySide6.QtWidgets import QApplication
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        from types import SimpleNamespace
+        from botwidget.qt_ui.faces import ArcCatcher
+        from botwidget.qt_ui.render import hit_region
+        app = QApplication.instance() or QApplication([])
+        image = QImage(20, 20, QImage.Format_ARGB32)
+        image.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(image)
+        painter.setBrush(QColor(0, 0, 0, 255))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(4, 4, 12, 12)
+        painter.end()
+        region = hit_region(QPixmap.fromImage(image), 20, 20)
+        self.assertTrue(region.contains(QPoint(10, 10)))
+        self.assertFalse(region.contains(QPoint(0, 0)))
+
+        class Spot:
+            def __init__(self, x, y):
+                self._at, self._mask = (x, y), QRegion(0, 0, 48, 48, QRegion.Ellipse)
+            def isVisible(self):
+                return True
+            def x(self):
+                return self._at[0]
+            def y(self):
+                return self._at[1]
+            def width(self):
+                return 48
+            def height(self):
+                return 48
+            def rect(self):
+                return QRect(0, 0, 48, 48)
+            def mask(self):
+                return self._mask
+
+        left, right = Spot(0, 0), Spot(70, 0)
+        catcher = ArcCatcher(SimpleNamespace(faces={"desk": left}, _arc_guests={"guest": right}))
+        self.addCleanup(catcher.deleteLater)
+        self.assertIs(catcher._face_at(24, 24), left)
+        self.assertIsNone(catcher._face_at(1, 1), "the corner of the square is not the bot")
+        self.assertIsNone(catcher._face_at(60, 24), "the gap between two bots is not a bot")
+        from botwidget.qt_ui.faces import arc_catcher_region
+        opened = arc_catcher_region(200, 70, [
+            (16, 47, QRegion(0, 0, 48, 48, QRegion.Ellipse)),
+            (136, 47, QRegion(0, 0, 48, 48, QRegion.Ellipse)),
+        ])
+        self.assertTrue(opened.contains(QPoint(100, 10)), "the opener above the bots still feels the pointer")
+        self.assertTrue(opened.contains(QPoint(40, 71)), "a bot keeps its own clicks")
+        self.assertFalse(opened.contains(QPoint(100, 60)), "the gap between the bots falls through")
+        self.assertIsNotNone(app)
+
     def test_a_bot_of_the_arc_let_go_inside_the_arc_glides_back_to_its_slot(self):
         """Dragging a hidden bot around inside the arc and letting go: it snaps back like a drag-in does."""
         from unittest import mock
