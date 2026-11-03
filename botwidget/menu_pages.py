@@ -76,7 +76,8 @@ def _command(label: str, command: str) -> tuple:
 
 def _heading(title: str) -> dict:
     # On the heading, so it is on screen when the page opens. The line above it fades away.
-    return _row((title, "b"), ("  ‹ Chat", "cmd:page/chat"))
+    # The no-break space keeps "‹ Chat" one link when a wide font wraps the heading.
+    return _row((title, "b"), ("  ‹\u00a0Chat", "cmd:page/chat"))
 
 
 def _back_hint() -> dict:

@@ -150,13 +150,31 @@ class SettingsInTheChatWindow(unittest.TestCase):
 
     def _chat_anchor(self):
         """The heading link back to the chat, or None when the page has none."""
-        cursor = self.bubble._doc.document().find("‹ Chat")
-        if cursor.isNull():
-            return None
-        fmt = cursor.charFormat()
-        if not fmt.isAnchor() or "page/chat" not in fmt.anchorHref():
-            return None
-        return cursor
+        from PySide6.QtGui import QTextCursor
+        doc = self.bubble._doc.document()
+        block = doc.begin()
+        while block.isValid():
+            it = block.begin()
+            while not it.atEnd():
+                frag = it.fragment()
+                fmt = frag.charFormat()
+                if fmt.isAnchor() and "page/chat" in fmt.anchorHref():
+                    cursor = QTextCursor(doc)
+                    cursor.setPosition(frag.position())
+                    cursor.setPosition(frag.position() + frag.length(), QTextCursor.KeepAnchor)
+                    return cursor
+                it += 1
+            block = block.next()
+        return None
+
+    def _anchor_rect(self, cursor):
+        """The link's glyphs. A caret at either end sits on the boundary and can miss the anchor."""
+        from PySide6.QtGui import QTextCursor
+        doc = self.bubble._doc.document()
+        start, end = QTextCursor(doc), QTextCursor(doc)
+        start.setPosition(cursor.selectionStart())
+        end.setPosition(cursor.selectionEnd())
+        return self.bubble._doc.cursorRect(start).united(self.bubble._doc.cursorRect(end))
 
     def _top_line_alpha(self):
         image = self.bubble._text.pixmap().toImage()
@@ -169,11 +187,12 @@ class SettingsInTheChatWindow(unittest.TestCase):
     def _assert_back_control_visible(self):
         cursor = self._chat_anchor()
         self.assertIsNotNone(cursor, "no back-to-chat link in the rendered page")
+        self.assertEqual(cursor.selectedText().replace("\u00a0", " "), "‹ Chat")
         self.assertIn("‹ Chat goes back to the chat.", self.bubble.full_text)
         self.assertEqual(self.bubble._scroll.verticalScrollBar().value(), 0)
         self.assertEqual(self.bubble._geom[0][0].get("back"), "page/commands")
         self.assertEqual(self._top_line_alpha(), 0, "the fading line is not the back control")
-        rect = self.bubble._doc.cursorRect(cursor)
+        rect = self._anchor_rect(cursor)
         origin = self.bubble._doc.viewport().mapTo(self.bubble._scroll.viewport(), rect.center())
         view = self.bubble._scroll.viewport().rect()
         self.assertGreater(rect.height(), 0)
@@ -185,7 +204,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
         from PySide6.QtTest import QTest
         cursor = self._chat_anchor()
         self.assertIsNotNone(cursor, "no back-to-chat link in the rendered page")
-        point = self.bubble._doc.cursorRect(cursor).center()
+        point = self._anchor_rect(cursor).center()
         # The click is inside the bubble, so the field is wanted the way a real pointer would make it.
         self.bubble.pointer_over = lambda: True
         self.window.pointer_over = lambda: True

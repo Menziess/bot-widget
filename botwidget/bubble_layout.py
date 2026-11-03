@@ -24,6 +24,9 @@ from botwidget.theme import (
     TABLE_GAP,
 )
 
+# A no-break space stays in the word, so a short link can keep its space and still wrap whole.
+_BREAK_SPACE = re.compile(r"([^\S\u00a0]+)")
+
 
 def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
     """Markdown to broken lines.
@@ -56,7 +59,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
         nonlocal widest
         tokens, space = [], True
         for chunk, style in block["chunks"]:
-            for piece in re.split(r"(\s+)", chunk):
+            for piece in _BREAK_SPACE.split(chunk):
                 if piece == "":
                     continue
                 if piece.isspace():
@@ -118,7 +121,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
         """The pieces of a cell broken into lines that fit: at spaces, and inside a word that is too long alone."""
         lines, cur = [], []
         for text, style in pieces:
-            for part in re.split(r"(\s+)", text):
+            for part in _BREAK_SPACE.split(text):
                 for chunk in ([part] if part.isspace() or width([(part, style)], size) <= room else part):
                     if not chunk:
                         continue
