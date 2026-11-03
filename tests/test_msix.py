@@ -1,5 +1,6 @@
 """Tests for packaging/msix.py and packaging/build.py --msix."""
 
+import io
 import json
 import os
 import shutil
@@ -138,6 +139,87 @@ class TestIsPlaceholder(unittest.TestCase):
                    "publisher": "CN=12345678-1234-1234-1234-123456789012",
                    "publisher_display_name": "MyCorp"}
         self.assertFalse(msix.is_placeholder(config))
+
+
+_REAL_IDENTITY = {
+    "MSIX_IDENTITY_NAME": "MyCorp.BotWidget",
+    "MSIX_PUBLISHER": "CN=12345678-1234-1234-1234-123456789012",
+    "MSIX_PUBLISHER_DISPLAY_NAME": "MyCorp",
+}
+
+
+class TestIdentityConfigured(unittest.TestCase):
+    def test_missing_all(self):
+        """Should be false when none of the identity variables are set."""
+        self.assertFalse(msix.identity_configured({}))
+
+    def test_missing_one(self):
+        """Should be false when any one identity variable is missing."""
+        env = dict(_REAL_IDENTITY)
+        del env["MSIX_PUBLISHER"]
+        self.assertFalse(msix.identity_configured(env))
+
+    def test_empty_string(self):
+        """Should be false when an identity variable is empty."""
+        env = dict(_REAL_IDENTITY)
+        env["MSIX_PUBLISHER_DISPLAY_NAME"] = ""
+        self.assertFalse(msix.identity_configured(env))
+
+    def test_all_set(self):
+        """Should be true when all three identity variables are set."""
+        self.assertTrue(msix.identity_configured(_REAL_IDENTITY))
+
+
+class TestMainIdentityGate(unittest.TestCase):
+    def test_skips_and_warns_when_missing(self):
+        """Should skip the package and emit a workflow warning when identity variables are missing."""
+        with unittest.mock.patch.object(msix, "stage") as stage, \
+             unittest.mock.patch.object(msix, "pack") as pack, \
+             unittest.mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            built = msix.main(["app", "out.msix"], environ={})
+        self.assertFalse(built)
+        stage.assert_not_called()
+        pack.assert_not_called()
+        text = out.getvalue()
+        self.assertIn("::warning::MSIX skipped:", text)
+        for key in _REAL_IDENTITY:
+            self.assertIn(key, text)
+        # One line, so Actions treats it as a single warning annotation.
+        self.assertEqual(text.count("\n"), 1)
+        self.assertTrue(text.startswith("::warning::"))
+
+    def test_builds_when_identity_set(self):
+        """Should build when the three identity variables are set."""
+        with unittest.mock.patch.object(msix, "stage") as stage, \
+             unittest.mock.patch.object(msix, "pack") as pack, \
+             unittest.mock.patch.object(msix, "_get_version", return_value="0.1.1"), \
+             unittest.mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            built = msix.main(["app", "out.msix"], environ=dict(_REAL_IDENTITY))
+        self.assertTrue(built)
+        stage.assert_called_once()
+        pack.assert_called_once()
+        self.assertEqual(stage.call_args.args[2]["identity_name"], "MyCorp.BotWidget")
+        self.assertEqual(stage.call_args.args[2]["publisher"], _REAL_IDENTITY["MSIX_PUBLISHER"])
+        self.assertIn("Built out.msix", out.getvalue())
+        self.assertNotIn("::warning::", out.getvalue())
+
+    def test_builds_when_set_values_are_placeholders(self):
+        """Should still build when the variables are set, even if the values are placeholders."""
+        env = {
+            "MSIX_IDENTITY_NAME": "PLACEHOLDER.BotWidget",
+            "MSIX_PUBLISHER": "CN=00000000-0000-0000-0000-000000000000",
+            "MSIX_PUBLISHER_DISPLAY_NAME": "PLACEHOLDER",
+        }
+        with unittest.mock.patch.object(msix, "stage") as stage, \
+             unittest.mock.patch.object(msix, "pack") as pack, \
+             unittest.mock.patch.object(msix, "_get_version", return_value="0.1.1"), \
+             unittest.mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            built = msix.main(["app", "out.msix"], environ=env)
+        self.assertTrue(built)
+        stage.assert_called_once()
+        pack.assert_called_once()
+        self.assertNotIn("::warning::", out.getvalue())
+        self.assertIn("WARNING: identity placeholders detected", out.getvalue())
 
 
 class TestMsixVersion(unittest.TestCase):

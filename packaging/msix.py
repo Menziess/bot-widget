@@ -87,6 +87,19 @@ def load_config(path=None, environ=None) -> dict:
     return config
 
 
+def identity_configured(environ=None) -> bool:
+    """True when all three Partner Center identity variables are non-empty."""
+    env = environ if environ is not None else os.environ
+    return all(
+        env.get(key)
+        for key in (
+            "MSIX_IDENTITY_NAME",
+            "MSIX_PUBLISHER",
+            "MSIX_PUBLISHER_DISPLAY_NAME",
+        )
+    )
+
+
 def is_placeholder(config: dict) -> bool:
     """True when identity_name or publisher_display_name contains PLACEHOLDER
     or publisher is the all-zero GUID CN."""
@@ -313,8 +326,9 @@ def pack(staging: str, out_path: str) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None, environ=None) -> bool:
     args = (argv if argv is not None else sys.argv[1:])
+    env = environ if environ is not None else os.environ
 
     # Resolve paths relative to the repo root (parent of packaging/).
     _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -322,7 +336,15 @@ def main(argv: list[str] | None = None) -> None:
     out_path = args[1] if len(args) > 1 else os.path.join(_repo_root, "dist", "BotWidget-Windows.msix")
     staging = os.path.join(_repo_root, "build", "msix")
 
-    config = load_config()
+    # A release without Partner Center identity still ships the other installers.
+    if not identity_configured(env):
+        print(
+            "::warning::MSIX skipped: set repo variables MSIX_IDENTITY_NAME, "
+            "MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME from Partner Center > Product identity"
+        )
+        return False
+
+    config = load_config(environ=env)
     version = _get_version()
 
     if is_placeholder(config):
@@ -336,6 +358,7 @@ def main(argv: list[str] | None = None) -> None:
     pack(staging, out_path)
 
     print("Built", out_path)
+    return True
 
 
 def _get_version() -> str:

@@ -217,7 +217,7 @@ jobs:
           if ($status -ne 'Valid') { Write-Output "installer signature: $status"; exit 1 }
 
       # MSIX package: built after the installer so the app folder already exists.
-      # The identity vars come from repo settings; without them a placeholder warning prints.
+      # Missing identity variables skip this asset with a ::warning::; the other installers still ship.
       - name: MSIX package
         if: runner.os == 'Windows'
         shell: pwsh
@@ -239,7 +239,7 @@ jobs:
         with:
           name: BotWidget-Windows.msix
           path: dist/BotWidget-Windows.msix
-          if-no-files-found: error
+          if-no-files-found: ignore  # skipped when the identity variables are not set
 
   publish:
     needs: build
@@ -259,7 +259,7 @@ jobs:
           tag = os.environ["GITHUB_REF_NAME"]
           if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
               sys.exit(f"tag {tag} is not vX.Y.Z")
-          names = ["BotWidget-macOS.zip", "BotWidget-Windows-Setup.exe", "BotWidget-Windows.msix", "BotWidget-Linux.tar.gz"]
+          names = ["BotWidget-macOS.zip", "BotWidget-Windows-Setup.exe", "BotWidget-Linux.tar.gz"]
           missing = [n for n in names if not os.path.isfile(os.path.join("artifacts", n))]
           if missing:
               sys.exit(f"missing builds: {missing}")
@@ -267,26 +267,31 @@ jobs:
               plist = plistlib.loads(z.read("Bot Widget.app/Contents/Info.plist"))
           if plist.get("CFBundleShortVersionString") != tag[1:]:
               sys.exit(f"tag {tag} but the macOS app says {plist.get('CFBundleShortVersionString')}")
-          # MSIX: parse AppxManifest.xml from the .msix (a ZIP) and check Identity Version.
-          with zipfile.ZipFile("artifacts/BotWidget-Windows.msix") as z:
-              manifest = z.read("AppxManifest.xml")
-          root = ET.fromstring(manifest)
-          identity = root.find(
-              "{http://schemas.microsoft.com/appx/manifest/foundation/windows10}Identity"
-          )
-          name = identity.get("Name", "")
-          publisher = identity.get("Publisher", "")
-          msix_ver = identity.get("Version", "")
-          expected = f"{tag[1:]}.0"
-          if msix_ver != expected:
-              sys.exit(f"tag {tag} but MSIX Identity Version is {msix_ver} (expected {expected})")
-          # Reject placeholder identities.
-          ns = "http://schemas.microsoft.com/appx/manifest/foundation/windows10"
-          props = root.find(f"{{{ns}}}Properties")
-          pdn = props.find(f"{{{ns}}}PublisherDisplayName").text if props is not None else ""
-          if "PLACEHOLDER" in name or "PLACEHOLDER" in pdn or publisher == "CN=00000000-0000-0000-0000-000000000000":
-              sys.exit("MSIX identity is still the placeholder: set repo variables MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME from Partner Center > Product identity")
-          print(f"{tag}: all builds present, macOS app version and MSIX identity match")
+          # MSIX is optional: without the identity variables the Windows job skips it.
+          msix_path = os.path.join("artifacts", "BotWidget-Windows.msix")
+          if not os.path.isfile(msix_path):
+              print("::warning::MSIX skipped: set repo variables MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME from Partner Center > Product identity")
+              print(f"{tag}: installers present, macOS app version matches, MSIX skipped")
+          else:
+              with zipfile.ZipFile(msix_path) as z:
+                  manifest = z.read("AppxManifest.xml")
+              root = ET.fromstring(manifest)
+              identity = root.find(
+                  "{http://schemas.microsoft.com/appx/manifest/foundation/windows10}Identity"
+              )
+              name = identity.get("Name", "")
+              publisher = identity.get("Publisher", "")
+              msix_ver = identity.get("Version", "")
+              expected = f"{tag[1:]}.0"
+              if msix_ver != expected:
+                  sys.exit(f"tag {tag} but MSIX Identity Version is {msix_ver} (expected {expected})")
+              # Reject placeholder identities when a package was actually built.
+              ns = "http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+              props = root.find(f"{{{ns}}}Properties")
+              pdn = props.find(f"{{{ns}}}PublisherDisplayName").text if props is not None else ""
+              if "PLACEHOLDER" in name or "PLACEHOLDER" in pdn or publisher == "CN=00000000-0000-0000-0000-000000000000":
+                  sys.exit("MSIX identity is still the placeholder: set repo variables MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME from Partner Center > Product identity")
+              print(f"{tag}: all builds present, macOS app version and MSIX identity match")
       # The widget checks every downloaded file against this before installing it.
       - name: Checksums
         run: cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt

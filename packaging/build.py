@@ -213,8 +213,8 @@ def main():
         sys.path.insert(0, os.path.join(ROOT, "packaging"))
         import msix as msix_mod
         msix_path = os.path.join(DIST, "BotWidget-Windows.msix")
-        msix_mod.main([app_folder, msix_path])
-        print("Built", msix_path)
+        if msix_mod.main([app_folder, msix_path]):
+            print("Built", msix_path)
         return
     if args and args != ["--bundle"]:
         sys.exit("usage: build.py [--bundle | --uninstaller DIR | --installer DIR | --msix]")
