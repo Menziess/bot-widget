@@ -62,3 +62,62 @@ jobs:
           HOME="$home" BOTWIDGET_NO_OPEN=1 BOTWIDGET_VERSION="$version" sh packaging/install-macos.sh
           test -d "$home/Applications/Bot Widget.app"
           codesign --verify --deep --strict "$home/Applications/Bot Widget.app"
+
+  msix:
+    runs-on: windows-latest
+    env:
+      MSIX_IDENTITY_NAME: "test.BotWidget"
+      MSIX_PUBLISHER: "CN=00000000-0000-0000-0000-000000000000"
+      MSIX_PUBLISHER_DISPLAY_NAME: "Test"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: python -m pip install -e . pyinstaller
+
+      - name: Build MSIX
+        run: python packaging/build.py --msix
+
+      - name: Unpack the MSIX
+        shell: pwsh
+        run: |
+          $makeappx = python -c "import sys; sys.path.insert(0, 'packaging'); import msix; print(msix.find_makeappx() or '')"
+          if (-not $makeappx) { Write-Output "makeappx not found"; exit 1 }
+          & $makeappx unpack /p dist/BotWidget-Windows.msix /d "$env:RUNNER_TEMP/unpacked" /o
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Check the unpacked MSIX
+        shell: python
+        run: |
+          import os, re, sys
+          sys.path.insert(0, "packaging")
+          import msix, xml.etree.ElementTree as ET
+          folder = os.path.join(os.environ["RUNNER_TEMP"], "unpacked")
+          manifest = os.path.join(folder, "AppxManifest.xml")
+          assert os.path.isfile(manifest), "AppxManifest.xml missing"
+          root = ET.parse(manifest).getroot()
+          assert root.tag.endswith("}Package"), f"bad root: {root.tag}"
+          identity = root.find(
+              "{http://schemas.microsoft.com/appx/manifest/foundation/windows10}Identity"
+          )
+          ver = identity.get("Version", "")
+          assert re.fullmatch(r"\d+\.\d+\.\d+\.\d+", ver), f"bad version: {ver}"
+          assert ver.endswith(".0"), f"version must end in .0: {ver}"
+          assets = os.path.join(folder, "Assets")
+          for key in msix.ASSETS:
+              assert os.path.isdir(assets), "Assets folder missing"
+              assert os.path.isfile(os.path.join(assets, key)), f"Asset missing: {key}"
+          exe = os.path.join(folder, "Bot Widget.exe")
+          assert os.path.isfile(exe), "Bot Widget.exe missing"
+          print("MSIX unpacked and checked")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BotWidget-Windows.msix
+          path: dist/BotWidget-Windows.msix
+          if-no-files-found: error
