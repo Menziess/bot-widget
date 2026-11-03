@@ -12,7 +12,7 @@ import time
 import uuid
 
 from PySide6.QtCore import QEasingCurve, QPoint, Qt, QTimer, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter
+from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QPainter
 from PySide6.QtWidgets import QWidget
 
 from botwidget.animation import IDLE_MS, FaceAnimator, frame_ms
@@ -63,11 +63,12 @@ from botwidget.openbot import (
 from botwidget import attachments, grokbot, hermesbot, menu_pages, power, __version__
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.bubble_window import BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window
-from botwidget.qt_ui.native import native_id, set_flags
+from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
 from botwidget.qt_ui.render import svg_pixmap
+from botwidget.qt_ui.text_doc import color
 from botwidget.sound import play_sound
 from botwidget.system.current import FACE_IS_TOOL, FOCUS_ON_HOVER, activate_app, send_behind_windows
-from botwidget.theme import BUBBLE_FONT
+from botwidget.theme import BUBBLE_FONT, SAND_INK_SOFT, SAND_SANS
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
@@ -95,6 +96,62 @@ DRAG_RESIZE_MS = 160
 DRAG_RESTACK_S = 0.25
 # How long the line on how a /refresh went stays under the chat.
 REFRESH_NOTE_S = 8.0
+THINKING_TEXT = "Thinking"
+THINKING_FONT = 11  # quieter than the bubble's 15
+
+
+class ThinkingRow(QWidget):
+    """'Thinking' under one face while that bot works.
+
+    A separate tool window, because the face is a fixed square the body almost fills: drawing the
+    line in it would cover the face or change its size. Clicks pass through.
+    """
+
+    def __init__(self, face):
+        super().__init__(face)
+        self.face = face
+        self._apply_flags()
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
+        font = QFont(SAND_SANS)
+        font.setPixelSize(THINKING_FONT)
+        self.setFont(font)
+        self._ink = color(SAND_INK_SOFT)
+        metrics = QFontMetrics(font)
+        self.setFixedSize(metrics.horizontalAdvance(THINKING_TEXT) + 2, metrics.height())
+
+    def text(self) -> str:
+        return THINKING_TEXT
+
+    def _apply_flags(self):
+        layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
+        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.WindowTransparentForInput
+                  | Qt.WindowDoesNotAcceptFocus)
+
+    def restack(self):
+        shown = self.isVisible()
+        self._apply_flags()
+        if shown:
+            self.show()
+
+    def setVisible(self, visible: bool):
+        if visible:
+            mark_before_show(self)
+        super().setVisible(visible)
+        if not visible:
+            drop_hidden(self)
+
+    def place(self):
+        face = self.face
+        self.move(face.x() + (face.width() - self.width()) // 2, face.y() + face.height())
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setPen(self._ink)
+        painter.setFont(self.font())
+        painter.drawText(self.rect(), Qt.AlignHCenter | Qt.AlignVCenter, THINKING_TEXT)
 
 
 def global_pointer() -> bool:
@@ -230,6 +287,7 @@ class FaceWindow(QWidget):
         self.bubble.older.connect(self.show_older)
         self.bubble.edit_queued.connect(self._edit_queued)
         self.bubble.command.connect(self._menu_command)
+        self._thinking = ThinkingRow(self)
 
         if spot:
             self.move(int(spot[0]), int(spot[1]))
@@ -268,6 +326,7 @@ class FaceWindow(QWidget):
         self._apply_flags()
         self.show()
         self.bubble.restack()
+        self._thinking.restack()
 
     def setVisible(self, visible: bool):
         if visible:
@@ -285,12 +344,15 @@ class FaceWindow(QWidget):
         self.apply_desktops()
         if self.faces is not None:
             self.faces.raise_bubbles()
+        self._place_thinking()
 
     def bring_here(self) -> bool:
         """The face, and the bubble if it is open, to the desktop you are on; True when the face moved."""
         moved = desktops.bring_here(self)
         if self.bubble.isVisible():
             desktops.bring_here(self.bubble)
+        if self._thinking.isVisible():
+            desktops.bring_here(self._thinking)
         return moved
 
     def apply_desktops(self):
@@ -298,6 +360,8 @@ class FaceWindow(QWidget):
         desktops.apply(self)
         if self.bubble.isVisible():
             desktops.apply(self.bubble)
+        if getattr(self, "_thinking", None) is not None and self._thinking.isVisible():
+            desktops.apply(self._thinking)
 
     def _set_semicircle(self, semicircle: dict):
         """Park this face on the arc, or send it home when the arc is gone.
@@ -366,6 +430,31 @@ class FaceWindow(QWidget):
 
     def spot(self) -> tuple:
         return self.x(), self.y()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._place_thinking()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_thinking()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._place_thinking()
+
+    def _place_thinking(self):
+        """The line sits under this face while it works, and is gone otherwise. The face does not move for it."""
+        row = getattr(self, "_thinking", None)
+        if row is None:
+            return
+        if self._working and self.isVisible():
+            row.place()
+            if not row.isVisible():
+                row.show()
+                desktops.apply(row)
+        elif row.isVisible():
+            row.hide()
 
     def _position_bottom_right(self, slot: int = 0):
         x, y, w, h = screens.rects()[0]
@@ -1023,6 +1112,9 @@ class FaceWindow(QWidget):
         self._poll_timer.stop()
         glass.clear(self.bubble)
         self.bubble.close()
+        row = getattr(self, "_thinking", None)
+        if row is not None:
+            row.close()
         self.close()
 
     # ── Polling ─────────────────────────────────────────────────
@@ -1168,6 +1260,7 @@ class FaceWindow(QWidget):
         """Cloud during a running turn, the conversation as long as the bubble is pinned or fresh."""
         self._working = bool(chat.get("activity")) or self._has_attention()
         self._waiting = bool(chat.get("waiting"))
+        self._place_thinking()
         if not (self._working or self._waiting):
             self._answer_view = False
         # OpenBot: the last turn failed (a spent provider, say). The face shows it like Grok Bot offline.

@@ -5144,7 +5144,7 @@ class NoTaskbarButton(unittest.TestCase):
             windows.hide_from_taskbar(0x1234)  # no user32 here: nothing happens, nothing breaks
 
     def test_every_top_level_widget_window_skips_the_taskbar(self):
-        """Faces, bubbles, the arc catcher and the thinking chain never get a dock or taskbar button."""
+        """Faces, bubbles, the arc catcher, the thinking chain and the Thinking row never get a dock or taskbar button."""
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QApplication
@@ -5162,7 +5162,7 @@ class NoTaskbarButton(unittest.TestCase):
         self.addCleanup(catcher.deleteLater)
         trail = Trail(window.bubble)
         self.addCleanup(trail.deleteLater)
-        for widget in (window, window.bubble, catcher, trail):
+        for widget in (window, window.bubble, catcher, trail, window._thinking):
             self.assertTrue(widget.windowFlags() & Qt.Tool, type(widget).__name__)
         window.restack()
         self.assertTrue(window.windowFlags() & Qt.Tool, "still a tool window after always-on-top switched")

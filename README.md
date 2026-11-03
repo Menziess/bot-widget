@@ -49,6 +49,7 @@ botwidget
 - Every face is drawn as a 3D body, built the way Grok Bot builds its avatars (extruded, turned on a lathe, lofted or rounded), so when it turns, its outline and shading turn with it, and its eyes lie on its surface, so they curve and get narrower towards the edge.
 - Idle is calm: the face holds still and only now and then, after a random 8 to 30 seconds, blinks or looks around. When something happens it plays one of Grok Bot's own clips: a nod when your message goes out, an inspecting look while the bot thinks, a happy hop on the reply, surprise at a message nobody asked for, a sad face when a message is refused, confused and then sleepy when there is no route, and a bounce when you click it. While it holds still it draws only ten frames a second.
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
+- While a bot is working, a small muted line under its face says Thinking, also when its thinking cloud is muted
 - A message you send shows a small cloud with dots at once. Pointing at the face or the cloud opens the thought with the field; moving away shrinks it back to the dots, which go by themselves after a few seconds
 - Right after you send, the cloud shows only its dots, with no field, even when the pointer is still on it; the thought and the field open when you leave the cloud and point at it again, or click the face
 - Dots and thought, and chat and cloud, replace each other with a fade instead of growing into each other; a thought is read from the top while the cloud grows
