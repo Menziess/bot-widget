@@ -1,10 +1,11 @@
 """Builds the app for this operating system and packages it for download.
 
-Usage: python packaging/build.py
+Usage: python packaging/build.py [--bundle | --msix]
 Result in dist/:
   macOS    BotWidget-macOS.zip          (Bot Widget.app, findable via Spotlight)
   Windows  BotWidget-Windows-Setup.exe  (Start menu entry; zip if Inno Setup is missing)
   Linux    BotWidget-Linux.tar.gz       (with install.sh for a menu entry)
+  Store    BotWidget-Windows.msix       (unsigned MSIX for Microsoft Store upload)
 
 Signing only happens when the secrets are in the environment:
   macOS    MACOS_SIGN_IDENTITY, plus APPLE_ID, APPLE_TEAM_ID and APPLE_APP_PASSWORD for notarization
@@ -15,6 +16,7 @@ Windows with SignPath (release.yml runs these in turn, signing in between):
   python packaging/build.py --bundle               the app folder only, nothing signed or packaged
   python packaging/build.py --uninstaller DIR      Inno's uninstaller to sign, as DIR/uninst-*.e32
   python packaging/build.py --installer DIR        the installer from the (signed) folder and uninstaller
+  python packaging/build.py --msix                 produce an unsigned MSIX from the PyInstaller folder
 """
 
 import glob
@@ -203,8 +205,19 @@ def main():
         package = windows_installer(args[1])
         print("Built", package, f"({os.path.getsize(package) / 1e6:.0f} MB)")
         return
+    if args[:1] == ["--msix"]:
+        app_folder = os.path.join(DIST, NAME)
+        if not os.path.isdir(app_folder):
+            bundle(icons())
+        # Use packaging/msix.py logic
+        sys.path.insert(0, os.path.join(ROOT, "packaging"))
+        import msix as msix_mod
+        msix_path = os.path.join(DIST, "BotWidget-Windows.msix")
+        msix_mod.main([app_folder, msix_path])
+        print("Built", msix_path)
+        return
     if args and args != ["--bundle"]:
-        sys.exit("usage: build.py [--bundle | --uninstaller DIR | --installer DIR]")
+        sys.exit("usage: build.py [--bundle | --uninstaller DIR | --installer DIR | --msix]")
     shutil.rmtree(DIST, ignore_errors=True)
     bundle(icons())
     if args == ["--bundle"]:

@@ -191,6 +191,33 @@ Bot Widget is applying to SignPath Foundation for free code signing of open-sour
 - Only our own binaries are signed. Files from other projects (Python, Qt) keep the signature they come with
 - Every signing request is approved by hand in SignPath before the release goes out
 
+### Microsoft Store (MSIX)
+
+An unsigned MSIX package can be built with:
+
+```sh
+python packaging/build.py --msix
+```
+
+It reads `packaging/msix.json` (identity, publisher, version) and produces
+`dist/BotWidget-Windows.msix` from the PyInstaller app folder. The Microsoft
+Store signs the package, so this is unsigned and ready for upload to Partner
+Center.
+
+Before building, set three repository variables (Settings > Secrets and
+variables > Actions > Variables) from Partner Center > Product identity:
+
+- `MSIX_IDENTITY_NAME` – e.g. `MyCorp.BotWidget`
+- `MSIX_PUBLISHER` – e.g. `CN=xxxxxxxx-...`
+- `MSIX_PUBLISHER_DISPLAY_NAME` – e.g. `MyCorp`
+
+The release workflow builds the MSIX on tag pushes and publishes
+`dist/BotWidget-Windows.msix` as the `BotWidget-Windows.msix` artifact.
+Upload it in Partner Center as a new submission.
+
+The website keeps distributing the Inno Setup installer (or zip if Inno is
+missing) for direct download; the MSIX is a Store-only channel.
+
 ### Windows Authenticode (SmartScreen)
 
 Unsigned Windows builds show SmartScreen. There is no code bypass; a signed installer earns reputation over time.

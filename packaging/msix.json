@@ -1,0 +1,9 @@
+{
+    "identity_name": "PLACEHOLDER.BotWidget",
+    "publisher": "CN=00000000-0000-0000-0000-000000000000",
+    "publisher_display_name": "PLACEHOLDER",
+    "display_name": "Bot Widget",
+    "description": "Animated bot faces on your desktop",
+    "min_version": "10.0.17763.0",
+    "max_version_tested": "10.0.22621.0"
+}
