@@ -48,6 +48,9 @@ class SettingsInTheChatWindow(unittest.TestCase):
         stack.enter_context(mock.patch(
             "botwidget.qt_ui.face.latest_chat",
             side_effect=lambda thread_id="", limit=20: self.chat))
+        # The chat is hidden until one of these is true. CI has neither app installed.
+        stack.enter_context(mock.patch("botwidget.qt_ui.face.openbot_installed", return_value=True))
+        stack.enter_context(mock.patch("botwidget.qt_ui.face.gbot_installed", return_value=True))
         self.faces = self.Faces()
         self.window = self.faces.faces["home"]
         self.window._poll_timer.stop()
