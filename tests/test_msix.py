@@ -7,11 +7,13 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import xml.etree.ElementTree as ET
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "packaging"))
 
-from packaging import build, msix
+import build
+import msix
 
 # Namespace URIs used in the manifest
 _NS = {
@@ -410,6 +412,7 @@ class TestStage(unittest.TestCase):
 
 
 class TestFindMakeappx(unittest.TestCase):
+    @unittest.skipIf(sys.platform == "win32", "the Windows SDK may provide makeappx")
     def test_returns_none_on_linux(self):
         self.assertIsNone(msix.find_makeappx())
 
