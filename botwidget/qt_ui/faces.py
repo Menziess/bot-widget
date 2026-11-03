@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter
 from PySide6.QtWidgets import QApplication, QWidget
 
@@ -174,10 +174,8 @@ class ArcCatcher(QWidget):
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
-        # Start the debounce timer instead of closing immediately; a dock popup
-        # that briefly covers the catcher would otherwise trigger a flicker loop.
-        if self.faces._semicircle_phase != "idle" and not self.faces._semicircle_hide_timer.isActive():
-            self.faces._semicircle_hide_timer.start()
+        # Debounced: a dock popup that briefly covers the catcher must not flicker the arc.
+        self.faces.semicircle_pointer_left()
 
     def paintEvent(self, _event):
         # A fully clear window gets no pointer events. One invisible pixel of paint is enough.
@@ -588,6 +586,7 @@ class Faces(QObject):
 
     def show_semicircle(self):
         """Hidden bots leave the top centre one by one and sit on the arc. Desktop faces stay put."""
+        self._watch_arc_pointer()
         if self._semicircle_phase == "hiding":
             cx, cy = self._hotspot()
             for i, bid in enumerate(self._arc_order):
@@ -653,6 +652,7 @@ class Faces(QObject):
         self._arc_order = []
         self._semicircle_phase = "idle"
         self._semicircle_timer.stop()
+        self._unwatch_arc_pointer()
         self._emit_semicircle()
         for face in guests:
             face.close_face()
@@ -799,27 +799,70 @@ class Faces(QObject):
         self.semicircle_pointer_left()
 
     def hold_arc(self):
-        """Right-click: the hidden bots show on the arc and stay while the command menu is open."""
+        """Right-click: show the hidden bots. The arc closes once the pointer leaves the face and the arc."""
         self.show_semicircle()
         self._semicircle_hide_timer.stop()
 
-    def _command_menu_open(self) -> bool:
-        return any(face.bubble.isVisible() and face.bubble._list_only for face in self.faces.values())
+    def _pointer_on_arc(self) -> bool:
+        """The pointer is on a face or on a bot of the arc."""
+        catcher = getattr(self, "_catcher", None)
+        if catcher is not None and catcher.underMouse():
+            return True
+        for face in list(self.faces.values()) + list(self._arc_guests.values()):
+            if face.isVisible() and face.underMouse():
+                return True
+        return False
+
+    def _over_arc_area(self, gx: float, gy: float) -> bool:
+        """A click here is on the face or the arc, so it does not dismiss the arc."""
+        if self._in_hotspot(gx, gy) or self._pointer_over_arc(gx, gy):
+            return True
+        widgets = list(self.faces.values()) + list(self._arc_guests.values())
+        catcher = getattr(self, "_catcher", None)
+        if catcher is not None:
+            widgets.append(catcher)
+        for widget in widgets:
+            if widget.isVisible() and widget.geometry().contains(int(gx), int(gy)):
+                return True
+        return False
+
+    def _watch_arc_pointer(self):
+        app = QApplication.instance()
+        if app is None or getattr(self, "_arc_watched", False):
+            return
+        app.installEventFilter(self)
+        self._arc_watched = True
+
+    def _unwatch_arc_pointer(self):
+        app = QApplication.instance()
+        if app is None or not getattr(self, "_arc_watched", False):
+            return
+        app.removeEventFilter(self)
+        self._arc_watched = False
+
+    def eventFilter(self, _watched, event):
+        # Wayland never reports the pointer once it has left our windows, so a click or Esc is the other way out.
+        if self._semicircle_phase == "idle":
+            return False
+        kind = event.type()
+        if kind == QEvent.KeyPress and event.key() == Qt.Key_Escape:
+            self.hide_semicircle()
+        elif kind == QEvent.ApplicationDeactivate:
+            self.hide_semicircle()
+        elif kind == QEvent.MouseButtonPress and not self._over_arc_area(
+                event.globalPosition().x(), event.globalPosition().y()):
+            self.hide_semicircle()
+        return False
 
     def semicircle_pointer_left(self):
-        if self._drag_in_progress() or self._catcher.underMouse() or self._command_menu_open():
-            return
-        here = list(self._arc_guests.values())
-        if any(face.underMouse() for face in here if face.isVisible()):
+        if self._drag_in_progress() or self._pointer_on_arc():
             return
         if self._semicircle_phase != "idle" and not self._semicircle_hide_timer.isActive():
             self._semicircle_hide_timer.start()
 
     def _semicircle_hide(self):
-        """The pointer stayed away: start the upward slide, unless the right-click menu still holds the arc."""
+        """The pointer stayed away from the face and the arc."""
         self._semicircle_hide_timer.stop()
-        if self._command_menu_open():
-            return
         self.hide_semicircle()
 
     def _semicircle_positions(self, ids=None) -> dict:

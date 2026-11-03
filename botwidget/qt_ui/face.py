@@ -609,14 +609,17 @@ class FaceWindow(QWidget):
     def enterEvent(self, event):
         super().enterEvent(event)
         self._entered_at = time.monotonic()
-        if self._semicircle_visible and self.faces is not None:
+        # Coming back onto the face, or onto a bot of the arc, cancels the close.
+        if self.faces is not None and self.faces._semicircle_phase != "idle":
             self.faces.semicircle_pointer_here()
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self._left_at = time.monotonic()
-        # Wayland cannot see the pointer in the gaps, so leaving a small face starts the hide.
-        if self._semicircle_visible and self.isVisible() and self.faces is not None:
+        # Wayland cannot see the pointer in the gaps. The face that was right-clicked is not on the
+        # arc, so leaving it has to start the hide too, not only leaving one of the bots.
+        if self.isVisible() and self.faces is not None and (
+                self._semicircle_visible or self.faces._semicircle_phase != "idle"):
             self.faces.semicircle_pointer_left()
 
     def pointer_over(self) -> bool:
