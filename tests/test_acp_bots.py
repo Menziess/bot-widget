@@ -76,6 +76,21 @@ class BotForm(unittest.TestCase):
         self.assertIn("nuage", shown)
         self.assertIn("blue", shown)
 
+    def test_saving_an_unset_face_does_not_repaint_the_bot(self):
+        stored = {"id": "local", "name": "Local Bot", "command": "run", "key_file": "k",
+                  "env": {"HARNESS_MODEL": "local", "HARNESS_MODEL_BASE_URL": "http://127.0.0.1:8080/v1"}}
+        form = acp_bots.fields_of({**stored, "id": "acp:local"})
+        self.assertEqual(form["face"], "")
+        self.assertEqual(form["color"], "")
+        shown = [block.get("label", "") for block in bot_form({"bot_form": form})
+                 if block.get("kind") == "control"]
+        self.assertIn("Face: automatic", shown)
+        self.assertIn("Colour: automatic", shown)
+        saved, error = acp_bots.commit(form, [stored])
+        self.assertEqual(error, "")
+        self.assertNotIn("face", saved[0])
+        self.assertNotIn("color", saved[0])
+
     def test_the_bots_page_can_add_edit_and_remove_a_harness_bot(self):
         blocks = bots({"bots": [{"id": "acp:local", "name": "Local", "on": True, "acp": True}]})
         commands = [block.get("command") for block in blocks if block.get("kind") == "control"]

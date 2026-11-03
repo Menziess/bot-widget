@@ -44,7 +44,7 @@ def fields_of(bot: dict) -> dict:
     face_id = bot.get("id") or ""
     stored = face_id[len(PREFIX):] if str(face_id).startswith(PREFIX) else str(face_id)
     return {"id": face_id, "stored_id": stored, "name": bot.get("name") or "",
-            "face": bot.get("face") or "nuage", "color": bot.get("color") or "blue",
+            "face": bot.get("face") or "", "color": bot.get("color") or "",
             "base_url": env.get("HARNESS_MODEL_BASE_URL") or DEFAULT_BASE,
             "model": env.get("HARNESS_MODEL") or DEFAULT_MODEL,
             "key_file": bot.get("key_file") or DEFAULT_KEY,
@@ -82,9 +82,10 @@ def _entry(fields: dict, previous: dict | None, taken: set) -> tuple:
     if not key_file:
         return None, "A bot needs a key file. The file holds the key; this form only keeps the path."
     face, color = str(fields.get("face") or ""), str(fields.get("color") or "")
-    if face not in FACES:
+    # Empty keeps the seed's face. Filling in nuage here would repaint the bot on a plain save.
+    if face and face not in FACES:
         return None, "Pick a face from the list."
-    if color not in COLORS:
+    if color and color not in COLORS:
         return None, "Pick a colour from the list."
     stored = str(fields.get("stored_id") or "").strip()
     if stored.startswith(PREFIX):
@@ -97,8 +98,12 @@ def _entry(fields: dict, previous: dict | None, taken: set) -> tuple:
            if str(key).startswith("HARNESS_") and not _secret(key)}
     env.update(HARNESS_BOT=name, HARNESS_MODEL_BASE_URL=base, HARNESS_MODEL=model)
     command = str(fields.get("command") or (previous or {}).get("command") or "").strip() or default_command()
-    return {"id": stored, "name": name, "command": command, "env": env, "key_file": key_file,
-            "face": face, "color": color}, ""
+    entry = {"id": stored, "name": name, "command": command, "env": env, "key_file": key_file}
+    if face:
+        entry["face"] = face
+    if color:
+        entry["color"] = color
+    return entry, ""
 
 
 def commit(fields: dict, existing) -> tuple:

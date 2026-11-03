@@ -159,8 +159,8 @@ def bot_form(state: dict) -> list:
         blocks.append(_row((state["bot_error"], "dim")))
     blocks += [
         _field("Name", "field/name", form.get("name") or ""),
-        _button(f"Face: {form.get('face') or 'nuage'}", "cycle/face"),
-        _button(f"Colour: {form.get('color') or 'blue'}", "cycle/color"),
+        _button(f"Face: {form.get('face') or 'automatic'}", "cycle/face"),
+        _button(f"Colour: {form.get('color') or 'automatic'}", "cycle/color"),
         _field("Model address", "field/base_url", form.get("base_url") or ""),
         _field("Model", "field/model", form.get("model") or ""),
         _field("Key file", "field/key_file", form.get("key_file") or ""),
