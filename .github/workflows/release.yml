@@ -95,10 +95,11 @@ jobs:
       # SignPath signs the Windows build once the secret SIGNPATH_API_TOKEN and the variables
       # SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG,
       # SIGNPATH_FILES_CONFIG_SLUG and SIGNPATH_SETUP_CONFIG_SLUG exist; until then it is the plain build.
+      # Only a version tag (refs/tags/v*) is signed; a workflow_dispatch from a branch is not.
       # The two artifact configurations are in packaging/signpath/.
       - name: Is SignPath set up
         id: signpath
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
         shell: bash
         env:
           TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -152,7 +153,7 @@ jobs:
 
       - name: Sign the app files and the uninstaller
         if: steps.signpath.outputs.enabled == 'true'
-        uses: signpath/github-action-submit-signing-request@v3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -194,7 +195,7 @@ jobs:
 
       - name: Sign the installer
         if: steps.signpath.outputs.enabled == 'true'
-        uses: signpath/github-action-submit-signing-request@v3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
