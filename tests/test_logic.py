@@ -2225,6 +2225,97 @@ class BubbleHover(unittest.TestCase):
         self.wheel_up(bubble)
         self.assertEqual(sent, ["page/commands"])
 
+    def top_line_alpha(self, bubble):
+        """The darkest pixel of the thin line across the top of the page. 0 is invisible."""
+        image = bubble._text.pixmap().toImage()
+        peak = 0
+        for y in range(min(16, image.height())):
+            for x in range(image.width()):
+                peak = max(peak, image.pixelColor(x, y).alpha())
+        return peak
+
+    def step_page_line(self, bubble, start, end):
+        """Run the line's fade with a fake clock, one frame at a time."""
+        moment = start
+        while moment <= end + 1e-9:
+            bubble._watch_arrow(moment)
+            moment += 0.016
+
+    def test_the_settings_line_stays_hidden_until_you_come_near_it(self):
+        """Should keep the thin line on the settings page invisible until a scroll, the pointer or a press, then hide it again after a short idle."""
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        bubble = self.open_settings()
+        self.assertEqual(self.top_line_alpha(bubble), 0, "hidden at rest, not a faint line")
+        from botwidget.qt_ui.bubble_window import LINE_FADE_S, LINE_IDLE_S
+        card = bubble.card()
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=True):
+            now = 0.0
+            self.where["at"] = (card.center().x(), card.top() + 8)
+            self.step_page_line(bubble, now, now + 0.12)
+            arriving = self.top_line_alpha(bubble)
+            self.assertGreater(arriving, 0, "fades in, it does not pop")
+            now += 0.12
+            self.step_page_line(bubble, now, now + LINE_FADE_S)
+            shown = self.top_line_alpha(bubble)
+            self.assertGreater(shown, arriving)
+            self.assertGreater(shown, 20, "visible once the pointer is near the line")
+            now += LINE_FADE_S
+            self.where["at"] = (-5000, -5000)
+            self.step_page_line(bubble, now, now + 1.0)
+            self.assertGreater(self.top_line_alpha(bubble), 20, "stays through the idle")
+            now += 1.0
+            self.step_page_line(bubble, now, now + LINE_IDLE_S + LINE_FADE_S)
+            self.assertEqual(self.top_line_alpha(bubble), 0, "gone after the idle")
+            now += LINE_IDLE_S + LINE_FADE_S + 0.2
+            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+                self.wheel_up(bubble)
+            self.step_page_line(bubble, now, now + LINE_FADE_S + 0.05)
+            self.assertGreater(self.top_line_alpha(bubble), 20, "a scroll shows it")
+            now += LINE_FADE_S + LINE_IDLE_S + LINE_FADE_S + 0.2
+            self.step_page_line(bubble, now - LINE_IDLE_S, now)
+            self.assertEqual(self.top_line_alpha(bubble), 0)
+            x, y = self.message_point(0, down=4)
+            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+                self.send_mouse("press", x, y, Qt.LeftButton, Qt.LeftButton)
+            self.step_page_line(bubble, now, now + LINE_FADE_S + 0.05)
+            self.assertGreater(self.top_line_alpha(bubble), 20, "a press near the line shows it")
+            self.assertEqual(bubble._geom[0][0]["role"], "more", "the line is still the way back")
+
+    def test_scrolling_the_page_by_the_bar_or_a_key_shows_the_line_and_restoring_the_place_does_not(self):
+        """Should show the menu line when the scrollbar moves by a drag or a key, and not when the page is put back."""
+        from unittest import mock
+        from PySide6.QtWidgets import QAbstractSlider
+        bubble = self.open_settings()
+        self.assertEqual(self.top_line_alpha(bubble), 0)
+        bubble._height_cap = lambda: 160
+        self.window.open_menu("settings")
+        self.finish_growth()
+        self.app.processEvents()
+        bar = bubble._scroll.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0, "the page can scroll")
+        self.assertEqual(self.top_line_alpha(bubble), 0, "laying the page out is not scrolling")
+        from botwidget.qt_ui.bubble_window import LINE_FADE_S, LINE_IDLE_S
+        now = 10.0
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+            bubble._place_scroll(min(40, bar.maximum()))
+        self.step_page_line(bubble, now, now + LINE_FADE_S + 0.05)
+        self.assertEqual(self.top_line_alpha(bubble), 0, "putting the page back shows nothing")
+        self.assertIsNone(bubble._line_active)
+        now = 20.0
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+            bar.triggerAction(QAbstractSlider.SliderAction.SliderSingleStepAdd)
+        self.assertIsNotNone(bubble._line_active, "a key step is the user scrolling")
+        self.step_page_line(bubble, now, now + LINE_FADE_S + 0.05)
+        self.assertGreater(self.top_line_alpha(bubble), 20, "the line fades in after the key")
+        now += LINE_FADE_S + LINE_IDLE_S + LINE_FADE_S + 0.2
+        self.step_page_line(bubble, now - (LINE_IDLE_S + LINE_FADE_S), now)
+        self.assertEqual(self.top_line_alpha(bubble), 0)
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+            bar.setValue(min(bar.maximum(), bar.value() + 30))
+        self.step_page_line(bubble, now, now + LINE_FADE_S + 0.05)
+        self.assertGreater(self.top_line_alpha(bubble), 20, "dragging the bar shows it too")
+
     def test_a_page_stays_a_while_when_the_pointer_is_outside_it_and_a_margin_counts_as_on_it(self):
         from unittest import mock
         bubble = self.open_settings()

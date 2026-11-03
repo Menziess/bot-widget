@@ -171,7 +171,8 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0, spots: lis
                 else:
                     spots.append(spot)
             elif line["kind"] == "more":
-                out.append(more_svg(ox, tops[n], box_w, line.get("progress", 0.0), line.get("hover", False)))
+                out.append(more_svg(ox, tops[n], box_w, line.get("progress", 0.0), line.get("hover", False),
+                                    line.get("shown", 1.0)))
             elif line["kind"] == "rule":
                 out.append(f'<rect x="{ox + PAD_PANEL_X}" y="{tops[n] + 6}"'
                            f' width="{box_w - 2 * PAD_PANEL_X}" height="1" fill="{hair}"/>')
@@ -184,10 +185,15 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0, spots: lis
     return shapes
 
 
-def more_svg(x: float, y: float, width: float, progress: float = 0.0, hover: bool = False) -> str:
+def more_svg(x: float, y: float, width: float, progress: float = 0.0, hover: bool = False,
+             shown: float = 1.0) -> str:
     """A thin line across the top of the bubble: there is more above. The further you pull (scroll up, or hold on),
     the more the middle of the line swells into a soft blob of light, like the glow at the edge of a list you
-    overscroll; a chevron shows in it as it fills. The pointer on the line gives it a first swell."""
+    overscroll; a chevron shows in it as it fills. The pointer on the line gives it a first swell.
+    shown is how visible it is: 0 draws nothing (a page of the menu at rest), 1 the line as it stands."""
+    shown = min(1.0, max(0.0, shown))
+    if shown <= 0.0:
+        return ""
     mid, base = x + width / 2, y + 7  # room above the line for the glow, so the top of the view does not cut it
     progress = min(1.0, max(0.0, progress))
     done = progress >= 0.999
@@ -195,6 +201,12 @@ def more_svg(x: float, y: float, width: float, progress: float = 0.0, hover: boo
     depth = swell * (MORE_H - 4)
     reach = MORE_OVAL_HALF_W * (0.5 + 0.9 * swell)
     line_a = 0.30 if swell else 0.22
+    glow_core = 0.55 if done else 0.38
+    glow_mid = 0.16 if done else 0.10
+    if shown < 1.0:
+        line_a *= shown
+        glow_core *= shown
+        glow_mid *= shown
     colour = SAND_ACCENT if swell else SAND_INK
     path = (f'M{x:.1f} {base:.1f} H{mid - reach:.1f}'
             f' C{mid - reach * 0.45:.1f} {base:.1f} {mid - reach * 0.4:.1f} {base + depth:.1f} {mid:.1f} {base + depth:.1f}'
@@ -206,8 +218,8 @@ def more_svg(x: float, y: float, width: float, progress: float = 0.0, hover: boo
            f'<stop offset="0.75" stop-color="{colour}" stop-opacity="{line_a}"/>'
            f'<stop offset="1" stop-color="{colour}" stop-opacity="0"/></linearGradient>'
            f'<radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">'
-           f'<stop offset="0" stop-color="{SAND_ACCENT}" stop-opacity="{0.55 if done else 0.38}"/>'
-           f'<stop offset="0.55" stop-color="{SAND_ACCENT}" stop-opacity="{0.16 if done else 0.10}"/>'
+           f'<stop offset="0" stop-color="{SAND_ACCENT}" stop-opacity="{glow_core}"/>'
+           f'<stop offset="0.55" stop-color="{SAND_ACCENT}" stop-opacity="{glow_mid}"/>'
            f'<stop offset="1" stop-color="{SAND_ACCENT}" stop-opacity="0"/></radialGradient></defs>']
     if swell:
         out.append(f'<ellipse cx="{mid:.1f}" cy="{base + depth * 0.45:.1f}" rx="{reach * 1.2:.1f}"'
@@ -215,9 +227,12 @@ def more_svg(x: float, y: float, width: float, progress: float = 0.0, hover: boo
     out.append(f'<path d="{path}" fill="none" stroke="url(#rule)" stroke-width="1.6" stroke-linecap="round"/>')
     if swell > 0.3:
         cy = base + depth * 0.5
+        chevron = min(1.0, swell * 1.4)
+        if shown < 1.0:
+            chevron *= shown
         out.append(f'<path d="M{mid - 3.4:.1f} {cy + 1.6:.1f} L{mid:.1f} {cy - 1.6:.1f} L{mid + 3.4:.1f} {cy + 1.6:.1f}"'
                    f' fill="none" stroke="{SAND_ACCENT}" stroke-width="1.7" stroke-linecap="round"'
-                   f' stroke-linejoin="round" opacity="{min(1.0, swell * 1.4):.2f}"/>')
+                   f' stroke-linejoin="round" opacity="{chevron:.2f}"/>')
     return "".join(out)
 
 
