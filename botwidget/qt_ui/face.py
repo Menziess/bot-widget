@@ -930,9 +930,11 @@ class FaceWindow(QWidget):
 
     def _toggle_answer_view(self) -> bool:
         """Click on a thinking face: the last answer shows, with the field. Click again: the cloud is back.
-        False when nothing thinks or there is no answer yet, so the click does what it always did."""
+        False when nothing thinks or there is no answer yet, so the click does what it always did.
+        A page that is open gives way first: this click asks for the chat, and a visible page would otherwise stay."""
         if self._answer_view:
             self._answer_view = False
+            self._menu_page = None
             self._sync_bubble(self._latest(), force=True)
             return True
         if not self._working or self.pinned or not self._show_think():
@@ -940,6 +942,7 @@ class FaceWindow(QWidget):
         if not any(m.get("role") == "bot" for m in (self._chat or {}).get("messages") or []):
             return False
         self._answer_view = True
+        self._menu_page = None
         self._depth = 1
         self._sync_bubble(self._latest(), force=True)
         self._claim_bubble()
@@ -1460,9 +1463,6 @@ class FaceWindow(QWidget):
         if not files and text.strip().lower() == "/pin":
             # Toggle pin: pinned keeps the bubble open, unpinned lets it close naturally.
             self.toggle_pin()
-            return
-        if not files and text.strip().lower() == "/settings":
-            self.open_settings()
             return
         self._think_quiet = False
         open_question = None if files else self._open_question()
