@@ -259,8 +259,7 @@ class FaceWindow(QWidget):
     def _apply_flags(self):
         """Separate from the taskbar; above or below normal windows according to widget.json."""
         layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
-        # Windows: Qt.Tool, no taskbar button. Linux: a normal window, kept out of the taskbar by skip-taskbar
-        # written before each map (a tool window there would rise above other apps).
+        # Qt.Tool: no taskbar, dock or alt-tab on every OS. Linux also writes skip-taskbar before each map.
         tool = Qt.Tool if FACE_IS_TOOL else Qt.WindowType(0)
         set_flags(self, Qt.FramelessWindowHint | layer | tool)
 
@@ -271,7 +270,7 @@ class FaceWindow(QWidget):
         self.bubble.restack()
 
     def setVisible(self, visible: bool):
-        if visible and not self.isVisible():
+        if visible:
             mark_before_show(self)
         super().setVisible(visible)
 

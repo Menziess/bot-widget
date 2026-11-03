@@ -85,9 +85,9 @@ def ensure_x11_libraries() -> None:
 HOTKEY_LABEL = ""
 # Mutter honours the X11 desktop property on the XWayland window the widget uses: "Always on Visible Workspace".
 CAN_PICK_DESKTOPS = True
-# Not Qt.Tool: mutter lifts a utility window to the layer of its group (above other apps); skip-taskbar
-# written before each map keeps the face out of the taskbar instead.
-FACE_IS_TOOL = False
+# Qt.Tool: no taskbar, dock or alt-tab. send_behind_windows still puts a face under ordinary apps
+# when always-on-top is off; skip-taskbar is also written before each map.
+FACE_IS_TOOL = True
 # Taking the keyboard without a click makes GNOME say "Bot Widget is ready" instead of focusing.
 FOCUS_ON_HOVER = False
 

@@ -9,7 +9,7 @@ HOTKEY_LABEL = ""
 CAN_PICK_DESKTOPS = False
 # Windows only flashes the taskbar for a window that takes focus without a click.
 FOCUS_ON_HOVER = False
-# A face is a tool window: no taskbar button. (Linux keeps a normal window, see linux.FACE_IS_TOOL.)
+# A face is a tool window: no taskbar button.
 FACE_IS_TOOL = True
 
 GWL_EXSTYLE = -20

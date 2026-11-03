@@ -72,8 +72,10 @@ def main():
     prepare_gui_environment()
     app = QApplication(sys.argv)
     install_quit_signals(app)
-    app.setApplicationName("Bot Widget")
-    # Matches botwidget.desktop: the app menu, the dock and the window find each other by this name.
+    # WM_CLASS class must be botwidget (StartupWMClass). "Bot Widget" as the class made GNOME show a
+    # second dock icon next to the face windows, whose instance name is __main__.py under python -m.
+    app.setApplicationName("botwidget")
+    app.setApplicationDisplayName("Bot Widget")
     app.setDesktopFileName("botwidget")
     icon = icon_path()
     if icon:

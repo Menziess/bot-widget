@@ -592,7 +592,7 @@ class Trail(QWidget):
         self._at = 0.0
 
     def setVisible(self, visible: bool):
-        if visible and not self.isVisible():
+        if visible:
             mark_before_show(self)
         super().setVisible(visible)
         if not visible:
@@ -2067,7 +2067,7 @@ class BubbleWindow(QWidget):
         desktops.apply(self)
 
     def setVisible(self, visible: bool):
-        if visible and not self.isVisible():
+        if visible:
             mark_before_show(self)
         super().setVisible(visible)
         if not visible:

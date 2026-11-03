@@ -156,7 +156,7 @@ class ArcCatcher(QWidget):
         super().mouseReleaseEvent(event)
 
     def setVisible(self, visible: bool):
-        if visible and not self.isVisible():
+        if visible:
             mark_before_show(self)
         super().setVisible(visible)
 
