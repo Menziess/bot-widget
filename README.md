@@ -74,7 +74,7 @@ botwidget
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
 - Right-click the face, or start the field with a slash, and a list of commands opens above the field. /feedback opens a new GitHub issue in the browser, already filled with the version, the system and how it was installed
 - Pick a command with the arrows and Return, Tab fills it in, and Escape closes the list and clears the command you typed (a message that was already there stays)
-- A page (settings, bots, connections) goes away by itself like any bubble, and with Escape
+- A page (settings, bots, connections) goes away by itself like any bubble. Escape, or ‹ Chat on the heading, brings the chat back in the same bubble
 - The /settings page holds sound, quiet hours, window stacking, desktops, start at login, update checks, switching version, and Quit
 - The /bots page switches the face of each bot on or off, and mutes its thinking
 - The /connections page has a switch per bot app, on when it was found, with whether the local API of OpenBot is on; turning one on that was not found opens its page and the switch stays on while it waits

@@ -1050,7 +1050,12 @@ class BubbleWindow(QWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and not self._input:
-            self.face.unpin()
+            # A typed command list handles its own Escape in the field. Here the bubble itself has the key:
+            # a menu page goes back to the chat, and the chat (or the right-click list) still closes.
+            if getattr(self.face, "_menu_page", None):
+                self.face.open_input()
+            else:
+                self.face.unpin()
             return
         super().keyPressEvent(event)
 

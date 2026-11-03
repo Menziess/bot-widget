@@ -4264,14 +4264,17 @@ class BubbleHover(unittest.TestCase):
     def window_commands(self, blocks):
         return [block["command"] for block in blocks if block.get("kind") == "control"]
 
-    def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
+    def test_a_menu_page_is_not_pinned_and_escape_returns_to_the_chat(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         self.window.pin()
         self.open_settings()
         self.assertFalse(self.window.pinned, "it goes away by itself like any bubble")
         QTest.keyClick(self.window.bubble, Qt.Key_Escape)
-        self.assertEqual(self.window.bubble.kind, "")
+        self.assertTrue(self.window.bubble.isVisible())
+        self.assertIsNone(self.window._menu_page)
+        self.assertIn("Ja.", self.window.bubble.full_text)
+        self.assertNotIn("Sound on a new answer", self.window.bubble.full_text)
 
     def test_clicking_a_command_in_the_list_runs_it(self):
         self.hover()
@@ -5457,7 +5460,7 @@ class MenuPages(unittest.TestCase):
 
     def test_the_bots_page_has_a_switch_per_bot(self):
         blocks = menu_pages.bots(self.STATE)
-        self.assertEqual(self.commands(blocks), ["page/commands", "bot/a", "mute/a", "bot/b", "mute/b"])
+        self.assertEqual(self.commands(blocks), ["page/commands", "page/chat", "bot/a", "mute/a", "bot/b", "mute/b"])
         self.assertIn("Arrow at the top goes back to commands.", self.text(blocks))
         self.assertIn("☑ Fritsie", self.text(blocks))
         self.assertIn("☐ Robo", self.text(blocks))
@@ -5466,7 +5469,7 @@ class MenuPages(unittest.TestCase):
     def test_the_connections_page_has_a_switch_per_connection_that_says_what_was_found(self):
         blocks = menu_pages.connections(self.STATE)
         text = self.text(blocks)
-        self.assertEqual(self.commands(blocks), ["page/commands", "connect/openbot", "connect/grokbot"])
+        self.assertEqual(self.commands(blocks), ["page/commands", "page/chat", "connect/openbot", "connect/grokbot"])
         self.assertIn("☑ OpenBot", text)
         self.assertIn("local API is off", text)
         self.assertIn("☐ Grok Bot", text)

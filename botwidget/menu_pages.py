@@ -75,11 +75,12 @@ def _command(label: str, command: str) -> tuple:
 
 
 def _heading(title: str) -> dict:
-    return _row((title, "b"))
+    # On the heading, so it is on screen when the page opens. The line above it fades away.
+    return _row((title, "b"), ("  ‹ Chat", "cmd:page/chat"))
 
 
 def _back_hint() -> dict:
-    return _row(("Arrow at the top goes back to commands.", "dim"))
+    return _row(("‹ Chat goes back to the chat. Arrow at the top goes back to commands.", "dim"))
 
 
 def _toggle(label: str, command: str, on: bool) -> dict:

@@ -1470,7 +1470,7 @@ class FaceWindow(QWidget):
             return
         again = page == self._menu_page and self.bubble.isVisible()
         self._menu_page = page
-        # A page goes away by itself like any bubble, and with Escape.
+        # A page goes away by itself like any bubble. Escape returns to the chat.
         self.pinned = False
         # The others close first: a tall page would otherwise give way to a bubble it is about to replace.
         self.faces.close_bubbles_except(self.agent_id)
@@ -1488,6 +1488,10 @@ class FaceWindow(QWidget):
             return
         if command == "page/commands":
             self.open_commands()
+            return
+        if command == "page/chat":
+            # Same as a click on the face while a page is open: the chat, in this bubble.
+            self.open_input()
             return
         page = self.faces.menu_command(command, self._menu_page)
         if page is not None:
