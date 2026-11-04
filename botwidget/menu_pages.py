@@ -75,13 +75,8 @@ def _command(label: str, command: str) -> tuple:
 
 
 def _heading(title: str) -> dict:
-    # On the heading, so it is on screen when the page opens. The line above it fades away.
-    # The no-break space keeps "‹ Chat" one link when a wide font wraps the heading.
-    return _row((title, "b"), ("  ‹\u00a0Chat", "cmd:page/chat"))
-
-
-def _back_hint() -> dict:
-    return _row(("‹ Chat goes back to the chat. Arrow at the top goes back to commands.", "dim"))
+    # On the heading, so the title is on screen when the page opens. The line above it fades away.
+    return _row((title, "b"))
 
 
 def _toggle(label: str, command: str, on: bool) -> dict:
@@ -93,12 +88,12 @@ def _button(label: str, command: str) -> dict:
 
 
 def _back() -> list:
-    """The arrow on top of a page: the way back to the menu, as scrolling past the top is the way to older messages."""
-    return [role_panel("more", back="page/commands"), plain_block("more"), role_panel("bot")]
+    """The line on top of a page. Pulling it or clicking it goes back to the chat."""
+    return [role_panel("more", back="page/chat"), plain_block("more"), role_panel("bot")]
 
 
 def settings(state: dict) -> list:
-    blocks = _back() + [_heading("Settings"), _back_hint(), plain_block("gap")]
+    blocks = _back() + [_heading("Settings"), plain_block("gap")]
     if state.get("staged_update"):
         blocks.append(_button(f"Restart to update to v{state['staged_update']}", "action/update"))
     elif state.get("update"):
@@ -130,7 +125,7 @@ def settings(state: dict) -> list:
 
 
 def bots(state: dict) -> list:
-    blocks = _back() + [_heading("Bots"), _back_hint(),
+    blocks = _back() + [_heading("Bots"),
                         _row(("Shift+click a bot's face to mute or unmute its thinking.", "dim")),
                         plain_block("gap")]
     for bot in state["bots"]:
@@ -144,7 +139,7 @@ def bots(state: dict) -> list:
 
 
 def connections(state: dict) -> list:
-    blocks = _back() + [_heading("Connections"), _back_hint(),
+    blocks = _back() + [_heading("Connections"),
                         _row(("Turning one on that was not found opens its page.", "dim")),
                         plain_block("gap")]
     wanted = state.get("wanted", ())

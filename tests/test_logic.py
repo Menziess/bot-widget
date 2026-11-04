@@ -2193,15 +2193,15 @@ class BubbleHover(unittest.TestCase):
         next(w for w in bubble._control_widgets if isinstance(w, Switch)).click()
         self.assertEqual(sent, ["toggle/sound"])
 
-    def test_the_arrow_on_a_page_leads_back_to_the_list_of_commands_only(self):
+    def test_the_arrow_on_a_page_leads_back_to_the_chat(self):
         bubble = self.open_settings()
-        self.assertEqual(bubble._geom[0][0]["back"], "page/commands")
-        bubble.command.emit("page/commands")
+        self.assertEqual(bubble._geom[0][0]["back"], "page/chat")
+        bubble.command.emit("page/chat")
         self.finish_growth()
         self.assertIsNone(self.window._menu_page)
-        self.assertTrue(bubble._list_only, "the command list on its own, as a first right-click")
-        self.assertTrue(bubble._slash.isVisibleTo(bubble))
-        self.assertNotIn("Ja.", bubble.full_text, "no conversation")
+        self.assertFalse(bubble._list_only)
+        self.assertIn("Ja.", bubble.full_text)
+        self.assertNotIn("Sound on a new answer", bubble.full_text)
 
     def test_a_page_has_the_arrow_up_instead_of_a_menu_link_and_it_goes_back(self):
         bubble = self.open_settings()
@@ -2211,7 +2211,7 @@ class BubbleHover(unittest.TestCase):
         bubble.command.connect(sent.append)
         _x, y = self.message_point(0, down=4)
         self.click_at(bubble._shown_w(bubble._geom[1]) // 2, y)
-        self.assertEqual(sent, ["page/commands"])
+        self.assertEqual(sent, ["page/chat"])
 
     def test_pulling_the_line_of_a_page_far_enough_goes_back_too(self):
         bubble = self.open_settings()
@@ -2223,7 +2223,7 @@ class BubbleHover(unittest.TestCase):
         self.wheel_up(bubble)
         self.wheel_up(bubble)
         self.wheel_up(bubble)
-        self.assertEqual(sent, ["page/commands"])
+        self.assertEqual(sent, ["page/chat"])
 
     def top_line_alpha(self, bubble):
         """The darkest pixel of the thin line across the top of the page. 0 is invisible."""
@@ -3654,7 +3654,7 @@ class BubbleHover(unittest.TestCase):
         QTest.keyClick(bubble._entry, Qt.Key_Escape)
         self.assertEqual(bubble._entry.text(), "een bericht")
 
-    def test_a_page_opened_on_another_face_replaces_the_one_before_and_escape_closes_it(self):
+    def test_a_page_opened_on_another_face_replaces_the_one_before_and_escape_returns_to_the_chat(self):
         from unittest import mock
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
@@ -3672,7 +3672,10 @@ class BubbleHover(unittest.TestCase):
         self.assertFalse(self.window.bubble.isVisible(), "one page at a time")
         self.assertTrue(other.bubble.isVisible())
         QTest.keyClick(other, Qt.Key_Escape)
-        self.assertFalse(other.bubble.isVisible(), "Escape works on the face too")
+        self.assertTrue(other.bubble.isVisible(), "Escape on the face brings the chat back")
+        self.assertIsNone(other._menu_page)
+        self.assertIn("Ja.", other.bubble.full_text)
+        self.assertFalse(other.bubble._list_only)
 
     def test_turning_on_a_connection_that_is_not_found_opens_its_page_and_stays_on_until_turned_off(self):
         from unittest import mock
@@ -5460,8 +5463,8 @@ class MenuPages(unittest.TestCase):
 
     def test_the_bots_page_has_a_switch_per_bot(self):
         blocks = menu_pages.bots(self.STATE)
-        self.assertEqual(self.commands(blocks), ["page/commands", "page/chat", "bot/a", "mute/a", "bot/b", "mute/b"])
-        self.assertIn("Arrow at the top goes back to commands.", self.text(blocks))
+        self.assertEqual(self.commands(blocks), ["page/chat", "bot/a", "mute/a", "bot/b", "mute/b"])
+        self.assertNotIn("‹ Chat", self.text(blocks))
         self.assertIn("☑ Fritsie", self.text(blocks))
         self.assertIn("☐ Robo", self.text(blocks))
         self.assertIn("No bots found yet", self.text(menu_pages.bots({**self.STATE, "bots": []})))
@@ -5469,7 +5472,7 @@ class MenuPages(unittest.TestCase):
     def test_the_connections_page_has_a_switch_per_connection_that_says_what_was_found(self):
         blocks = menu_pages.connections(self.STATE)
         text = self.text(blocks)
-        self.assertEqual(self.commands(blocks), ["page/commands", "page/chat", "connect/openbot", "connect/grokbot"])
+        self.assertEqual(self.commands(blocks), ["page/chat", "connect/openbot", "connect/grokbot"])
         self.assertIn("☑ OpenBot", text)
         self.assertIn("local API is off", text)
         self.assertIn("☐ Grok Bot", text)
@@ -5483,9 +5486,9 @@ class MenuPages(unittest.TestCase):
         self.assertIn("☑ Grok Bot", text)
         self.assertIn("Waiting for Grok Bot", text)
 
-    def test_every_page_leads_back_to_the_commands(self):
+    def test_every_page_leads_back_to_the_chat(self):
         for page in menu_pages.PAGES:
-            self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], "page/commands")
+            self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], "page/chat")
         self.assertEqual(self.commands(menu_pages.page_blocks("nonsense", self.STATE)),
                          self.commands(menu_pages.settings(self.STATE)))
 

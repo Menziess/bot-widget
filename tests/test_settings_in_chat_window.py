@@ -167,15 +167,6 @@ class SettingsInTheChatWindow(unittest.TestCase):
             block = block.next()
         return None
 
-    def _anchor_rect(self, cursor):
-        """The link's glyphs. A caret at either end sits on the boundary and can miss the anchor."""
-        from PySide6.QtGui import QTextCursor
-        doc = self.bubble._doc.document()
-        start, end = QTextCursor(doc), QTextCursor(doc)
-        start.setPosition(cursor.selectionStart())
-        end.setPosition(cursor.selectionEnd())
-        return self.bubble._doc.cursorRect(start).united(self.bubble._doc.cursorRect(end))
-
     def _top_line_alpha(self):
         image = self.bubble._text.pixmap().toImage()
         peak = 0
@@ -184,32 +175,48 @@ class SettingsInTheChatWindow(unittest.TestCase):
                 peak = max(peak, image.pixelColor(x, y).alpha())
         return peak
 
-    def _assert_back_control_visible(self):
-        cursor = self._chat_anchor()
-        self.assertIsNotNone(cursor, "no back-to-chat link in the rendered page")
-        self.assertEqual(cursor.selectedText().replace("\u00a0", " "), "‹ Chat")
-        self.assertIn("‹ Chat goes back to the chat.", self.bubble.full_text)
+    def _assert_no_chat_link(self):
+        """A page heading is the title only. The fading line above it is the way back to the chat."""
+        self.assertIsNone(self._chat_anchor(), "the heading still has a ‹ Chat link")
+        self.assertNotIn("‹ Chat", self.bubble.full_text)
+        self.assertNotIn("goes back to commands", self.bubble.full_text)
         self.assertEqual(self.bubble._scroll.verticalScrollBar().value(), 0)
-        self.assertEqual(self.bubble._geom[0][0].get("back"), "page/commands")
-        self.assertEqual(self._top_line_alpha(), 0, "the fading line is not the back control")
-        rect = self._anchor_rect(cursor)
-        origin = self.bubble._doc.viewport().mapTo(self.bubble._scroll.viewport(), rect.center())
-        view = self.bubble._scroll.viewport().rect()
-        self.assertGreater(rect.height(), 0)
-        self.assertTrue(view.contains(origin), "the back control is outside the page without scrolling")
-        self.assertGreater(origin.y(), 16, "the back control is the fading top line")
+        self.assertEqual(self.bubble._geom[0][0].get("role"), "more")
+        self.assertEqual(self.bubble._geom[0][0].get("back"), "page/chat")
+        self.assertEqual(self._top_line_alpha(), 0, "the line stays hidden until a scroll or a pointer")
 
-    def _activate_back(self):
-        from PySide6.QtCore import QPoint, Qt
-        from PySide6.QtTest import QTest
-        cursor = self._chat_anchor()
-        self.assertIsNotNone(cursor, "no back-to-chat link in the rendered page")
-        point = self._anchor_rect(cursor).center()
-        # The click is inside the bubble, so the field is wanted the way a real pointer would make it.
-        self.bubble.pointer_over = lambda: True
-        self.window.pointer_over = lambda: True
-        QTest.mouseClick(self.bubble._doc.viewport(), Qt.LeftButton, Qt.NoModifier, QPoint(point.x(), point.y()))
+    def _click_top_line(self):
+        """A left click on the fading line, which is the first row even while it is faded out."""
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication
+        from botwidget.bubble import panel_rects
+        top, _height = panel_rects(self.bubble._geom[0])[0]
+        viewport = self.bubble._doc.viewport()
+        point = QPointF(40, top + 4 - self.bubble._doc.y())
+        global_point = QPointF(viewport.mapToGlobal(point.toPoint()))
+        QApplication.sendEvent(viewport, QMouseEvent(
+            QEvent.MouseButtonPress, point, global_point, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+        QApplication.sendEvent(viewport, QMouseEvent(
+            QEvent.MouseButtonRelease, point, global_point, Qt.LeftButton, Qt.NoButton, Qt.NoModifier))
         self._finish()
+
+    def _wheel_up(self, times: int = 1):
+        from PySide6.QtCore import QPoint, QPointF, Qt
+        from PySide6.QtGui import QWheelEvent
+        from PySide6.QtWidgets import QApplication
+        for _ in range(times):
+            QApplication.sendEvent(self.bubble._scroll.viewport(), QWheelEvent(
+                QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, 120),
+                Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False))
+
+    def _assert_chat_field(self):
+        """Back on the chat, the typing field is in the bubble even though the pointer is not."""
+        self._assert_chat_shown()
+        self.assertFalse(self.window.pointer_near(self.bubble), "the pointer is on the bubble, so the field would show anyway")
+        self.assertTrue(self.bubble._input)
+        self.assertIsNotNone(self.bubble._entry)
+        self.assertTrue(self.bubble._entry.isVisibleTo(self.bubble))
 
     def _assert_chat_shown(self):
         self.assertIsNone(self.window._menu_page)
@@ -217,12 +224,6 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertIn("Hello from the bot.", self.bubble.full_text)
         self.assertNotIn("Sound on a new answer", self.bubble.full_text)
         self.assertFalse(self.bubble._list_only)
-
-    def _assert_chat_back(self):
-        self._assert_chat_shown()
-        self.assertTrue(self.bubble._input)
-        self.assertTrue(self.bubble._entry.isVisibleTo(self.bubble))
-        self.assertTrue(self.bubble._entry.hasFocus() or self.bubble.focusWidget() is self.bubble._entry)
 
     def test_should_open_typed_settings_in_the_chat_bubble(self):
         before, bubble_id = self._type_settings()
@@ -232,22 +233,71 @@ class SettingsInTheChatWindow(unittest.TestCase):
         before = self._pick_settings_row()
         self._assert_settings_in_same_bubble(before, id(self.bubble))
 
-    def test_should_show_a_back_to_chat_control_without_scrolling_or_hovering(self):
+    def test_should_not_put_a_chat_link_on_any_page(self):
+        """Should leave every page heading as a title. The way back is the line on top, and it targets the chat."""
         for page in ("settings", "bots", "connections"):
             self.window.open_menu(page)
             self._finish()
-            self._assert_back_control_visible()
+            self._assert_no_chat_link()
 
-    def test_should_return_to_the_chat_when_the_back_control_is_activated(self):
+    def test_should_return_to_the_chat_when_the_top_line_is_clicked(self):
+        """Should open the chat, with its typing field, when the fading line on a page is clicked."""
         self._open_chat()
         entry = self.bubble._entry
         self.window.open_menu("settings")
         self._finish()
-        self._activate_back()
+        self.assertEqual(self.bubble._back_command(), "page/chat")
+        self._click_top_line()
         self.assertIs(self.bubble._entry, entry)
-        self._assert_chat_back()
+        self._assert_chat_field()
+
+    def test_should_return_to_the_chat_when_scrolled_up_past_the_top(self):
+        """Should stay on the page for one notch, and go back to the chat once the line is pulled far enough."""
+        self.window.open_menu("bots")
+        self._finish()
+        self._wheel_up()
+        self.assertEqual(self.window._menu_page, "bots", "one notch only pulls the line")
+        self.assertGreater(self.bubble._pull_px, 0)
+        self.assertIn("Shift+click", self.bubble.full_text)
+        self._wheel_up(3)
+        self._finish()
+        self._assert_chat_field()
+
+    def test_should_return_to_the_chat_with_the_field_on_a_left_click(self):
+        """Should leave a page for the chat when its face is left-clicked, and never open settings that way."""
+        from PySide6.QtCore import Qt
+        for page in ("settings", "bots", "connections"):
+            self.window.open_menu(page)
+            self._finish()
+            self.assertEqual(self.window._menu_page, page)
+            self._click(self.window, Qt.LeftButton, True)
+            self._click(self.window, Qt.LeftButton, False)
+            self._finish()
+            self._assert_chat_field()
+            self.assertNotEqual(self.window._menu_page, "settings")
+            self.assertNotIn("Sound on a new answer", self.bubble.full_text)
+        self._click(self.window, Qt.LeftButton, True)
+        self._click(self.window, Qt.LeftButton, False)
+        self._finish()
+        self.assertNotEqual(self.window._menu_page, "settings")
+        self.assertNotIn("Sound on a new answer", self.bubble.full_text)
+
+    def test_should_return_to_the_chat_with_the_field_on_a_left_click_while_thinking(self):
+        """Should show the chat, not settings and not the cloud, when the face of a working bot is left-clicked."""
+        from PySide6.QtCore import Qt
+        self.window.open_menu("settings")
+        self._finish()
+        self.chat["activity"] = "reading"
+        self.window._chat = {"messages": list(self.chat["messages"]), "activity": "reading"}
+        self.window._working = True
+        self._click(self.window, Qt.LeftButton, True)
+        self._click(self.window, Qt.LeftButton, False)
+        self._finish()
+        self._assert_chat_field()
+        self.assertNotEqual(self.bubble.kind, "think")
 
     def test_should_return_to_the_chat_when_escape_is_pressed_on_the_page(self):
+        """Should bring the chat back, with its typing field, when Escape is pressed on a page."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         self._open_chat()
@@ -256,7 +306,31 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertEqual(self.window._menu_page, "settings")
         QTest.keyClick(self.bubble, Qt.Key_Escape)
         self._finish()
-        self._assert_chat_shown()
+        self._assert_chat_field()
+
+    def test_should_return_to_the_chat_when_escape_is_pressed_on_the_face(self):
+        """Should bring the chat back when Escape is pressed with the keyboard on the face of an open page."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.window.open_menu("connections")
+        self._finish()
+        self.assertEqual(self.window._menu_page, "connections")
+        self.window.setFocus()
+        QTest.keyClick(self.window, Qt.Key_Escape)
+        self._finish()
+        self._assert_chat_field()
+
+    def test_should_leave_the_command_list_without_a_page_back_line(self):
+        """Should keep a right-click list as it is: no page line, and a wheel there does not open the chat."""
+        self.right_click()
+        self._finish()
+        self.assertTrue(self.bubble._list_only)
+        self.assertEqual(self.bubble._back_command(), "")
+        self._wheel_up(4)
+        self._finish()
+        self.assertTrue(self.bubble._list_only)
+        self.assertIsNone(self.window._menu_page)
+        self.assertNotIn("Hello from the bot.", self.bubble.full_text)
 
     def test_should_still_close_the_chat_when_escape_is_pressed_there(self):
         from PySide6.QtCore import Qt

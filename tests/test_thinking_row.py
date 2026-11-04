@@ -160,3 +160,59 @@ class ThinkingRowUnderWorkingFace(unittest.TestCase):
         muted = ink.alpha() < normal.alpha() or (ink.red() + ink.green() + ink.blue()) > (
             normal.red() + normal.green() + normal.blue())
         self.assertTrue(muted, f"row ink {ink.name(QColor.HexArgb)} is not quieter than {normal.name()}")
+
+    def test_should_hide_the_row_while_the_thinking_cloud_is_open_and_show_it_when_that_cloud_is_muted_or_closed(self):
+        """Should show Thinking only when the bot works and its cloud is muted or closed."""
+        with mock.patch("botwidget.qt_ui.face.openbot_installed", return_value=True):
+            self.window._muted = False
+            self.window._think_quiet = False
+            self._work(self.window, True)
+            self.assertEqual(self.window.bubble.kind, "think")
+            self.assertTrue(self.window.bubble.isVisible())
+            self.assertEqual(self._rows(self.window), [], "the live cloud is up, so the row stays away")
+            self.window._muted = True
+            self._work(self.window, True)
+            self.assertNotEqual(self.window.bubble.kind, "think")
+            self.assertEqual(len(self._rows(self.window)), 1, "muted: the row stands in for the cloud")
+            self.window._muted = False
+            self.window._think_quiet = True
+            self._work(self.window, True)
+            self.assertNotEqual(self.window.bubble.kind, "think")
+            self.assertEqual(len(self._rows(self.window)), 1, "the cloud closed itself")
+
+    def test_should_hide_the_row_while_the_face_wants_attention(self):
+        """Should hide Thinking for a prompt, an approval or a browser takeover."""
+        self.window._attention = {"prompts": [{"requestId": "p", "questions": [
+            {"id": "q", "question": "Go on?"}]}]}
+        self._work(self.window, True)
+        self.assertTrue(self.window._has_attention())
+        self.assertEqual(self._rows(self.window), [])
+        self.window._attention = {"approvals": [{"requestId": "a", "kind": "command"}]}
+        self._work(self.window, True)
+        self.assertEqual(self._rows(self.window), [])
+        self.window._attention = {"browserTakeovers": [{"requestId": "shot"}]}
+        self._work(self.window, True)
+        self.assertEqual(self._rows(self.window), [])
+        self.window._attention = {}
+        self._work(self.window, True)
+        self.assertEqual(len(self._rows(self.window)), 1, "back once nothing is waiting")
+
+    def test_should_paint_a_faint_glass_behind_the_word(self):
+        """Should draw a rounded translucent plate a little larger than the word Thinking."""
+        from PySide6.QtGui import QFontMetrics, QImage
+        self._work(self.window, True)
+        row = self._rows(self.window)[0]
+        metrics = QFontMetrics(row.font())
+        self.assertGreaterEqual(row.width() - metrics.horizontalAdvance("Thinking"), 8)
+        self.assertGreaterEqual(row.height() - metrics.height(), 4)
+        self.assertEqual(row.text(), "Thinking")
+        image = QImage(row.size(), QImage.Format_ARGB32_Premultiplied)
+        image.fill(0)
+        row.render(image)
+        again = QImage(row.size(), QImage.Format_ARGB32_Premultiplied)
+        again.fill(0)
+        row.render(again)
+        self.assertEqual(image, again, "the row does not animate")
+        plate = image.pixelColor(3, image.height() // 2)
+        self.assertGreater(plate.alpha(), 20, "no glass in the padding beside the word")
+        self.assertLess(plate.alpha(), 250, "the glass is translucent")

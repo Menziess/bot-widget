@@ -2372,6 +2372,7 @@ class BubbleWindow(QWidget):
             self._show_commands([])
             self.hide()
             self._list_only = False
+            self._placed()
             return
         self.changed = time.monotonic()
         if not self._dots_on and self._dots_lines:
@@ -2397,3 +2398,10 @@ class BubbleWindow(QWidget):
         if not self._physics_on:
             self._physics_on = True
             self._physics.start()
+        self._placed()
+
+    def _placed(self):
+        """The cloud came or went: the Thinking row under the face follows it."""
+        place = getattr(self.face, "_place_thinking", None)
+        if place is not None and getattr(self.face, "_thinking", None) is not None:
+            place()

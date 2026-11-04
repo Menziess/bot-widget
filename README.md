@@ -49,7 +49,7 @@ botwidget
 - Every face is drawn as a 3D body, built the way Grok Bot builds its avatars (extruded, turned on a lathe, lofted or rounded), so when it turns, its outline and shading turn with it, and its eyes lie on its surface, so they curve and get narrower towards the edge.
 - Idle is calm: the face holds still and only now and then, after a random 8 to 30 seconds, blinks or looks around. When something happens it plays one of Grok Bot's own clips: a nod when your message goes out, an inspecting look while the bot thinks, a happy hop on the reply, surprise at a message nobody asked for, a sad face when a message is refused, confused and then sleepy when there is no route, and a bounce when you click it. While it holds still it draws only ten frames a second.
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
-- While a bot is working, a small muted line under its face says Thinking, also when its thinking cloud is muted
+- While a bot is working and its thinking cloud is muted or closed, a small line under its face says Thinking, on a faint glass chip so it can be read on any wallpaper. The line stays away while that cloud is open, and while a question, an approval or the browser is waiting
 - A message you send shows a small cloud with dots at once. Pointing at the face or the cloud opens the thought with the field; moving away shrinks it back to the dots, which go by themselves after a few seconds
 - Right after you send, the cloud shows only its dots, with no field, even when the pointer is still on it; the thought and the field open when you leave the cloud and point at it again, or click the face
 - Dots and thought, and chat and cloud, replace each other with a fade instead of growing into each other; a thought is read from the top while the cloud grows
@@ -74,11 +74,11 @@ botwidget
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
 - Right-click the face, or start the field with a slash, and a list of commands opens above the field. /feedback opens a new GitHub issue in the browser, already filled with the version, the system and how it was installed
 - Pick a command with the arrows and Return, Tab fills it in, and Escape closes the list and clears the command you typed (a message that was already there stays)
-- A page (settings, bots, connections) goes away by itself like any bubble. Escape, or ‹ Chat on the heading, brings the chat back in the same bubble
+- A page (settings, bots, connections) goes away by itself like any bubble. Escape, the line at the top, scrolling up past the top of the page, or a left click on its face brings the chat back in the same bubble, with the field to type in
 - The /settings page holds sound, quiet hours, window stacking, desktops, start at login, update checks, switching version, and Quit
 - The /bots page switches the face of each bot on or off, and mutes its thinking
 - The /connections page has a switch per bot app, on when it was found, with whether the local API of OpenBot is on; turning one on that was not found opens its page and the switch stays on while it waits
-- Each page opens in the bubble, with real switches and buttons, and the arrow on top goes back
+- Each page opens in the bubble, with real switches and buttons, and the line on top goes back to the chat
 - On macOS Control+Option+Space opens the chat from any app, and closes it again
 - The face goes back to where you put it when its screen comes back
 - On macOS the face and its bubble are on every desktop. With Settings, Show on all desktops off the face stays on one, and Control+Option+Space on another desktop brings it there, and a window cannot be dragged into a full-screen app's desktop
