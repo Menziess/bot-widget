@@ -929,6 +929,14 @@ class FaceWindow(QWidget):
         self.head_bottom = AVATAR_SIZE / 2 + profile["bottom"] * CIRCLE_R
         self._render()
 
+    def show_live_status(self, state: str, summary: str):
+        """A relay status line: the title says what the bot is doing, the tip says why."""
+        self.live_status = state
+        self.live_summary = summary
+        self.setToolTip(summary)
+        label = {"start": "Working", "done": "Done", "stuck": "Stuck", "needs_you": "Needs you"}[state]
+        self.setWindowTitle(f"{self.bot_name} · {label}")
+
     def _aim(self, dt_ms: float):
         """Where the face wants to go: dragging, happy, looking at the mouse, or what motion plays."""
         a = self.anim

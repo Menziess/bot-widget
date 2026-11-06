@@ -166,6 +166,13 @@ def connections(state: dict) -> list:
     else:
         note = "Waiting for Grok Bot to be installed" if "grokbot" in wanted else "Not found"
     blocks.append({**_row((note, "dim")), "indent": 44})
+    blocks.append(plain_block("gap"))
+    relay = state.get("grok_relay") or ""
+    if relay:
+        blocks.append({**_row((f"Linked via ntfy · {relay}", "dim")), "indent": 0})
+        blocks.append(_button("Copy chief prompt", "action/copy-grok-prompt"))
+    else:
+        blocks.append(_button("Link Grok bots", "action/link-grok"))
     return blocks
 
 
