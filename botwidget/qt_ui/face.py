@@ -37,6 +37,7 @@ from botwidget.config import (
     automation_ready,
     muted_bots,
     set_muted,
+    widget_config,
 )
 from botwidget.delivery import Outbox
 from botwidget.motion import STILL, Motion, offsets
@@ -187,7 +188,6 @@ class FaceWindow(QWidget):
         self._coasting = False
         self._working = False
         self._waiting = False
-        self._debug = False
         self._inactive_since = 0.0
         self._answer_view = False  # a click while it thinks: the last answer instead of the cloud, until blur or click
         # Calm idle, and Grok Bot's clips when something happens (botwidget.motion).
@@ -266,7 +266,9 @@ class FaceWindow(QWidget):
         # Windows: Qt.Tool, no taskbar button. Linux: a normal window, kept out of the taskbar by skip-taskbar
         # written before each map (a tool window there would rise above other apps).
         tool = Qt.Tool if FACE_IS_TOOL else Qt.WindowType(0)
-        set_flags(self, Qt.FramelessWindowHint | layer | tool)
+        # Mutter spends the first click on focusing a normal window, so a right-click never arrived
+        # until the face already had focus. The bubble still accepts focus, which is what typing needs.
+        set_flags(self, Qt.FramelessWindowHint | layer | tool | Qt.WindowDoesNotAcceptFocus)
 
     def restack(self):
         """After a change of the setting: new flags ask the window to be shown again."""
@@ -923,6 +925,7 @@ class FaceWindow(QWidget):
         if menu or not self.bubble.isVisible():
             # Clicking the face from a page of the menu, or its command list, is asking for the chat again.
             self._menu_page = None
+            self._arc_for_page(None)
             self._depth = 1
             self._sync_bubble(self._latest(), force=True, replace_menu=menu)
         self._claim_bubble()
@@ -994,6 +997,7 @@ class FaceWindow(QWidget):
         self.pinned = True
         self._think_held = False
         self._menu_page = None
+        self._arc_for_page(None)
         self.has_pending = False
         self._refused = False
         self.update()
@@ -1046,11 +1050,16 @@ class FaceWindow(QWidget):
         """The latest chat of this bot: from Grok Bot or from the local OpenBot."""
         self._cleanup_local()
         chat = self.link.chat() if self.link else latest_chat(thread_id=self.thread_id)
-        if self._debug:
-            # /debug: the bot looks busy with a thought, and a click shows a message with every piece of markdown.
+        if self._debug_on():
+            # Settings: the bot looks busy with a thought, and a click shows a message with every piece of markdown.
             chat = {**chat, "activity": menu_pages.DEBUG_THOUGHT,
                     "messages": [*(chat.get("messages") or []), {"role": "bot", "text": menu_pages.DEBUG_MESSAGE}]}
         return chat
+
+    def _debug_on(self) -> bool:
+        """Sample thoughts. Only a checkout honors the switch, so an installed copy ignores a leftover flag."""
+        from botwidget.startup import from_checkout
+        return from_checkout() and widget_config().get("debug") is True
 
     def _poll_pending(self):
         """Check whether a question or approval is waiting and refresh the bubble.
@@ -1086,11 +1095,15 @@ class FaceWindow(QWidget):
             # The agent pushes its updates, so there is nothing to poll: draw what came in, and keep
             # the timer alive only while a turn runs.
             changed = self._set_attention(self.acp.attention())
-            self._sync_bubble(self._latest(), force=changed)
+            chat = self._latest()
+            self._sync_bubble(chat, force=changed)
             if self._refreshing and not self.acp.active():
                 self._refreshed(self.acp.note() or "Refreshed.")
             if self.acp.active():
                 self._poll_timer.start(1000)
+            elif chat.get("activity") or self._asked or self._answer_pending:
+                # chat() was copied while the turn was still in it. One more look shows the answer.
+                self._poll_timer.start(40)
             return
         try:
             data = api_get(f"/v1/agents/{self.agent_id}/pending")
@@ -1216,10 +1229,13 @@ class FaceWindow(QWidget):
             self._last_bot = last
             self._answer_pending = True
         visible = self._with_local(stored)
+        # A reply must still open the bubble when this is the first time the conversation is drawn.
+        show_now = False
         if (self._answer_pending and not self._working and visible
                 and visible[-1].get("role") == "bot"):
             # The reply is in. A pause while the question is still the latest line is not the end:
             # the cloud would otherwise flip to the chat and back.
+            show_now = True
             self._answer_pending = False
             self.react("reply" if self._asked else "new_message")
             self._asked = False
@@ -1254,7 +1270,14 @@ class FaceWindow(QWidget):
         if self._asked and self.link and self.link.stopped:
             self._asked = False
             pending = False
-        if self._asked and not self.grok and not self.hermes and not self._working and not self._sending and not self._outbox.items and not self._queue:
+            if self.acp:
+                show_now = True  # the failure is the reply; the first look must not treat it as old news
+        if self._asked and self.acp and not self.acp.active() and not self._working and not self._sending and not self._outbox.items and not self._queue:
+            # The local turn already ended (it can finish before the next look). Dots would hide the answer.
+            show_now = True
+            self._asked = False
+            pending = False
+        elif self._asked and not self.grok and not self.hermes and not self._working and not self._sending and not self._outbox.items and not self._queue:
             # Do not clear _asked: the dots should stay until an answer arrives.
             pass
         if pending and not self.pinned:
@@ -1298,7 +1321,7 @@ class FaceWindow(QWidget):
         text = block_text(blocks)
         older, self._loading_older = self._loading_older, False
         first, self._seeded = not self._seeded, True
-        if first and not force and not self.pinned:
+        if first and not force and not self.pinned and not show_now:
             # The conversation as it was when the widget started is old news: only what comes after opens the bubble.
             self._shown_text = text
             self._prepare_bubble(blocks)
@@ -1333,6 +1356,7 @@ class FaceWindow(QWidget):
 
         from botwidget.startup import install_kind
         self._menu_page = None
+        self._arc_for_page(None)
         self.pinned = False
         self.bubble.show_blocks([status_block("Opening a GitHub issue in your browser…")], "say")
         url = menu_pages.feedback_issue_url(__version__, platform.system(), install_kind())
@@ -1349,6 +1373,7 @@ class FaceWindow(QWidget):
             self.faces.refresh_others(self.agent_id)
         self._reset_state()
         self._menu_page = None
+        self._arc_for_page(None)
         self._refreshing = True
         self._refresh_note = ""
         self.bubble.show_blocks([status_block("Refreshing…"), role_panel("bot"), plain_block("dots")], "say")
@@ -1390,8 +1415,17 @@ class FaceWindow(QWidget):
         if self.faces is not None:
             self.faces.close_bubbles_except(self.agent_id)
         self.bubble.show_command_menu()
-        if self.faces is not None:
-            self.faces.hold_arc()
+        self._arc_for_page(None)
+
+    def _arc_for_page(self, page: str | None):
+        """Hidden bots sit on the arc only while /bots is open, and leave when that page does."""
+        faces = self.faces
+        if faces is None:
+            return
+        if page == "bots" and hasattr(faces, "hold_arc"):
+            faces.hold_arc()
+        elif hasattr(faces, "release_bots_arc"):
+            faces.release_bots_arc()
 
     def open_menu(self, page: str = "settings"):
         """A page of the menu in the bubble: /settings, /bots or /connections typed or picked."""
@@ -1404,9 +1438,14 @@ class FaceWindow(QWidget):
         # The others close first: a tall page would otherwise give way to a bubble it is about to replace.
         self.faces.close_bubbles_except(self.agent_id)
         self.bubble.show_blocks(menu_pages.page_blocks(page, self.faces.menu_state()), "say", keep_scroll=again)
+        # A failed save stays on this page. The reason sits by the button, so bring that end into view.
+        if getattr(self.faces, "_bot_error", "") and (page == "bot" or page.startswith("bot/")):
+            bar = self.bubble._scroll.verticalScrollBar()
+            bar.setValue(bar.maximum())
         self._claim_bubble()
         self.bubble.activateWindow()
         self.bubble.setFocus()
+        self._arc_for_page(page)
 
     def _menu_command(self, command: str):
         kind, _, rest = command.partition("/")
@@ -1473,13 +1512,6 @@ class FaceWindow(QWidget):
         if not files and text.strip().lower() == "/feedback":
             self.open_feedback()
             return
-        if not files and text.strip().lower() == "/debug" and any(c[0] == "/debug" for c in menu_pages.commands()):
-            self._debug = not self._debug
-            self.pinned = False
-            self._answer_view = False
-            self.bubble.close_bubble("debug")  # the list of commands it was chosen from goes with it
-            self._sync_bubble(self._latest(), force=True, replace_menu=True)
-            return
         if not files and text.strip().lower() == "/pin":
             # Toggle pin: pinned keeps the bubble open, unpinned lets it close naturally.
             self.toggle_pin()
@@ -1492,7 +1524,7 @@ class FaceWindow(QWidget):
         if open_question:
             self._give_answer(*open_question, [text])
             return
-        if self._working and not self._debug:
+        if self._working and not self._debug_on():
             self._queue.append({"text": text, "files": files, "id": uuid.uuid4().hex[:8]})
             self._sync_bubble(self._latest(), force=True)
             self._poll_timer.start(300)

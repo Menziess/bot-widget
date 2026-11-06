@@ -69,7 +69,10 @@ def line_height(block: dict) -> int:
     if block["kind"] == "more":
         return MORE_H
     if block["kind"] == "control":
-        return 220 if block.get("control") == "editor" else CONTROL_H
+        if block.get("control") == "editor":
+            return 220
+        # The face preview is the avatar itself, not a one-line button.
+        return AVATAR_SIZE if block.get("control") == "preview" else CONTROL_H
     if block["kind"] == "gap":
         return LINE_GAP_H
     if block["kind"] == "rule":

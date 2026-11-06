@@ -33,8 +33,8 @@ def default_command() -> str:
 
 
 def blank() -> dict:
-    """What New bot shows before anything is typed. The address is the local llama.cpp server."""
-    return {"id": "", "stored_id": "", "name": "", "face": "nuage", "color": "blue",
+    """What New bot shows before anything is typed. With no connection picked, the address is the local server."""
+    return {"id": "", "stored_id": "", "name": "", "face": "nuage", "color": "blue", "connection": "",
             "base_url": DEFAULT_BASE, "model": DEFAULT_MODEL, "key_file": DEFAULT_KEY, "command": ""}
 
 
@@ -45,6 +45,7 @@ def fields_of(bot: dict) -> dict:
     stored = face_id[len(PREFIX):] if str(face_id).startswith(PREFIX) else str(face_id)
     return {"id": face_id, "stored_id": stored, "name": bot.get("name") or "",
             "face": bot.get("face") or "", "color": bot.get("color") or "",
+            "connection": bot.get("connection") or "",
             "base_url": env.get("HARNESS_MODEL_BASE_URL") or DEFAULT_BASE,
             "model": env.get("HARNESS_MODEL") or DEFAULT_MODEL,
             "key_file": bot.get("key_file") or DEFAULT_KEY,
@@ -99,6 +100,9 @@ def _entry(fields: dict, previous: dict | None, taken: set) -> tuple:
     env.update(HARNESS_BOT=name, HARNESS_MODEL_BASE_URL=base, HARNESS_MODEL=model)
     command = str(fields.get("command") or (previous or {}).get("command") or "").strip() or default_command()
     entry = {"id": stored, "name": name, "command": command, "env": env, "key_file": key_file}
+    connection = str(fields.get("connection") or "").strip()
+    if connection:
+        entry["connection"] = connection
     if face:
         entry["face"] = face
     if color:
@@ -106,8 +110,21 @@ def _entry(fields: dict, previous: dict | None, taken: set) -> tuple:
     return entry, ""
 
 
-def commit(fields: dict, existing) -> tuple:
-    """The bot list with this form saved into it. The first item is None when the form is not usable."""
+def commit(fields: dict, existing, connections=None) -> tuple:
+    """The bot list with this form saved into it. The first item is None when the form is not usable.
+
+    A chosen connection supplies the address, model and key file. Without one, the form's own values do,
+    which is how a bot saved before connections existed keeps its model.
+    """
+    fields = dict(fields)
+    connection = str(fields.get("connection") or "").strip()
+    if connection:
+        row = next((item for item in public_connections(connections) if item["id"] == connection), None)
+        if row is None:
+            return None, "Pick a connection."
+        fields["base_url"] = row["base_url"]
+        fields["model"] = row["model"]
+        fields["key_file"] = row["key_file"]
     rows = [row for row in existing if isinstance(row, dict)] if isinstance(existing, list) else []
     stored = str(fields.get("stored_id") or "")
     if stored.startswith(PREFIX):
@@ -131,6 +148,122 @@ def commit(fields: dict, existing) -> tuple:
     if not replaced:
         out.append(entry)
     return out, ""
+
+
+def blank_connection() -> dict:
+    """What New connection shows. The address is the usual local llama.cpp server."""
+    return {"id": "", "stored_id": "", "name": "", "base_url": DEFAULT_BASE, "model": DEFAULT_MODEL,
+            "key_file": DEFAULT_KEY}
+
+
+def public_connections(existing) -> list:
+    """Connections the pages can show. A row without an id or a name is skipped."""
+    rows = []
+    for row in existing if isinstance(existing, list) else []:
+        if not isinstance(row, dict):
+            continue
+        ident, name = str(row.get("id") or "").strip(), str(row.get("name") or "").strip()
+        if not ident or not name:
+            continue
+        rows.append({"id": ident, "name": name, "base_url": str(row.get("base_url") or ""),
+                     "model": str(row.get("model") or ""), "key_file": str(row.get("key_file") or ""),
+                     "on": row.get("enabled") is not False})
+    return rows
+
+
+def first_connection(existing) -> str:
+    rows = public_connections(existing)
+    return rows[0]["id"] if rows else ""
+
+
+def fields_of_connection(row: dict) -> dict:
+    return {"id": row.get("id") or "", "stored_id": row.get("id") or "", "name": row.get("name") or "",
+            "base_url": row.get("base_url") or DEFAULT_BASE, "model": row.get("model") or DEFAULT_MODEL,
+            "key_file": row.get("key_file") or DEFAULT_KEY}
+
+
+def cycle_connection(current: str, existing) -> str:
+    """The next connection, or none, and back around."""
+    ids = [""] + [row["id"] for row in public_connections(existing)]
+    if current not in ids:
+        return ids[1] if len(ids) > 1 else ""
+    return ids[(ids.index(current) + 1) % len(ids)]
+
+
+def commit_connection(fields: dict, existing) -> tuple:
+    """The connection list with this form saved into it."""
+    name = str(fields.get("name") or "").strip()
+    if not name or any(ch in name for ch in "\n\r"):
+        return None, "A connection needs a name."
+    base = str(fields.get("base_url") or "").strip()
+    if not base.startswith(("http://", "https://")):
+        return None, "The model address has to start with http:// or https://."
+    model = str(fields.get("model") or "").strip()
+    if not model:
+        return None, "A connection needs a model name."
+    key_file = str(fields.get("key_file") or "").strip()
+    if not key_file:
+        return None, "A connection needs a key file. The file holds the key; this form only keeps the path."
+    rows = public_connections(existing)
+    stored = str(fields.get("stored_id") or "").strip()
+    taken = {row["id"] for row in rows if row["id"] != stored}
+    if not stored:
+        stored = _unique(name, taken)
+    elif stored in taken:
+        return None, "Another connection already uses that id."
+    kept = next((row for row in rows if row["id"] == stored), None)
+    entry = {"id": stored, "name": name, "base_url": base, "model": model, "key_file": key_file}
+    # A new connection starts on. Saving the form does not turn an existing one back on.
+    if kept is not None and not kept["on"]:
+        entry["enabled"] = False
+    out, replaced = [], False
+    for row in rows:
+        if row["id"] == stored:
+            out.append(entry)
+            replaced = True
+        else:
+            out.append(_stored_connection(row))
+    if not replaced:
+        out.append(entry)
+    return out, ""
+
+
+def _stored_connection(row: dict) -> dict:
+    """The connection as widget.json keeps it. Off is stored; on is the absence of that flag."""
+    entry = {"id": row["id"], "name": row["name"], "base_url": row.get("base_url") or "",
+             "model": row.get("model") or "", "key_file": row.get("key_file") or ""}
+    if row.get("on") is False or row.get("enabled") is False:
+        entry["enabled"] = False
+    return entry
+
+
+def set_connection_on(existing, conn_id: str, on: bool):
+    """The connection list with this one on or off. None when that id is not there."""
+    rows = public_connections(existing)
+    if not any(row["id"] == conn_id for row in rows):
+        return None
+    out = []
+    for row in rows:
+        entry = _stored_connection(row)
+        if row["id"] == conn_id:
+            if on:
+                entry.pop("enabled", None)
+            else:
+                entry["enabled"] = False
+        out.append(entry)
+    return out
+
+
+def connection_in_use(bots, conn_id: str) -> bool:
+    rows = bots if isinstance(bots, list) else []
+    return any(isinstance(row, dict) and str(row.get("connection") or "") == conn_id for row in rows)
+
+
+def drop_connection(existing, conn_id: str, bots) -> tuple:
+    """The list without this connection, or an error when a bot still names it."""
+    if connection_in_use(bots, conn_id):
+        return None, "A bot still uses this connection."
+    return [_stored_connection(row) for row in public_connections(existing) if row["id"] != conn_id], ""
 
 
 def without(existing, face_id: str) -> list:
@@ -227,4 +360,24 @@ def parse_editor(text: str) -> tuple:
     error = _check_bots(data.get("acp_bots"))
     if error:
         return None, error
+    error = _check_connections(data.get("connections"))
+    if error:
+        return None, error
     return data, ""
+
+
+def _check_connections(rows) -> str:
+    if rows is None:
+        return ""
+    if not isinstance(rows, list):
+        return "connections has to be a list."
+    seen = set()
+    for index, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):
+            return f"Connection {index} has to be an object."
+        if not str(row.get("name") or "").strip() or not str(row.get("id") or "").strip():
+            return f"Connection {index} needs a name and an id."
+        if str(row["id"]) in seen:
+            return f"Connection {index} uses an id another connection already has."
+        seen.add(str(row["id"]))
+    return ""

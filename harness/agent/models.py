@@ -52,8 +52,10 @@ class ChatCompletions:
             return self._read_props(timeout)
         except (urllib.error.URLError, OSError) as error:
             reason = getattr(error, "reason", error)
-            raise ModelError(f"no model server at {self.base_url} ({reason}); start it or set "
-                             f"HARNESS_MODEL_BASE_URL") from error
+            # strerror is "Connection refused". str(reason) is the long "[Errno 111] ..." line.
+            detail = getattr(reason, "strerror", None) or reason
+            raise ModelError(f"no model server at {self.base_url} ({detail}). Start it, or change "
+                             f"the address in Connections.") from error
         self._read_props(timeout)
 
     def _read_props(self, timeout: float) -> None:

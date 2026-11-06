@@ -50,7 +50,7 @@ from PySide6.QtWidgets import (
 )
 
 from botwidget import attachments, menu_pages, power
-from botwidget.avatar import AVATAR_SIZE, CIRCLE_R
+from botwidget.avatar import AVATAR_SIZE, CIRCLE_R, avatar_svg
 from botwidget.bubble import (
     bubble_body_svg,
     bubble_deco_svg,
@@ -75,7 +75,7 @@ from botwidget.markdown import block_text, md_blocks, plain_block, plain_text, r
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
-from botwidget.qt_ui.controls import ActionButton, SlashList, Switch, TextEditor, TextField, ValueSlider
+from botwidget.qt_ui.controls import ActionButton, ItemRow, SlashList, Switch, TextEditor, TextField, ValueSlider
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, cut_out, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document
@@ -972,8 +972,13 @@ class BubbleWindow(QWidget):
         return QRect(self._held) if self._held is not None else None
 
     def _area_under_pointer(self) -> QRect | None:
-        """The whole window, when the pointer is on it: what a smaller card keeps as hover area."""
-        if not (self.isVisible() and self.kind and self.face.pointer_near(self)):
+        """The whole window, when the pointer is on it: what a smaller card keeps as hover area.
+
+        A frame that misses the X query still keeps it when the pointer was already on the bubble.
+        """
+        if not (self.isVisible() and self.kind):
+            return None
+        if not (self.face.pointer_near(self) or self._was_near):
             return None
         return QRect(self.frameGeometry())
 
@@ -1005,9 +1010,12 @@ class BubbleWindow(QWidget):
         self._fit_window()
 
     def _pointer_on_card(self) -> bool:
-        """Only where the position can be trusted: on X while the pointer is on this window, or where the
-        pointer is known everywhere. A stale position must not shrink the window away from under it."""
-        if not (pointer_on(self) or self.face.pointer_known()):
+        """The window may become the card again only where the pointer position is known everywhere.
+
+        On XWayland the cursor reading is not the pointer. It can sit on the new card while the pointer is
+        still in the area this window holds, and shrinking then closes the page.
+        """
+        if not self.face.pointer_known():
             return False
         px, py = self.face._pointer()
         return self.card().contains(QPoint(int(px), int(py)))
@@ -1118,7 +1126,18 @@ class BubbleWindow(QWidget):
         """Click on the arrow loads the message before; on a message it copies it, shift+click as markdown."""
         widget = self._control_at(x, y)
         if widget is not None:
-            widget.click()
+            # The text sits over the form. A button has click(); a field only needs the cursor.
+            press = getattr(widget, "press_at", None)
+            if press is not None:
+                press(self._doc.x() + x - widget.geometry().x())
+            elif getattr(widget, "click", None) is not None:
+                widget.click()
+            else:
+                target = getattr(widget, "edit", None) or getattr(widget, "slider", None) or widget
+                window = widget.window()
+                if window is not None:
+                    window.activateWindow()
+                target.setFocus()
             return
         panel = self._message_at(x, y)
         if panel and panel["role"] == "more":
@@ -1637,7 +1656,8 @@ class BubbleWindow(QWidget):
                     wanted.append((line, QRect(PAD_PANEL_X + line["indent"], y, shown_w - 2 * PAD_PANEL_X,
                                                line_height(line))))
                 y += line_height(line)
-        key = tuple((line["control"], line["label"], line["command"], line.get("on"), line.get("value"))
+        key = tuple((line["control"], line["label"], line["command"], line.get("on"), line.get("value"),
+                     tuple((action["label"], action["command"]) for action in line.get("actions") or []))
                     for line, _rect in wanted)
         if key != self._controls_key:
             for widget in self._control_widgets:
@@ -1663,6 +1683,14 @@ class BubbleWindow(QWidget):
         return values
 
     def _make_control(self, line: dict):
+        if line["control"] == "preview":
+            face, colour, seed = (str(line.get("value") or "") + "||").split("|", 2)
+            avatar = {"shape": face, "color": colour} if (face or colour) else None
+            label = QLabel(self._text)
+            label.setAttribute(Qt.WA_TranslucentBackground)
+            label.setAttribute(Qt.WA_TransparentForMouseEvents)
+            label.setPixmap(svg_pixmap(avatar_svg(seed=seed or "new", avatar=avatar)))
+            return label
         if line["control"] == "field":
             widget = TextField(line["label"], str(line.get("value") or ""), self._text)
             widget.command = line["command"]
@@ -1672,6 +1700,11 @@ class BubbleWindow(QWidget):
         if line["control"] == "slider":
             widget = ValueSlider(line["label"], int(line["on"]), self._text)
             widget.changed.connect(lambda value, command=line["command"]: self.command.emit(f"{command}/{value}"))
+            return widget
+        if line["control"] == "item":
+            widget = ItemRow(line["label"], bool(line["on"]), line["command"], line.get("actions") or [],
+                             self._text)
+            widget.chosen.connect(self.command.emit)
             return widget
         if line["control"] == "toggle":
             widget = Switch(line["label"], bool(line["on"]), self._text)
@@ -2285,6 +2318,12 @@ class BubbleWindow(QWidget):
         or selected count too."""
         return self.isVisible() and (bool(self.face.pointer_near(self)) or self.holding())
 
+    def _release_bots_arc(self):
+        """A bubble that was showing /bots took the arc with it."""
+        faces = getattr(self.face, "faces", None)
+        if faces is not None and hasattr(faces, "release_bots_arc"):
+            faces.release_bots_arc()
+
     def close_bubble(self, reason: str) -> bool:
         """Close the bubble, unless it closes by itself and the pointer is still engaged. True when it closed."""
         if not self.kind and not self.isVisible():
@@ -2295,6 +2334,7 @@ class BubbleWindow(QWidget):
             self.face.pinned = False
             self.face._answer_view = False
         self.place("")
+        self._release_bots_arc()
         return True
 
     def heal(self) -> bool:
@@ -2304,6 +2344,7 @@ class BubbleWindow(QWidget):
         if self.consistent():
             return False
         self.place("")
+        self._release_bots_arc()
         return True
 
     def place(self, kind: str):

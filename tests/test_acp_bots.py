@@ -10,6 +10,7 @@ import unittest
 
 from botwidget import acp_bots, acplink, config
 from botwidget.avatar import GROK_HEX, avatar_profile
+from botwidget.markdown import block_text
 from botwidget.menu_pages import bot_form, bots
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -70,11 +71,18 @@ class BotForm(unittest.TestCase):
             block.get("label", "") + " " + str(block.get("value") or "")
             for block in bot_form({}) if block.get("kind") == "control")
         self.assertIn("New bot", "\n".join(str(block.get("chunks")) for block in bot_form({})))
-        self.assertIn("http://127.0.0.1:8080/v1", shown)
-        self.assertIn("local", shown)
-        self.assertIn("~/.config/llm/key", shown)
+        self.assertIn("Connection: none yet", shown)
+        self.assertNotIn("Model address", shown)
         self.assertIn("nuage", shown)
         self.assertIn("blue", shown)
+        preview = next(block for block in bot_form({}) if block.get("control") == "preview")
+        self.assertEqual(preview["value"], "nuage|blue|new")
+        from botwidget.bubble import line_height
+        from botwidget.avatar import AVATAR_SIZE
+        self.assertEqual(line_height(preview), AVATAR_SIZE)
+        refused = block_text(bot_form({"bot_error": "A bot needs a name."}))
+        self.assertLess(refused.index("Connection: none yet"), refused.index("A bot needs a name."))
+        self.assertLess(refused.index("A bot needs a name."), refused.index("Save bot"))
 
     def test_saving_an_unset_face_does_not_repaint_the_bot(self):
         stored = {"id": "local", "name": "Local Bot", "command": "run", "key_file": "k",
@@ -94,9 +102,16 @@ class BotForm(unittest.TestCase):
     def test_the_bots_page_can_add_edit_and_remove_a_harness_bot(self):
         blocks = bots({"bots": [{"id": "acp:local", "name": "Local", "on": True, "acp": True}]})
         commands = [block.get("command") for block in blocks if block.get("kind") == "control"]
+        commands += [action["command"] for block in blocks for action in block.get("actions") or []]
         self.assertIn("page/bot", commands)
         self.assertIn("page/bot/acp:local", commands)
         self.assertIn("bot-remove/acp:local", commands)
+        armed = bots({"bots": [{"id": "acp:a", "name": "One", "on": True, "acp": True},
+                               {"id": "acp:b", "name": "Two", "on": True, "acp": True}],
+                      "confirm_remove": "bot-remove/acp:a"})
+        removes = [(action["label"], action["command"]) for block in armed for action in block.get("actions") or []
+                   if str(action["command"]).startswith("bot-remove/")]
+        self.assertEqual(removes, [("Again", "bot-remove/acp:a"), ("Remove", "bot-remove/acp:b")])
         self.assertIn("page/widget-json", commands)
 
     def test_two_bots_share_a_model_and_a_rename_keeps_the_id(self):
@@ -129,6 +144,53 @@ class BotForm(unittest.TestCase):
         remodel = [dict(before[0], env={**before[0]["env"], "HARNESS_MODEL": "other"}), before[1]]
         self.assertEqual(acp_bots.plan(before, remodel), [("restart", "acp:local")])
         self.assertEqual(acp_bots.plan(before, before[:1]), [("close", "acp:other")])
+
+    def test_a_bot_uses_the_connection_it_names_and_an_edit_restarts_only_that_bot(self):
+        """Should copy the chosen connection onto the bot, restart only that bot when it changes, and refuse a remove while it is in use."""
+        from unittest import mock
+        here, error = acp_bots.commit_connection(
+            {**acp_bots.blank_connection(), "name": "Here", "base_url": "http://127.0.0.1:8080/v1",
+             "model": "local", "key_file": "k"}, [])
+        self.assertEqual(error, "")
+        there, error = acp_bots.commit_connection(
+            {**acp_bots.blank_connection(), "name": "There", "base_url": "http://10.0.0.2:9/v1",
+             "model": "other", "key_file": "k2"}, here)
+        self.assertEqual(error, "")
+        self.assertEqual(acp_bots.first_connection(there), "here")
+        qwen, error = acp_bots.commit({**acp_bots.blank(), "name": "Qwen", "connection": "there"}, [], there)
+        self.assertEqual(error, "")
+        self.assertEqual(qwen[0]["connection"], "there")
+        self.assertEqual(qwen[0]["env"]["HARNESS_MODEL_BASE_URL"], "http://10.0.0.2:9/v1")
+        both, error = acp_bots.commit({**acp_bots.blank(), "name": "Other"}, qwen, there)
+        self.assertEqual(error, "")
+        self.assertNotIn("connection", both[1])
+        shown = [block.get("label", "") for block in bot_form(
+            {"connections": there, "bot_form": {**acp_bots.blank(), "connection": "there", "name": "Qwen"}})]
+        self.assertIn("Connection: There", shown)
+        with mock.patch.object(acplink, "widget_config", return_value={"acp_bots": both, "connections": there}):
+            before = acplink.configured_bots()
+        edited, error = acp_bots.commit_connection(
+            {**acp_bots.fields_of_connection(there[1]), "base_url": "http://10.0.0.8:9/v1"}, there)
+        self.assertEqual(error, "")
+        with mock.patch.object(acplink, "widget_config", return_value={"acp_bots": both, "connections": edited}):
+            after = acplink.configured_bots()
+        self.assertEqual(acp_bots.plan(before, after), [("restart", "acp:qwen")])
+        refused, message = acp_bots.drop_connection(there, "there", both)
+        self.assertIsNone(refused)
+        self.assertEqual(message, "A bot still uses this connection.")
+        kept, message = acp_bots.drop_connection(there, "here", both)
+        self.assertEqual(message, "")
+        self.assertEqual([row["id"] for row in kept], ["there"])
+        off = acp_bots.set_connection_on(there, "there", False)
+        self.assertEqual(off[1]["enabled"], False)
+        with mock.patch.object(acplink, "widget_config", return_value={"acp_bots": both, "connections": off}):
+            stopped = acplink.configured_bots()
+        self.assertEqual(acp_bots.plan(before, stopped), [("close", "acp:qwen")])
+        self.assertEqual([bot["id"] for bot in stopped], ["acp:other"])
+        edited_off, error = acp_bots.commit_connection(
+            {**acp_bots.fields_of_connection(off[1]), "model": "renamed"}, off)
+        self.assertEqual(error, "")
+        self.assertEqual(edited_off[1].get("enabled"), False)
 
     def test_a_chosen_face_and_colour_are_what_gets_drawn(self):
         profile = avatar_profile("acp:local", None, {"shape": "nuage", "color": "blue"})
@@ -209,6 +271,9 @@ class WidgetSave(unittest.TestCase):
         self.assertNotIn("acp:second-check", [call[1] for call in self.calls])
         self.assertEqual(json.load(open(config.CONFIG_PATH))["acp_bots"][0]["id"], "harness-check")
 
+        self.assertEqual(self.box.menu_command("bot-remove/acp:harness-check", "bots"), "bots")
+        still = json.load(open(config.CONFIG_PATH))["acp_bots"]
+        self.assertEqual([row["id"] for row in still], ["harness-check", "second-check"])
         self.box.menu_command("bot-remove/acp:harness-check", "bots")
         left = json.load(open(config.CONFIG_PATH))["acp_bots"]
         self.assertEqual([row["id"] for row in left], ["second-check"])
@@ -237,7 +302,7 @@ class EditPage(unittest.TestCase):
     def test_clicking_edit_opens_that_bots_page(self):
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest
-        from botwidget.qt_ui.controls import ActionButton
+        from botwidget.qt_ui.controls import ItemRow
 
         box = self.Faces.__new__(self.Faces)
         box.faces = {}
@@ -266,14 +331,67 @@ class EditPage(unittest.TestCase):
         window.open_menu("bots")
         self.app.processEvents()
         bubble = window.bubble
-        edit = next(w for w in bubble._control_widgets if isinstance(w, ActionButton) and w.text() == "Edit Local Bot")
-        # Where the text window receives the click that was meant for the button.
-        point = QPoint(edit.geometry().center().x() - bubble._doc.x(), edit.geometry().center().y() - bubble._doc.y())
+        row = next(w for w in bubble._control_widgets if isinstance(w, ItemRow))
+        edit = next(rect for _label, command, rect in row._hits if command == "page/bot/acp:local-bot")
+        # Where the text window receives the click that was meant for Edit on this row.
+        point = QPoint(int(row.geometry().x() + edit.center().x() - bubble._doc.x()),
+                       int(row.geometry().center().y() - bubble._doc.y()))
         QTest.mouseClick(bubble._doc.viewport(), Qt.LeftButton, Qt.NoModifier, point)
         self.app.processEvents()
         self.assertIn("Edit bot", bubble.full_text)
         self.assertIn("Name: Local Bot", bubble.full_text)
         self.assertEqual(window._menu_page, "bot/acp:local-bot")
+
+    def test_clicking_the_name_and_save_stores_the_bot(self):
+        """Should keep a name typed into the field when the click lands on the text, then save it."""
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        from botwidget.qt_ui.controls import ActionButton, TextField
+
+        box = self.Faces.__new__(self.Faces)
+        box.faces = {}
+        box._arc_guests = {}
+        box._arc_order = []
+        box._semicircle = {}
+        box.toggle = lambda *_args: None
+        box.close_bubbles_except = lambda *_args: None
+        box.hold_arc = lambda: None
+        box._stop_guest = lambda *_args: None
+
+        def menu_state():
+            return {
+                "version": "0", "channel": "local", "switch_label": None, "hotkey": "",
+                "update": "", "staged_update": "", "sound": False, "quiet_hours": False,
+                "always_on_top": False, "can_pick_desktops": False, "can_glass": False, "glass_clear": 0,
+                "all_desktops": False, "login": False, "check_updates": False, "save_battery": False,
+                "can_install_updates": False, "auto_update": False, "bots": [],
+                "bot_form": getattr(box, "_bot_draft", None), "bot_error": getattr(box, "_bot_error", ""),
+                "json_text": "", "json_error": "", "openbot": False, "automation_ready": False,
+                "gbot": False, "grok": "", "grok_target": "", "hermes": False, "wanted": [],
+            }
+
+        box.menu_state = menu_state
+        window = self.FaceWindow("t", "Test", spot=(300, 400), faces=box)
+        window._poll_timer.stop()
+        self.addCleanup(window.close_face)
+        window.open_menu("bot")
+        self.app.processEvents()
+        bubble = window.bubble
+        name = next(w for w in bubble._control_widgets if isinstance(w, TextField))
+        point = QPoint(name.geometry().center().x() - bubble._doc.x(),
+                       name.geometry().center().y() - bubble._doc.y())
+        QTest.mouseClick(bubble._doc.viewport(), Qt.LeftButton, Qt.NoModifier, point)
+        self.assertIs(bubble.focusWidget(), name.edit)
+        QTest.keyClicks(name.edit, "Lokal")
+        save = next(w for w in bubble._control_widgets if isinstance(w, ActionButton) and w.text() == "Save bot")
+        point = QPoint(save.geometry().center().x() - bubble._doc.x(),
+                       save.geometry().center().y() - bubble._doc.y())
+        QTest.mouseClick(bubble._doc.viewport(), Qt.LeftButton, Qt.NoModifier, point)
+        self.app.processEvents()
+        self.assertEqual(window._menu_page, "bots")
+        with open(config.CONFIG_PATH) as fh:
+            names = [row["name"] for row in json.load(fh)["acp_bots"]]
+        self.assertIn("Lokal", names)
 
     def test_a_missed_pointer_sample_after_edit_does_not_close_the_page(self):
         """Should keep Edit bot open when X names no window on the frame after the click.
@@ -284,7 +402,7 @@ class EditPage(unittest.TestCase):
         """
         from unittest import mock
         from PySide6.QtGui import QGuiApplication
-        from botwidget.qt_ui.controls import ActionButton
+        from botwidget.qt_ui.controls import ItemRow
         from botwidget.qt_ui.native import native_id
 
         box = self.Faces.__new__(self.Faces)
@@ -315,7 +433,8 @@ class EditPage(unittest.TestCase):
         window.open_menu("bots")
         self.app.processEvents()
         bubble = window.bubble
-        edit = next(w for w in bubble._control_widgets if isinstance(w, ActionButton) and w.text() == "Edit Local Bot")
+        row = next(w for w in bubble._control_widgets if isinstance(w, ItemRow))
+        edit = next(rect for _label, command, rect in row._hits if command == "page/bot/acp:local-bot")
         named = {"id": native_id(bubble)}
 
         def under_pointer():
@@ -325,7 +444,7 @@ class EditPage(unittest.TestCase):
                 mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
                 mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer):
             self.assertTrue(window.pointer_near(bubble), "the pointer is on the bots page")
-            edit.click()
+            row.press_at(edit.center().x())
             self.app.processEvents()
             self.assertTrue(bubble.full_text.startswith("Edit bot"))
             self.assertTrue(bubble.isVisible())

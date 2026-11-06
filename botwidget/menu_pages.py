@@ -10,7 +10,7 @@ from botwidget.config import QUIET_FROM, QUIET_TO
 from botwidget.markdown import control_block, plain_block, role_panel, text_block
 from botwidget.theme import BUBBLE_FONT
 
-PAGES = ("settings", "bots", "connections", "bot", "widget-json")
+PAGES = ("settings", "bots", "connections", "bot", "connection", "widget-json")
 # What typing it in the field opens.
 SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"}
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
@@ -18,13 +18,11 @@ SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"
 COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
             ("/connections", "what was found"), ("/refresh", "reload every bot"),
             ("/feedback", "open a GitHub issue"))
-DEBUG_COMMAND = ("/debug", "pretend to think; click for a sample message")
 
 
 def commands() -> tuple:
-    """The commands the list offers. /debug only in a copy that runs from a checkout, never in an installed one."""
-    from botwidget.startup import from_checkout
-    return (*COMMANDS, DEBUG_COMMAND) if from_checkout() else COMMANDS
+    """The commands the list offers. A sample thought is a switch in Settings, and only in a checkout."""
+    return COMMANDS
 
 
 DEBUG_THOUGHT = "Debug: this is what a thought looks like while the bot works…"
@@ -90,6 +88,12 @@ def _button(label: str, command: str) -> dict:
     return control_block("button", label, command)
 
 
+def _item(label: str, command: str, on: bool, actions: list) -> dict:
+    """One element: the switch is the command, and each action belongs to this row alone."""
+    return {**control_block("item", label, command, bool(on)),
+            "actions": [{"label": text, "command": action} for text, action in actions]}
+
+
 def _field(label: str, command: str, value: str) -> dict:
     return {**control_block("field", label, command), "value": value}
 
@@ -127,8 +131,17 @@ def settings(state: dict) -> list:
     ]
     if state.get("can_install_updates"):
         blocks.append(_toggle("Install updates automatically", "toggle/auto_update", state["auto_update"]))
+    if state.get("dev"):
+        blocks.append(_toggle("Sample thought, click the face for a sample message", "toggle/debug",
+                              bool(state.get("debug"))))
     blocks += [plain_block("gap"), _button("Quit Bot Widget", "action/quit")]
     return blocks
+
+
+def _remove_button(state: dict, command: str, name: str) -> dict:
+    """The first click arms it. It is gone only after the second click of this same row."""
+    label = "Click again to remove" if state.get("confirm_remove") == command else name
+    return _button(label, command)
 
 
 def bots(state: dict) -> list:
@@ -138,37 +151,55 @@ def bots(state: dict) -> list:
     for bot in state["bots"]:
         # Where the bot lives: OpenBot, Grok Bot, Hermes or a harness bot.
         label = f"{bot['name']} · {bot['source']}" if bot.get("source") else bot["name"]
-        blocks.append(_toggle(label, f"bot/{bot['id']}", bot["on"]))
-        blocks.append({**_toggle("Thinking muted", f"mute/{bot['id']}", bot.get("muted", False)), "indent": 44})
+        actions = [("Unmute" if bot.get("muted") else "Mute", f"mute/{bot['id']}")]
         if bot.get("acp"):
-            blocks.append(_button(f"Edit {bot['name']}", f"page/bot/{bot['id']}"))
-            blocks.append(_button(f"Remove {bot['name']}", f"bot-remove/{bot['id']}"))
+            actions.append(("Edit", f"page/bot/{bot['id']}"))
+            remove = f"bot-remove/{bot['id']}"
+            actions.append(("Again" if state.get("confirm_remove") == remove else "Remove", remove))
+        blocks.append(_item(label, f"bot/{bot['id']}", bot["on"], actions))
     if not state["bots"]:
         blocks.append(_row(("No bots found yet", "dim")))
     blocks += [plain_block("gap"), _button("New bot", "page/bot"), _button("Edit widget.json", "page/widget-json")]
     return blocks
 
 
+def _face_preview(form: dict) -> dict:
+    """The face and colour as they will be drawn. The value is what the picture is of."""
+    face, colour = form.get("face") or "", form.get("color") or ""
+    seed = form.get("id") or form.get("name") or "new"
+    return {**control_block("preview", "", "preview"), "value": f"{face}|{colour}|{seed}"}
+
+
+def _connection_label(state: dict, form: dict) -> str:
+    chosen = str(form.get("connection") or "")
+    for row in state.get("connections") or []:
+        if row.get("id") == chosen:
+            return f"Connection: {row.get('name') or chosen}"
+    return "Connection: none yet"
+
+
 def bot_form(state: dict) -> list:
-    """Name, face, colour and the model. The key stays in its file."""
+    """Name, face, colour and which connection answers. The address lives on that connection."""
     from botwidget.acp_bots import blank
     form = state.get("bot_form") or blank()
     editing = bool(form.get("stored_id"))
     blocks = _back() + [_heading("Edit bot" if editing else "New bot"), _back_hint()]
-    if state.get("bot_error"):
-        blocks.append(_row((state["bot_error"], "dim")))
     blocks += [
         _field("Name", "field/name", form.get("name") or ""),
         _button(f"Face: {form.get('face') or 'automatic'}", "cycle/face"),
         _button(f"Colour: {form.get('color') or 'automatic'}", "cycle/color"),
-        _field("Model address", "field/base_url", form.get("base_url") or ""),
-        _field("Model", "field/model", form.get("model") or ""),
-        _field("Key file", "field/key_file", form.get("key_file") or ""),
+        _face_preview(form),
+        _button(_connection_label(state, form), "cycle/connection"),
+    ]
+    # Next to Save: an error at the top stayed off screen once the form had been scrolled down.
+    if state.get("bot_error"):
+        blocks.append(_row((state["bot_error"], "b")))
+    blocks += [
         plain_block("gap"),
         _button("Save bot", "action/save-bot"),
     ]
     if editing:
-        blocks.append(_button("Remove bot", f"bot-remove/{form['id']}"))
+        blocks.append(_remove_button(state, f"bot-remove/{form['id']}", "Remove bot"))
     return blocks
 
 
@@ -212,6 +243,41 @@ def connections(state: dict) -> list:
     else:
         note = "Waiting for Grok Bot to be installed" if "grokbot" in wanted else "Not found"
     blocks.append({**_row((note, "dim")), "indent": 44})
+    blocks += [plain_block("gap"), _heading("Model connections"),
+               _row(("Each one is on or off, like OpenBot. Off stops the bots that use it. "
+                     "The key stays in its file.", "dim"))]
+    if state.get("connection_error"):
+        blocks.append(_row((state["connection_error"], "b")))
+    for conn in state.get("connections") or []:
+        label = conn["name"] if conn.get("on", True) else f"{conn['name']} · off"
+        if conn.get("model"):
+            label = f"{label} · {conn['model']}"
+        remove = f"connection-remove/{conn['id']}"
+        blocks.append(_item(label, f"connection-toggle/{conn['id']}", conn.get("on", True), [
+            ("Edit", f"page/connection/{conn['id']}"),
+            ("Again" if state.get("confirm_remove") == remove else "Remove", remove),
+        ]))
+    blocks.append(_button("New connection", "page/connection"))
+    return blocks
+
+
+def connection_form(state: dict) -> list:
+    """One model endpoint: address, model name and the file the key is read from."""
+    from botwidget.acp_bots import blank_connection
+    form = state.get("connection_form") or blank_connection()
+    editing = bool(form.get("stored_id"))
+    blocks = _back() + [_heading("Edit connection" if editing else "New connection"), _back_hint()]
+    blocks += [
+        _field("Name", "field/name", form.get("name") or ""),
+        _field("Model address", "field/base_url", form.get("base_url") or ""),
+        _field("Model", "field/model", form.get("model") or ""),
+        _field("Key file", "field/key_file", form.get("key_file") or ""),
+    ]
+    if state.get("connection_error"):
+        blocks.append(_row((state["connection_error"], "b")))
+    blocks += [plain_block("gap"), _button("Save connection", "action/save-connection")]
+    if editing:
+        blocks.append(_remove_button(state, f"connection-remove/{form['id']}", "Remove connection"))
     return blocks
 
 
@@ -220,4 +286,6 @@ def page_blocks(page: str, state: dict) -> list:
         return widget_json(state)
     if page == "bot" or (isinstance(page, str) and page.startswith("bot/")):
         return bot_form(state)
+    if page == "connection" or (isinstance(page, str) and page.startswith("connection/")):
+        return connection_form(state)
     return {"settings": settings, "bots": bots, "connections": connections}.get(page, settings)(state)

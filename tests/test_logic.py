@@ -342,6 +342,35 @@ class GrokAvatarFallback(unittest.TestCase):
         self.assertEqual(faces.avatar, {"shape": "blob", "color": "black"})
         self.assertEqual(len(saved), 1, "nothing new to save")
 
+    def test_the_bots_page_holds_the_arc_until_that_page_closes(self):
+        """Should keep the arc up for /bots and hide it when that page closes, not when the pointer merely leaves."""
+        from unittest import mock
+        from botwidget.qt_ui.faces import Faces
+        faces = Faces.__new__(Faces)
+        faces._arc_from_bots = False
+        faces._semicircle_hide_timer = mock.Mock()
+        seen = []
+        faces.show_semicircle = lambda: seen.append("show") or setattr(faces, "_semicircle_phase", "visible")
+        faces.hide_semicircle = lambda: seen.append("hide")
+        faces._drag_in_progress = lambda: False
+        faces._semicircle_phase = "idle"
+        faces.faces = {}
+        faces.hold_arc()
+        self.assertEqual(seen, ["show"])
+        guest = mock.Mock()
+        guest._menu_page = "bots"
+        guest.bubble.isVisible.return_value = True
+        faces.faces = {"a": guest}
+        faces.release_bots_arc()
+        faces._semicircle_hide_timer.start.assert_not_called()
+        guest.bubble.isVisible.return_value = False
+        faces.release_bots_arc()
+        faces._semicircle_hide_timer.start.assert_called_once()
+        self.assertFalse(faces._arc_from_bots)
+        faces._semicircle_hide_timer.start.reset_mock()
+        faces.release_bots_arc()
+        faces._semicircle_hide_timer.start.assert_not_called()
+
     def test_semicircle_hangs_under_the_top_middle(self):
         """Should put every face on the lower half of the circle, under the top edge."""
         from botwidget.qt_ui.faces import Faces
@@ -1202,6 +1231,30 @@ class BubbleHover(unittest.TestCase):
         self.finish_growth()
         self.assertEqual(bubble._chrome_pix.size(), chrome.size())
         self.assertEqual(bubble._built, built)
+
+    def test_a_fast_local_answer_opens_the_bubble_on_the_first_look(self):
+        """Should show the answer when the turn is already over before the face has drawn a chat."""
+        class Link:
+            stopped = False
+
+            def active(self):
+                return False
+
+            def note(self):
+                return ""
+
+            def close(self):
+                pass
+
+        self.window.acp = Link()
+        self.window._seeded = False
+        self.window._asked = True
+        self.window._last_bot = None
+        self.window._sync_bubble({"messages": [{"role": "user", "text": "Hoi"},
+                                               {"role": "bot", "text": "Yo"}], "activity": ""})
+        self.assertEqual(self.window.bubble.kind, "say")
+        self.assertIn("Yo", self.window.bubble.full_text)
+        self.assertFalse(self.window._asked)
 
     def test_the_thinking_cloud_is_not_kept_open_by_its_dots(self):
         import time
@@ -2790,9 +2843,9 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble.frameGeometry().contains(bubble.card()), f"the card sticks out {when}")
 
     def test_the_held_area_of_a_bigger_bubble_goes_once_the_pointer_is_on_the_card_or_with_a_yield(self):
-        """After the back arrow the window holds the page's area. Once the pointer is on the smaller card, or the
-        bubble gives way to another one or closes, the window is the card again: no see-through area is left on
-        the screen that still counts as the bubble."""
+        """After the back arrow the window holds the page's area. A cursor reading on the smaller card does not
+        drop it: on XWayland that reading is not the pointer, and dropping it closed the page. Giving way or
+        closing does drop it."""
         from unittest import mock
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
@@ -2804,11 +2857,10 @@ class BubbleHover(unittest.TestCase):
             self.assertIsNotNone(bubble.holding_area())
             self.window_holds(bubble, "after the back arrow")
             centre = bubble.card().center()
-            self.where["at"] = (centre.x(), centre.y())  # onto the list itself
+            self.where["at"] = (centre.x(), centre.y())  # the cursor says it is on the list
             bubble._tick()
             self.assertTrue(bubble.isVisible())
-            self.assertIsNone(bubble.holding_area(), "on the card: nothing to hold any more")
-            self.assertEqual(bubble.frameGeometry(), bubble.card())
+            self.assertIsNotNone(bubble.holding_area(), "the cursor reading must not shrink the window")
             window.open_command_menu()  # the content changes again, the pointer on it
             self.window_holds(bubble, "after a second change")
             # Again, and now the bubble gives way to another one.
@@ -3261,6 +3313,9 @@ class BubbleHover(unittest.TestCase):
         point = QPointF(5, 5)
         QApplication.sendEvent(self.window, QMouseEvent(QEvent.MouseButtonPress, point, point, Qt.RightButton,
                                                         Qt.RightButton, Qt.NoModifier))
+        self.assertTrue(self.window.windowFlags() & Qt.WindowDoesNotAcceptFocus,
+                        "the first right-click has to arrive while the face is not focused")
+        self.assertFalse(self.window.bubble.windowFlags() & Qt.WindowDoesNotAcceptFocus)
         self.assertTrue(self.window.bubble.isVisible(), "the menu is up")
         self.assertFalse(other.bubble.isVisible())
 
@@ -4478,45 +4533,35 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "", "the keyboard is gone again: it may go")
 
-    def test_debug_is_only_offered_in_a_local_copy(self):
+    def test_debug_is_a_settings_switch_only_in_a_local_copy(self):
+        """Should offer the sample thought only as a Settings switch in a checkout, and keep the settings page full of its own text."""
         from unittest import mock
         from botwidget import menu_pages
-        with mock.patch("botwidget.startup.from_checkout", return_value=True):
-            self.assertIn("/debug", [c for c, _n in menu_pages.commands()])
+        from botwidget.config import save_widget_config
+        turned_on = {**self.settings_state(), "dev": True, "debug": True}
+        self.assertIn("toggle/debug", [block.get("command") for block in menu_pages.settings(turned_on)])
+        self.assertNotIn("toggle/debug", [block.get("command") for block in menu_pages.settings(self.settings_state())])
+        self.assertNotIn("/debug", [command for command, _note in menu_pages.commands()])
+        save_widget_config(debug=True)
         with mock.patch("botwidget.startup.from_checkout", return_value=False):
-            self.assertNotIn("/debug", [c for c, _n in menu_pages.commands()])
-            self.window.on_user_message("/debug")
-        self.assertFalse(self.window._debug, "an installed copy does not know the command")
-
-    def test_debug_makes_the_bot_think_and_a_click_shows_a_sample_message(self):
-        from unittest import mock
-        from botwidget import menu_pages
+            self.assertFalse(self.window._debug_on(), "an installed copy ignores the flag")
+            self.assertEqual(self.window._latest().get("activity", ""), "")
         with mock.patch("botwidget.startup.from_checkout", return_value=True):
-            self.window.on_user_message("/debug")
-        self.assertTrue(self.window._debug)
-        chat = self.window._latest()
-        self.assertEqual(chat["activity"], menu_pages.DEBUG_THOUGHT)
-        self.window._sync_bubble(chat, force=True)
-        self.assertTrue(self.window._working, "it looks busy")
-        self.assertTrue(self.window._toggle_answer_view())
-        self.assertIn("Header one", self.window.bubble.full_text)
-        self.assertIn("```python", menu_pages.DEBUG_MESSAGE)
+            self.assertTrue(self.window._debug_on())
+            chat = self.window._latest()
+            self.assertEqual(chat["activity"], menu_pages.DEBUG_THOUGHT)
+            self.window._sync_bubble(chat, force=True)
+            self.assertTrue(self.window._working, "it looks busy")
+            self.assertTrue(self.window._toggle_answer_view())
+            self.assertIn("Header one", self.window.bubble.full_text)
+            self.assertIn("```python", menu_pages.DEBUG_MESSAGE)
+        save_widget_config(debug=False)
         with mock.patch("botwidget.startup.from_checkout", return_value=True):
-            self.window.on_user_message("/debug")
-        self.assertFalse(self.window._debug, "a toggle")
-        self.assertEqual(self.window._latest().get("activity", ""), "")
-
-    def test_debug_chosen_from_the_menu_while_in_debug_mode_does_not_leave_an_empty_bubble(self):
-        from unittest import mock
-        with mock.patch("botwidget.startup.from_checkout", return_value=True):
-            self.window.on_user_message("/debug")
-            self.window.open_command_menu()
-            bubble = self.window.bubble
-            self.assertTrue(bubble._list_only)
-            bubble._run_command("/debug")
-        self.assertFalse(self.window._debug)
-        self.assertFalse(bubble._list_only, "the list went with the choice")
-        self.assertTrue(not bubble.isVisible() or bubble.full_text.strip(), "never an empty bubble")
+            self.assertFalse(self.window._debug_on(), "a toggle")
+            self.assertEqual(self.window._latest().get("activity", ""), "")
+        self.open_settings()
+        self.assertIn("Sound on a new answer", self.window.bubble.full_text)
+        self.assertNotIn("Header one", self.window.bubble.full_text, "the sample is not the settings page")
 
     def test_the_balls_hang_together_as_a_chain_and_go_with_the_bubble(self):
         from unittest import mock
@@ -5437,7 +5482,9 @@ class MenuPages(unittest.TestCase):
         found = []
         for block in blocks:
             found += [style[4:] for _text, style in block.get("chunks", []) if style.startswith("cmd:")]
-            found += [block["command"]] if block.get("kind") == "control" else []
+            if block.get("kind") == "control":
+                found.append(block["command"])
+                found += [action["command"] for action in block.get("actions") or []]
             found += [block["back"]] if block.get("back") else []
         return found
 
@@ -5479,7 +5526,8 @@ class MenuPages(unittest.TestCase):
     def test_the_connections_page_has_a_switch_per_connection_that_says_what_was_found(self):
         blocks = menu_pages.connections(self.STATE)
         text = self.text(blocks)
-        self.assertEqual(self.commands(blocks), ["page/commands", "connect/openbot", "connect/grokbot"])
+        self.assertEqual(self.commands(blocks),
+                         ["page/commands", "connect/openbot", "connect/grokbot", "page/connection"])
         self.assertIn("☑ OpenBot", text)
         self.assertIn("local API is off", text)
         self.assertIn("☐ Grok Bot", text)
@@ -5492,6 +5540,21 @@ class MenuPages(unittest.TestCase):
         text = self.text(menu_pages.connections({**self.STATE, "wanted": ["grokbot"]}))
         self.assertIn("☑ Grok Bot", text)
         self.assertIn("Waiting for Grok Bot", text)
+
+    def test_a_saved_connection_is_its_own_switch_with_edit_and_remove(self):
+        """Should put the switch, edit and remove on that connection, not on a button at the bottom."""
+        state = {**self.STATE, "connections": [
+            {"id": "here", "name": "Local", "on": True, "model": "qwen"},
+            {"id": "there", "name": "Other", "on": False, "model": "other"},
+        ]}
+        blocks = menu_pages.connections(state)
+        self.assertEqual(self.commands(blocks), [
+            "page/commands", "connect/openbot", "connect/grokbot",
+            "connection-toggle/here", "page/connection/here", "connection-remove/here",
+            "connection-toggle/there", "page/connection/there", "connection-remove/there",
+            "page/connection"])
+        self.assertIn("☑ Local · qwen", self.text(blocks))
+        self.assertIn("☐ Other · off · other", self.text(blocks))
 
     def test_every_page_leads_back_to_the_commands(self):
         for page in menu_pages.PAGES:

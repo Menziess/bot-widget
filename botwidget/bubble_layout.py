@@ -192,6 +192,10 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
             label_w = width([(block["label"], "")], SMALL_FONT)
             extra = {"toggle": CONTROL_SWITCH_W, "slider": CONTROL_SLIDER_W, "field": 220,
                      "editor": 420}.get(block["control"], CONTROL_BUTTON_PAD)
+            if block["control"] == "item":
+                extra = CONTROL_SWITCH_W + sum(
+                    width([(action.get("label") or "", "")], SMALL_FONT) + 32
+                    for action in block.get("actions") or [])
             laid.append({**block, "words": [], "xs": [], "ws": [], "head": False, "width": label_w + extra})
             widest = max(widest, laid[-1]["width"] + block.get("indent", 0))
             continue

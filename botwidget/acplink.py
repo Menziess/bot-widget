@@ -38,12 +38,25 @@ def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
+def _connections(config: dict) -> dict:
+    """id -> connection. A bot that names one takes its address, model and key file from here."""
+    rows = config.get("connections")
+    found = {}
+    for row in rows if isinstance(rows, list) else []:
+        if isinstance(row, dict) and str(row.get("id") or "").strip():
+            found[str(row["id"])] = row
+    return found
+
+
 def configured_bots() -> list[dict]:
     """The ACP faces in widget.json, one entry each: name, command, HARNESS_* env and a key file.
 
     The key itself is never in widget.json: `key_file` names a file the link reads at start.
+    A bot that names a connection uses that connection's address, model and key file.
     """
-    entries = widget_config().get("acp_bots")
+    config = widget_config()
+    entries = config.get("acp_bots")
+    links = _connections(config)
     bots = []
     for entry in entries if isinstance(entries, list) else []:
         if not isinstance(entry, dict):
@@ -53,6 +66,19 @@ def configured_bots() -> list[dict]:
             continue
         env = {key: str(value) for key, value in (entry.get("env") or {}).items()
                if str(key).startswith("HARNESS_") and str(key) != "HARNESS_MODEL_API_KEY"}
+        key_file = str(entry.get("key_file") or "")
+        conn = links.get(str(entry.get("connection") or ""))
+        if isinstance(conn, dict) and conn.get("enabled") is False:
+            continue  # the connection is off: its bots are not running, and the row stays in the file
+        if isinstance(conn, dict):
+            base, model = str(conn.get("base_url") or "").strip(), str(conn.get("model") or "").strip()
+            key = str(conn.get("key_file") or "").strip()
+            if base:
+                env["HARNESS_MODEL_BASE_URL"] = base
+            if model:
+                env["HARNESS_MODEL"] = model
+            if key:
+                key_file = key
         stored = str(entry.get("id") or "").strip()
         if stored.startswith(PREFIX):
             stored = stored[len(PREFIX):]
@@ -60,7 +86,7 @@ def configured_bots() -> list[dict]:
         if any(bot["id"] == PREFIX + ident for bot in bots):
             continue  # the same id twice would be one face with two agents
         bots.append({"id": PREFIX + ident, "name": name, "command": command, "env": env,
-                     "key_file": str(entry.get("key_file") or ""),
+                     "key_file": key_file, "connection": str(entry.get("connection") or ""),
                      "face": str(entry.get("face") or ""), "color": str(entry.get("color") or "")})
     return bots
 

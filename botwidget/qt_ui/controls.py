@@ -41,6 +41,80 @@ class Switch(QAbstractButton):
                          Qt.AlignVCenter | Qt.AlignLeft, self.text())
 
 
+class ItemRow(QWidget):
+    """One bot or one connection: its switch, its name, and only the actions that belong to it."""
+
+    chosen = Signal(str)
+
+    def __init__(self, title: str, on: bool, toggle: str, actions: list, parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._on = bool(on)
+        self._toggle = toggle
+        self._actions = [(str(action["label"]), str(action["command"])) for action in actions]
+        self._hits: list[tuple[str, str, QRectF]] = []
+        self._title_w = 0
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place()
+
+    def _place(self):
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        metrics = QFontMetrics(font)
+        x = float(self.width())
+        hits = []
+        for label, command in reversed(self._actions):
+            width = metrics.horizontalAdvance(label) + 28
+            x -= width
+            hits.append((label, command, QRectF(x, (self.height() - 28) / 2, width - 6, 28)))
+            x -= 4
+        hits.reverse()
+        self._hits = hits
+        self._title_w = max(0, x - CONTROL_SWITCH_W - 8)
+
+    def press_at(self, x: float):
+        """The text window sits over this row, so the click arrives as a position."""
+        if self._actions and not self._hits:
+            self._place()
+        for _label, command, rect in self._hits:
+            if rect.left() <= x <= rect.right():
+                self.chosen.emit(command)
+                return
+        self.chosen.emit(self._toggle)
+
+    def paintEvent(self, _event):
+        if self._actions and not self._hits:
+            self._place()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        top = (self.height() - TRACK_H) / 2
+        track = QRectF(0, top, TRACK_W, TRACK_H)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(color(SAND_ACCENT) if self._on else QColor(28, 28, 28, 64))
+        painter.drawRoundedRect(track, TRACK_H / 2, TRACK_H / 2)
+        knob = TRACK_H - 2 * KNOB_PAD
+        knob_x = TRACK_W - KNOB_PAD - knob if self._on else KNOB_PAD
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawEllipse(QRectF(knob_x, top + KNOB_PAD, knob, knob))
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        painter.setFont(font)
+        painter.setPen(color(SAND_INK))
+        title = QFontMetrics(font).elidedText(self._title, Qt.ElideRight, max(1, int(self._title_w)))
+        painter.drawText(QRectF(CONTROL_SWITCH_W, 0, max(1, self._title_w), self.height()),
+                         Qt.AlignVCenter | Qt.AlignLeft, title)
+        for label, _command, rect in self._hits:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(28, 28, 28, 14))
+            painter.drawRoundedRect(rect, 14, 14)
+            painter.setPen(color(SAND_INK))
+            painter.drawText(rect, Qt.AlignCenter, label)
+
+
 class ActionButton(QPushButton):
     """A button for something that happens once: an update, a link, quitting."""
 
