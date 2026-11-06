@@ -18,7 +18,7 @@ from botwidget import config, grok_relay
 
 
 def _write_config(data: dict):
-    """widget.json for this test. The suite deletes the file before every test."""
+    """widget.json for this test (CONFIG_PATH must already point at a temp file)."""
     os.makedirs(os.path.dirname(config.CONFIG_PATH), exist_ok=True)
     with open(config.CONFIG_PATH, "w") as fh:
         json.dump(data, fh)
@@ -95,6 +95,14 @@ class ParseRelayMessages(unittest.TestCase):
 
 class RelayChannel(unittest.TestCase):
     """Should subscribe only when widget.json names a channel, and only through the injected listener."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        old_path = config.CONFIG_PATH
+        config.CONFIG_PATH = os.path.join(folder.name, "widget.json")
+        self.addCleanup(setattr, config, "CONFIG_PATH", old_path)
+        config._config_read[:] = [None, {}]
 
     def test_should_read_a_blank_channel_as_off(self):
         self.assertEqual(grok_relay.channel(), "")
@@ -326,6 +334,14 @@ class RelayFaces(unittest.TestCase):
 
 class LinkGrokBotsTest(unittest.TestCase):
     """Backlog #5: Link button + chief prompt (no network)."""
+
+    def setUp(self) -> None:
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        old_path = config.CONFIG_PATH
+        config.CONFIG_PATH = os.path.join(folder.name, "widget.json")
+        self.addCleanup(setattr, config, "CONFIG_PATH", old_path)
+        config._config_read[:] = [None, {}]
 
     def test_new_topic_unique_nonempty(self) -> None:
         a, b = grok_relay.new_topic(), grok_relay.new_topic()
