@@ -463,6 +463,7 @@ class Faces(QObject):
             "grok_target": grokbot.target(),
             "hermes": hermesbot.is_hermes_installed(),
             "wanted": sorted(self.wanted),
+            "grok_relay": grok_relay.channel(),
         }
 
     TOGGLES = {
@@ -512,6 +513,17 @@ class Faces(QObject):
             self.switch_channel()
         elif kind == "action" and name == "quit":
             QApplication.quit()
+        elif kind == "action" and name == "link-grok":
+            linked = grok_relay.link_channel()
+            if getattr(self, "relay", None) is not None:
+                self.relay.start()
+            QApplication.clipboard().setText(linked["prompt"])
+            return "connections"
+        elif kind == "action" and name == "copy-grok-prompt":
+            topic = grok_relay.channel()
+            if topic:
+                QApplication.clipboard().setText(grok_relay.chief_prompt(topic))
+            return "connections"
         return None
 
     def _set_glass(self, percent: int):

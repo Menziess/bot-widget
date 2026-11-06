@@ -4,7 +4,9 @@ import json
 import urllib.request
 from threading import Event, Thread
 
-from botwidget.config import widget_config
+import secrets
+
+from botwidget.config import save_widget_config, widget_config
 
 _STATES = {"start", "done", "stuck", "needs_you"}
 _RETRY_S = 2
@@ -48,6 +50,34 @@ def _timestamp(value):
         text = value.strip()
         return text or None
     return None
+
+
+
+def new_topic() -> str:
+    """A fresh public ntfy topic name the widget created."""
+    return "bw-" + secrets.token_urlsafe(18)
+
+
+def chief_prompt(topic: str) -> str:
+    """One pasteable instruction for General so every Grok bot shares this relay."""
+    topic = topic.strip()
+    return (
+        f"Bot Widget linked Grok bots on ntfy topic {topic} (https://ntfy.sh/{topic}). "
+        "Tell every Grok bot to publish status JSON there: "
+        '{bot, state: start|done|stuck|needs_you, summary, ts}. '
+        "Send one roster once as "
+        "{bots:[{name, team, color, face, chat_url}, ...]}; a routine may resend roster and usage. "
+        "Do not ask Stefan to configure each bot."
+    )
+
+
+def link_channel(*, topic: str | None = None) -> dict:
+    """Create (or reuse) the channel in widget.json. Returns topic + chief prompt."""
+    name = (topic or new_topic()).strip()
+    if not name:
+        name = new_topic()
+    save_widget_config(grok_relay=name)
+    return {"topic": name, "prompt": chief_prompt(name)}
 
 
 def parse(raw):

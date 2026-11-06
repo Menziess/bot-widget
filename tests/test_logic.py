@@ -5472,14 +5472,24 @@ class MenuPages(unittest.TestCase):
     def test_the_connections_page_has_a_switch_per_connection_that_says_what_was_found(self):
         blocks = menu_pages.connections(self.STATE)
         text = self.text(blocks)
-        self.assertEqual(self.commands(blocks), ["page/chat", "connect/openbot", "connect/grokbot"])
+        self.assertEqual(
+            self.commands(blocks),
+            ["page/chat", "connect/openbot", "connect/grokbot", "action/link-grok"],
+        )
         self.assertIn("☑ OpenBot", text)
         self.assertIn("local API is off", text)
         self.assertIn("☐ Grok Bot", text)
         self.assertIn("Not found", text)
+        self.assertIn("Link Grok bots", text)
         ready = self.text(menu_pages.connections({**self.STATE, "automation_ready": True, "gbot": True}))
         self.assertIn("local API ready", ready)
         self.assertIn("☑ Grok Bot", ready)
+        linked = menu_pages.connections({**self.STATE, "grok_relay": "bw-x"})
+        self.assertEqual(
+            self.commands(linked),
+            ["page/chat", "connect/openbot", "connect/grokbot", "action/copy-grok-prompt"],
+        )
+        self.assertIn("bw-x", self.text(linked))
 
     def test_a_connection_that_was_turned_on_but_not_found_stays_on_and_says_it_waits(self):
         text = self.text(menu_pages.connections({**self.STATE, "wanted": ["grokbot"]}))

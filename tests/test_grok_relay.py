@@ -8,6 +8,7 @@ import os
 import tempfile
 import time
 import unittest
+from pathlib import Path
 from contextlib import ExitStack
 from unittest import mock
 
@@ -321,3 +322,74 @@ class RelayFaces(unittest.TestCase):
         self.faces.apply_relay("not json")
         self.faces.apply_relay(None)
         self.assertEqual(set(self.faces.faces), before)
+
+
+class LinkGrokBotsTest(unittest.TestCase):
+    """Backlog #5: Link button + chief prompt (no network)."""
+
+    def test_new_topic_unique_nonempty(self) -> None:
+        a, b = grok_relay.new_topic(), grok_relay.new_topic()
+        self.assertTrue(a.startswith("bw-"))
+        self.assertNotEqual(a, b)
+
+    def test_chief_prompt_includes_topic_and_states(self) -> None:
+        text = grok_relay.chief_prompt("bw-demo")
+        self.assertIn("bw-demo", text)
+        self.assertIn("ntfy.sh/bw-demo", text)
+        for state in ("start", "done", "stuck", "needs_you"):
+            self.assertIn(state, text)
+        self.assertIn("roster", text.lower())
+
+    def test_link_channel_writes_config(self) -> None:
+        out = grok_relay.link_channel(topic="bw-fixed-topic")
+        self.assertEqual(out["topic"], "bw-fixed-topic")
+        self.assertIn("bw-fixed-topic", out["prompt"])
+        self.assertEqual(config.widget_config().get("grok_relay"), "bw-fixed-topic")
+        self.assertEqual(grok_relay.channel(), "bw-fixed-topic")
+
+    def test_connections_page_shows_link_button_when_unlinked(self) -> None:
+        from botwidget import menu_pages
+        state = {
+            "openbot": False, "automation_ready": False, "gbot": False, "grok": "",
+            "wanted": (), "grok_relay": "",
+        }
+        blocks = menu_pages.connections(state)
+        commands = [b.get("command") for b in blocks if isinstance(b, dict) and b.get("command")]
+        self.assertIn("action/link-grok", commands)
+        self.assertNotIn("action/copy-grok-prompt", commands)
+
+    def test_connections_page_shows_copy_when_linked(self) -> None:
+        from botwidget import menu_pages
+        state = {
+            "openbot": False, "automation_ready": False, "gbot": True, "grok": "ok",
+            "wanted": (), "grok_relay": "bw-linked",
+        }
+        blocks = menu_pages.connections(state)
+        blob = json.dumps(blocks)
+        self.assertIn("bw-linked", blob)
+        commands = [b.get("command") for b in blocks if isinstance(b, dict) and b.get("command")]
+        self.assertIn("action/copy-grok-prompt", commands)
+        self.assertNotIn("action/link-grok", commands)
+
+    def test_menu_command_link_grok(self) -> None:
+        from botwidget.qt_ui.faces import Faces
+        clip = []
+
+        class _Clip:
+            def setText(self, text):
+                clip.append(text)
+
+        class _App:
+            @staticmethod
+            def clipboard():
+                return _Clip()
+
+        faces = mock.Mock()
+        faces.relay = mock.Mock()
+        with mock.patch("botwidget.qt_ui.faces.QApplication", _App):
+            page = Faces.menu_command(faces, "action/link-grok", "connections")
+        self.assertEqual(page, "connections")
+        faces.relay.start.assert_called_once()
+        self.assertEqual(len(clip), 1)
+        self.assertIn("ntfy", clip[0])
+        self.assertTrue(grok_relay.channel().startswith("bw-"))

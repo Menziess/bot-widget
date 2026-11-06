@@ -100,7 +100,7 @@ The widget can also talk to one bot of Grok Bot. It does that with the `gbot` co
 - /bots switches the Grok face on or off, like the faces of the other bots
 - The Grok face wears the avatar Grok Bot gives the bot: its own shape (blob, hex, cloud, clover, sparkle, house, square and the rest) and colour; it moves and blinks like the other faces
 - Without an answer from Grok Bot the face takes `grokbot_avatars` in widget.json, e.g. `{"General": {"shape": "blob", "color": "black"}}`, and else the avatar Grok Bot gave last time
-- The widget can also read live status from a relay. The channel is `grok_relay` in widget.json, either a topic name or a full URL. With that key missing or blank, the widget does not subscribe. A roster on the channel lists each bot by name, plus team, color, face and chat_url when they are sent, and each bot gets a Grok face whose shape and colour come from face and color. A status line for that bot (`start`, `done`, `stuck` or `needs_you`) is shown on its face.
+- The widget can also read live status from a relay. The channel is `grok_relay` in widget.json, either a topic name or a full URL. With that key missing or blank, the widget does not subscribe. A roster on the channel lists each bot by name, plus team, color, face and chat_url when they are sent, and each bot gets a Grok face whose shape and colour come from face and color. A status line for that bot (`start`, `done`, `stuck` or `needs_you`) is shown on its face. Connections → Link Grok bots creates the channel and copies one chief prompt for General.
 
 ## Updates
 
