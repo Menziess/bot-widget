@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration, request 2 of the Windows release (slug in the variable
+     SIGNPATH_SETUP_CONFIG_SLUG): the Inno Setup installer, built from the files signed in request 1. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="BotWidget-Windows-Setup.exe" product-name="Bot Widget" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

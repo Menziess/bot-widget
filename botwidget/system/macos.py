@@ -25,8 +25,8 @@ MANAGED = 1 << 2
 FULL_SCREEN_AUXILIARY = 1 << 8
 MOVE_TO_ACTIVE_SPACE = 1 << 1
 CAN_PICK_DESKTOPS = True
-# No taskbar here; the Dock icon goes with hide_from_dock.
-FACE_IS_TOOL = False
+# Qt.Tool is an NSPanel: no Dock tile, no Cmd-Tab. hide_from_dock also sets accessory policy.
+FACE_IS_TOOL = True
 # Resting the pointer on a face puts the cursor in its field.
 FOCUS_ON_HOVER = True
 ACCESSORY = 1  # NSApplicationActivationPolicyAccessory

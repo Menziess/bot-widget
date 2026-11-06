@@ -279,7 +279,7 @@
 
   var ANSWERS = [
     [/\b(hi|hello|hey|hoi|yo)\b/, "Hi! Ask me how to install me, what I need, or what I can do."],
-    [/install|download|get you|setup|set up|start|run/, "On a Mac: unzip, drag Bot Widget into Applications and open it. On Windows: run the installer. On Linux: unpack the archive and run ./botwidget/install.sh. With uv, one line does it everywhere: uv tool install git+https://github.com/Menziess/bot-widget"],
+    [/install|download|get you|setup|set up|start|run/, "On a Mac with Apple Silicon, run curl -fsSL https://bot-widget.com/install.sh | sh in Terminal. On Windows: run the installer. On Linux: unpack the archive and run ./botwidget/install.sh. With uv, one line does it everywhere: uv tool install git+https://github.com/Menziess/bot-widget"],
     [/windows|linux|mac|system|platform|support/, "I run on macOS, Windows and Linux. The download button above picks the right one for you."],
     [/openbot|grok/, "I'm only the face. I talk to OpenBot or Grok Bot on your computer; without either I tell you so and point you to both."],
     [/free|cost|price|pay|licen|open source/, "Free, and the source is on GitHub."],

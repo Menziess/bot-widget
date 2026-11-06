@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration, request 1 of the Windows release (slug in the variable
+     SIGNPATH_FILES_CONFIG_SLUG). The ZIP is the signpath-windows-files artifact from release.yml:
+       app/Bot Widget.exe       the app, built by PyInstaller with version info from packaging/build.py
+       uninstaller/uninst.exe   Inno Setup's uninstaller (uninst-*.e32), embedded in the installer after signing
+     Only our own binaries: files from other projects in the app folder are never signed here.
+     SignPath Foundation requires the product name and version to be set and enforced. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="version" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file path="app/Bot Widget.exe" product-name="Bot Widget" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+    <pe-file path="uninstaller/uninst.exe" product-name="Bot Widget" product-version="${version}">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

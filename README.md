@@ -12,6 +12,7 @@ uv tool install git+https://github.com/Menziess/bot-widget
 
 uv is for the command line and for development. On Linux the face stays tied to that terminal, so closing the terminal quits the face. For a start from the app menu, use the Linux tar and `install.sh`. That command is `bot-widget`. To leave the terminal and keep the face: `nohup botwidget >/dev/null 2>&1 &`.
 
+- On a Mac with Apple Silicon, `curl -fsSL https://bot-widget.com/install.sh | sh` puts the app in `~/Applications` and opens it. A download from Terminal is not quarantined, so macOS does not show its warning for apps that are not notarized. The script is `packaging/install-macos.sh`: it checks the download against the release's SHA256SUMS.txt and the app's signature, and never asks for sudo. `BOTWIDGET_VERSION=0.2.7` installs that version instead of the latest
 - Instead of uv, `pipx install git+https://github.com/Menziess/bot-widget` works the same way
 - Python 3.10 or newer is the only requirement
 - Linux, macOS and Windows use the same code
@@ -26,7 +27,7 @@ botwidget
 - Point at the face to open the bubble, also when the pointer was already there: the latest message, and a field to type in
 - After a restart the old conversation does not open the bubble by itself; only a message that comes after does
 - The field is focused once the pointer stays on the face for a moment, press Enter to send
-- Earlier messages load one at a time. Scroll up at the top of the bubble, or point at its top edge, and a thin line across the top of the bubble appears (the bubble grows by it, the text moves down) and stays there. On a page of the menu the same line is on top, and pulling it far enough goes back. The pointer on it makes the middle swell a little. Keep scrolling and the line is pulled: its middle swells into a soft blue glow with an arrow in it by the distance you scrolled, however fast or slow, and it shrinks again when you scroll back down. Pulled far enough (about 140 pixels), or clicked, the message before slides in; let go earlier and the line shoots back up. After a message came in, the scrolling that is still going on (coasting included) does nothing: the next message needs a new scroll. A message that comes in is shown from its end (its last lines in view, scroll up to read it), not from its top
+- Earlier messages load one at a time. Scroll up at the top of the bubble, or point at its top edge, and a thin line across the top of the bubble appears (the bubble grows by it, the text moves down) and stays there. On a page of the menu the same line stays hidden until you scroll (a wheel, the scrollbar or a key), or the pointer or a press comes near it. It fades in, and fades out again after a short idle. Pulling it far enough goes back. The pointer on it makes the middle swell a little. Keep scrolling and the line is pulled: its middle swells into a soft blue glow with an arrow in it by the distance you scrolled, however fast or slow, and it shrinks again when you scroll back down. Pulled far enough (about 140 pixels), or clicked, the message before slides in; let go earlier and the line shoots back up. After a message came in, the scrolling that is still going on (coasting included) does nothing: the next message needs a new scroll. A message that comes in is shown from its end (its last lines in view, scroll up to read it), not from its top
 - Names only show above the messages when there are several
 - The bubble sits above the face, or to the right of it when there is no room above, then to the left, and below only when nothing else fits
 - The bubble that pointing at a face opens next is laid out in advance (text, glass, shadow), while nobody waits, so it opens at once even for a long answer
@@ -48,6 +49,7 @@ botwidget
 - Every face is drawn as a 3D body, built the way Grok Bot builds its avatars (extruded, turned on a lathe, lofted or rounded), so when it turns, its outline and shading turn with it, and its eyes lie on its surface, so they curve and get narrower towards the edge.
 - Idle is calm: the face holds still and only now and then, after a random 8 to 30 seconds, blinks or looks around. When something happens it plays one of Grok Bot's own clips: a nod when your message goes out, an inspecting look while the bot thinks, a happy hop on the reply, surprise at a message nobody asked for, a sad face when a message is refused, confused and then sleepy when there is no route, and a bounce when you click it. While it holds still it draws only ten frames a second.
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
+- While a bot is working and its thinking cloud is muted or closed, a small line under its face says Thinking, on a faint glass chip so it can be read on any wallpaper. The line stays away while that cloud is open, and while a question, an approval or the browser is waiting
 - A message you send shows a small cloud with dots at once. Pointing at the face or the cloud opens the thought with the field; moving away shrinks it back to the dots, which go by themselves after a few seconds
 - Right after you send, the cloud shows only its dots, with no field, even when the pointer is still on it; the thought and the field open when you leave the cloud and point at it again, or click the face
 - Dots and thought, and chat and cloud, replace each other with a fade instead of growing into each other; a thought is read from the top while the cloud grows
@@ -72,11 +74,11 @@ botwidget
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
 - Right-click the face, or start the field with a slash, and a list of commands opens above the field. /feedback opens a new GitHub issue in the browser, already filled with the version, the system and how it was installed
 - Pick a command with the arrows and Return, Tab fills it in, and Escape closes the list and clears the command you typed (a message that was already there stays)
-- A page (settings, bots, connections) goes away by itself like any bubble, and with Escape
+- A page (settings, bots, connections) goes away by itself like any bubble. Escape, the line at the top, scrolling up past the top of the page, or a left click on its face brings the chat back in the same bubble, with the field to type in
 - The /settings page holds sound, quiet hours, window stacking, desktops, start at login, update checks, switching version, and Quit
 - The /bots page switches the face of each bot on or off, and mutes its thinking
 - The /connections page has a switch per bot app, on when it was found, with whether the local API of OpenBot is on; turning one on that was not found opens its page and the switch stays on while it waits
-- Each page opens in the bubble, with real switches and buttons, and the arrow on top goes back
+- Each page opens in the bubble, with real switches and buttons, and the line on top goes back to the chat
 - On macOS Control+Option+Space opens the chat from any app, and closes it again
 - The face goes back to where you put it when its screen comes back
 - On macOS the face and its bubble are on every desktop. With Settings, Show on all desktops off the face stays on one, and Control+Option+Space on another desktop brings it there, and a window cannot be dragged into a full-screen app's desktop
@@ -98,6 +100,7 @@ The widget can also talk to one bot of Grok Bot. It does that with the `gbot` co
 - /bots switches the Grok face on or off, like the faces of the other bots
 - The Grok face wears the avatar Grok Bot gives the bot: its own shape (blob, hex, cloud, clover, sparkle, house, square and the rest) and colour; it moves and blinks like the other faces
 - Without an answer from Grok Bot the face takes `grokbot_avatars` in widget.json, e.g. `{"General": {"shape": "blob", "color": "black"}}`, and else the avatar Grok Bot gave last time
+- The widget can also read live status from a relay. The channel is `grok_relay` in widget.json, either a topic name or a full URL. With that key missing or blank, the widget does not subscribe. A roster on the channel lists each bot by name, plus team, color, face and chat_url when they are sent, and each bot gets a Grok face whose shape and colour come from face and color. A status line for that bot (`start`, `done`, `stuck` or `needs_you`) is shown on its face. Connections → Link Grok bots creates the channel and copies one chief prompt for General.
 
 ## A bot of your own
 
@@ -220,6 +223,43 @@ gh secret set MACOS_CERTIFICATE < certificate.p12.base64
 - Windows needs WINDOWS_CERTIFICATE (a base64 .pfx) and WINDOWS_CERT_PASSWORD
 - Without these secrets the workflow still builds, just unsigned
 
+### Windows through SignPath
+
+Bot Widget is applying to SignPath Foundation for free code signing of open-source projects. The release workflow is ready for it and does nothing until it is set up:
+
+- Secret `SIGNPATH_API_TOKEN`; variables `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`, `SIGNPATH_FILES_CONFIG_SLUG` and `SIGNPATH_SETUP_CONFIG_SLUG`
+- The two artifact configurations to create in SignPath are in `packaging/signpath/`
+- Request 1 signs `Bot Widget.exe` and Inno Setup's uninstaller, then the installer is built around them; request 2 signs `BotWidget-Windows-Setup.exe`
+- Only our own binaries are signed. Files from other projects (Python, Qt) keep the signature they come with
+- Every signing request is approved by hand in SignPath before the release goes out
+
+### Microsoft Store (MSIX)
+
+An unsigned MSIX package can be built with:
+
+```sh
+python packaging/build.py --msix
+```
+
+It reads `packaging/msix.json` (identity, publisher, version) and produces
+`dist/BotWidget-Windows.msix` from the PyInstaller app folder. The Microsoft
+Store signs the package, so this is unsigned and ready for upload to Partner
+Center.
+
+Before building, set three repository variables (Settings > Secrets and
+variables > Actions > Variables) from Partner Center > Product identity:
+
+- `MSIX_IDENTITY_NAME` – e.g. `MyCorp.BotWidget`
+- `MSIX_PUBLISHER` – e.g. `CN=xxxxxxxx-...`
+- `MSIX_PUBLISHER_DISPLAY_NAME` – e.g. `MyCorp`
+
+The release workflow builds the MSIX on tag pushes and publishes
+`dist/BotWidget-Windows.msix` as the `BotWidget-Windows.msix` artifact.
+Upload it in Partner Center as a new submission.
+
+The website keeps distributing the Inno Setup installer (or zip if Inno is
+missing) for direct download; the MSIX is a Store-only channel.
+
 ### Windows Authenticode (SmartScreen)
 
 Unsigned Windows builds show SmartScreen. There is no code bypass; a signed installer earns reputation over time.
@@ -230,3 +270,16 @@ Unsigned Windows builds show SmartScreen. There is no code bypass; a signed inst
 4. Push a new tag so the release workflow signs both `Bot Widget.exe` and `BotWidget-Windows-Setup.exe`.
 
 Do not invent a certificate or spend money from this repo. Until those secrets exist, Windows downloads stay unsigned: in SmartScreen choose **More info**, then **Run anyway**.
+
+## Code signing policy
+
+Windows releases are to be signed with free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). Until approved, Windows downloads are unsigned.
+
+- Committers and reviewers: [Stefan Schenk (Menziess)](https://github.com/Menziess)
+- Approvers: [Stefan Schenk (Menziess)](https://github.com/Menziess)
+
+Every signed file is built by GitHub Actions from this repository (`.github/workflows/release.yml`), and each signing request is approved by hand.
+
+### Privacy
+
+Bot Widget talks to the bot apps on your own computer (OpenBot, Grok Bot). On its own it only asks GitHub (`api.github.com`) whether there is a newer release, and downloads that release from GitHub Releases; Check for updates on the /settings page switches that off. [GitHub's privacy statement](https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement) applies to those requests. Anything else, such as /feedback opening a GitHub issue in your browser, only happens when you ask for it.

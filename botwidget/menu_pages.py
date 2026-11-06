@@ -73,11 +73,8 @@ def _command(label: str, command: str) -> tuple:
 
 
 def _heading(title: str) -> dict:
+    # On the heading, so the title is on screen when the page opens. The line above it fades away.
     return _row((title, "b"))
-
-
-def _back_hint() -> dict:
-    return _row(("Arrow at the top goes back to commands.", "dim"))
 
 
 def _toggle(label: str, command: str, on: bool) -> dict:
@@ -99,12 +96,12 @@ def _field(label: str, command: str, value: str) -> dict:
 
 
 def _back() -> list:
-    """The arrow on top of a page: the way back to the menu, as scrolling past the top is the way to older messages."""
-    return [role_panel("more", back="page/commands"), plain_block("more"), role_panel("bot")]
+    """The line on top of a page. Pulling it or clicking it goes back to the chat."""
+    return [role_panel("more", back="page/chat"), plain_block("more"), role_panel("bot")]
 
 
 def settings(state: dict) -> list:
-    blocks = _back() + [_heading("Settings"), _back_hint(), plain_block("gap")]
+    blocks = _back() + [_heading("Settings"), plain_block("gap")]
     if state.get("staged_update"):
         blocks.append(_button(f"Restart to update to v{state['staged_update']}", "action/update"))
     elif state.get("update"):
@@ -145,7 +142,7 @@ def _remove_button(state: dict, command: str, name: str) -> dict:
 
 
 def bots(state: dict) -> list:
-    blocks = _back() + [_heading("Bots"), _back_hint(),
+    blocks = _back() + [_heading("Bots"),
                         _row(("Shift+click a bot's face to mute or unmute its thinking.", "dim")),
                         plain_block("gap")]
     for bot in state["bots"]:
@@ -183,7 +180,7 @@ def bot_form(state: dict) -> list:
     from botwidget.acp_bots import blank
     form = state.get("bot_form") or blank()
     editing = bool(form.get("stored_id"))
-    blocks = _back() + [_heading("Edit bot" if editing else "New bot"), _back_hint()]
+    blocks = _back() + [_heading("Edit bot" if editing else "New bot")]
     blocks += [
         _field("Name", "field/name", form.get("name") or ""),
         _button(f"Face: {form.get('face') or 'automatic'}", "cycle/face"),
@@ -216,7 +213,7 @@ def widget_json(state: dict) -> list:
 
 
 def connections(state: dict) -> list:
-    blocks = _back() + [_heading("Connections"), _back_hint(),
+    blocks = _back() + [_heading("Connections"),
                         _row(("Turning one on that was not found opens its page.", "dim")),
                         plain_block("gap")]
     wanted = state.get("wanted", ())
@@ -243,6 +240,13 @@ def connections(state: dict) -> list:
     else:
         note = "Waiting for Grok Bot to be installed" if "grokbot" in wanted else "Not found"
     blocks.append({**_row((note, "dim")), "indent": 44})
+    blocks.append(plain_block("gap"))
+    relay = state.get("grok_relay") or ""
+    if relay:
+        blocks.append({**_row((f"Linked via ntfy · {relay}", "dim")), "indent": 0})
+        blocks.append(_button("Copy chief prompt", "action/copy-grok-prompt"))
+    else:
+        blocks.append(_button("Link Grok bots", "action/link-grok"))
     blocks += [plain_block("gap"), _heading("Model connections"),
                _row(("Each one is on or off, like OpenBot. Off stops the bots that use it. "
                      "The key stays in its file.", "dim"))]
@@ -266,7 +270,7 @@ def connection_form(state: dict) -> list:
     from botwidget.acp_bots import blank_connection
     form = state.get("connection_form") or blank_connection()
     editing = bool(form.get("stored_id"))
-    blocks = _back() + [_heading("Edit connection" if editing else "New connection"), _back_hint()]
+    blocks = _back() + [_heading("Edit connection" if editing else "New connection")]
     blocks += [
         _field("Name", "field/name", form.get("name") or ""),
         _field("Model address", "field/base_url", form.get("base_url") or ""),

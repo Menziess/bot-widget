@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write
+  actions: read  # SignPath reads the unsigned files from this run's artifacts
 
 jobs:
   build:
@@ -91,14 +92,155 @@ jobs:
           tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
           assert botwidget.__version__ == tag, f"tag {tag} but the build says {botwidget.__version__}"
 
+      # SignPath signs the Windows build once the secret SIGNPATH_API_TOKEN and the variables
+      # SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG, SIGNPATH_SIGNING_POLICY_SLUG,
+      # SIGNPATH_FILES_CONFIG_SLUG and SIGNPATH_SETUP_CONFIG_SLUG exist; until then it is the plain build.
+      # Only a version tag (refs/tags/v*) is signed; a workflow_dispatch from a branch is not.
+      # The two artifact configurations are in packaging/signpath/.
+      - name: Is SignPath set up
+        id: signpath
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+          ORG: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          PROJECT: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          POLICY: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          FILES: ${{ vars.SIGNPATH_FILES_CONFIG_SLUG }}
+          SETUP: ${{ vars.SIGNPATH_SETUP_CONFIG_SLUG }}
+        run: |
+          if [ -n "$TOKEN" ] && [ -n "$ORG" ] && [ -n "$PROJECT" ] && [ -n "$POLICY" ] && [ -n "$FILES" ] && [ -n "$SETUP" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "SignPath is not set up: this Windows build stays unsigned (or uses WINDOWS_CERTIFICATE)."
+          fi
+
       - name: Build
+        if: steps.signpath.outputs.enabled != 'true'
         run: python packaging/build.py
+
+      # SignPath, request 1: our own binaries only, Bot Widget.exe and Inno's uninstaller. SignPath
+      # Foundation signs nothing built by other projects (Python, Qt and so on keep their own signature,
+      # or none); the step lists those that have none.
+      - name: Windows app and uninstaller to sign
+        if: steps.signpath.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          python packaging/build.py --bundle
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python packaging/build.py --uninstaller build/uninstaller
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $version = python -c "import re, botwidget; print(re.match(r'\d+(\.\d+){0,2}', botwidget.__version__).group(0))"
+          "BW_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $app = (Resolve-Path "dist/Bot Widget").Path
+          New-Item -ItemType Directory -Force "signpath-files/app", "signpath-files/uninstaller" | Out-Null
+          Copy-Item (Join-Path $app "Bot Widget.exe") "signpath-files/app/Bot Widget.exe"
+          $e32 = Get-ChildItem build/uninstaller -Filter "uninst-*.e32" | Select-Object -First 1
+          Copy-Item $e32.FullName "signpath-files/uninstaller/uninst.exe"
+          "UNINSTALLER_E32=$($e32.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $unsigned = Get-ChildItem $app -Recurse -File -Include *.exe, *.dll, *.pyd |
+            Where-Object { $_.Name -ne "Bot Widget.exe" -and (Get-AuthenticodeSignature $_.FullName).Status -ne 'Valid' }
+          Write-Output "Files from other projects without a signature of their own: $(@($unsigned).Count)"
+          $unsigned | ForEach-Object { Write-Output "  $($_.FullName.Substring($app.Length + 1))" }
+
+      - id: upload-unsigned-files
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath-windows-files
+          path: signpath-files/
+          if-no-files-found: error
+
+      - name: Sign the app files and the uninstaller
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_FILES_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-files.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-files
+          parameters: |
+            version: ${{ toJSON(env.BW_VERSION) }}
+
+      # Then the installer from the signed files; Inno embeds the signed uninstaller (SignedUninstaller).
+      - name: Installer from the signed files
+        if: steps.signpath.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          $app = (Resolve-Path "dist/Bot Widget").Path
+          Copy-Item "signed-files/app/Bot Widget.exe" (Join-Path $app "Bot Widget.exe") -Force
+          Copy-Item "signed-files/uninstaller/uninst.exe" $env:UNINSTALLER_E32 -Force
+          $check = Join-Path $env:RUNNER_TEMP "uninst-check.exe"
+          Copy-Item $env:UNINSTALLER_E32 $check -Force
+          foreach ($file in @((Join-Path $app "Bot Widget.exe"), $check)) {
+            $status = (Get-AuthenticodeSignature $file).Status
+            if ($status -ne 'Valid') { Write-Output "not signed: $file ($status)"; exit 1 }
+          }
+          python packaging/build.py --installer build/uninstaller
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      # SignPath, request 2: the installer itself.
+      - id: upload-unsigned-setup
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signpath-windows-setup
+          path: dist/BotWidget-Windows-Setup.exe
+          if-no-files-found: error
+
+      - name: Sign the installer
+        if: steps.signpath.outputs.enabled == 'true'
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_SETUP_CONFIG_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-setup
+          parameters: |
+            version: ${{ toJSON(env.BW_VERSION) }}
+
+      - name: Use the signed installer
+        if: steps.signpath.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          Copy-Item "signed-setup/BotWidget-Windows-Setup.exe" "dist/BotWidget-Windows-Setup.exe" -Force
+          $status = (Get-AuthenticodeSignature "dist/BotWidget-Windows-Setup.exe").Status
+          if ($status -ne 'Valid') { Write-Output "installer signature: $status"; exit 1 }
+
+      # MSIX package: built after the installer so the app folder already exists.
+      # Missing identity variables skip this asset with a ::warning::; the other installers still ship.
+      - name: MSIX package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: python packaging/build.py --msix
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}
           if-no-files-found: error
+
+      - name: Upload the MSIX
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BotWidget-Windows.msix
+          path: dist/BotWidget-Windows.msix
+          if-no-files-found: ignore  # skipped when the identity variables are not set
 
   publish:
     needs: build
@@ -108,11 +250,71 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: BotWidget-*  # not the signpath-* files that only went to SignPath
           merge-multiple: true
+      # The tag must be a plain version, and the builds must carry that same version.
+      - name: The version matches the tag
+        shell: python
+        run: |
+          import os, plistlib, re, sys, zipfile, xml.etree.ElementTree as ET
+          tag = os.environ["GITHUB_REF_NAME"]
+          if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+              sys.exit(f"tag {tag} is not vX.Y.Z")
+          names = ["BotWidget-macOS.zip", "BotWidget-Windows-Setup.exe", "BotWidget-Linux.tar.gz"]
+          missing = [n for n in names if not os.path.isfile(os.path.join("artifacts", n))]
+          if missing:
+              sys.exit(f"missing builds: {missing}")
+          with zipfile.ZipFile("artifacts/BotWidget-macOS.zip") as z:
+              plist = plistlib.loads(z.read("Bot Widget.app/Contents/Info.plist"))
+          if plist.get("CFBundleShortVersionString") != tag[1:]:
+              sys.exit(f"tag {tag} but the macOS app says {plist.get('CFBundleShortVersionString')}")
+          # MSIX is optional: without the identity variables the Windows job skips it.
+          msix_path = os.path.join("artifacts", "BotWidget-Windows.msix")
+          if not os.path.isfile(msix_path):
+              print("::warning::MSIX skipped: set repo variables MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME from Partner Center > Product identity")
+              print(f"{tag}: installers present, macOS app version matches, MSIX skipped")
+          else:
+              with zipfile.ZipFile(msix_path) as z:
+                  manifest = z.read("AppxManifest.xml")
+              root = ET.fromstring(manifest)
+              identity = root.find(
+                  "{http://schemas.microsoft.com/appx/manifest/foundation/windows10}Identity"
+              )
+              name = identity.get("Name", "")
+              publisher = identity.get("Publisher", "")
+              msix_ver = identity.get("Version", "")
+              expected = f"{tag[1:]}.0"
+              if msix_ver != expected:
+                  sys.exit(f"tag {tag} but MSIX Identity Version is {msix_ver} (expected {expected})")
+              # Reject placeholder identities when a package was actually built.
+              ns = "http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+              props = root.find(f"{{{ns}}}Properties")
+              pdn = props.find(f"{{{ns}}}PublisherDisplayName").text if props is not None else ""
+              if "PLACEHOLDER" in name or "PLACEHOLDER" in pdn or publisher == "CN=00000000-0000-0000-0000-000000000000":
+                  sys.exit("MSIX identity is still the placeholder: set repo variables MSIX_IDENTITY_NAME, MSIX_PUBLISHER, MSIX_PUBLISHER_DISPLAY_NAME from Partner Center > Product identity")
+              print(f"{tag}: all builds present, macOS app version and MSIX identity match")
       # The widget checks every downloaded file against this before installing it.
       - name: Checksums
         run: cd artifacts && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
-      - uses: softprops/action-gh-release@v2
+      # First a draft with every file attached, published only at the end: a published
+      # release never changes afterwards, so immutable releases can be switched on.
+      - id: draft
+        uses: softprops/action-gh-release@v2
         with:
+          draft: true
+          body: "[Code signing policy](https://github.com/Menziess/bot-widget#code-signing-policy)"
           files: artifacts/*
           generate_release_notes: true
+          fail_on_unmatched_files: true
+      - name: Publish once every file is on the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ steps.draft.outputs.id }}
+        run: |
+          want="$(ls artifacts | sort)"
+          have="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.assets[] | select(.state == "uploaded") | .name' | sort)"
+          if [ "$want" != "$have" ]; then
+            printf 'draft files differ from the build:\nwant:\n%s\nhave:\n%s\n' "$want" "$have"
+            exit 1
+          fi
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" -F draft=false --jq '.html_url'

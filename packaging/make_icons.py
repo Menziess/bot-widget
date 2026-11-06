@@ -29,6 +29,20 @@ def render(size: int) -> QImage:
     return image
 
 
+def render_wide(width: int, height: int) -> QImage:
+    """Render a wide icon: a square face centred on a transparent canvas of given size."""
+    svg = avatar_svg("rest", SEED, None)
+    image = QImage(width, height, QImage.Format_ARGB32)
+    image.fill(Qt.transparent)
+    painter = QPainter(image)
+    # Fit the SVG into a square centred on the canvas
+    face_size = min(width, height)
+    rect = QRectF((width - face_size) / 2, (height - face_size) / 2, face_size, face_size)
+    QSvgRenderer(QByteArray(svg.encode())).render(painter, rect)
+    painter.end()
+    return image
+
+
 def main(out: str):
     _app = QGuiApplication([])
     os.makedirs(out, exist_ok=True)

@@ -11,8 +11,8 @@ import threading
 import time
 import uuid
 
-from PySide6.QtCore import QEasingCurve, QPoint, Qt, QTimer, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QCursor, QGuiApplication, QPainter
+from PySide6.QtCore import QEasingCurve, QPoint, QRectF, Qt, QTimer, QVariantAnimation, Signal
+from PySide6.QtGui import QBrush, QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QLinearGradient, QPainter
 from PySide6.QtWidgets import QWidget
 
 from botwidget import acplink
@@ -65,11 +65,20 @@ from botwidget.openbot import (
 from botwidget import attachments, grokbot, hermesbot, menu_pages, power, __version__
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.bubble_window import BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window
-from botwidget.qt_ui.native import native_id, set_flags
+from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
 from botwidget.qt_ui.render import hit_region, svg_pixmap
+from botwidget.qt_ui.text_doc import color
 from botwidget.sound import play_sound
 from botwidget.system.current import FACE_IS_TOOL, FOCUS_ON_HOVER, activate_app, send_behind_windows
-from botwidget.theme import BUBBLE_FONT
+from botwidget.theme import (
+    BUBBLE_FONT,
+    SAND_GLASS_BOTTOM,
+    SAND_GLASS_EDGE,
+    SAND_GLASS_TOP,
+    SAND_INK_SOFT,
+    SAND_RADIUS_PANEL,
+    SAND_SANS,
+)
 
 DOT_SIZE = 14
 CLICK_SLOP = 5
@@ -97,6 +106,83 @@ DRAG_RESIZE_MS = 160
 DRAG_RESTACK_S = 0.25
 # How long the line on how a /refresh went stays under the chat.
 REFRESH_NOTE_S = 8.0
+THINKING_TEXT = "Thinking"
+THINKING_FONT = 11  # quieter than the bubble's 15
+THINKING_PAD_X = 8
+THINKING_PAD_Y = 3
+# On the wallpaper, not in the bubble, so this stays put when the bubble's glass slider is turned clear.
+THINKING_GLASS = 0.62
+
+
+class ThinkingRow(QWidget):
+    """'Thinking' under one face while that bot works.
+
+    A separate tool window, because the face is a fixed square the body almost fills: drawing the
+    line in it would cover the face or change its size. Clicks pass through.
+    """
+
+    def __init__(self, face):
+        super().__init__(face)
+        self.face = face
+        self._apply_flags()
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setAttribute(Qt.WA_ShowWithoutActivating)
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
+        font = QFont(SAND_SANS)
+        font.setPixelSize(THINKING_FONT)
+        self.setFont(font)
+        self._ink = color(SAND_INK_SOFT)
+        metrics = QFontMetrics(font)
+        self.setFixedSize(metrics.horizontalAdvance(THINKING_TEXT) + 2 * THINKING_PAD_X,
+                          metrics.height() + 2 * THINKING_PAD_Y)
+
+    def text(self) -> str:
+        return THINKING_TEXT
+
+    def _apply_flags(self):
+        layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
+        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.WindowTransparentForInput
+                  | Qt.WindowDoesNotAcceptFocus)
+
+    def restack(self):
+        shown = self.isVisible()
+        self._apply_flags()
+        if shown:
+            self.show()
+
+    def setVisible(self, visible: bool):
+        if visible:
+            mark_before_show(self)
+        super().setVisible(visible)
+        if not visible:
+            drop_hidden(self)
+
+    def place(self):
+        face = self.face
+        self.move(face.x() + (face.width() - self.width()) // 2, face.y() + face.height())
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        radius = min(SAND_RADIUS_PANEL, rect.height() / 2)
+        fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        for at, name in ((0.0, SAND_GLASS_TOP), (1.0, SAND_GLASS_BOTTOM)):
+            tone = QColor(name)
+            tone.setAlphaF(THINKING_GLASS)
+            fill.setColorAt(at, tone)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(fill))
+        painter.drawRoundedRect(rect, radius, radius)
+        edge = QColor(SAND_GLASS_EDGE)
+        edge.setAlphaF(0.9)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(edge)
+        painter.drawRoundedRect(rect, radius, radius)
+        painter.setPen(self._ink)
+        painter.setFont(self.font())
+        painter.drawText(self.rect(), Qt.AlignHCenter | Qt.AlignVCenter, THINKING_TEXT)
 
 
 def global_pointer() -> bool:
@@ -234,6 +320,7 @@ class FaceWindow(QWidget):
         self.bubble.older.connect(self.show_older)
         self.bubble.edit_queued.connect(self._edit_queued)
         self.bubble.command.connect(self._menu_command)
+        self._thinking = ThinkingRow(self)
 
         if spot:
             self.move(int(spot[0]), int(spot[1]))
@@ -263,8 +350,7 @@ class FaceWindow(QWidget):
     def _apply_flags(self):
         """Separate from the taskbar; above or below normal windows according to widget.json."""
         layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
-        # Windows: Qt.Tool, no taskbar button. Linux: a normal window, kept out of the taskbar by skip-taskbar
-        # written before each map (a tool window there would rise above other apps).
+        # Qt.Tool: no taskbar, dock or alt-tab on every OS. Linux also writes skip-taskbar before each map.
         tool = Qt.Tool if FACE_IS_TOOL else Qt.WindowType(0)
         # Mutter spends the first click on focusing a normal window, so a right-click never arrived
         # until the face already had focus. The bubble still accepts focus, which is what typing needs.
@@ -275,9 +361,10 @@ class FaceWindow(QWidget):
         self._apply_flags()
         self.show()
         self.bubble.restack()
+        self._thinking.restack()
 
     def setVisible(self, visible: bool):
-        if visible and not self.isVisible():
+        if visible:
             mark_before_show(self)
         super().setVisible(visible)
 
@@ -292,12 +379,15 @@ class FaceWindow(QWidget):
         self.apply_desktops()
         if self.faces is not None:
             self.faces.raise_bubbles()
+        self._place_thinking()
 
     def bring_here(self) -> bool:
         """The face, and the bubble if it is open, to the desktop you are on; True when the face moved."""
         moved = desktops.bring_here(self)
         if self.bubble.isVisible():
             desktops.bring_here(self.bubble)
+        if self._thinking.isVisible():
+            desktops.bring_here(self._thinking)
         return moved
 
     def apply_desktops(self):
@@ -305,6 +395,8 @@ class FaceWindow(QWidget):
         desktops.apply(self)
         if self.bubble.isVisible():
             desktops.apply(self.bubble)
+        if getattr(self, "_thinking", None) is not None and self._thinking.isVisible():
+            desktops.apply(self._thinking)
 
     def _set_semicircle(self, semicircle: dict):
         """Park this face on the arc, or send it home when the arc is gone.
@@ -383,6 +475,37 @@ class FaceWindow(QWidget):
     def spot(self) -> tuple:
         return self.x(), self.y()
 
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._place_thinking()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place_thinking()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._place_thinking()
+
+    def _thinking_cloud_open(self) -> bool:
+        bubble = getattr(self, "bubble", None)
+        return bool(bubble is not None and bubble.isVisible() and bubble.kind == "think")
+
+    def _place_thinking(self):
+        """Under this face while it works and its cloud is muted or closed. Hidden for a question, an approval
+        or a browser takeover, and while the cloud itself is on screen. The face does not move for it."""
+        row = getattr(self, "_thinking", None)
+        if row is None:
+            return
+        show = self._working and self.isVisible() and not self._has_attention() and not self._thinking_cloud_open()
+        if show:
+            row.place()
+            if not row.isVisible():
+                row.show()
+                desktops.apply(row)
+        elif row.isVisible():
+            row.hide()
+
     def _position_bottom_right(self, slot: int = 0):
         x, y, w, h = screens.rects()[0]
         self.move(x + w - AVATAR_SIZE - 20, y + h - AVATAR_SIZE - 60 - slot * (AVATAR_SIZE + 16))
@@ -438,7 +561,10 @@ class FaceWindow(QWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and self.bubble.isVisible():
-            self.unpin()
+            if self._menu_page is not None:
+                self.open_input()
+            else:
+                self.unpin()
             return
         super().keyPressEvent(event)
 
@@ -536,9 +662,41 @@ class FaceWindow(QWidget):
             self._apply_drag_size(self._size_goal)
         self._size_goal = None
 
+    def mouseDoubleClickEvent(self, event):
+        """Double-click: enter screenshot mode for this face. Suppresses the normal click→open_input."""
+        if event.button() != Qt.LeftButton:
+            return
+        if getattr(self, "screenshot_face", None) is not None:
+            return
+        # Enter screenshot mode
+        self._press_pos = None
+        self._drag_origin = None
+        self._screenshot_active = True
+        self.screenshot_face = self
+        self._happy_on = True
+        self.anim.kick("sy", -0.8)
+        from botwidget.qt_ui.screenshot import enter_screenshot_mode
+        enter_screenshot_mode(self)
+
+    def _leave_screenshot_mode(self):
+        """Cancel screenshot mode: hide overlay, restore faces, clear state."""
+        overlay = getattr(self, "_screenshot_overlay", None)
+        if overlay is not None:
+            self._screenshot_overlay = None
+            overlay.close()
+        self.screenshot_face = None
+        self._screenshot_active = False
+        self._happy_off()
+        self._render()
+
     def mouseReleaseEvent(self, event):
         """A click (hardly any movement) puts the cursor in the field."""
         if event.button() != Qt.LeftButton:
+            return
+        # If screenshot mode was entered via double-click, suppress the click action.
+        if getattr(self, "_screenshot_active", False):
+            self._press_pos = None
+            self._drag_origin = None
             return
         self._finish_resize()
         click = False
@@ -625,14 +783,17 @@ class FaceWindow(QWidget):
     def enterEvent(self, event):
         super().enterEvent(event)
         self._entered_at = time.monotonic()
-        if self._semicircle_visible and self.faces is not None:
+        # Coming back onto the face, or onto a bot of the arc, cancels the close.
+        if self.faces is not None and self.faces._semicircle_phase != "idle":
             self.faces.semicircle_pointer_here()
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
         self._left_at = time.monotonic()
-        # Wayland cannot see the pointer in the gaps, so leaving a small face starts the hide.
-        if self._semicircle_visible and self.isVisible() and self.faces is not None:
+        # Wayland cannot see the pointer in the gaps. The face that was right-clicked is not on the
+        # arc, so leaving it has to start the hide too, not only leaving one of the bots.
+        if self.isVisible() and self.faces is not None and (
+                self._semicircle_visible or self.faces._semicircle_phase != "idle"):
             self.faces.semicircle_pointer_left()
 
     def pointer_over(self) -> bool:
@@ -815,6 +976,14 @@ class FaceWindow(QWidget):
         self.head_bottom = AVATAR_SIZE / 2 + profile["bottom"] * CIRCLE_R
         self._render()
 
+    def show_live_status(self, state: str, summary: str):
+        """A relay status line: the title says what the bot is doing, the tip says why."""
+        self.live_status = state
+        self.live_summary = summary
+        self.setToolTip(summary)
+        label = {"start": "Working", "done": "Done", "stuck": "Stuck", "needs_you": "Needs you"}[state]
+        self.setWindowTitle(f"{self.bot_name} · {label}")
+
     def _aim(self, dt_ms: float):
         """Where the face wants to go: dragging, happy, looking at the mouse, or what motion plays."""
         a = self.anim
@@ -841,6 +1010,16 @@ class FaceWindow(QWidget):
                   pitch=0.0, yaw=0.0, roll=0.0, **moved)
             self._show_face("neutral")
             return
+        # Screenshot mode: the target face follows the mouse with its eyes (big, wide-open).
+        if getattr(self, "screenshot_face", None) is not None:
+            px, py = self._pointer()
+            target = eye_aim(px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2))
+            if target is not None:
+                dx, dy, converge, scale = target
+                a.aim(dx=dx, dy=dy, converge=converge, scale=scale,
+                      pitch=0.0, yaw=0.0, roll=0.0, **moved)
+                self._show_face("neutral")
+                return
         a.aim(happy=0.0)
         if self.motion.playing is None and not (self._working or self.has_pending):
             px, py = self._pointer()
@@ -924,10 +1103,11 @@ class FaceWindow(QWidget):
         menu = self._menu_page is not None or self.bubble._list_only
         if menu or not self.bubble.isVisible():
             # Clicking the face from a page of the menu, or its command list, is asking for the chat again.
+            # The field shows even when the pointer is not on the bubble: that is what "back to the chat" asked for.
             self._menu_page = None
             self._arc_for_page(None)
             self._depth = 1
-            self._sync_bubble(self._latest(), force=True, replace_menu=menu)
+            self._sync_bubble(self._latest(), force=True, replace_menu=menu, show_field=menu)
         self._claim_bubble()
         self._activate_here()
         self.bubble.focus_entry()
@@ -944,18 +1124,22 @@ class FaceWindow(QWidget):
 
     def _toggle_answer_view(self) -> bool:
         """Click on a thinking face: the last answer shows, with the field. Click again: the cloud is back.
-        False when nothing thinks or there is no answer yet, so the click does what it always did."""
+        False when nothing thinks or there is no answer yet, so the click does what it always did.
+        A page that is open gives way first: this click asks for the chat, and a visible page would otherwise stay."""
+        leaving = self._menu_page is not None
         if self._answer_view:
             self._answer_view = False
-            self._sync_bubble(self._latest(), force=True)
+            self._menu_page = None
+            self._sync_bubble(self._latest(), force=True, show_field=leaving)
             return True
         if not self._working or self.pinned or not self._show_think():
             return False
         if not any(m.get("role") == "bot" for m in (self._chat or {}).get("messages") or []):
             return False
         self._answer_view = True
+        self._menu_page = None
         self._depth = 1
-        self._sync_bubble(self._latest(), force=True)
+        self._sync_bubble(self._latest(), force=True, show_field=leaving)
         self._claim_bubble()
         self._activate_here()
         self.bubble.focus_entry()
@@ -1035,6 +1219,9 @@ class FaceWindow(QWidget):
         self._poll_timer.stop()
         glass.clear(self.bubble)
         self.bubble.close()
+        row = getattr(self, "_thinking", None)
+        if row is not None:
+            row.close()
         self.close()
         if self.acp:
             self.acp.close()
@@ -1206,10 +1393,11 @@ class FaceWindow(QWidget):
                 "Install one and I'll come alive.")
         return conversation_blocks([{"role": "bot", "text": text}], self.bot_name)
 
-    def _sync_bubble(self, chat: dict, force: bool = False, replace_menu: bool = False):
+    def _sync_bubble(self, chat: dict, force: bool = False, replace_menu: bool = False, show_field: bool = False):
         """Cloud during a running turn, the conversation as long as the bubble is pinned or fresh."""
         self._working = bool(chat.get("activity")) or self._has_attention()
         self._waiting = bool(chat.get("waiting"))
+        self._place_thinking()
         if not (self._working or self._waiting):
             self._answer_view = False
         # OpenBot: the last turn failed (a spent provider, say). The face shows it like Grok Bot offline.
@@ -1326,14 +1514,16 @@ class FaceWindow(QWidget):
             self._shown_text = text
             self._prepare_bubble(blocks)
             return
+        # show_field: back from a page. The field stays even when the pointer is somewhere else.
+        hover_field = not show_field
         if self.pinned:
             self._shown_text = text
             if not self.bubble.shows("say", text, True):
-                self.bubble.show_blocks(blocks, "say", input=True, older=older, hover_field=True)
+                self.bubble.show_blocks(blocks, "say", input=True, older=older, hover_field=hover_field)
         elif blocks and (force or text != self._shown_text):
             # Only new text brings the bubble back by itself; after it slid away it stays away.
             self._shown_text = text
-            self.bubble.show_blocks(blocks, "say", input=True, older=older, hover_field=True)
+            self.bubble.show_blocks(blocks, "say", input=True, older=older, hover_field=hover_field)
         elif not blocks and self.bubble.kind and not self.bubble._list_only:
             # The conversation is gone (a new chat): the bubble goes too, unless the pointer is engaged with it.
             self.bubble.close_bubble("empty")
@@ -1402,7 +1592,7 @@ class FaceWindow(QWidget):
         self._poll_timer.start(0)
 
     def open_commands(self):
-        """The arrow on top of a page: the list of commands on its own, exactly what a first right-click shows.
+        """The list of commands on its own, exactly what a first right-click shows.
         Not the conversation: that is what hovering the face is for."""
         self.open_command_menu()
 
@@ -1415,7 +1605,8 @@ class FaceWindow(QWidget):
         if self.faces is not None:
             self.faces.close_bubbles_except(self.agent_id)
         self.bubble.show_command_menu()
-        self._arc_for_page(None)
+        if self.faces is not None:
+            self.faces.hold_arc()
 
     def _arc_for_page(self, page: str | None):
         """Hidden bots sit on the arc only while /bots is open, and leave when that page does."""
@@ -1433,7 +1624,7 @@ class FaceWindow(QWidget):
             return
         again = page == self._menu_page and self.bubble.isVisible()
         self._menu_page = page
-        # A page goes away by itself like any bubble, and with Escape.
+        # A page goes away by itself like any bubble. Escape returns to the chat.
         self.pinned = False
         # The others close first: a tall page would otherwise give way to a bubble it is about to replace.
         self.faces.close_bubbles_except(self.agent_id)
@@ -1456,6 +1647,10 @@ class FaceWindow(QWidget):
             return
         if command == "page/commands":
             self.open_commands()
+            return
+        if command == "page/chat":
+            # Same as a click on the face while a page is open: the chat, in this bubble.
+            self.open_input()
             return
         page = self.faces.menu_command(command, self._menu_page, self.bubble.control_values())
         if page is not None:
@@ -1515,9 +1710,6 @@ class FaceWindow(QWidget):
         if not files and text.strip().lower() == "/pin":
             # Toggle pin: pinned keeps the bubble open, unpinned lets it close naturally.
             self.toggle_pin()
-            return
-        if not files and text.strip().lower() == "/settings":
-            self.open_settings()
             return
         self._think_quiet = False
         open_question = None if files else self._open_question()

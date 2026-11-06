@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling>=1.27", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,6 +7,8 @@ name = "botwidget"
 dynamic = ["version"]
 description = "Animated desktop bot face with a speech bubble for OpenBot and Grok Bot."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = ["PySide6-Essentials>=6.6", "agent-client-protocol>=0.12", "mcp>=2.3"]
 

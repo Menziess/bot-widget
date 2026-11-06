@@ -1853,7 +1853,7 @@ class BubbleHover(unittest.TestCase):
             bubble.show()
             self.assertEqual(marked.call_count, 2, "a second map needs it again")
             bubble.show()
-            self.assertEqual(marked.call_count, 2, "already shown: nothing to mark")
+            self.assertGreaterEqual(marked.call_count, 2, "already shown may re-mark skip-taskbar")
 
     def test_flying_past_the_face_never_takes_the_keyboard(self):
         focus = []
@@ -2351,15 +2351,15 @@ class BubbleHover(unittest.TestCase):
         next(w for w in bubble._control_widgets if isinstance(w, Switch)).click()
         self.assertEqual(sent, ["toggle/sound"])
 
-    def test_the_arrow_on_a_page_leads_back_to_the_list_of_commands_only(self):
+    def test_the_arrow_on_a_page_leads_back_to_the_chat(self):
         bubble = self.open_settings()
-        self.assertEqual(bubble._geom[0][0]["back"], "page/commands")
-        bubble.command.emit("page/commands")
+        self.assertEqual(bubble._geom[0][0]["back"], "page/chat")
+        bubble.command.emit("page/chat")
         self.finish_growth()
         self.assertIsNone(self.window._menu_page)
-        self.assertTrue(bubble._list_only, "the command list on its own, as a first right-click")
-        self.assertTrue(bubble._slash.isVisibleTo(bubble))
-        self.assertNotIn("Ja.", bubble.full_text, "no conversation")
+        self.assertFalse(bubble._list_only)
+        self.assertIn("Ja.", bubble.full_text)
+        self.assertNotIn("Sound on a new answer", bubble.full_text)
 
     def test_a_page_has_the_arrow_up_instead_of_a_menu_link_and_it_goes_back(self):
         bubble = self.open_settings()
@@ -2369,7 +2369,7 @@ class BubbleHover(unittest.TestCase):
         bubble.command.connect(sent.append)
         _x, y = self.message_point(0, down=4)
         self.click_at(bubble._shown_w(bubble._geom[1]) // 2, y)
-        self.assertEqual(sent, ["page/commands"])
+        self.assertEqual(sent, ["page/chat"])
 
     def test_pulling_the_line_of_a_page_far_enough_goes_back_too(self):
         bubble = self.open_settings()
@@ -2381,7 +2381,98 @@ class BubbleHover(unittest.TestCase):
         self.wheel_up(bubble)
         self.wheel_up(bubble)
         self.wheel_up(bubble)
-        self.assertEqual(sent, ["page/commands"])
+        self.assertEqual(sent, ["page/chat"])
+
+    def top_line_alpha(self, bubble):
+        """The darkest pixel of the thin line across the top of the page. 0 is invisible."""
+        image = bubble._text.pixmap().toImage()
+        peak = 0
+        for y in range(min(16, image.height())):
+            for x in range(image.width()):
+                peak = max(peak, image.pixelColor(x, y).alpha())
+        return peak
+
+    def step_page_line(self, bubble, start, end):
+        """Run the line's fade with a fake clock, one frame at a time."""
+        moment = start
+        while moment <= end + 1e-9:
+            bubble._watch_arrow(moment)
+            moment += 0.016
+
+    def test_the_settings_line_stays_hidden_until_you_come_near_it(self):
+        """Should keep the thin line on the settings page invisible until a scroll, the pointer or a press, then hide it again after a short idle."""
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        bubble = self.open_settings()
+        self.assertEqual(self.top_line_alpha(bubble), 0, "hidden at rest, not a faint line")
+        from botwidget.qt_ui.bubble_window import LINE_FADE_S, LINE_IDLE_S
+        card = bubble.card()
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=True):
+            now = 0.0
+            self.where["at"] = (card.center().x(), card.top() + 8)
+            self.step_page_line(bubble, now, now + 0.12)
+            arriving = self.top_line_alpha(bubble)
+            self.assertGreater(arriving, 0, "fades in, it does not pop")
+            now += 0.12
+            self.step_page_line(bubble, now, now + LINE_FADE_S)
+            shown = self.top_line_alpha(bubble)
+            self.assertGreater(shown, arriving)
+            self.assertGreater(shown, 20, "visible once the pointer is near the line")
+            now += LINE_FADE_S
+            self.where["at"] = (-5000, -5000)
+            self.step_page_line(bubble, now, now + 1.0)
+            self.assertGreater(self.top_line_alpha(bubble), 20, "stays through the idle")
+            now += 1.0
+            self.step_page_line(bubble, now, now + LINE_IDLE_S + LINE_FADE_S)
+            self.assertEqual(self.top_line_alpha(bubble), 0, "gone after the idle")
+            now += LINE_IDLE_S + LINE_FADE_S + 0.2
+            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+                self.wheel_up(bubble)
+            self.step_page_line(bubble, now, now + LINE_FADE_S + 0.05)
+            self.assertGreater(self.top_line_alpha(bubble), 20, "a scroll shows it")
+            now += LINE_FADE_S + LINE_IDLE_S + LINE_FADE_S + 0.2
+            self.step_page_line(bubble, now - LINE_IDLE_S, now)
+            self.assertEqual(self.top_line_alpha(bubble), 0)
+            x, y = self.message_point(0, down=4)
+            with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+                self.send_mouse("press", x, y, Qt.LeftButton, Qt.LeftButton)
+            self.step_page_line(bubble, now, now + LINE_FADE_S + 0.05)
+            self.assertGreater(self.top_line_alpha(bubble), 20, "a press near the line shows it")
+            self.assertEqual(bubble._geom[0][0]["role"], "more", "the line is still the way back")
+
+    def test_scrolling_the_page_by_the_bar_or_a_key_shows_the_line_and_restoring_the_place_does_not(self):
+        """Should show the menu line when the scrollbar moves by a drag or a key, and not when the page is put back."""
+        from unittest import mock
+        from PySide6.QtWidgets import QAbstractSlider
+        bubble = self.open_settings()
+        self.assertEqual(self.top_line_alpha(bubble), 0)
+        bubble._height_cap = lambda: 160
+        self.window.open_menu("settings")
+        self.finish_growth()
+        self.app.processEvents()
+        bar = bubble._scroll.verticalScrollBar()
+        self.assertGreater(bar.maximum(), 0, "the page can scroll")
+        self.assertEqual(self.top_line_alpha(bubble), 0, "laying the page out is not scrolling")
+        from botwidget.qt_ui.bubble_window import LINE_FADE_S, LINE_IDLE_S
+        now = 10.0
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+            bubble._place_scroll(min(40, bar.maximum()))
+        self.step_page_line(bubble, now, now + LINE_FADE_S + 0.05)
+        self.assertEqual(self.top_line_alpha(bubble), 0, "putting the page back shows nothing")
+        self.assertIsNone(bubble._line_active)
+        now = 20.0
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+            bar.triggerAction(QAbstractSlider.SliderAction.SliderSingleStepAdd)
+        self.assertIsNotNone(bubble._line_active, "a key step is the user scrolling")
+        self.step_page_line(bubble, now, now + LINE_FADE_S + 0.05)
+        self.assertGreater(self.top_line_alpha(bubble), 20, "the line fades in after the key")
+        now += LINE_FADE_S + LINE_IDLE_S + LINE_FADE_S + 0.2
+        self.step_page_line(bubble, now - (LINE_IDLE_S + LINE_FADE_S), now)
+        self.assertEqual(self.top_line_alpha(bubble), 0)
+        with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
+            bar.setValue(min(bar.maximum(), bar.value() + 30))
+        self.step_page_line(bubble, now, now + LINE_FADE_S + 0.05)
+        self.assertGreater(self.top_line_alpha(bubble), 20, "dragging the bar shows it too")
 
     def test_a_page_stays_a_while_when_the_pointer_is_outside_it_and_a_margin_counts_as_on_it(self):
         from unittest import mock
@@ -3723,7 +3814,7 @@ class BubbleHover(unittest.TestCase):
         QTest.keyClick(bubble._entry, Qt.Key_Escape)
         self.assertEqual(bubble._entry.text(), "een bericht")
 
-    def test_a_page_opened_on_another_face_replaces_the_one_before_and_escape_closes_it(self):
+    def test_a_page_opened_on_another_face_replaces_the_one_before_and_escape_returns_to_the_chat(self):
         from unittest import mock
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
@@ -3741,7 +3832,10 @@ class BubbleHover(unittest.TestCase):
         self.assertFalse(self.window.bubble.isVisible(), "one page at a time")
         self.assertTrue(other.bubble.isVisible())
         QTest.keyClick(other, Qt.Key_Escape)
-        self.assertFalse(other.bubble.isVisible(), "Escape works on the face too")
+        self.assertTrue(other.bubble.isVisible(), "Escape on the face brings the chat back")
+        self.assertIsNone(other._menu_page)
+        self.assertIn("Ja.", other.bubble.full_text)
+        self.assertFalse(other.bubble._list_only)
 
     def test_turning_on_a_connection_that_is_not_found_opens_its_page_and_stays_on_until_turned_off(self):
         from unittest import mock
@@ -4333,14 +4427,17 @@ class BubbleHover(unittest.TestCase):
     def window_commands(self, blocks):
         return [block["command"] for block in blocks if block.get("kind") == "control"]
 
-    def test_a_menu_page_is_not_pinned_and_escape_closes_it(self):
+    def test_a_menu_page_is_not_pinned_and_escape_returns_to_the_chat(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         self.window.pin()
         self.open_settings()
         self.assertFalse(self.window.pinned, "it goes away by itself like any bubble")
         QTest.keyClick(self.window.bubble, Qt.Key_Escape)
-        self.assertEqual(self.window.bubble.kind, "")
+        self.assertTrue(self.window.bubble.isVisible())
+        self.assertIsNone(self.window._menu_page)
+        self.assertIn("Ja.", self.window.bubble.full_text)
+        self.assertNotIn("Sound on a new answer", self.window.bubble.full_text)
 
     def test_clicking_a_command_in_the_list_runs_it(self):
         self.hover()
@@ -5202,30 +5299,32 @@ class NoTaskbarButton(unittest.TestCase):
         if sys.platform != "win32":
             windows.hide_from_taskbar(0x1234)  # no user32 here: nothing happens, nothing breaks
 
-    def test_every_top_level_window_is_a_tool_window_on_windows(self):
-        from unittest import mock
+    def test_every_top_level_widget_window_skips_the_taskbar(self):
+        """Faces, bubbles, the arc catcher, the thinking chain and the Thinking row never get a dock or taskbar button."""
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QApplication
         from botwidget.qt_ui import face, faces
+        from botwidget.qt_ui.bubble_window import Trail
+        from botwidget.system import linux, macos, windows
         QApplication.instance() or QApplication([])
-        with mock.patch.object(face, "FACE_IS_TOOL", True):
-            window = face.FaceWindow("t", "Test", spot=(300, 400))
-            window._poll_timer.stop()
-            self.addCleanup(window.close_face)
-            catcher = faces.ArcCatcher(None)
-            self.addCleanup(catcher.deleteLater)
-            for widget in (window, window.bubble, catcher):
-                self.assertTrue(widget.windowFlags() & Qt.Tool, type(widget).__name__)
-            window.restack()
-            self.assertTrue(window.windowFlags() & Qt.Tool, "still a tool window after always-on-top switched")
-            self.assertTrue(window.bubble.windowFlags() & Qt.Tool)
+        self.assertTrue(linux.FACE_IS_TOOL)
+        self.assertTrue(windows.FACE_IS_TOOL)
+        self.assertTrue(macos.FACE_IS_TOOL)
+        window = face.FaceWindow("t", "Test", spot=(300, 400))
+        window._poll_timer.stop()
+        self.addCleanup(window.close_face)
+        catcher = faces.ArcCatcher(None)
+        self.addCleanup(catcher.deleteLater)
+        trail = Trail(window.bubble)
+        self.addCleanup(trail.deleteLater)
+        for widget in (window, window.bubble, catcher, trail, window._thinking):
+            self.assertTrue(widget.windowFlags() & Qt.Tool, type(widget).__name__)
+        window.restack()
+        self.assertTrue(window.windowFlags() & Qt.Tool, "still a tool window after always-on-top switched")
+        self.assertTrue(window.bubble.windowFlags() & Qt.Tool)
         import inspect
         self.assertIn("Qt.Tool", inspect.getsource(faces.Faces._spawn_guest), "arc guests")
-
-    def test_linux_faces_stay_normal_windows(self):
-        from botwidget.system import linux
-        self.assertFalse(linux.FACE_IS_TOOL, "a utility window rises above other apps under mutter")
 
 
 class ScreenChanges(unittest.TestCase):
@@ -5517,8 +5616,8 @@ class MenuPages(unittest.TestCase):
     def test_the_bots_page_has_a_switch_per_bot(self):
         blocks = menu_pages.bots(self.STATE)
         self.assertEqual(self.commands(blocks),
-                         ["page/commands", "bot/a", "mute/a", "bot/b", "mute/b", "page/bot", "page/widget-json"])
-        self.assertIn("Arrow at the top goes back to commands.", self.text(blocks))
+                         ["page/chat", "bot/a", "mute/a", "bot/b", "mute/b", "page/bot", "page/widget-json"])
+        self.assertNotIn("‹ Chat", self.text(blocks))
         self.assertIn("☑ Fritsie", self.text(blocks))
         self.assertIn("☐ Robo", self.text(blocks))
         self.assertIn("No bots found yet", self.text(menu_pages.bots({**self.STATE, "bots": []})))
@@ -5526,15 +5625,22 @@ class MenuPages(unittest.TestCase):
     def test_the_connections_page_has_a_switch_per_connection_that_says_what_was_found(self):
         blocks = menu_pages.connections(self.STATE)
         text = self.text(blocks)
-        self.assertEqual(self.commands(blocks),
-                         ["page/commands", "connect/openbot", "connect/grokbot", "page/connection"])
+        self.assertEqual(self.commands(blocks), [
+            "page/chat", "connect/openbot", "connect/grokbot", "action/link-grok", "page/connection"])
         self.assertIn("☑ OpenBot", text)
         self.assertIn("local API is off", text)
         self.assertIn("☐ Grok Bot", text)
         self.assertIn("Not found", text)
+        self.assertIn("Link Grok bots", text)
         ready = self.text(menu_pages.connections({**self.STATE, "automation_ready": True, "gbot": True}))
         self.assertIn("local API ready", ready)
         self.assertIn("☑ Grok Bot", ready)
+        linked = menu_pages.connections({**self.STATE, "grok_relay": "bw-x"})
+        self.assertEqual(
+            self.commands(linked),
+            ["page/chat", "connect/openbot", "connect/grokbot", "action/copy-grok-prompt", "page/connection"],
+        )
+        self.assertIn("bw-x", self.text(linked))
 
     def test_a_connection_that_was_turned_on_but_not_found_stays_on_and_says_it_waits(self):
         text = self.text(menu_pages.connections({**self.STATE, "wanted": ["grokbot"]}))
@@ -5549,16 +5655,16 @@ class MenuPages(unittest.TestCase):
         ]}
         blocks = menu_pages.connections(state)
         self.assertEqual(self.commands(blocks), [
-            "page/commands", "connect/openbot", "connect/grokbot",
+            "page/chat", "connect/openbot", "connect/grokbot", "action/link-grok",
             "connection-toggle/here", "page/connection/here", "connection-remove/here",
             "connection-toggle/there", "page/connection/there", "connection-remove/there",
             "page/connection"])
         self.assertIn("☑ Local · qwen", self.text(blocks))
         self.assertIn("☐ Other · off · other", self.text(blocks))
 
-    def test_every_page_leads_back_to_the_commands(self):
+    def test_every_page_leads_back_to_the_chat(self):
         for page in menu_pages.PAGES:
-            self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], "page/commands")
+            self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], "page/chat")
         self.assertEqual(self.commands(menu_pages.page_blocks("nonsense", self.STATE)),
                          self.commands(menu_pages.settings(self.STATE)))
 
@@ -5613,6 +5719,12 @@ class MenuInBubble(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        folder = tempfile.TemporaryDirectory()  # own widget.json: no draft leaks in from other tests
+        self.addCleanup(folder.cleanup)
+        self.addCleanup(setattr, config, "CONFIG_PATH", config.CONFIG_PATH)
+        config.CONFIG_PATH = os.path.join(folder.name, "widget.json")
+        config._config_read[:] = [None, {}]
+        self.addCleanup(config._config_read.__setitem__, slice(None), [None, {}])
         for name, value in (("latest_chat", lambda thread_id, limit=20: {"messages": [{"role": "bot", "text": "Hoi."}], "activity": ""}),
                             ("openbot_installed", lambda: True), ("gbot_installed", lambda: True),
                             ("automation_ready", lambda: True)):
@@ -5665,20 +5777,13 @@ class MenuInBubble(unittest.TestCase):
         QApplication.sendEvent(self.window, QMouseEvent(QEvent.MouseButtonPress, point, point, Qt.RightButton,
                                                         Qt.RightButton, Qt.NoModifier))
 
-    def test_the_command_list_has_a_line_on_top_that_closes_it(self):
-        """Should show the same line as a page, and a tap on it closes the menu."""
-        from PySide6.QtCore import Qt
-        from PySide6.QtTest import QTest
+    def test_the_command_list_has_no_page_line(self):
+        """Should keep the right-click list free of the page line, so a wheel does not leave it for the chat."""
         self.right_click()
         bubble = self.window.bubble
-        self.assertEqual(bubble._geom[0][0]["role"], "more")
-        self.assertEqual(bubble._back_command(), "close")
-        self.assertTrue(bubble._menu_line.isVisibleTo(bubble))
-        self.assertFalse(bubble._scroll.isVisibleTo(bubble), "the line is not a second page under the list")
-        self.assertLess(bubble._menu_line.geometry().bottom(), bubble._slash.geometry().top() + 2)
-        QTest.mouseClick(bubble._menu_line, Qt.LeftButton)
-        self.assertFalse(bubble.isVisible(), "a tap on the line closes the menu")
-        self.assertEqual(bubble._slash.rows, [])
+        self.assertEqual(bubble._back_command(), "")
+        self.assertFalse(bubble._menu_line.isVisible())
+        self.assertTrue(bubble._list_only)
 
     def test_a_right_click_opens_the_bubble_with_a_slash_and_the_list_of_commands(self):
         self.right_click()

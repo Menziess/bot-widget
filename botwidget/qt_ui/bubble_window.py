@@ -144,8 +144,11 @@ OLDER_END_SHARE = 0.4  # a message that came in above is shown from its end, wit
 # The line for the message before shows when you scroll up at the top, or the pointer is in the top MORE_ZONE_PX of
 # the bubble, and then it stays. Scrolling on at the top pulls it: it swells with the distance you scrolled (PULL_PX
 # pixels loads the message), shrinks again when you scroll back down, and when you let go it shoots back up. A click
-# loads the message at once. On a page of the menu the same line is on top, and going back works the same way.
+# loads the message at once. On a page of the menu the same line is the way back, but it is not drawn until you
+# scroll, or the pointer or a press comes near it. It fades out again after a short idle.
 MORE_ZONE_PX = 28
+LINE_IDLE_S = 1.2  # a menu line stays up this long after the last scroll or the pointer leaving it
+LINE_FADE_S = 0.28  # how long that line takes to fade in or out
 FIELD_LINGER_S = 0.8  # the field for a message stays this long after the pointer left
 PULL_PX = 140
 WHEEL_PX = 40  # one notch of a mouse wheel, which has no pixel distance of its own
@@ -465,8 +468,11 @@ class OlderScroll(QScrollArea):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.pull_active = lambda: False
+        self.on_user_scroll = None
 
     def wheelEvent(self, event):
+        if self.on_user_scroll:
+            self.on_user_scroll()
         bar = self.verticalScrollBar()
         phase = event.phase()
         pixels = event.pixelDelta().y() or event.angleDelta().y() / 120 * WHEEL_PX
@@ -541,6 +547,10 @@ class BubbleText(QTextBrowser):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
+            near = getattr(self, "pressed_near", None)
+            if near is not None:
+                pos = event.position()
+                near(pos.x(), pos.y())
             self._press = event.position().toPoint()
             self._shift = bool(event.modifiers() & Qt.ShiftModifier)
             self._dragging = False
@@ -608,7 +618,7 @@ class Trail(QWidget):
         self._at = 0.0
 
     def setVisible(self, visible: bool):
-        if visible and not self.isVisible():
+        if visible:
             mark_before_show(self)
         super().setVisible(visible)
         if not visible:
@@ -774,6 +784,10 @@ class BubbleWindow(QWidget):
         self._pull_held = False  # a finger is still on the pad
         self._pull_tick = 0.0
         self._more_hover = False  # the pointer is on the arrow
+        self._line_shown = 0.0  # a menu page draws its top line only while you are at it
+        self._line_active = None  # last moment that line had a reason to show
+        self._line_tick = 0.0
+        self._placing_scroll = 0  # nested while our own code moves the bar; that is not the user scrolling
         self._tip = None
         self._vx = self._vy = 0.0
         self._physics_on = False
@@ -792,11 +806,13 @@ class BubbleWindow(QWidget):
         self._text.setAttribute(Qt.WA_TranslucentBackground)
         self._doc = BubbleText(self._text)
         self._doc.message_at = self._message_at
+        self._doc.pressed_near = self._on_line_press
         self._doc.clicked.connect(self._on_click)
         self._doc.command.connect(self.command)
         self._scroll = OlderScroll(self._card)
         self._scroll.pulled.connect(self._on_pulled)
         self._scroll.pull_active = lambda: self._pull_px > 0
+        self._scroll.on_user_scroll = self._on_user_scroll
         self._scroll.setWidget(self._text)
         # Text that scrolls out of the bubble fades away at the edge, where there is more of it.
         self._fade = QGraphicsOpacityEffect(self._scroll)
@@ -804,6 +820,7 @@ class BubbleWindow(QWidget):
         self._scroll.setGraphicsEffect(self._fade)
         self._scroll.verticalScrollBar().valueChanged.connect(self._update_fade)
         self._scroll.verticalScrollBar().valueChanged.connect(self._remember_place)
+        self._scroll.verticalScrollBar().valueChanged.connect(self._on_bar_value)
         self._scroll.verticalScrollBar().rangeChanged.connect(self._update_fade)
         self._scroll.setFrameShape(QScrollArea.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -1035,10 +1052,8 @@ class BubbleWindow(QWidget):
         self._dots_lines = []
         self._slash.show_rows(list(menu_pages.commands()))
         # As wide as the commands and their notes need, so nothing is cut; never wider than a chat bubble.
-        # The line on top is the same one a page has. Here a tap closes the list.
-        width = max(MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60))
-        panels = bubble_panels(measure, [role_panel("more", back="close"), plain_block("more")], width)
-        self._geom = (panels, width, content_height(panels))
+        # No page line here: a wheel must not leave this list for the chat. A page has that line.
+        self._geom = ([], max(MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60)), 0)
         self._built = ("commands",)
         self._growth = None
         self.setWindowOpacity(1.0)
@@ -1062,7 +1077,12 @@ class BubbleWindow(QWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and not self._input:
-            self.face.unpin()
+            # A typed command list handles its own Escape in the field. Here the bubble itself has the key:
+            # a menu page goes back to the chat, and the chat (or the right-click list) still closes.
+            if getattr(self.face, "_menu_page", None):
+                self.face.open_input()
+            else:
+                self.face.unpin()
             return
         super().keyPressEvent(event)
 
@@ -1541,7 +1561,12 @@ class BubbleWindow(QWidget):
             return
         self._menu_line.hide()
         view_h = max(1, self._body_h(inner) - 2 * PAD_BODY - self._extras())
-        self._scroll.setGeometry(x, y, box_w + SCROLLBAR_W, view_h)
+        # Resizing the scroll area clamps its bar. That is layout, not the user.
+        self._placing_scroll += 1
+        try:
+            self._scroll.setGeometry(x, y, box_w + SCROLLBAR_W, view_h)
+        finally:
+            self._placing_scroll -= 1
         self._update_fade()
         below = y + view_h
         if self._links:
@@ -1602,8 +1627,27 @@ class BubbleWindow(QWidget):
                 glass.clear(self)
             self._layout_children(self._paint_chrome())
 
+    def _stamp_line_shown(self):
+        """The menu line's opacity lives on the bubble. The chat line is drawn whenever its row is there."""
+        shown = self._line_shown if self._back_command() else 1.0
+        for panel in self._geom[0] if self._geom else []:
+            if panel.get("role") != "more":
+                continue
+            for line in panel["lines"]:
+                if line["kind"] == "more":
+                    line["shown"] = shown
+
     def _set_text(self):
         """The shapes behind the text; the words themselves are the text document."""
+        self._stamp_line_shown()
+        # A new picture can resize the text, and the bar then jumps. That is not the user scrolling.
+        self._placing_scroll += 1
+        try:
+            self._set_text_picture()
+        finally:
+            self._placing_scroll -= 1
+
+    def _set_text_picture(self):
         panels, box_w, inner = self._geom
         spots = []
         pix = svg_pixmap(bubble_deco_svg(panels, box_w, spots))
@@ -1823,10 +1867,18 @@ class BubbleWindow(QWidget):
         self._list_only = False
         if not self._toggling:
             self._more_open = False  # new content: the arrow for the message before shows again when asked for
+            self._line_shown = 0.0
+            self._line_active = None
+            self._line_tick = 0.0
         key = self._content_key(blocks, kind, input, links)
         if key == self._built and not self._dots_lines:
             # The same bubble as before, only hidden: showing it again needs no new layout or shadow.
             self.changed = time.monotonic()
+            if not visible and self._back_command():
+                self._line_shown = 0.0
+                self._line_active = None
+                self._line_tick = 0.0
+                self._set_text()
             if not visible and not self._yielding:
                 self._growth = self._opening_growth()
                 self.setWindowOpacity(0.0)
@@ -2010,12 +2062,77 @@ class BubbleWindow(QWidget):
         panel = self._message_at(spot.x(), spot.y())
         return bool(panel and panel["role"] == "more")
 
+    def _pointer_near_line(self) -> bool:
+        """The pointer is in the top band of the bubble, or on the line itself."""
+        if not self.face.pointer_known():
+            return False
+        px, py = self.face._pointer()
+        card = self.card()
+        if card.left() <= px <= card.right() and card.top() - 6 <= py <= card.top() + MORE_ZONE_PX:
+            return True
+        return self._pointer_on_arrow()
+
+    def _place_scroll(self, value: int):
+        """Move the page from our own code. That is not the user scrolling, so the menu line stays as it is."""
+        self._placing_scroll += 1
+        try:
+            self._scroll.verticalScrollBar().setValue(value)
+        finally:
+            self._placing_scroll -= 1
+
+    def _on_bar_value(self, _value: int):
+        """The scrollbar moved. Keyboard and dragging it come through here; a restore of the place does not."""
+        if not self._placing_scroll:
+            self._on_user_scroll()
+
+    def _on_user_scroll(self):
+        """A scroll on a menu page is a reason to show its line: the wheel, a dragged bar or a key."""
+        if self._back_command():
+            self._line_active = time.monotonic()
+
+    def _on_line_press(self, x: float, y: float):
+        """A click or a touch (it arrives as a press) on the menu line shows it. The row is already there."""
+        if not self._back_command():
+            return
+        panel = self._message_at(x, y)
+        if (panel and panel["role"] == "more") or y <= MORE_ZONE_PX:
+            self._line_active = time.monotonic()
+
+    def _page_line_hot(self, now: float) -> bool:
+        if self._pull_px > 0 or self._pull_held or self._pointer_near_line():
+            self._line_active = now
+        if self._line_active is None:
+            return False
+        return now - self._line_active < LINE_IDLE_S
+
+    def _fade_page_line(self, now: float):
+        """Ease the menu line toward visible or invisible. One frame never jumps the whole way."""
+        target = 1.0 if self._page_line_hot(now) else 0.0
+        if not self._line_tick or now < self._line_tick:
+            dt = 0.016
+        else:
+            dt = min(0.1, now - self._line_tick)
+        self._line_tick = now
+        step = dt / LINE_FADE_S
+        shown = min(target, self._line_shown + step) if target > self._line_shown else max(target, self._line_shown - step)
+        if shown < 0.004:
+            shown = 0.0
+        elif shown > 0.996:
+            shown = 1.0
+        if abs(shown - self._line_shown) < 0.004:
+            return
+        self._line_shown = shown
+        self._set_text()
+
     def _watch_arrow(self, now: float):
         """The pointer in the top of the bubble brings the line for the message before, or a scroll up does; once it is
-        there it stays, until new content takes it away. On a page of the menu it is always there."""
+        there it stays, until new content takes it away. On a page of the menu the line fades in for the same
+        reasons, or a press, and fades out after a short idle."""
         back = self._back_command()
         if self.kind != "say" or not (self._has_older or back) or self._growth is not None:
             return
+        if back:
+            self._fade_page_line(now)
         if not self._more_open and not back:
             bar = self._scroll.verticalScrollBar()
             card = self.card()
@@ -2061,9 +2178,9 @@ class BubbleWindow(QWidget):
         bar = self._scroll.verticalScrollBar()
         if getattr(growth, "older", False):
             target = getattr(growth, "target", 0)
-            bar.setValue(min(bar.maximum(), round(growth.added - (growth.added - target) * progress)))
+            self._place_scroll(min(bar.maximum(), round(growth.added - (growth.added - target) * progress)))
         else:
-            bar.setValue(self._scroll_value())
+            self._place_scroll(self._scroll_value())
         if growth.opening:
             self.setWindowOpacity(min(1.0, progress * 1.25))
 
@@ -2075,7 +2192,7 @@ class BubbleWindow(QWidget):
         self.setWindowOpacity(1.0)
         if self.kind:
             self._layout_children(self._paint_chrome())
-            self._scroll.verticalScrollBar().setValue(self._scroll_value())
+            self._place_scroll(self._scroll_value())
             # The range of the scroll bar follows the new size a moment later.
             QTimer.singleShot(0, self._scroll_to_top)
 
@@ -2085,7 +2202,7 @@ class BubbleWindow(QWidget):
             else self._scroll_target
 
     def _scroll_to_top(self):
-        self._scroll.verticalScrollBar().setValue(self._scroll_value())
+        self._place_scroll(self._scroll_value())
 
     def _resume_dots(self):
         if self._dots_lines and not self._dots.isActive():
@@ -2177,7 +2294,7 @@ class BubbleWindow(QWidget):
         desktops.apply(self)
 
     def setVisible(self, visible: bool):
-        if visible and not self.isVisible():
+        if visible:
             mark_before_show(self)
         super().setVisible(visible)
         if not visible:
@@ -2372,6 +2489,7 @@ class BubbleWindow(QWidget):
             self._menu_line.hide()
             self.hide()
             self._list_only = False
+            self._placed()
             return
         self.changed = time.monotonic()
         if not self._dots_on and self._dots_lines:
@@ -2397,3 +2515,10 @@ class BubbleWindow(QWidget):
         if not self._physics_on:
             self._physics_on = True
             self._physics.start()
+        self._placed()
+
+    def _placed(self):
+        """The cloud came or went: the Thinking row under the face follows it."""
+        place = getattr(self.face, "_place_thinking", None)
+        if place is not None and getattr(self.face, "_thinking", None) is not None:
+            place()

@@ -7,11 +7,11 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QObject, QPoint, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter, QRegion
 from PySide6.QtWidgets import QApplication, QWidget
 
-from botwidget import __version__, acp_bots, acplink, channel, checkout, grokbot, hermesbot, startup, updates
+from botwidget import __version__, acp_bots, acplink, channel, checkout, grok_relay, grokbot, hermesbot, startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -197,7 +197,7 @@ class ArcCatcher(QWidget):
         super().mouseReleaseEvent(event)
 
     def setVisible(self, visible: bool):
-        if visible and not self.isVisible():
+        if visible:
             mark_before_show(self)
         super().setVisible(visible)
 
@@ -215,10 +215,8 @@ class ArcCatcher(QWidget):
 
     def leaveEvent(self, event):
         super().leaveEvent(event)
-        # Start the debounce timer instead of closing immediately; a dock popup
-        # that briefly covers the catcher would otherwise trigger a flicker loop.
-        if self.faces._semicircle_phase != "idle" and not self.faces._semicircle_hide_timer.isActive():
-            self.faces._semicircle_hide_timer.start()
+        # Debounced: a dock popup that briefly covers the catcher must not flicker the arc.
+        self.faces.semicircle_pointer_left()
 
     def paintEvent(self, _event):
         # A fully clear window gets no pointer events. One invisible pixel of paint is enough.
@@ -228,6 +226,7 @@ class ArcCatcher(QWidget):
 
 class Faces(QObject):
     grok_probed = Signal()  # the roster came back, so the Grok Bot face can take its own avatar
+    relay_message = Signal(object)  # a relay message, handled on the Qt thread
 
     def __init__(self):
         super().__init__()
@@ -292,6 +291,9 @@ class Faces(QObject):
                 "hue": None,
             }
             self._open(bot, slot)
+        self.relay_message.connect(self.apply_relay)
+        self.relay = grok_relay.Relay(self.relay_message.emit)
+        self.relay.start()
 
     def _load(self) -> list:
         try:
@@ -397,11 +399,58 @@ class Faces(QObject):
         spot = self.pos.get(bot["id"])
         if not (isinstance(spot, (list, tuple)) and len(spot) == 2):
             spot = None
-        avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else _avatar(bot)
+        if "avatar" in bot:
+            avatar = bot["avatar"]
+        elif grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"]):
+            avatar = self.avatar
+        else:
+            avatar = _avatar(bot)
         face = FaceWindow(bot["id"], bot["name"], spot, slot, bot.get("threadId"), self,
                           bot.get("hue"), bot.get("seed"), avatar)
         self.faces[bot["id"]] = face
         face.show()
+
+    def apply_relay(self, raw):
+        """A roster opens a Grok face per bot. A status line shows on the face that bot already has."""
+        if isinstance(raw, dict) and raw.get("kind") in ("roster", "status"):
+            message = raw
+        else:
+            message = grok_relay.parse(raw)
+        if not isinstance(message, dict):
+            return
+        if message.get("kind") == "roster":
+            for bot in message.get("bots") or []:
+                self._show_roster_bot(bot)
+        elif message.get("kind") == "status":
+            face = self._relay_face(message.get("bot") or "")
+            if face is not None:
+                face.show_live_status(message["state"], message["summary"])
+
+    def _relay_face(self, name: str):
+        wanted = (name or "").strip().lower()
+        if not wanted:
+            return None
+        for face in self.faces.values():
+            if grokbot.is_grok(face.agent_id) and face.bot_name.strip().lower() == wanted:
+                return face
+        return None
+
+    def _show_roster_bot(self, bot: dict):
+        name = bot.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return
+        name = name.strip()
+        live = {}
+        for key, field in (("shape", "face"), ("color", "color")):
+            value = bot.get(field)
+            if isinstance(value, str) and value.strip():
+                live[key] = value.strip()
+        avatar = grokbot.pick_avatar(live or None, name, self.grok_avatars)
+        face = self._relay_face(name)
+        if face is None:
+            self._open({"id": grokbot.face_id(name), "name": name, "avatar": avatar}, len(self.faces))
+            return
+        face.set_avatar(avatar)
 
     def remember(self, agent_id: str, x: int, y: int):
         self.pos[agent_id] = [int(x), int(y)]
@@ -465,6 +514,7 @@ class Faces(QObject):
             "grok_target": grokbot.target(),
             "hermes": hermesbot.is_hermes_installed(),
             "wanted": sorted(self.wanted),
+            "grok_relay": grok_relay.channel(),
         }
 
     TOGGLES = {
@@ -694,6 +744,17 @@ class Faces(QObject):
             self.switch_channel()
         elif kind == "action" and name == "quit":
             QApplication.quit()
+        elif kind == "action" and name == "link-grok":
+            linked = grok_relay.link_channel()
+            if getattr(self, "relay", None) is not None:
+                self.relay.start()
+            QApplication.clipboard().setText(linked["prompt"])
+            return "connections"
+        elif kind == "action" and name == "copy-grok-prompt":
+            topic = grok_relay.channel()
+            if topic:
+                QApplication.clipboard().setText(grok_relay.chief_prompt(topic))
+            return "connections"
         return None
 
     def _set_debug(self, on: bool):
@@ -845,6 +906,7 @@ class Faces(QObject):
 
     def show_semicircle(self):
         """Hidden bots leave the top centre one by one and sit on the arc. Desktop faces stay put."""
+        self._watch_arc_pointer()
         if self._semicircle_phase == "hiding":
             cx, cy = self._hotspot()
             for i, bid in enumerate(self._arc_order):
@@ -910,6 +972,7 @@ class Faces(QObject):
         self._arc_order = []
         self._semicircle_phase = "idle"
         self._semicircle_timer.stop()
+        self._unwatch_arc_pointer()
         self._emit_semicircle()
         for face in guests:
             face.close_face()
@@ -1056,7 +1119,7 @@ class Faces(QObject):
         self.semicircle_pointer_left()
 
     def hold_arc(self):
-        """The /bots page: hidden bots stay on the arc until that page closes."""
+        """Show the hidden bots. A right-click uses this, and the /bots page keeps it up until that page closes."""
         self._arc_from_bots = True
         self.show_semicircle()
         self._semicircle_hide_timer.stop()
@@ -1076,17 +1139,65 @@ class Faces(QObject):
         if self._semicircle_phase != "idle":
             self._semicircle_hide_timer.start()
 
-    def semicircle_pointer_left(self):
-        if self._drag_in_progress() or self._catcher.underMouse() or self._bots_page_open():
+    def _pointer_on_arc(self) -> bool:
+        """The pointer is on a face or on a bot of the arc."""
+        catcher = getattr(self, "_catcher", None)
+        if catcher is not None and catcher.underMouse():
+            return True
+        for face in list(self.faces.values()) + list(self._arc_guests.values()):
+            if face.isVisible() and face.underMouse():
+                return True
+        return False
+
+    def _over_arc_area(self, gx: float, gy: float) -> bool:
+        """A click here is on the face or the arc, so it does not dismiss the arc."""
+        if self._in_hotspot(gx, gy) or self._pointer_over_arc(gx, gy):
+            return True
+        widgets = list(self.faces.values()) + list(self._arc_guests.values())
+        catcher = getattr(self, "_catcher", None)
+        if catcher is not None:
+            widgets.append(catcher)
+        for widget in widgets:
+            if widget.isVisible() and widget.geometry().contains(int(gx), int(gy)):
+                return True
+        return False
+
+    def _watch_arc_pointer(self):
+        app = QApplication.instance()
+        if app is None or getattr(self, "_arc_watched", False):
             return
-        here = list(self._arc_guests.values())
-        if any(face.underMouse() for face in here if face.isVisible()):
+        app.installEventFilter(self)
+        self._arc_watched = True
+
+    def _unwatch_arc_pointer(self):
+        app = QApplication.instance()
+        if app is None or not getattr(self, "_arc_watched", False):
+            return
+        app.removeEventFilter(self)
+        self._arc_watched = False
+
+    def eventFilter(self, _watched, event):
+        # Wayland never reports the pointer once it has left our windows, so a click or Esc is the other way out.
+        if self._semicircle_phase == "idle":
+            return False
+        kind = event.type()
+        if kind == QEvent.KeyPress and event.key() == Qt.Key_Escape:
+            self.hide_semicircle()
+        elif kind == QEvent.ApplicationDeactivate:
+            self.hide_semicircle()
+        elif kind == QEvent.MouseButtonPress and not self._over_arc_area(
+                event.globalPosition().x(), event.globalPosition().y()):
+            self.hide_semicircle()
+        return False
+
+    def semicircle_pointer_left(self):
+        if self._drag_in_progress() or self._pointer_on_arc() or self._bots_page_open():
             return
         if self._semicircle_phase != "idle" and not self._semicircle_hide_timer.isActive():
             self._semicircle_hide_timer.start()
 
     def _semicircle_hide(self):
-        """The pointer stayed away: start the upward slide, unless /bots still holds the arc."""
+        """The pointer stayed away from the face and the arc, unless /bots still holds it."""
         self._semicircle_hide_timer.stop()
         if self._bots_page_open():
             return

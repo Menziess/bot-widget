@@ -1,15 +1,22 @@
 """Builds the app for this operating system and packages it for download.
 
-Usage: python packaging/build.py
+Usage: python packaging/build.py [--bundle | --msix]
 Result in dist/:
   macOS    BotWidget-macOS.zip          (Bot Widget.app, findable via Spotlight)
   Windows  BotWidget-Windows-Setup.exe  (Start menu entry; zip if Inno Setup is missing)
   Linux    BotWidget-Linux.tar.gz       (with install.sh for a menu entry)
+  Store    BotWidget-Windows.msix       (unsigned MSIX for Microsoft Store upload)
 
 Signing only happens when the secrets are in the environment:
   macOS    MACOS_SIGN_IDENTITY, plus APPLE_ID, APPLE_TEAM_ID and APPLE_APP_PASSWORD for notarization
   Windows  WINDOWS_CERT_FILE and WINDOWS_CERT_PASSWORD
 Without those secrets it stays an unsigned build.
+
+Windows with SignPath (release.yml runs these in turn, signing in between):
+  python packaging/build.py --bundle               the app folder only, nothing signed or packaged
+  python packaging/build.py --uninstaller DIR      Inno's uninstaller to sign, as DIR/uninst-*.e32
+  python packaging/build.py --installer DIR        the installer from the (signed) folder and uninstaller
+  python packaging/build.py --msix                 produce an unsigned MSIX from the PyInstaller folder
 """
 
 import glob
@@ -60,7 +67,29 @@ def bundle(icon: str):
         args += ["--exclude-module", f"PySide6.{module}"]
     if sys.platform == "darwin":
         args += ["--osx-bundle-identifier", BUNDLE_ID]
+    if sys.platform == "win32":
+        args += ["--version-file", windows_version_file()]
     run(*args, os.path.join(ROOT, "packaging", "entry.py"))
+
+
+def windows_version_file() -> str:
+    """Version info for Bot Widget.exe: product name and version are what SignPath checks."""
+    numbers = tuple(int(n) for n in version().split(".")) + (0, 0, 0)
+    filevers = numbers[:4]
+    path = os.path.join(BUILD, "version_info.txt")
+    os.makedirs(BUILD, exist_ok=True)
+    strings = {"CompanyName": NAME, "FileDescription": NAME, "FileVersion": version(),
+               "InternalName": NAME, "OriginalFilename": f"{NAME}.exe", "ProductName": NAME,
+               "ProductVersion": version(), "LegalCopyright": "MIT License"}
+    entries = ", ".join(f"StringStruct({k!r}, {v!r})" for k, v in strings.items())
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(f"""VSVersionInfo(
+  ffi=FixedFileInfo(filevers={filevers}, prodvers={filevers}, mask=0x3f, flags=0x0, OS=0x40004,
+                    fileType=0x1, subtype=0x0, date=(0, 0)),
+  kids=[StringFileInfo([StringTable('040904B0', [{entries}])]),
+        VarFileInfo([VarStruct('Translation', [1033, 1200])])])
+""")
+    return path
 
 
 def mac():
@@ -104,22 +133,55 @@ def sign_windows(path: str):
         "/tr", "http://timestamp.digicert.com", "/td", "sha256", path)
 
 
-def windows():
+def _windows_folder() -> str:
+    """The PyInstaller folder with the icon next to the exe."""
     folder = os.path.join(DIST, NAME)
-    exe = os.path.join(folder, f"{NAME}.exe")
     icon = os.path.join(BUILD, "icons", "icon.ico")
     if os.path.isfile(icon):
         shutil.copy(icon, os.path.join(folder, "icon.ico"))
+    return folder
+
+
+def _iscc(iscc: str, folder: str, *extra: str):
+    icon = os.path.join(BUILD, "icons", "icon.ico")
+    run(iscc, f"/DVersion={version()}", f"/DSourceDir={folder}", f"/DOutputDir={DIST}",
+        f"/DIconFile={icon}", *extra, os.path.join(ROOT, "packaging", "windows.iss"))
+
+
+def windows():
+    folder = _windows_folder()
+    exe = os.path.join(folder, f"{NAME}.exe")
     if os.path.isfile(exe):
         sign_windows(exe)
     iscc = shutil.which("iscc")
     if iscc:
-        run(iscc, f"/DVersion={version()}", f"/DSourceDir={folder}", f"/DOutputDir={DIST}",
-            f"/DIconFile={icon}", os.path.join(ROOT, "packaging", "windows.iss"))
+        _iscc(iscc, folder)
         installer = os.path.join(DIST, "BotWidget-Windows-Setup.exe")
         sign_windows(installer)
         return installer
     return shutil.make_archive(os.path.join(DIST, "BotWidget-Windows"), "zip", DIST, NAME)
+
+
+def windows_uninstaller(folder_for_it: str) -> str:
+    """Let Inno write its uninstaller to sign: in signed-uninstaller mode the first compile stops
+    on purpose once uninst-*.e32 exists (see SignedUninstaller in the Inno Setup help)."""
+    iscc = shutil.which("iscc") or sys.exit("iscc not found")
+    os.makedirs(folder_for_it, exist_ok=True)
+    try:
+        _iscc(iscc, os.path.join(DIST, NAME), "/DSignedUninstall", f"/DSignedUninstallerDir={folder_for_it}")
+    except subprocess.CalledProcessError:
+        pass  # expected: Inno asks for the signature first
+    found = glob.glob(os.path.join(folder_for_it, "uninst-*.e32"))
+    if len(found) != 1:
+        sys.exit(f"expected one uninst-*.e32 in {folder_for_it}, found {found}")
+    return found[0]
+
+
+def windows_installer(folder_for_it: str) -> str:
+    """The installer from the signed folder, with the signed uninstaller in folder_for_it."""
+    iscc = shutil.which("iscc") or sys.exit("iscc not found")
+    _iscc(iscc, os.path.join(DIST, NAME), "/DSignedUninstall", f"/DSignedUninstallerDir={folder_for_it}")
+    return os.path.join(DIST, "BotWidget-Windows-Setup.exe")
 
 
 def linux():
@@ -135,8 +197,32 @@ def linux():
 
 
 def main():
+    args = sys.argv[1:]
+    if args[:1] == ["--uninstaller"] and len(args) == 2:
+        print("Uninstaller to sign:", windows_uninstaller(args[1]))
+        return
+    if args[:1] == ["--installer"] and len(args) == 2:
+        package = windows_installer(args[1])
+        print("Built", package, f"({os.path.getsize(package) / 1e6:.0f} MB)")
+        return
+    if args[:1] == ["--msix"]:
+        app_folder = os.path.join(DIST, NAME)
+        if not os.path.isdir(app_folder):
+            bundle(icons())
+        # Use packaging/msix.py logic
+        sys.path.insert(0, os.path.join(ROOT, "packaging"))
+        import msix as msix_mod
+        msix_path = os.path.join(DIST, "BotWidget-Windows.msix")
+        if msix_mod.main([app_folder, msix_path]):
+            print("Built", msix_path)
+        return
+    if args and args != ["--bundle"]:
+        sys.exit("usage: build.py [--bundle | --uninstaller DIR | --installer DIR | --msix]")
     shutil.rmtree(DIST, ignore_errors=True)
     bundle(icons())
+    if args == ["--bundle"]:
+        print("Bundled", _windows_folder() if sys.platform == "win32" else os.path.join(DIST, NAME))
+        return
     package = {"darwin": mac, "win32": windows}.get(sys.platform, linux)()
     print("Built", package, f"({os.path.getsize(package) / 1e6:.0f} MB)")
 
