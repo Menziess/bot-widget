@@ -5553,6 +5553,12 @@ class MenuInBubble(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        folder = tempfile.TemporaryDirectory()  # own widget.json: no draft leaks in from other tests
+        self.addCleanup(folder.cleanup)
+        self.addCleanup(setattr, config, "CONFIG_PATH", config.CONFIG_PATH)
+        config.CONFIG_PATH = os.path.join(folder.name, "widget.json")
+        config._config_read[:] = [None, {}]
+        self.addCleanup(config._config_read.__setitem__, slice(None), [None, {}])
         for name, value in (("latest_chat", lambda thread_id, limit=20: {"messages": [{"role": "bot", "text": "Hoi."}], "activity": ""}),
                             ("openbot_installed", lambda: True), ("gbot_installed", lambda: True),
                             ("automation_ready", lambda: True)):

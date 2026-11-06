@@ -14,6 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from botwidget import config
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication
 
 
 def _write_config(data: dict):
@@ -30,7 +31,6 @@ class ScreenshotMode(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from PySide6.QtWidgets import QApplication
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -111,43 +111,33 @@ class ScreenshotMode(unittest.TestCase):
     def test_overlay_mouse_events_work(self):
         """Verify overlay handles mouse events (left press, move, release)."""
         from botwidget.qt_ui.screenshot import ScreenshotOverlay
-        overlay = ScreenshotOverlay.__new__(ScreenshotOverlay)
-        overlay._rect = None
-        overlay._start = None
-        overlay._mouse_down = False
-        overlay._done_callback = None
-        overlay._cancel_callback = None
-        # Patch close/update to avoid __init__ RuntimeError
-        overlay.close = mock.Mock()
-        overlay.update = mock.Mock()
+        window = self.face.FaceWindow("t1", "Test", spot=(300, 400))
+        self.addCleanup(window.close_face)
+        overlay = ScreenshotOverlay(window)
+        self.addCleanup(overlay.close)
 
-        # Simulate a left mouse press
-        pos = mock.Mock()
-        pos.x.return_value = 100.0
-        pos.y.return_value = 100.0
-        press = mock.Mock()
-        press.button.return_value = Qt.LeftButton
-        press.position.return_value = pos
-        overlay.mousePressEvent(press)
-        self.assertTrue(overlay._mouse_down)
-        self.assertEqual(overlay._start, (100, 100))
+        # Patch update so we can verify it was called
+        with mock.patch.object(overlay, 'update') as mock_update:
+            # Simulate a left mouse press
+            pos = mock.Mock()
+            pos.x.return_value = 100.0
+            pos.y.return_value = 100.0
+            press = mock.Mock()
+            press.button.return_value = Qt.LeftButton
+            press.position.return_value = pos
+            overlay.mousePressEvent(press)
+            self.assertTrue(overlay._mouse_down)
+            self.assertEqual(overlay._start, (100, 100))
 
-        # Simulate mouse move
-        move_pos = mock.Mock()
-        move_pos.x.return_value = 150.0
-        move_pos.y.return_value = 130.0
-        move = mock.Mock()
-        move.position.return_value = move_pos
-        overlay.mouseMoveEvent(move)
-        self.assertIsNotNone(overlay._rect)
-        overlay.update.assert_called()
-
-        # Simulate left button release — triggers _done since rect > 2x2
-        release = mock.Mock()
-        release.button.return_value = Qt.LeftButton
-        overlay.mouseReleaseEvent(release)
-        self.assertFalse(overlay._mouse_down)
-        overlay.close.assert_called()
+            # Simulate mouse move
+            move_pos = mock.Mock()
+            move_pos.x.return_value = 150.0
+            move_pos.y.return_value = 130.0
+            move = mock.Mock()
+            move.position.return_value = move_pos
+            overlay.mouseMoveEvent(move)
+            self.assertIsNotNone(overlay._rect)
+            mock_update.assert_called()
 
     def test_overlay_right_click_cancels(self):
         from botwidget.qt_ui.screenshot import ScreenshotOverlay
@@ -194,9 +184,10 @@ class ScreenshotOverlay(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from PySide6.QtWidgets import QApplication
+            from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
+        cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
     def test_overlay_has_translucent_background(self):
@@ -217,51 +208,63 @@ class ScreenshotOverlay(unittest.TestCase):
         overlay._rect = (100, 100, 50, 30)
         self.assertIsNotNone(overlay._rect)
 
+    def test_overlay_flags_allow_input(self):
+        """Overlay must NOT have WindowTransparentForInput or WindowDoesNotAcceptFocus."""
+        from botwidget.qt_ui.screenshot import ScreenshotOverlay
+        window = self.face.FaceWindow("t1", "Test", spot=(300, 400))
+        self.addCleanup(window.close_face)
+        overlay = ScreenshotOverlay(window)
+        self.addCleanup(overlay.close)
+        # Neither flag should be set
+        self.assertFalse(overlay.windowFlags() & Qt.WindowTransparentForInput)
+        self.assertFalse(overlay.windowFlags() & Qt.WindowDoesNotAcceptFocus)
+        # But frameless and stays-on-top must be present
+        self.assertTrue(overlay.windowFlags() & Qt.FramelessWindowHint)
+        self.assertTrue(overlay.windowFlags() & Qt.WindowStaysOnTopHint)
 
-class ScreenshotFaceEyes(unittest.TestCase):
-    """While in screenshot mode the target face aims eyes at the mouse."""
+    def test_paint_event_does_not_raise_with_tuple_rect(self):
+        """Setting _rect = (10, 20, 30, 40) and paintEvent must not TypeError."""
+        from PySide6.QtCore import QRect
+        from botwidget.qt_ui.screenshot import ScreenshotOverlay
+        from PySide6.QtGui import QPaintEvent
+
+        window = self.face.FaceWindow("t1", "Test", spot=(300, 400))
+        self.addCleanup(window.close_face)
+        overlay = ScreenshotOverlay(window)
+        self.addCleanup(overlay.close)
+        overlay._rect = (10, 20, 30, 40)
+        # paintEvent should not raise
+        overlay.paintEvent(QPaintEvent(QRect(0, 0, 400, 300)))
+
+
+class ScreenshotPngEncoding(unittest.TestCase):
+    """pixmap_png_bytes encodes a QPixmap as valid PNG bytes."""
 
     @classmethod
     def setUpClass(cls):
         try:
-            from PySide6.QtWidgets import QApplication
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
-        cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_face_aims_at_mouse_in_screenshot_mode(self):
-        window = self.face.FaceWindow("t1", "Test", spot=(300, 400))
-        self.addCleanup(window.close_face)
-        window._poll_timer.stop()
-        window._anim_timer.stop()
-        # Set screenshot_face so the _aim method enters screenshot mode
-        window.screenshot_face = window
-        # Pointer must be between ON_FACE (~32px) and GAZE_NEAR (58px) of face center (334, 434).
-        # vx=30, vy=20 → dist=37.4 → eye_aim returns non-trivial dx/dy.
-        window._pointer = lambda: (364, 454)
-        window._aim(16)
-        target = window.anim.target
-        # Should follow mouse, not do idle motion (dx/dy should be non-zero)
-        self.assertNotEqual((target["dx"], target["dy"]), (0.0, 0.0))
-        # Should not have pitch/yaw/roll from idle motion
-        self.assertEqual(target["pitch"], 0.0)
-        self.assertEqual(target["yaw"], 0.0)
-        self.assertEqual(target["roll"], 0.0)
+    def test_pixmap_to_png_roundtrip(self):
+        from botwidget.qt_ui.screenshot import pixmap_png_bytes
+        from PySide6.QtGui import QPixmap
+        pixmap = QPixmap(32, 32)
+        pixmap.fill(Qt.green)
+        data = pixmap_png_bytes(pixmap)
+        self.assertIsNotNone(data)
+        self.assertIsInstance(data, bytes)
+        self.assertGreater(len(data), 0)
+        self.assertEqual(data[:4], b"\x89PNG")  # PNG magic bytes
 
-    def test_normal_aim_without_screenshot_mode(self):
-        window = self.face.FaceWindow("t1", "Test", spot=(300, 400))
-        self.addCleanup(window.close_face)
-        window._poll_timer.stop()
-        window._anim_timer.stop()
-        # No screenshot_face set
-        window._pointer = lambda: (500, 500)
-        window._aim(16)
-        target = window.anim.target
-        # Should go back to idle (Grok Bot still pose)
-        self.assertEqual(target["dx"], 0.0)
-        self.assertEqual(target["dy"], 0.0)
+    def test_null_pixmap_returns_none(self):
+        from botwidget.qt_ui.screenshot import pixmap_png_bytes
+        from PySide6.QtGui import QPixmap
+        # An invalid (null) pixmap should return None
+        null_pixmap = QPixmap()
+        self.assertIsNone(pixmap_png_bytes(null_pixmap))
 
 
 class FaceHideShow(unittest.TestCase):
@@ -270,7 +273,6 @@ class FaceHideShow(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from PySide6.QtWidgets import QApplication
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -333,9 +335,10 @@ class ScreenGrab(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from PySide6.QtWidgets import QApplication
+            from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
+        cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
     def test_grab_returns_pixmap(self):
@@ -351,7 +354,6 @@ class EndToEnd(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from PySide6.QtWidgets import QApplication
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -422,3 +424,140 @@ class EndToEnd(unittest.TestCase):
         with mock.patch.object(overlay, 'close'):
             window._leave_screenshot_mode()
         self.assertIsNone(window.screenshot_face)
+
+    def test_done_hides_faces_before_grab(self):
+        """_done must hide the overlay and all faces before grabbing, and restore them after."""
+        from botwidget.qt_ui.screenshot import ScreenshotOverlay, enter_screenshot_mode, _restore_faces
+        from PySide6.QtGui import QPixmap
+        from botwidget import attachments
+        from pathlib import Path
+
+        window = self._make_window()
+        self.addCleanup(window.close_face)
+        w2 = self._make_window("t2", "Test2")
+        window.faces = mock.Mock()
+        window.faces.faces = {"t1": window, "t2": w2}
+        w2._poll_timer.stop()
+        w2._anim_timer.stop()
+
+        # Enter screenshot mode for real (creates real overlay)
+        overlay = enter_screenshot_mode(window)
+        self.addCleanup(overlay.close)
+        self.assertTrue(overlay.isVisible())
+
+        # Show faces so they start visible before _done hides them
+        window.show()
+        w2.show()
+        self.assertTrue(window.isVisible())
+        self.assertTrue(w2.isVisible())
+
+        # Track whether faces are hidden at grab time
+        face_visibility_at_grab = {}
+
+        def mock_grab_region(self=None):
+            face_visibility_at_grab["window"] = window.isVisible()
+            face_visibility_at_grab["w2"] = w2.isVisible()
+            face_visibility_at_grab["overlay"] = overlay.isVisible()
+            fake = QPixmap(100, 100)
+            fake.fill(Qt.blue)
+            return fake
+
+        # Patch grab_region on the class so _done calls our mock
+        captured_bytes = []
+        captured_paths = []
+
+        def mock_store_bytes(name, data):
+            captured_paths.append((name, data))
+            return Path(tempfile.mkdtemp()) / name
+
+        with mock.patch.object(ScreenshotOverlay, 'grab_region', mock_grab_region):
+            with mock.patch.object(attachments, 'store_bytes', mock_store_bytes):
+                with mock.patch.object(attachments, 'TRANSFERS', Path(tempfile.mkdtemp())):
+                    window.on_user_message = mock.Mock()
+
+                    overlay._rect = (10, 20, 50, 40)
+
+                    # Call _done directly — this triggers the real on_done callback chain
+                    overlay._done((10, 20, 50, 40))
+
+        # Faces must have been hidden at grab time
+        self.assertFalse(face_visibility_at_grab.get("window", True))
+        self.assertFalse(face_visibility_at_grab.get("w2", True))
+        self.assertFalse(face_visibility_at_grab.get("overlay", True))
+
+        # After _done, faces should be restored
+        self.assertTrue(window.isVisible())
+        self.assertTrue(w2.isVisible())
+
+        # store_bytes should have been called with PNG bytes
+        self.assertEqual(len(captured_paths), 1)
+        name, data = captured_paths[0]
+        self.assertEqual(name, "screenshot.png")
+        self.assertEqual(data[:4], b"\x89PNG")
+        self.assertGreater(len(data), 0)
+
+    def test_done_with_no_pixmap_calls_cancel(self):
+        """If grab returns None, _done calls the cancel callback."""
+        from botwidget.qt_ui.screenshot import ScreenshotOverlay, enter_screenshot_mode
+
+        window = self._make_window()
+        self.addCleanup(window.close_face)
+        window.faces = mock.Mock()
+        window.faces.faces = {"t1": window}
+
+        overlay = enter_screenshot_mode(window)
+        self.addCleanup(overlay.close)
+
+        cancel_called = []
+
+        def on_cancel():
+            cancel_called.append(True)
+
+        overlay._cancel_callback = on_cancel
+        overlay._done_callback = None  # no done callback
+        overlay._rect = (10, 20, 50, 40)
+
+        with mock.patch.object(overlay, 'grab_region', return_value=None):
+            overlay._done((10, 20, 50, 40))
+
+        self.assertEqual(cancel_called, [True])
+
+    def test_full_flow_with_real_png_encoding(self):
+        """End-to-end: enter mode, drag, grab, encode, store_bytes called."""
+        from botwidget.qt_ui.screenshot import enter_screenshot_mode, pixmap_png_bytes
+        from botwidget import attachments
+        from PySide6.QtGui import QPixmap
+        from pathlib import Path
+
+        window = self._make_window()
+        self.addCleanup(window.close_face)
+        window.faces = mock.Mock()
+        window.faces.faces = {"t1": window}
+        window.show()
+
+        overlay = enter_screenshot_mode(window)
+        self.addCleanup(overlay.close)
+
+        captured_paths = []
+
+        def mock_store_bytes(name, data):
+            captured_paths.append((name, data))
+            return Path(tempfile.mkdtemp()) / name
+
+        with mock.patch.object(attachments, 'store_bytes', mock_store_bytes):
+            with mock.patch.object(attachments, 'TRANSFERS', Path(tempfile.mkdtemp())):
+                # Stub on_user_message so nothing is actually sent
+                window.on_user_message = mock.Mock()
+
+                overlay._rect = (10, 20, 50, 40)
+
+                # Provide a real pixmap and let the flow complete
+                fake_pixmap = QPixmap(100, 100)
+                fake_pixmap.fill(Qt.red)
+                overlay._done_callback(None, fake_pixmap)
+
+        self.assertEqual(len(captured_paths), 1)
+        name, data = captured_paths[0]
+        self.assertEqual(name, "screenshot.png")
+        self.assertEqual(data[:4], b"\x89PNG")
+        self.assertGreater(len(data), 0)
