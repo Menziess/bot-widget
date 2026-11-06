@@ -11,7 +11,7 @@ from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter
 from PySide6.QtWidgets import QApplication, QWidget
 
-from botwidget import __version__, channel, checkout, grokbot, hermesbot, startup, updates
+from botwidget import __version__, channel, checkout, grok_relay, grokbot, hermesbot, startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -185,6 +185,7 @@ class ArcCatcher(QWidget):
 
 class Faces(QObject):
     grok_probed = Signal()  # the roster came back, so the Grok Bot face can take its own avatar
+    relay_message = Signal(object)  # a relay message, handled on the Qt thread
 
     def __init__(self):
         super().__init__()
@@ -248,6 +249,9 @@ class Faces(QObject):
                 "hue": None,
             }
             self._open(bot, slot)
+        self.relay_message.connect(self.apply_relay)
+        self.relay = grok_relay.Relay(self.relay_message.emit)
+        self.relay.start()
 
     def _load(self) -> list:
         try:
@@ -353,11 +357,58 @@ class Faces(QObject):
         spot = self.pos.get(bot["id"])
         if not (isinstance(spot, (list, tuple)) and len(spot) == 2):
             spot = None
-        avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else None
+        if "avatar" in bot:
+            avatar = bot["avatar"]
+        elif grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"]):
+            avatar = self.avatar
+        else:
+            avatar = None
         face = FaceWindow(bot["id"], bot["name"], spot, slot, bot.get("threadId"), self,
                           bot.get("hue"), bot.get("seed"), avatar)
         self.faces[bot["id"]] = face
         face.show()
+
+    def apply_relay(self, raw):
+        """A roster opens a Grok face per bot. A status line shows on the face that bot already has."""
+        if isinstance(raw, dict) and raw.get("kind") in ("roster", "status"):
+            message = raw
+        else:
+            message = grok_relay.parse(raw)
+        if not isinstance(message, dict):
+            return
+        if message.get("kind") == "roster":
+            for bot in message.get("bots") or []:
+                self._show_roster_bot(bot)
+        elif message.get("kind") == "status":
+            face = self._relay_face(message.get("bot") or "")
+            if face is not None:
+                face.show_live_status(message["state"], message["summary"])
+
+    def _relay_face(self, name: str):
+        wanted = (name or "").strip().lower()
+        if not wanted:
+            return None
+        for face in self.faces.values():
+            if grokbot.is_grok(face.agent_id) and face.bot_name.strip().lower() == wanted:
+                return face
+        return None
+
+    def _show_roster_bot(self, bot: dict):
+        name = bot.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return
+        name = name.strip()
+        live = {}
+        for key, field in (("shape", "face"), ("color", "color")):
+            value = bot.get(field)
+            if isinstance(value, str) and value.strip():
+                live[key] = value.strip()
+        avatar = grokbot.pick_avatar(live or None, name, self.grok_avatars)
+        face = self._relay_face(name)
+        if face is None:
+            self._open({"id": grokbot.face_id(name), "name": name, "avatar": avatar}, len(self.faces))
+            return
+        face.set_avatar(avatar)
 
     def remember(self, agent_id: str, x: int, y: int):
         self.pos[agent_id] = [int(x), int(y)]
