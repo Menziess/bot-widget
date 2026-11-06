@@ -647,9 +647,41 @@ class FaceWindow(QWidget):
             self._apply_drag_size(self._size_goal)
         self._size_goal = None
 
+    def mouseDoubleClickEvent(self, event):
+        """Double-click: enter screenshot mode for this face. Suppresses the normal click→open_input."""
+        if event.button() != Qt.LeftButton:
+            return
+        if getattr(self, "screenshot_face", None) is not None:
+            return
+        # Enter screenshot mode
+        self._press_pos = None
+        self._drag_origin = None
+        self._screenshot_active = True
+        self.screenshot_face = self
+        self._happy_on = True
+        self.anim.kick("sy", -0.8)
+        from botwidget.qt_ui.screenshot import enter_screenshot_mode
+        enter_screenshot_mode(self)
+
+    def _leave_screenshot_mode(self):
+        """Cancel screenshot mode: hide overlay, restore faces, clear state."""
+        overlay = getattr(self, "_screenshot_overlay", None)
+        if overlay is not None:
+            self._screenshot_overlay = None
+            overlay.close()
+        self.screenshot_face = None
+        self._screenshot_active = False
+        self._happy_off()
+        self._render()
+
     def mouseReleaseEvent(self, event):
         """A click (hardly any movement) puts the cursor in the field."""
         if event.button() != Qt.LeftButton:
+            return
+        # If screenshot mode was entered via double-click, suppress the click action.
+        if getattr(self, "_screenshot_active", False):
+            self._press_pos = None
+            self._drag_origin = None
             return
         self._finish_resize()
         click = False
@@ -963,6 +995,16 @@ class FaceWindow(QWidget):
                   pitch=0.0, yaw=0.0, roll=0.0, **moved)
             self._show_face("neutral")
             return
+        # Screenshot mode: the target face follows the mouse with its eyes (big, wide-open).
+        if getattr(self, "screenshot_face", None) is not None:
+            px, py = self._pointer()
+            target = eye_aim(px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2))
+            if target is not None:
+                dx, dy, converge, scale = target
+                a.aim(dx=dx, dy=dy, converge=converge, scale=scale,
+                      pitch=0.0, yaw=0.0, roll=0.0, **moved)
+                self._show_face("neutral")
+                return
         a.aim(happy=0.0)
         if self.motion.playing is None and not (self._working or self.has_pending):
             px, py = self._pointer()
