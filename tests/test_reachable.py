@@ -1844,6 +1844,476 @@ class PlainPaths(unittest.TestCase):
         self.assertTrue(home.has_pending)
 
 
+class OffscreenCalls(unittest.TestCase):
+    """Should call the bubble and face methods that still run on this screen."""
+
+    def setUp(self):
+        from PySide6.QtWidgets import QApplication
+        self.app = QApplication.instance() or QApplication([])
+
+    def _face(self, agent_id, name, spot):
+        from botwidget.qt_ui.face import FaceWindow
+        window = FaceWindow(agent_id, name, spot=spot)
+        window._poll_timer.stop()
+        self.addCleanup(window.close_face)
+        return window
+
+    def _mouse(self, kind, button, at=(4.0, 4.0), buttons=None):
+        from PySide6.QtCore import QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        point = QPointF(*at)
+        return QMouseEvent(kind, point, point, button, buttons or button, Qt.KeyboardModifier.NoModifier)
+
+    def test_bubble_answers_clicks_keys_and_paints(self):
+        """Should copy, scroll, open a slash list, and draw the lines the bubble still has."""
+        import time
+        from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
+        from PySide6.QtGui import QKeyEvent, QWheelEvent
+        from botwidget.markdown import status_block
+        from botwidget.qt_ui.bubble_window import CopyNotice, DOTS_MS
+        from botwidget.qt_ui.controls import TextEditor
+
+        home = self._face("home", "Home", (80, 80))
+        bubble = home.bubble
+        noticed = []
+        notice = CopyNotice(bubble._card)
+        notice.clicked.connect(lambda: noticed.append(True))
+        notice.ask_over(QRect(0, 0, 20, 12), "Copy", False)
+        notice.mousePressEvent(self._mouse(QEvent.Type.MouseButtonPress, Qt.MouseButton.LeftButton))
+        self.assertEqual(noticed, [True])
+
+        down = QWheelEvent(
+            QPointF(1, 1), QPointF(1, 1), QPoint(0, 0), QPoint(0, -120),
+            Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
+        bubble._scroll.wheelEvent(down)
+        bubble.kind = ""
+        bubble._geom = ([], 1, 1)
+        bubble._menu_line.mouseReleaseEvent(
+            self._mouse(QEvent.Type.MouseButtonRelease, Qt.MouseButton.LeftButton))
+        bubble._doc._shift = True
+        bubble._doc._press = QPoint(1, 1)
+        bubble._doc.mouseMoveEvent(self._mouse(QEvent.Type.MouseMove, Qt.MouseButton.NoButton, buttons=Qt.MouseButton.NoButton))
+
+        bubble._commands_forced = True
+        bubble._entry.setPlainText("/settings")
+        bubble.open_command_list()
+        self.assertFalse(bubble._commands_forced)
+        seen = []
+        bubble._glass_mask = b"x"
+        with mock.patch("botwidget.qt_ui.bubble_window.glass.update", side_effect=lambda *args: seen.append(args)):
+            bubble._fit_window()
+        self.assertTrue(seen)
+
+        home.pinned = True
+        home._working = False
+        home._menu_page = None
+        bubble._input = False
+        bubble.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier))
+        self.assertFalse(home.pinned)
+        bubble.kind = "hint"
+        self.assertIsNone(bubble._message_at(0, 0))
+        panel = {"role": "user", "queued": "abc", "copy": "hi", "lines": [{"kind": "text", "size": 12}]}
+        bubble.kind = "say"
+        bubble._geom = ([panel], 80, 40)
+        bubble._doc.move(0, 0)
+        queued = []
+        bubble.edit_queued.connect(queued.append)
+        bubble._on_click(1, 1, False)
+        self.assertEqual(queued, ["abc"])
+        bubble._geom = ([], 10, 10)
+        bubble._on_click(0, 0, False)
+        bubble._notice_from_end = 3
+        self.assertTrue(bubble._notice_rect().isNull())
+
+        other = self._face("other", "Other", (80, 80))
+        other.bubble.show()
+        other.bubble.resize(300, 200)
+        other.bubble.move(0, 0)
+        home.faces = SimpleNamespace(faces={"home": home, "other": other}, raise_bubbles=lambda: None)
+        bubble.show()
+        other_box = other.bubble
+        # The push is sideways when the boxes overlap less across than down.
+        tall = other_box.height() + other_box.width() + 50
+        moved = bubble._clear_spot(other_box.x(), other_box.y() + other_box.height() / 2 - tall / 2, 1, tall)
+        self.assertNotEqual(moved[0], other_box.x())
+
+        bubble.show()
+        bubble.restack()
+        bubble._geom = None
+        bubble.kind = "say"
+        bubble._paint_chrome()
+        self.assertIsNotNone(bubble._geom)
+        bubble._chrome_key = None
+        bubble._shadow_key = None
+        with mock.patch("botwidget.qt_ui.bubble_window.glass.blurs", return_value=True):
+            bubble._paint_chrome()
+        self.assertTrue(bubble._glass_mask)
+        trail = SimpleNamespace(hidden=False, isVisible=lambda: True, hide=lambda: setattr(trail, "hidden", True))
+        bubble._trail = trail
+        bubble.kind = "say"
+        bubble._move_trail()
+        self.assertTrue(trail.hidden)
+        bubble._show_menu_line(1, 1, 40, 8)
+        self.assertTrue(bubble._menu_line.isVisible())
+        bubble.kind = "say"
+        bubble._geom = bubble._parts()
+        bubble.restyle()
+        bubble._spots = [(index, 0, "#111", 0) for index in range(300)]
+        bubble._draw_dots()
+        self.assertLess(len(bubble._dot_frames), 256)
+        bubble._geom = None
+        bubble._place_controls()
+        editor = bubble._make_control({"control": "editor", "value": "hi"})
+        self.addCleanup(editor.deleteLater)
+        self.assertIsInstance(editor, TextEditor)
+
+        blocks = [status_block("Same")]
+        bubble.hide()
+        bubble._yielding = False
+        bubble._show_blocks(blocks, "say")
+        bubble.hide()
+        bubble._geom[0][0]["back"] = "close"
+        bubble._built = bubble._content_key(blocks, "say", False, None)
+        bubble._dots_lines = []
+        bubble._show_blocks(blocks, "say")
+        self.assertEqual(bubble._line_shown, 0.0)
+        bubble._geom[0][0]["back"] = "close"
+        home.pinned = True
+        bubble._arrow_clicked()
+        self.assertFalse(home.pinned)
+        bubble._geom = ([{"role": "more", "back": "close", "lines": [{"kind": "more"}]}], 20, 10)
+        bubble._pull_done()
+        bubble.kind = "say"
+        bubble._growth = None
+        bubble._more_hover = True
+        bubble._pull_px = 0
+        bubble._pull_held = False
+        bubble._pull_last = time.monotonic()
+        bubble._geom = ([{"role": "more", "back": "up", "lines": [{"kind": "more", "shown": 0}]}], 40, 20)
+        bubble._watch_arrow(time.monotonic())
+        self.assertFalse(bubble._more_hover)
+
+        bubble._dots_lines = [{"kind": "dots"}]
+        bubble._spots = []
+        bubble._geom = ([{"role": "bot", "lines": []}], 20, 10)
+        bubble._dots.setInterval(1)
+        with mock.patch("botwidget.qt_ui.bubble_window.power.reduced", return_value=True):
+            bubble._tick_dots()
+        self.assertEqual(bubble._dots.interval(), DOTS_MS * 2)
+        called = []
+        with mock.patch("botwidget.qt_ui.bubble_window.always_on_top", return_value=False), \
+                mock.patch("botwidget.qt_ui.bubble_window.send_behind_windows", side_effect=called.append):
+            bubble.hide()
+            bubble.show()
+        self.assertTrue(called)
+        bubble.kind = "say"
+        bubble._input = False
+        bubble._had_focus = False
+        bubble._physics.setInterval(1)
+        home.faces = None
+        with mock.patch("botwidget.qt_ui.bubble_window.power.reduced", return_value=True):
+            bubble._tick()
+        self.assertEqual(bubble._physics.interval(), 33)
+        bubble._dots_on = False
+        bubble._dots_lines = [{"kind": "dots"}]
+        bubble.place("say")
+        self.assertTrue(bubble._dots.isActive())
+        bubble._dots.stop()
+        bubble._physics.stop()
+
+    def test_face_drags_polls_and_sends_without_a_server(self):
+        """Should drag, bounce, poll a stand-in link, and send without leaving this machine."""
+        import threading
+        import time
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        from botwidget.avatar import AVATAR_SIZE
+        from botwidget.markdown import status_block
+
+        home = self._face("home", "Home", (80, 80))
+        home._thinking.show()
+        home._thinking.restack()
+        self.assertTrue(home._thinking.isVisible())
+        home.bring_here()
+        home.apply_desktops()
+        home._drag_origin = [home.spot()]
+        home._set_semicircle({home.agent_id: {"visible": True, "size": 48, "x": 10, "y": 10}})
+        self.assertFalse(home._semicircle_visible)
+        home._drag_origin = None
+        home._semicircle_visible = True
+        home._set_pixmap(home._pixmap)
+        row = home._thinking
+        home._thinking = None
+        home._place_thinking()
+        home._thinking = row
+        _x, _y, _vx, vy = home._stay_on_screen(home.x(), 100000, 0.0, 40.0)
+        self.assertLess(vy, 0)
+        home.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_A, Qt.KeyboardModifier.NoModifier))
+        home._drag_origin = None
+        home.mousePressEvent(self._mouse(QEvent.Type.MouseButtonPress, Qt.MouseButton.MiddleButton))
+        self.assertIsNone(home._drag_origin)
+        spot = home.spot()
+        home.mouseMoveEvent(self._mouse(QEvent.Type.MouseMove, Qt.MouseButton.NoButton, buttons=Qt.MouseButton.NoButton))
+        self.assertEqual(home.spot(), spot)
+
+        home.show()
+        home.bubble.show()
+        home._arc_guest = True
+        home.faces = SimpleNamespace(
+            faces={"home": home}, _in_hotspot=lambda _x, _y: True,
+            raise_bubbles=lambda: None, offer_semicircle=lambda _x, _y: None)
+        home._drag_origin = [home.spot()]
+        home._press_pos = (0.0, 0.0)
+        home._drag_box = home.width()
+        home._drag_sample = (time.monotonic() - 1, home.x(), home.y())
+        home._wall_kick = (0.0, 0.0)
+        home._restacked_at = time.monotonic()
+        home.mouseMoveEvent(self._mouse(
+            QEvent.Type.MouseMove, Qt.MouseButton.NoButton, at=(50.0, 0.0), buttons=Qt.MouseButton.LeftButton))
+        self.assertFalse(home.bubble.kind)
+        self.assertNotEqual(home._dvx, 0.0)
+
+        home.screenshot_face = None
+        home.mouseDoubleClickEvent(self._mouse(QEvent.Type.MouseButtonDblClick, Qt.MouseButton.MiddleButton))
+        self.assertIsNone(home.screenshot_face)
+        home.screenshot_face = home
+        home.mouseDoubleClickEvent(self._mouse(QEvent.Type.MouseButtonDblClick, Qt.MouseButton.LeftButton))
+        self.assertIs(home.screenshot_face, home)
+        home.mouseReleaseEvent(self._mouse(QEvent.Type.MouseButtonRelease, Qt.MouseButton.MiddleButton))
+        home._screenshot_active = True
+        home._press_pos = (1.0, 1.0)
+        home._drag_origin = [home.spot()]
+        home.mouseReleaseEvent(self._mouse(QEvent.Type.MouseButtonRelease, Qt.MouseButton.LeftButton))
+        self.assertIsNone(home._drag_origin)
+
+        home._screenshot_active = False
+        home.screenshot_face = None
+        home._semicircle_visible = True
+        home._press_pos = (4.0, 4.0)
+        home._drag_origin = [home.spot()]
+        home._dvx = home._dvy = 0.0
+        home._wall_kick = (0.0, 0.0)
+        home.faces = None
+        remembered = home._home
+        home.mouseReleaseEvent(self._mouse(QEvent.Type.MouseButtonRelease, Qt.MouseButton.LeftButton))
+        self.assertEqual(home._home, remembered)
+
+        dropped = []
+        home._semicircle_visible = False
+        home._press_pos = (0.0, 0.0)
+        home._drag_origin = [home.spot()]
+        home.faces = SimpleNamespace(drop_arc=lambda _face: True, drag_let_go=lambda: dropped.append(1), faces={})
+        home.mouseReleaseEvent(self._mouse(
+            QEvent.Type.MouseButtonRelease, Qt.MouseButton.LeftButton, at=(80.0, 80.0)))
+        self.assertEqual(dropped, [1])
+        home._press_pos = (0.0, 0.0)
+        home._drag_origin = [home.spot()]
+        home._wall_kick = (800.0, 0.0)
+        home._dvx = home._dvy = 0.0
+        home.faces = SimpleNamespace(drop_arc=lambda _face: False, drag_let_go=lambda: None, faces={})
+        home.mouseReleaseEvent(self._mouse(
+            QEvent.Type.MouseButtonRelease, Qt.MouseButton.LeftButton, at=(80.0, 80.0)))
+        self.assertTrue(home._coasting)
+        home._coast_timer.stop()
+        home._coasting = False
+        with mock.patch("botwidget.qt_ui.face.QTimer.singleShot", side_effect=lambda _ms, fn: fn()):
+            home._drag_origin = None
+            home._screens_changed()
+
+        home.pinned = True
+        self.assertFalse(home.shrink_think())
+        home.set_avatar(home._avatar)
+        with mock.patch.object(home, "_pointer_on_head", return_value=False), \
+                mock.patch("botwidget.qt_ui.face.power.reduced", return_value=True):
+            home._drag_origin = None
+            home._coasting = False
+            home._happy_on = False
+            home._animate()
+        home.screenshot_face = home
+        home._happy_on = False
+        near = (home.x() + AVATAR_SIZE / 2 + 5, home.y() + AVATAR_SIZE / 2)
+        with mock.patch.object(home, "_pointer", return_value=near):
+            home._aim(16)
+        home.screenshot_face = None
+        home._working = True
+        home.pinned = False
+        home._think_quiet = False
+        home._answer_view = False
+        home._chat = {"messages": [{"role": "user", "text": "q"}]}
+        self.assertFalse(home._toggle_answer_view())
+
+        link = SimpleNamespace(stopped=False, _active=False, _note="from grok", sent=[], fetched=[], resumed=False)
+        link.due = lambda: False
+        link.active = lambda: link._active
+        link.note = lambda: link._note
+        link.chat = lambda: {"messages": [], "activity": ""}
+        link.attention = lambda: {"prompts": [], "approvals": [], "browserTakeovers": []}
+        link.close = lambda: None
+        link.request_fetch = lambda: link.fetched.append("fetch")
+        link.send = lambda text: link.sent.append(text) or (True, "")
+        link.resume = lambda: setattr(link, "resumed", True)
+        link.is_polling = False
+        home.faces = None
+        home._working = True
+        home.pinned = True
+        patches = [mock.patch(name, value) for name, value in (
+            ("botwidget.qt_ui.face.latest_chat", mock.Mock(return_value={"messages": [], "activity": ""})),
+            ("botwidget.qt_ui.face.openbot_installed", mock.Mock(return_value=True)),
+            ("botwidget.qt_ui.face.gbot_installed", mock.Mock(return_value=True)),
+        )]
+        for patch in patches:
+            patch.start()
+            self.addCleanup(patch.stop)
+        home.unpin()
+        self.assertFalse(home.pinned)
+        home.pinned = False
+        home._sending = False
+        home._working = False
+        home._coasting = False
+        home._drag_origin = None
+        self.assertTrue(home.idle())
+
+        home._refreshing = False
+        home._refreshed("nope")
+        self.assertFalse(home._refreshing)
+        home.grok = link
+        home._refreshing = True
+        home._on_grok_polled()
+        self.assertEqual(home._refresh_note, "from grok")
+        link._active = True
+        home._poll_timer.stop()
+        home._on_grok_polled()
+        self.assertTrue(home._poll_timer.isActive())
+        home._poll_timer.stop()
+        home.hermes = None
+        home.acp = None
+        home._grok_fetch()
+        self.assertEqual(link.fetched, ["fetch"])
+        home.grok = None
+        hermes = SimpleNamespace(fetched=[])
+        hermes.request_fetch = lambda: hermes.fetched.append("h")
+        hermes.close = lambda: None
+        home.hermes = hermes
+        home._poll_timer.stop()
+        home._grok_fetch()
+        self.assertEqual(hermes.fetched, ["h"])
+        home.hermes = None
+        home.acp = link
+        home._poll_timer.stop()
+        home._grok_fetch()
+        self.assertTrue(home._poll_timer.isActive())
+        home._poll_timer.stop()
+        link._note = "waiting on the link"
+        self.assertEqual(home._waiting_note(""), "waiting on the link")
+
+        home.grok = None
+        home.hermes = None
+        home.acp = link
+        link.stopped = True
+        home._asked = True
+        home._answer_pending = False
+        home._last_bot = "done"
+        home._drag_origin = None
+        home._welcome_until = 0
+        home._menu_page = None
+        home._queue = []
+        home.bubble.place("")
+        home._sync_bubble({"messages": [{"role": "bot", "text": "done"}], "activity": ""}, force=True)
+        self.assertFalse(home._asked)
+        link.stopped = False
+        home._send_status = "still waiting"
+        home.pinned = False
+        home._answer_view = False
+        with mock.patch.object(home, "_think_expanded", return_value=True):
+            home._sync_bubble({"messages": [], "activity": "thinking"}, force=True)
+        self.assertIn("still waiting", home._shown_text)
+        home._send_status = ""
+        link._note = "link down"
+        with mock.patch.object(home, "_think_expanded", return_value=True):
+            home._sync_bubble({"messages": [], "activity": "thinking"}, force=True)
+        self.assertIn("link down", home._shown_text)
+
+        home.grok = link
+        home.hermes = hermes
+        home.acp = None
+        home.faces = None
+        link.fetched.clear()
+        hermes.fetched.clear()
+        home.refresh()
+        self.assertEqual(link.fetched, ["fetch"])
+        self.assertEqual(hermes.fetched, ["h"])
+        home._poll_timer.stop()
+        link.fetched.clear()
+        hermes.fetched.clear()
+        home.reload_quietly()
+        self.assertEqual(link.fetched, ["fetch"])
+        self.assertEqual(hermes.fetched, ["h"])
+        home._poll_timer.stop()
+
+        home.faces = SimpleNamespace(
+            _bot_error="nope", close_bubbles_except=lambda _id: None, menu_state=lambda: {},
+            release_bots_arc=lambda: None, hold_arc=lambda: None, raise_bubbles=lambda: None)
+        with mock.patch("botwidget.qt_ui.face.menu_pages.page_blocks", return_value=[status_block("page")]):
+            home.open_menu("bot")
+        bar = home.bubble._scroll.verticalScrollBar()
+        self.assertEqual(bar.value(), bar.maximum())
+
+        home._working = False
+        home._queue = []
+        home.pinned = False
+        home.acp = None
+        home.grok = None
+        home.hermes = None
+        home.on_user_message("/pin")
+        self.assertTrue(home.pinned)
+
+        class Now(threading.Thread):
+            def start(self):
+                self.run()
+
+        home.pinned = False
+        home._working = False
+        home.acp = link
+        link.stopped = False
+        link._active = True
+        link.sent.clear()
+        home._poll_timer.stop()
+        with mock.patch("botwidget.qt_ui.face.threading.Thread", Now):
+            home.on_user_message("hello")
+        self.assertTrue(link.resumed)
+        self.assertEqual(link.sent, ["hello"])
+        self.assertTrue(any(item.get("role") == "user" and item.get("text") == "hello" for item in home._local))
+        self.assertTrue(home._poll_timer.isActive())
+        home._poll_timer.stop()
+
+        home._working = False
+        home._queue_hold = True
+        home._queue_hold_until = 0
+        home._queue = []
+        home._sending = False
+        home._next_queued()
+        self.assertFalse(home._queue_hold)
+        home._edit_queued("missing")
+        home._attention = {}
+        home._give_answer("missing", "q", ["a"])
+        with mock.patch("botwidget.qt_ui.face.api_post", side_effect=RuntimeError("down")):
+            home._post_attention("/v1/agents/home/prompts/x/answer", {})
+        self.assertIn("did not go through", home._attention_note)
+        home._poll_timer.stop()
+
+        home.acp = None
+        home.grok = None
+        home.hermes = None
+        home._alive = True
+        with mock.patch("botwidget.qt_ui.face.automation_ready", return_value=False):
+            home._post_message("offline", "cid-offline")
+        self.assertTrue(home._refused)
+        home._poll_timer.stop()
+        home._anim_timer.stop()
+        home.bubble._dots.stop()
+        home.bubble._physics.stop()
+
+
 class Wheel(unittest.TestCase):
     """Should put the harness package in the wheel. The widget imports it, and CI installs the wheel."""
 
