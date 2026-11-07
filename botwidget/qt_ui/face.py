@@ -1608,8 +1608,8 @@ class FaceWindow(QWidget):
         if self.faces is not None:
             self.faces.close_bubbles_except(self.agent_id)
         self.bubble.show_command_menu()
-        if self.faces is not None:
-            self.faces.hold_arc()
+        # Hidden bots belong to /bots. A right-click, or leaving that page for this list, drops them.
+        self._arc_for_page(None)
 
     def _arc_for_page(self, page: str | None):
         """Hidden bots sit on the arc only while /bots is open, and leave when that page does."""

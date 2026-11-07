@@ -1,4 +1,4 @@
-"""The right-click arc closes without the pointer ever touching a hidden bot.
+"""Hidden bots show only while /bots is open. An arc opened another way still closes on its own.
 
 Offscreen Qt only: no display and no network.
 """
@@ -15,7 +15,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 class ArcClosesWithoutVisitingBots(unittest.TestCase):
-    """Should close the right-click arc when the pointer leaves, clicks away, or presses Esc."""
+    """Should keep hidden bots off the slash list, and close an arc that /bots is not holding."""
 
     @classmethod
     def setUpClass(cls):
@@ -84,10 +84,29 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
             QEvent.MouseButtonPress, local, where, Qt.RightButton, Qt.RightButton, Qt.NoModifier))
 
     def _open_arc(self):
-        self.right_click()
+        """The top edge still opens the arc. A right-click must not."""
+        self.faces.show_semicircle()
         self.assertNotEqual(self.faces._semicircle_phase, "idle")
         self.assertIn("away", self.faces._arc_guests)
         self.assertFalse(self.faces._arc_guests["away"].underMouse())
+
+    def test_should_keep_hidden_bots_off_a_right_click(self):
+        """Should leave inactive bots hidden when the slash list opens."""
+        self.right_click()
+        self.assertEqual(self.faces._semicircle_phase, "idle")
+        self.assertEqual(self.faces._arc_guests, {})
+
+    def test_should_show_hidden_bots_only_while_the_bots_page_is_open(self):
+        """Should show a hidden bot on /bots, keep it when the pointer leaves, and drop it when the page closes."""
+        self.right_click()
+        self.assertEqual(self.faces._arc_guests, {})
+        self.window.open_menu("bots")
+        self.assertNotEqual(self.faces._semicircle_phase, "idle")
+        self.assertIn("away", self.faces._arc_guests)
+        self._leave(self.window)
+        self.assertFalse(self.faces._semicircle_hide_timer.isActive())
+        self.window.open_input()
+        self.assertTrue(self.faces._semicircle_hide_timer.isActive())
 
     def _settle_closed(self):
         if self.faces._semicircle_hide_timer.isActive():

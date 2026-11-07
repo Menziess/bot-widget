@@ -1119,7 +1119,7 @@ class Faces(QObject):
         self.semicircle_pointer_left()
 
     def hold_arc(self):
-        """Show the hidden bots. A right-click uses this, and the /bots page keeps it up until that page closes."""
+        """Show the hidden bots. Only the /bots page calls this, and it keeps them up until that page closes."""
         self._arc_from_bots = True
         self.show_semicircle()
         self._semicircle_hide_timer.stop()
