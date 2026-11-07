@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-dependencies = ["PySide6-Essentials>=6.6", "agent-client-protocol>=0.12", "mcp>=2.3"]
+dependencies = ["PySide6-Essentials>=6.6", "agent-client-protocol>=0.12", "mcp>=2.3", "certifi"]
 
 [project.scripts]
 botwidget = "botwidget.qt_ui.app:main"
