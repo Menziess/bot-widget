@@ -50,7 +50,7 @@ from PySide6.QtWidgets import (
 )
 
 from botwidget import attachments, menu_pages, power
-from botwidget.avatar import AVATAR_SIZE, CIRCLE_R
+from botwidget.avatar import AVATAR_SIZE, CIRCLE_R, avatar_svg
 from botwidget.bubble import (
     bubble_body_svg,
     bubble_deco_svg,
@@ -64,17 +64,18 @@ from botwidget.bubble import (
     cloud_shadow_svg,
     content_height,
     line_height,
+    more_svg,
     panel_pad,
     panel_rects,
     reading_seconds,
 )
 from botwidget.config import always_on_top, draft, set_draft
 from botwidget.bubble_layout import bubble_panels
-from botwidget.markdown import block_text, md_blocks, plain_text
+from botwidget.markdown import block_text, md_blocks, plain_block, plain_text, role_panel
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
-from botwidget.qt_ui.controls import ActionButton, SlashList, Switch, ValueSlider
+from botwidget.qt_ui.controls import ActionButton, ItemRow, SlashList, Switch, TextEditor, TextField, ValueSlider
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, cut_out, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document
@@ -482,6 +483,21 @@ class OlderScroll(QScrollArea):
         super().wheelEvent(event)
 
 
+class MenuHandle(QLabel):
+    """The thin line on top of the command list. A tap closes the list."""
+
+    def __init__(self, bubble):
+        super().__init__(bubble._card)
+        self.bubble = bubble
+        self.setCursor(Qt.PointingHandCursor)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.hide()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.bubble._arrow_clicked()
+
+
 class BubbleText(QTextBrowser):
     """The words in the bubble as real text: a click copies the message, a drag selects and copies."""
 
@@ -836,6 +852,7 @@ class BubbleWindow(QWidget):
         self._entry.attached.connect(self._attach)
         self._slash = SlashList(self._card)
         self._slash.chosen.connect(self._run_command)
+        self._menu_line = MenuHandle(self)
         self._entry.textChanged.connect(self._update_commands)
         self._entry.textChanged.connect(self._edited)
         self._entry.moved.connect(self._slash.move_selection)
@@ -972,8 +989,13 @@ class BubbleWindow(QWidget):
         return QRect(self._held) if self._held is not None else None
 
     def _area_under_pointer(self) -> QRect | None:
-        """The whole window, when the pointer is on it: what a smaller card keeps as hover area."""
-        if not (self.isVisible() and self.kind and self.face.pointer_near(self)):
+        """The whole window, when the pointer is on it: what a smaller card keeps as hover area.
+
+        A frame that misses the X query still keeps it when the pointer was already on the bubble.
+        """
+        if not (self.isVisible() and self.kind):
+            return None
+        if not (self.face.pointer_near(self) or self._was_near):
             return None
         return QRect(self.frameGeometry())
 
@@ -982,12 +1004,13 @@ class BubbleWindow(QWidget):
         above the face goes beside it): the window keeps covering the area it had, until the pointer leaves the
         window or comes onto the card.
 
-        The pointer was on the bubble, so it has been touched: leaving closes it at once, not after a while.
+        The pointer was on the bubble. Leaving still closes at once, but only after a later frame
+        has seen the pointer: the frame of the change itself often has no X window under it, and
+        treating that miss as leaving closed the page the click had just opened.
         """
         self._release_hold()
         if old is None or not self.isVisible() or not self.kind:
             return
-        self._was_near = True
         width, height = self._final_size()
         tx, ty, _tip = self._goal()
         final = QRect(int(tx), int(ty), width, height)
@@ -1004,9 +1027,12 @@ class BubbleWindow(QWidget):
         self._fit_window()
 
     def _pointer_on_card(self) -> bool:
-        """Only where the position can be trusted: on X while the pointer is on this window, or where the
-        pointer is known everywhere. A stale position must not shrink the window away from under it."""
-        if not (pointer_on(self) or self.face.pointer_known()):
+        """The window may become the card again only where the pointer position is known everywhere.
+
+        On XWayland the cursor reading is not the pointer. It can sit on the new card while the pointer is
+        still in the area this window holds, and shrinking then closes the page.
+        """
+        if not self.face.pointer_known():
             return False
         px, py = self.face._pointer()
         return self.card().contains(QPoint(int(px), int(py)))
@@ -1026,6 +1052,7 @@ class BubbleWindow(QWidget):
         self._dots_lines = []
         self._slash.show_rows(list(menu_pages.commands()))
         # As wide as the commands and their notes need, so nothing is cut; never wider than a chat bubble.
+        # No page line here: a wheel must not leave this list for the chat. A page has that line.
         self._geom = ([], max(MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60)), 0)
         self._built = ("commands",)
         self._growth = None
@@ -1107,8 +1134,31 @@ class BubbleWindow(QWidget):
                 return panel
         return None
 
+    def _control_at(self, x: float, y: float):
+        """The form widget under this spot. The text's window sits over those widgets, so the click arrives here."""
+        point = QPoint(int(self._doc.x() + x), int(self._doc.y() + y))
+        for widget in self._control_widgets:
+            if widget.isVisible() and widget.geometry().contains(point):
+                return widget
+        return None
+
     def _on_click(self, x: float, y: float, shift: bool):
         """Click on the arrow loads the message before; on a message it copies it, shift+click as markdown."""
+        widget = self._control_at(x, y)
+        if widget is not None:
+            # The text sits over the form. A button has click(); a field only needs the cursor.
+            press = getattr(widget, "press_at", None)
+            if press is not None:
+                press(self._doc.x() + x - widget.geometry().x())
+            elif getattr(widget, "click", None) is not None:
+                widget.click()
+            else:
+                target = getattr(widget, "edit", None) or getattr(widget, "slider", None) or widget
+                window = widget.window()
+                if window is not None:
+                    window.activateWindow()
+                target.setFocus()
+            return
         panel = self._message_at(x, y)
         if panel and panel["role"] == "more":
             self._arrow_clicked()
@@ -1480,6 +1530,18 @@ class BubbleWindow(QWidget):
             self._blur_mask = glass.png(shape) if glass.blurs() else b""
         return self._shadow_pix
 
+    def _show_menu_line(self, x: int, y: int, box_w: int, line: int):
+        """The same fading line a page draws on top. The command list has no page under it, so the line is its own."""
+        if not line:
+            self._menu_line.hide()
+            return
+        svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{box_w}" height="{line}">'
+               f'{more_svg(0, 0, box_w)}</svg>')
+        self._menu_line.setPixmap(svg_pixmap(svg))
+        self._menu_line.setGeometry(x, y, box_w, line)
+        self._menu_line.show()
+        self._menu_line.raise_()
+
     def _layout_children(self, pix):
         """Chrome, text area, link row and input field in their places."""
         _panels, full_w, inner = self._geom
@@ -1493,8 +1555,11 @@ class BubbleWindow(QWidget):
             self._scroll.hide()
             self._entry.hide()
             self._link_row.hide()
-            self._slash.setGeometry(x, y, box_w, max(1, self._commands_h() - COMMANDS_GAP))
+            line = self._geom[2]
+            self._show_menu_line(x, y, box_w, line)
+            self._slash.setGeometry(x, y + line, box_w, max(1, self._commands_h() - COMMANDS_GAP))
             return
+        self._menu_line.hide()
         view_h = max(1, self._body_h(inner) - 2 * PAD_BODY - self._extras())
         # Resizing the scroll area clamps its bar. That is layout, not the user.
         self._placing_scroll += 1
@@ -1635,7 +1700,9 @@ class BubbleWindow(QWidget):
                     wanted.append((line, QRect(PAD_PANEL_X + line["indent"], y, shown_w - 2 * PAD_PANEL_X,
                                                line_height(line))))
                 y += line_height(line)
-        key = tuple((line["control"], line["label"], line["command"], line["on"]) for line, _rect in wanted)
+        key = tuple((line["control"], line["label"], line["command"], line.get("on"), line.get("value"),
+                     tuple((action["label"], action["command"]) for action in line.get("actions") or []))
+                    for line, _rect in wanted)
         if key != self._controls_key:
             for widget in self._control_widgets:
                 widget.hide()
@@ -1651,10 +1718,37 @@ class BubbleWindow(QWidget):
             widget.raise_()
             widget.show()
 
+    def control_values(self) -> dict:
+        """What the text fields hold right now, keyed by their command. Save reads this, not a copy."""
+        values = {}
+        for widget in self._control_widgets:
+            if hasattr(widget, "text_value"):
+                values[widget.command] = widget.text_value()
+        return values
+
     def _make_control(self, line: dict):
+        if line["control"] == "preview":
+            face, colour, seed = (str(line.get("value") or "") + "||").split("|", 2)
+            avatar = {"shape": face, "color": colour} if (face or colour) else None
+            label = QLabel(self._text)
+            label.setAttribute(Qt.WA_TranslucentBackground)
+            label.setAttribute(Qt.WA_TransparentForMouseEvents)
+            label.setPixmap(svg_pixmap(avatar_svg(seed=seed or "new", avatar=avatar)))
+            return label
+        if line["control"] == "field":
+            widget = TextField(line["label"], str(line.get("value") or ""), self._text)
+            widget.command = line["command"]
+            return widget
+        if line["control"] == "editor":
+            return TextEditor(str(line.get("value") or ""), self._text)
         if line["control"] == "slider":
             widget = ValueSlider(line["label"], int(line["on"]), self._text)
             widget.changed.connect(lambda value, command=line["command"]: self.command.emit(f"{command}/{value}"))
+            return widget
+        if line["control"] == "item":
+            widget = ItemRow(line["label"], bool(line["on"]), line["command"], line.get("actions") or [],
+                             self._text)
+            widget.chosen.connect(self.command.emit)
             return widget
         if line["control"] == "toggle":
             widget = Switch(line["label"], bool(line["on"]), self._text)
@@ -1666,6 +1760,7 @@ class BubbleWindow(QWidget):
     def _set_doc(self):
         panels, box_w, _inner = self._geom
         fill_document(self._doc.document(), panels, box_w)
+        self._place_controls()
 
     def _field_wanted(self) -> bool:
         """Is the pointer with this bubble, or the user busy with it: then its field for a message shows."""
@@ -1878,8 +1973,19 @@ class BubbleWindow(QWidget):
         if self._pull_px >= PULL_PX and self._growth is None and now >= self._older_until:
             self._pull_done()
 
+    def _leave_menu(self) -> bool:
+        """The line on the command list closes it. True when that line was pulled or tapped."""
+        if self._back_command() != "close":
+            return False
+        self.face.pinned = False
+        self.face._answer_view = False
+        self.close_bubble("menu")
+        return True
+
     def _pull_done(self):
         """Pulled all the way: the message before comes in, or the page goes back."""
+        if self._leave_menu():
+            return
         back = self._back_command()
         if not back:
             self._load_older()
@@ -1903,6 +2009,8 @@ class BubbleWindow(QWidget):
         self._show_pull()
 
     def _arrow_clicked(self):
+        if self._leave_menu():
+            return
         back = self._back_command()
         if back:
             if self._growth is None and time.monotonic() >= self._older_until:
@@ -2327,6 +2435,12 @@ class BubbleWindow(QWidget):
         or selected count too."""
         return self.isVisible() and (bool(self.face.pointer_near(self)) or self.holding())
 
+    def _release_bots_arc(self):
+        """A bubble that was showing /bots took the arc with it."""
+        faces = getattr(self.face, "faces", None)
+        if faces is not None and hasattr(faces, "release_bots_arc"):
+            faces.release_bots_arc()
+
     def close_bubble(self, reason: str) -> bool:
         """Close the bubble, unless it closes by itself and the pointer is still engaged. True when it closed."""
         if not self.kind and not self.isVisible():
@@ -2337,6 +2451,7 @@ class BubbleWindow(QWidget):
             self.face.pinned = False
             self.face._answer_view = False
         self.place("")
+        self._release_bots_arc()
         return True
 
     def heal(self) -> bool:
@@ -2346,6 +2461,7 @@ class BubbleWindow(QWidget):
         if self.consistent():
             return False
         self.place("")
+        self._release_bots_arc()
         return True
 
     def place(self, kind: str):
@@ -2370,6 +2486,7 @@ class BubbleWindow(QWidget):
             self._physics_on = False
             self._commands_forced = False
             self._show_commands([])
+            self._menu_line.hide()
             self.hide()
             self._list_only = False
             self._placed()

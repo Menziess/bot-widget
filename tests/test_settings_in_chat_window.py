@@ -51,6 +51,8 @@ class SettingsInTheChatWindow(unittest.TestCase):
         # The chat is hidden until one of these is true. CI has neither app installed.
         stack.enter_context(mock.patch("botwidget.qt_ui.face.openbot_installed", return_value=True))
         stack.enter_context(mock.patch("botwidget.qt_ui.face.gbot_installed", return_value=True))
+        # Offscreen still reports a cursor position. Trusting it closes a click-opened chat on CI.
+        stack.enter_context(mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False))
         self.faces = self.Faces()
         self.window = self.faces.faces["home"]
         self.window._poll_timer.stop()

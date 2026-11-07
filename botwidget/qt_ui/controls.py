@@ -2,7 +2,7 @@
 
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
-from PySide6.QtWidgets import QAbstractButton, QPushButton, QSlider, QWidget
+from PySide6.QtWidgets import QAbstractButton, QLineEdit, QPlainTextEdit, QPushButton, QSlider, QWidget
 
 from botwidget.qt_ui.text_doc import color
 from botwidget.theme import BUBBLE_FONT, CONTROL_SWITCH_W, SAND_ACCENT, SAND_INK, SAND_INK_SOFT, SAND_SANS
@@ -39,6 +39,82 @@ class Switch(QAbstractButton):
         painter.setPen(color(SAND_INK))
         painter.drawText(QRectF(CONTROL_SWITCH_W, 0, self.width() - CONTROL_SWITCH_W, self.height()),
                          Qt.AlignVCenter | Qt.AlignLeft, self.text())
+
+
+class ItemRow(QWidget):
+    """One bot or one connection: its switch, its name, and only the actions that belong to it."""
+
+    chosen = Signal(str)
+
+    def __init__(self, title: str, on: bool, toggle: str, actions: list, parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._on = bool(on)
+        self._toggle = toggle
+        self._actions = [(str(action["label"]), str(action["command"])) for action in actions]
+        self._hits: list[tuple[str, str, QRectF]] = []
+        self._title_w = 0
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._place()
+
+    def _place(self):
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        metrics = QFontMetrics(font)
+        x = float(self.width())
+        hits = []
+        for label, command in reversed(self._actions):
+            width = metrics.horizontalAdvance(label) + 28
+            x -= width
+            hits.append((label, command, QRectF(x, (self.height() - 28) / 2, width - 6, 28)))
+            x -= 4
+        hits.reverse()
+        self._hits = hits
+        self._title_w = max(0, x - CONTROL_SWITCH_W - 8)
+
+    def press_at(self, x: float):
+        """The text window sits over this row, so the click arrives as a position."""
+        if self._actions and not self._hits:
+            self._place()
+        for _label, command, rect in self._hits:
+            if rect.left() <= x <= rect.right():
+                self.chosen.emit(command)
+                return
+        self.chosen.emit(self._toggle)
+
+    def paintEvent(self, _event):
+        if self._actions and not self._hits:
+            self._place()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        top = (self.height() - TRACK_H) / 2
+        track = QRectF(0, top, TRACK_W, TRACK_H)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(color(SAND_ACCENT) if self._on else QColor(28, 28, 28, 64))
+        painter.drawRoundedRect(track, TRACK_H / 2, TRACK_H / 2)
+        knob = TRACK_H - 2 * KNOB_PAD
+        knob_x = TRACK_W - KNOB_PAD - knob if self._on else KNOB_PAD
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawEllipse(QRectF(knob_x, top + KNOB_PAD, knob, knob))
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        painter.setFont(font)
+        painter.setPen(color(SAND_INK))
+        title = QFontMetrics(font).elidedText(self._title, Qt.ElideRight, max(1, int(self._title_w)))
+        painter.drawText(QRectF(CONTROL_SWITCH_W, 0, max(1, self._title_w), self.height()),
+                         Qt.AlignVCenter | Qt.AlignLeft, title)
+        for label, _command, rect in self._hits:
+            # "Again" is the second click that really removes; "Unmute" means the bot is muted.
+            marked = label in ("Again", "Unmute")
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(color(SAND_ACCENT) if marked else QColor(28, 28, 28, 14))
+            painter.drawRoundedRect(rect, 14, 14)
+            painter.setPen(QColor("#ffffff") if marked else color(SAND_INK))
+            painter.drawText(rect, Qt.AlignCenter, label)
 
 
 class ActionButton(QPushButton):
@@ -183,3 +259,50 @@ class ValueSlider(QWidget):
         painter.setFont(font)
         painter.setPen(color(SAND_INK))
         painter.drawText(QRectF(0, 0, self.width(), self.height()), Qt.AlignVCenter | Qt.AlignLeft, self._label)
+
+
+FIELD_STYLE = (f"QLineEdit, QPlainTextEdit {{ background: rgba(28, 28, 28, 14); color: {SAND_INK}; border: none;"
+               f" border-radius: 8px; padding: 0px 8px; font-family: '{SAND_SANS}'; font-size: {BUBBLE_FONT}px; }}")
+
+
+class TextField(QWidget):
+    """A labelled line. The page reads it when you save, so a click on Save still sees the last letter."""
+
+    def __init__(self, label: str, value: str, parent=None):
+        super().__init__(parent)
+        self._label = label
+        self.command = ""
+        self.edit = QLineEdit(value, self)
+        self.edit.setStyleSheet(FIELD_STYLE)
+        self.edit.setFocusPolicy(Qt.StrongFocus)
+
+    def text_value(self) -> str:
+        return self.edit.text()
+
+    def resizeEvent(self, _event):
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        label_w = QFontMetrics(font).horizontalAdvance(self._label)
+        self.edit.setGeometry(label_w + 14, 4, max(40, self.width() - label_w - 14), max(16, self.height() - 8))
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        painter.setFont(font)
+        painter.setPen(color(SAND_INK))
+        painter.drawText(QRectF(0, 0, self.width(), self.height()), Qt.AlignVCenter | Qt.AlignLeft, self._label)
+
+
+class TextEditor(QPlainTextEdit):
+    """The widget.json text. Taller than one row; the page reads it on Save."""
+
+    def __init__(self, value: str, parent=None):
+        super().__init__(value, parent)
+        self.command = "editor"
+        self.setStyleSheet(FIELD_STYLE)
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setTabChangesFocus(True)
+
+    def text_value(self) -> str:
+        return self.toPlainText()

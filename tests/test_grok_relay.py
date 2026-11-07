@@ -91,6 +91,8 @@ class ParseRelayMessages(unittest.TestCase):
         got = grok_relay.parse({"bot": "Ada", "state": "start", "summary": 5, "ts": 1})
         self.assertEqual(got["summary"], "")
         self.assertEqual(got["ts"], 1)
+        self.assertIsNone(grok_relay.parse({"bot": "Ada", "state": "start", "ts": True})["ts"])
+        self.assertIsNone(grok_relay.parse({"bot": "Ada", "state": "start", "ts": {"n": 1}})["ts"])
 
 
 class RelayChannel(unittest.TestCase):
@@ -154,12 +156,55 @@ class RelayChannel(unittest.TestCase):
 
         relay = grok_relay.Relay(on_message=got.append, listen=listen)
         relay.start()
+        relay.start()
         relay._thread.join(2)
         self.assertFalse(relay._thread.is_alive())
         self.assertEqual(got[0], "https://ntfy.sh/crew-topic/json")
         self.assertEqual(got[1], {
             "kind": "status", "bot": "Ada", "state": "done", "summary": "ok", "ts": 1,
         })
+
+    def test_should_replace_a_blank_topic_and_read_the_stream_until_it_drops(self):
+        """Should mint a topic when the given one is blank, and keep reading after a dropped line."""
+        from threading import Event
+        with mock.patch.object(grok_relay, "new_topic", return_value="bw-fresh"):
+            made = grok_relay.link_channel(topic="  ")
+        self.assertEqual(made["topic"], "bw-fresh")
+        seen = []
+
+        class Response:
+            def __init__(self):
+                self.n = 0
+
+            def readline(self):
+                self.n += 1
+                if self.n == 1:
+                    return b'{"a":1}\n'
+                if self.n == 2:
+                    return b"   \n"
+                return b""
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        calls = {"n": 0}
+        stop = Event()
+
+        def urlopen(url, timeout=0):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return Response()
+            stop.set()
+            raise OSError("down")
+
+        with mock.patch.object(grok_relay.urllib.request, "urlopen", urlopen), \
+                mock.patch.object(grok_relay, "_RETRY_S", 0.01):
+            grok_relay.listen("http://example/json", seen.append, stop)
+        self.assertEqual(seen, ['{"a":1}'])
+        self.assertGreaterEqual(calls["n"], 2)
 
 
 class RelayFaces(unittest.TestCase):

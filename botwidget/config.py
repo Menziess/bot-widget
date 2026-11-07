@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 
 from botwidget.system.current import data_home
 
@@ -66,7 +67,8 @@ CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
 SETTING_KEYS = ("drafts", "save_battery", "sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied",
-                "local_command", "muted_bots", "glass_clear", "grokbot_target", "hermesbot_target", "grok_relay")
+                "local_command", "muted_bots", "glass_clear", "grokbot_target", "hermesbot_target", "grok_relay",
+                "acp_bots", "connections", "debug")
 
 
 # With quiet hours on, the sound stays off from this hour until the other, around midnight.
@@ -146,15 +148,66 @@ def widget_config() -> dict:
     return dict(data) if isinstance(data, dict) else {}
 
 
-def save_widget_config(**values) -> dict:
-    """Update widget.json; only the keys the widget knows."""
-    data = widget_config()
-    data.update({k: v for k, v in values.items() if k in SETTING_KEYS})
+def _read_config() -> dict | None:
+    """The file as it is now. None when it is missing-but-broken: a later save must not replace it."""
     try:
-        os.makedirs(APP_DIR, exist_ok=True)
-        with open(CONFIG_PATH, "w") as fh:
+        with open(CONFIG_PATH) as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _remember(data: dict) -> None:
+    try:
+        stat = os.stat(CONFIG_PATH)
+        stamp = (CONFIG_PATH, stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        stamp = None
+    _config_read[:] = [stamp, data]
+
+
+def _store(data: dict) -> bool:
+    """Replace widget.json in one step. A failed write leaves the previous file in place."""
+    try:
+        folder = os.path.dirname(CONFIG_PATH)
+        os.makedirs(folder or ".", exist_ok=True)
+        temporary = CONFIG_PATH + ".tmp"
+        with open(temporary, "w") as fh:
             json.dump(data, fh, indent=2)
             fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temporary, CONFIG_PATH)
     except OSError:
-        pass
+        return False
+    _remember(data)
+    return True
+
+
+def save_widget_config(**values) -> dict:
+    """Update widget.json from the file on disk, not from a copy kept in memory.
+
+    A setting saved at exit would otherwise write back whatever was read at startup and drop a bot
+    added since. A file that cannot be read is left as it is. Only known keys are written.
+    """
+    data = _read_config()
+    if data is None:
+        return widget_config()
+    data.update({key: value for key, value in values.items() if key in SETTING_KEYS})
+    _store(data)
     return data
+
+
+def replace_widget_config(data: dict) -> str:
+    """Save the whole document from the JSON editor. The previous file is kept beside it as .bak."""
+    try:
+        if os.path.exists(CONFIG_PATH):
+            shutil.copy2(CONFIG_PATH, CONFIG_PATH + ".bak")
+    except OSError as error:
+        return f"Could not keep a backup of widget.json ({error.strerror})."
+    if not _store(data):
+        return "Could not save widget.json."
+    return ""

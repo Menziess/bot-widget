@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
-dependencies = ["PySide6-Essentials>=6.6"]
+dependencies = ["PySide6-Essentials>=6.6", "agent-client-protocol>=0.12", "mcp>=2.3"]
 
 [project.scripts]
 botwidget = "botwidget.qt_ui.app:main"
@@ -24,7 +24,9 @@ raw-options = { fallback_version = "0.0.0+unknown" }
 version-file = "botwidget/_version.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["botwidget"]
+# harness is imported by botwidget.acplink. A wheel of only botwidget breaks
+# `import botwidget.qt_ui.app` once the checkout is not on PYTHONPATH.
+packages = ["botwidget", "harness"]
 
 [tool.ruff]
 line-length = 110

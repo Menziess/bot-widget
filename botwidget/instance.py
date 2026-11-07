@@ -31,7 +31,8 @@ def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
             if not process_cmdline(old):
                 break
         else:
-            os.kill(old, signal.SIGKILL)
+            # Windows has SIGTERM and no SIGKILL.
+            os.kill(old, getattr(signal, "SIGKILL", signal.SIGTERM))
     with open(pidfile, "w") as fh:
         fh.write(str(os.getpid()))
     atexit.register(lambda: os.path.exists(pidfile) and os.remove(pidfile))

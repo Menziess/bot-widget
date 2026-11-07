@@ -7,11 +7,11 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter, QRegion
 from PySide6.QtWidgets import QApplication, QWidget
 
-from botwidget import __version__, channel, checkout, grok_relay, grokbot, hermesbot, startup, updates
+from botwidget import __version__, acp_bots, acplink, channel, checkout, grok_relay, grokbot, hermesbot, startup, updates
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -24,6 +24,7 @@ from botwidget.config import (
     auto_update,
     automation_ready,
     check_updates,
+    replace_widget_config,
     save_battery,
     muted_bots,
     save_widget_config,
@@ -85,17 +86,39 @@ def arc_progress(elapsed: float, rank: int, step: float = ARC_STEP_S, move: floa
     return min(1.0, local / move)
 
 
+def arc_catcher_region(width: int, height: int, faces: list) -> QRegion:
+    """The opener still feels the pointer. Gaps between the bots do not take clicks."""
+    whole = QRegion(0, 0, width, height)
+    bots = QRegion()
+    for dx, dy, mask in faces:
+        bots = bots.united(mask.translated(int(dx), int(dy)))
+    if bots.isEmpty():
+        return whole
+    return whole.subtracted(QRegion(bots.boundingRect())).united(bots)
+
+
 def bot_source(bot_id: str) -> str:
     """Which app the bot lives in, as the /bots page shows it."""
     if grokbot.is_grok(bot_id):
         return "Grok Bot"
     if hermesbot.is_hermes(bot_id):
         return "Hermes"
+    if acplink.is_acp(bot_id):
+        return "Harness"
     return "OpenBot"
 
 
+def _avatar(bot: dict):
+    """The face and colour a harness bot asked for. Empty means the seed picks them."""
+    shape, colour = bot.get("face") or "", bot.get("color") or ""
+    if not shape and not colour:
+        return None
+    return {"shape": shape, "color": colour}
+
+
 def _all_bots() -> list:
-    """Every bot the widget can show a face for: the local ones, Grok Bot, and Hermes Bot."""
+    """Every bot the widget can show a face for: the local ones, Grok Bot, Hermes Bot, and the ACP
+    bots the user configured in widget.json."""
     bots = list(list_bots())
     if gbot_installed():
         target = grokbot.target()
@@ -104,6 +127,10 @@ def _all_bots() -> list:
     if hermesbot.is_hermes_installed():
         bots.append({"id": hermesbot.face_id(), "name": "Hermes Bot", "threadId": None,
                      "hue": None, "seed": hermesbot.face_id(), "status": "ready"})
+    for bot in acplink.configured_bots():
+        bots.append({"id": bot["id"], "name": bot["name"], "threadId": None,
+                     "hue": None, "seed": bot["id"], "status": "ready",
+                     "face": bot.get("face") or "", "color": bot.get("color") or ""})
     return bots
 
 
@@ -122,20 +149,34 @@ class ArcCatcher(QWidget):
         self._drag = None
 
     def _face_at(self, gx, gy):
-        """The bot under this screen point. A guest wins when it sits on a desktop face."""
+        """The bot shape under this screen point. A guest wins when it sits on a desktop face."""
         hit = None
         for face in list(self.faces.faces.values()) + list(self.faces._arc_guests.values()):
             if not face.isVisible():
                 continue
-            if face.x() <= gx <= face.x() + face.width() and face.y() <= gy <= face.y() + face.height():
-                hit = face
+            local = QPoint(int(gx - face.x()), int(gy - face.y()))
+            if not face.rect().contains(local):
+                continue
+            mask = face.mask()
+            if not mask.isEmpty() and not mask.contains(local):
+                continue
+            hit = face
         return hit
 
     def mousePressEvent(self, event):
         # This window covers the arc, so a press on a small bot arrives here.
+        # A press in a gap never arrives: the mask lets it through.
         if event.button() == Qt.LeftButton:
             point = event.globalPosition()
             self._drag = self._face_at(point.x(), point.y())
+        elif event.button() == Qt.RightButton:
+            point = event.globalPosition()
+            face = self._face_at(point.x(), point.y())
+            if face is not None:
+                face.mousePressEvent(event)
+                return
+            super().mousePressEvent(event)
+            return
         if self._drag is not None:
             self._drag.mousePressEvent(event)
             return
@@ -202,6 +243,7 @@ class Faces(QObject):
         self.hotkey_on = False
         # ── semicircle state ────────────────────────────────────
         self._semicircle_phase = "idle"  # idle / showing / hiding
+        self._arc_from_bots = False  # the arc was opened for /bots, so closing that page hides it
         self._semicircle = {}  # bot_id → where it sits on the arc right now
         self._arc_order = []
         self._arc_guests = {}  # hidden bots, shown only while the arc is up
@@ -362,7 +404,7 @@ class Faces(QObject):
         elif grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"]):
             avatar = self.avatar
         else:
-            avatar = None
+            avatar = _avatar(bot)
         face = FaceWindow(bot["id"], bot["name"], spot, slot, bot.get("threadId"), self,
                           bot.get("hue"), bot.get("seed"), avatar)
         self.faces[bot["id"]] = face
@@ -457,7 +499,16 @@ class Faces(QObject):
             "save_battery": save_battery(),
             "can_install_updates": can_install_update() or startup.from_checkout(), "auto_update": auto_update(),
             "bots": [{"id": bot["id"], "name": bot["name"], "on": bot["id"] in self.faces,
-                      "muted": bot["id"] in muted_bots(), "source": bot_source(bot["id"])} for bot in bots],
+                      "muted": bot["id"] in muted_bots(), "source": bot_source(bot["id"]),
+                      "acp": acplink.is_acp(bot["id"])} for bot in bots],
+            "bot_form": getattr(self, "_bot_draft", None), "bot_error": getattr(self, "_bot_error", ""),
+            "connections": acp_bots.public_connections(config.get("connections")),
+            "connection_form": getattr(self, "_connection_draft", None),
+            "connection_error": getattr(self, "_connection_error", ""),
+            "dev": startup.from_checkout(),
+            "debug": startup.from_checkout() and config.get("debug") is True,
+            "confirm_remove": getattr(self, "_confirm_remove", ""),
+            "json_text": getattr(self, "_json_text", ""), "json_error": getattr(self, "_json_error", ""),
             "openbot": openbot_installed(), "automation_ready": automation_ready(),
             "gbot": gbot_installed(), "grok": self.grok_line(),
             "grok_target": grokbot.target(),
@@ -475,15 +526,195 @@ class Faces(QObject):
         "check_updates": lambda faces, on: save_widget_config(check_updates=on),
         "save_battery": lambda faces, on: save_widget_config(save_battery=on),
         "auto_update": lambda faces, on: save_widget_config(auto_update=on),
+        "debug": lambda faces, on: faces._set_debug(on),
     }
     CONNECTIONS = {"openbot": "openbot", "grokbot": "gbot", "hermesbot": "hermes"}
     LINKS = {"openbot": OPENBOT_URL, "grokbot": GROKBOT_URL, "hermesbot": updates.DOWNLOAD_URL, "download": updates.DOWNLOAD_URL}
 
-    def menu_command(self, command: str, page: str) -> str | None:
+    def _stop_guest(self, ident: str):
+        guest = self._arc_guests.pop(ident, None)
+        self._semicircle.pop(ident, None)
+        if ident in self._arc_order:
+            self._arc_order.remove(ident)
+        if guest is not None:
+            guest.close_face()
+
+    def _apply_bots(self, before: list):
+        """Open, restyle or restart only the bots this save changed. The widget itself stays up."""
+        after = {bot["id"]: bot for bot in acplink.configured_bots()}
+        for action, ident in acp_bots.plan(before, list(after.values())):
+            if action == "close":
+                if ident in self.faces:
+                    self.toggle(ident, False)
+                self._stop_guest(ident)
+            elif action == "open":
+                self._stop_guest(ident)
+                self.toggle(ident, True)
+            elif action == "restart":
+                # The old process is the face, or a hidden guest. Either way only this bot stops.
+                page = getattr(self.faces.get(ident), "_menu_page", None)
+                if ident in self.faces:
+                    self.toggle(ident, False)
+                self._stop_guest(ident)
+                self.toggle(ident, True)
+                if page and ident in self.faces:
+                    self.faces[ident].open_menu("bots")
+            elif action == "restyle":
+                bot = after[ident]
+                face = self.faces.get(ident) or self._arc_guests.get(ident)
+                if face is None:
+                    continue
+                face.bot_name = bot["name"]
+                face.setWindowTitle(bot["name"])
+                face.set_avatar(_avatar(bot))
+
+    def _take(self, fields: dict | None, page: str):
+        if not fields:
+            return
+        if page == "bot" or (isinstance(page, str) and page.startswith("bot/")):
+            draft = getattr(self, "_bot_draft", None) or acp_bots.blank()
+            for command, value in fields.items():
+                if command.startswith("field/"):
+                    draft[command[len("field/"):]] = value
+            self._bot_draft = draft
+        elif page == "widget-json" and "editor" in fields:
+            self._json_text = fields["editor"]
+        elif page == "connection" or (isinstance(page, str) and page.startswith("connection/")):
+            draft = getattr(self, "_connection_draft", None) or acp_bots.blank_connection()
+            for command, value in fields.items():
+                if command.startswith("field/"):
+                    draft[command[len("field/"):]] = value
+            self._connection_draft = draft
+
+    def _open_bot_form(self, face_id: str):
+        bots = {bot["id"]: bot for bot in acplink.configured_bots()}
+        if face_id in bots:
+            self._bot_draft = acp_bots.fields_of(bots[face_id])
+        else:
+            draft = acp_bots.blank()
+            draft["connection"] = acp_bots.first_connection(widget_config().get("connections"))
+            self._bot_draft = draft
+        self._bot_error = ""
+
+    def _open_connection_form(self, conn_id: str):
+        rows = {row["id"]: row for row in acp_bots.public_connections(widget_config().get("connections"))}
+        self._connection_draft = (acp_bots.fields_of_connection(rows[conn_id]) if conn_id in rows
+                                  else acp_bots.blank_connection())
+        self._connection_error = ""
+
+    def _commit_bot(self) -> str:
+        previous = acplink.configured_bots()
+        entries, error = acp_bots.commit(self._bot_draft or acp_bots.blank(), widget_config().get("acp_bots"),
+                                         widget_config().get("connections"))
+        if error:
+            return error
+        save_widget_config(acp_bots=entries)
+        if widget_config().get("acp_bots") != entries:
+            return "Could not save widget.json."
+        self._apply_bots(previous)
+        return ""
+
+    def _commit_json(self) -> str:
+        data, error = acp_bots.parse_editor(getattr(self, "_json_text", "") or "")
+        if error:
+            return error
+        previous = acplink.configured_bots()
+        error = replace_widget_config(data)
+        if error:
+            return error
+        self._apply_bots(previous)
+        return ""
+
+    def _commit_connection(self) -> str:
+        previous = acplink.configured_bots()
+        rows, error = acp_bots.commit_connection(self._connection_draft or acp_bots.blank_connection(),
+                                                 widget_config().get("connections"))
+        if error:
+            return error
+        save_widget_config(connections=rows)
+        if widget_config().get("connections") != rows:
+            return "Could not save widget.json."
+        self._apply_bots(previous)
+        return ""
+
+    def _set_connection_on(self, conn_id: str):
+        """The same kind of switch as OpenBot: on runs the bots that pick it, off stops them."""
+        rows = acp_bots.public_connections(widget_config().get("connections"))
+        current = next((row for row in rows if row["id"] == conn_id), None)
+        if current is None:
+            return
+        previous = acplink.configured_bots()
+        saved = acp_bots.set_connection_on(widget_config().get("connections"), conn_id, not current["on"])
+        save_widget_config(connections=saved)
+        self._apply_bots(previous)
+
+    def _remove_connection(self, conn_id: str) -> str:
+        previous = acplink.configured_bots()
+        rows, error = acp_bots.drop_connection(widget_config().get("connections"), conn_id,
+                                               widget_config().get("acp_bots"))
+        if error:
+            return error
+        save_widget_config(connections=rows)
+        self._apply_bots(previous)
+        return ""
+
+    def _remove_bot(self, face_id: str):
+        previous = acplink.configured_bots()
+        save_widget_config(acp_bots=acp_bots.without(widget_config().get("acp_bots"), face_id))
+        self._apply_bots(previous)
+
+    def menu_command(self, command: str, page: str, fields: dict | None = None) -> str | None:
         """Do what a menu row asks; the page to show next, or None to leave the bubble as it is."""
         kind, _, name = command.partition("/")
+        if kind not in ("bot-remove", "connection-remove"):
+            self._confirm_remove = ""
+        if command in ("action/save-bot", "action/save-json", "action/save-connection") or kind == "cycle":
+            self._take(fields, page)
+        if kind == "page" and (name == "bot" or name.startswith("bot/")):
+            self._open_bot_form(name.split("/", 1)[1] if name.startswith("bot/") else "")
+            return name
+        if kind == "page" and (name == "connection" or name.startswith("connection/")):
+            self._open_connection_form(name.split("/", 1)[1] if name.startswith("connection/") else "")
+            return name
+        if kind == "page" and name == "widget-json":
+            self._json_text = acp_bots.public_text(widget_config())
+            self._json_error = ""
+            return name
         if kind == "page":
             return name
+        if kind == "cycle" and name in ("face", "color"):
+            draft = self._bot_draft or acp_bots.blank()
+            draft[name] = acp_bots.cycle(name, draft.get(name) or "")
+            self._bot_draft = draft
+            return page
+        if kind == "cycle" and name == "connection":
+            draft = self._bot_draft or acp_bots.blank()
+            draft["connection"] = acp_bots.cycle_connection(draft.get("connection") or "",
+                                                           widget_config().get("connections"))
+            self._bot_draft = draft
+            return page
+        if kind == "action" and name == "save-bot":
+            self._bot_error = self._commit_bot()
+            return page if self._bot_error else "bots"
+        if kind == "action" and name == "save-json":
+            self._json_error = self._commit_json()
+            return page if self._json_error else "bots"
+        if kind == "action" and name == "save-connection":
+            self._connection_error = self._commit_connection()
+            return page if self._connection_error else "connections"
+        if kind in ("bot-remove", "connection-remove"):
+            if getattr(self, "_confirm_remove", "") != command:
+                self._confirm_remove = command
+                return page
+            self._confirm_remove = ""
+            if kind == "bot-remove":
+                self._remove_bot(name)
+                return "bots"
+            self._connection_error = self._remove_connection(name)
+            return page if self._connection_error else "connections"
+        if kind == "connection-toggle":
+            self._set_connection_on(name)
+            return page
         if kind == "toggle" and name in self.TOGGLES:
             state = self.menu_state()
             self.TOGGLES[name](self, not state[name])
@@ -525,6 +756,12 @@ class Faces(QObject):
                 QApplication.clipboard().setText(grok_relay.chief_prompt(topic))
             return "connections"
         return None
+
+    def _set_debug(self, on: bool):
+        """Sample thoughts. An installed copy has no such switch, and a flag left in the file does nothing there."""
+        if not startup.from_checkout():
+            return
+        save_widget_config(debug=bool(on))
 
     def _set_glass(self, percent: int):
         save_widget_config(glass_clear=percent)
@@ -635,9 +872,29 @@ class Faces(QObject):
         """Tell every face on the arc where it is."""
         for face in list(self.faces.values()) + list(self._arc_guests.values()):
             face._set_semicircle(self._semicircle)
+        self._fit_catcher_mask()
+
+    def _fit_catcher_mask(self):
+        """While the arc is up, only the edge and the bots take clicks. Gaps fall through."""
+        catcher = self._catcher
+        if self._semicircle_phase == "idle":
+            if not catcher.mask().isEmpty():
+                catcher.clearMask()
+            return
+        shapes = []
+        ox, oy = catcher.x(), catcher.y()
+        for face in list(self.faces.values()) + list(self._arc_guests.values()):
+            if not face.isVisible():
+                continue
+            mask = face.mask()
+            shape = mask if not mask.isEmpty() else QRegion(face.rect())
+            shapes.append((face.x() - ox, face.y() - oy, shape))
+        region = arc_catcher_region(catcher.width(), catcher.height(), shapes)
+        if region != catcher.mask():
+            catcher.setMask(region)
 
     def _spawn_guest(self, bot: dict):
-        avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else None
+        avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else _avatar(bot)
         face = FaceWindow(bot["id"], bot["name"], None, 0, bot.get("threadId"), self,
                           bot.get("hue"), bot.get("seed"), avatar)
         face._arc_guest = True
@@ -822,7 +1079,8 @@ class Faces(QObject):
         """
         on_top = always_on_top()
         guests = getattr(self, "_arc_guests", {})
-        for face in list(getattr(self, "faces", {}).values()) + list(guests.values()):
+        faces = list(getattr(self, "faces", {}).values()) + list(guests.values())
+        for face in faces:
             if not face.isVisible():
                 pass
             elif on_top or getattr(face, "_arc_guest", False):
@@ -830,12 +1088,11 @@ class Faces(QObject):
             else:
                 face.lower()
                 send_behind_windows(native_id(face))
+        # After every face, so an arc guest cannot sit on top of a menu that was just opened.
+        for face in faces:
             bubble = getattr(face, "bubble", None)
             if bubble is not None and bubble.isVisible():
                 bubble.raise_()
-        for face in guests.values():
-            if face.isVisible():
-                face.raise_()
 
     def _drag_in_progress(self) -> bool:
         held = list(getattr(self, "faces", {}).values()) + list(getattr(self, "_arc_guests", {}).values())
@@ -862,9 +1119,25 @@ class Faces(QObject):
         self.semicircle_pointer_left()
 
     def hold_arc(self):
-        """Right-click: show the hidden bots. The arc closes once the pointer leaves the face and the arc."""
+        """Show the hidden bots. A right-click uses this, and the /bots page keeps it up until that page closes."""
+        self._arc_from_bots = True
         self.show_semicircle()
         self._semicircle_hide_timer.stop()
+
+    def _bots_page_open(self) -> bool:
+        return any(getattr(face, "_menu_page", None) == "bots" and face.bubble.isVisible()
+                   for face in self.faces.values())
+
+    def release_bots_arc(self):
+        """The /bots page closed: the arc it opened leaves on the same short timer as the top edge.
+
+        No hover over the bots is required. The timer is what lets the pointer reach them from the bubble.
+        """
+        if not getattr(self, "_arc_from_bots", False) or self._bots_page_open() or self._drag_in_progress():
+            return
+        self._arc_from_bots = False
+        if self._semicircle_phase != "idle":
+            self._semicircle_hide_timer.start()
 
     def _pointer_on_arc(self) -> bool:
         """The pointer is on a face or on a bot of the arc."""
@@ -918,14 +1191,16 @@ class Faces(QObject):
         return False
 
     def semicircle_pointer_left(self):
-        if self._drag_in_progress() or self._pointer_on_arc():
+        if self._drag_in_progress() or self._pointer_on_arc() or self._bots_page_open():
             return
         if self._semicircle_phase != "idle" and not self._semicircle_hide_timer.isActive():
             self._semicircle_hide_timer.start()
 
     def _semicircle_hide(self):
-        """The pointer stayed away from the face and the arc."""
+        """The pointer stayed away from the face and the arc, unless /bots still holds it."""
         self._semicircle_hide_timer.stop()
+        if self._bots_page_open():
+            return
         self.hide_semicircle()
 
     def _semicircle_positions(self, ids=None) -> dict:

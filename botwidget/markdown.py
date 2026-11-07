@@ -46,7 +46,8 @@ def url_host(url: str) -> str:
     try:
         host = urlparse(url).netloc or url
     except ValueError:
-        host = url
+        # A broken address has no host. Splitting it on ":" would leave only the scheme.
+        return url
     return host.split("@")[-1].split(":")[0] or url
 
 
@@ -236,9 +237,14 @@ def block_text(blocks: list) -> str:
             out.append(" ".join(block.get("lines") or []))
             continue
         if block.get("kind") == "control":
+            if block["control"] in ("field", "editor"):
+                out.append(f"{block['label']}: {block.get('value') or ''}")
+                continue
             on = block.get("on")
             mark = "" if on is None else (f"{on}% " if block["control"] == "slider" else "☑ " if on else "☐ ")
-            out.append(f"{mark}{block['label']}")
+            # Action labels ("Again", "Unmute") are the only thing that changes on a second click.
+            actions = " ".join(str(action.get("label") or "") for action in block.get("actions") or [])
+            out.append(f"{mark}{block['label']}" + (f" [{actions}]" if actions else ""))
             continue
         if block.get("kind") == "table":
             out.append(" | ".join("".join(piece for piece, _style in cell) for row in block["rows"] for cell in row))
