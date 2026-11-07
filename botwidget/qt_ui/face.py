@@ -1628,6 +1628,9 @@ class FaceWindow(QWidget):
         if self.faces is None:
             return
         again = page == self._menu_page and self.bubble.isVisible()
+        if not again:
+            # Remove stays on Again only while this page is still open.
+            self.faces._confirm_remove = ""
         self._menu_page = page
         # A page goes away by itself like any bubble. Escape returns to the chat.
         self.pinned = False

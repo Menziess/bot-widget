@@ -6100,6 +6100,26 @@ class MenuInBubble(unittest.TestCase):
         self.assertEqual((bubble._list_only, bubble.full_text, list(bubble._slash.rows), bubble._geom[1]), first)
         self.assertNotIn("Hoi.", bubble.full_text, "no answer text, only the commands")
 
+    def test_a_closed_bots_page_forgets_a_half_finished_remove(self):
+        """Should show Remove again after the bots page was closed and opened."""
+        faces = self.window.faces
+        faces._confirm_remove = "bot-remove/a"
+        base = faces.menu_state()
+
+        def menu_state():
+            data = dict(base)
+            data["bots"] = [{"id": "a", "name": "Fritsie", "on": True, "acp": True}]
+            data["confirm_remove"] = getattr(faces, "_confirm_remove", "")
+            return data
+
+        faces.menu_state = menu_state
+        self.window._menu_page = None
+        self.window.bubble.hide()
+        self.window.open_menu("bots")
+        self.assertEqual(faces._confirm_remove, "")
+        self.assertIn("Remove", self.text())
+        self.assertNotIn("Again", self.text())
+
     def test_the_line_on_a_bot_goes_back_to_the_bots_page(self):
         """Should open the bots page from a bot form, not the slash list."""
         self.window.open_menu("bot")
