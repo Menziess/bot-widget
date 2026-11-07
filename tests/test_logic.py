@@ -5750,9 +5750,12 @@ class MenuPages(unittest.TestCase):
         self.assertIn("Remove connection", text)
         self.assertEqual(menu_pages._command("Bots", "/bots"), ("Bots", "cmd:/bots"))
 
-    def test_every_page_leads_back_to_the_chat(self):
+    def test_a_nested_page_leads_back_to_the_page_it_came_from(self):
+        """Should step up one screen. A form returns to its list, and that list returns to the chat."""
+        back = {"settings": "page/chat", "bots": "page/chat", "connections": "page/chat",
+                "bot": "page/bots", "connection": "page/connections", "widget-json": "page/bots"}
         for page in menu_pages.PAGES:
-            self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], "page/chat")
+            self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], back[page])
         self.assertEqual(self.commands(menu_pages.page_blocks("nonsense", self.STATE)),
                          self.commands(menu_pages.settings(self.STATE)))
 
@@ -6065,6 +6068,17 @@ class MenuInBubble(unittest.TestCase):
         self.assertTrue(bubble.isVisible())
         self.assertEqual((bubble._list_only, bubble.full_text, list(bubble._slash.rows), bubble._geom[1]), first)
         self.assertNotIn("Hoi.", bubble.full_text, "no answer text, only the commands")
+
+    def test_the_line_on_a_bot_goes_back_to_the_bots_page(self):
+        """Should open the bots page from a bot form, not the slash list."""
+        self.window.open_menu("bot")
+        self.assertEqual(self.window.bubble._back_command(), "page/bots")
+        self.assertIn("New bot", self.text())
+        self.window.bubble.command.emit("page/bots")
+        self.assertEqual(self.window._menu_page, "bots")
+        self.assertIn("Fritsie", self.text())
+        self.assertFalse(self.window.bubble._list_only)
+        self.assertNotIn("/settings", self.text())
 
     def test_a_link_in_the_bubble_runs_its_command(self):
         from PySide6.QtCore import QUrl

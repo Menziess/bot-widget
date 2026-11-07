@@ -14,7 +14,7 @@ PAGES = ("settings", "bots", "connections", "bot", "connection", "widget-json")
 # What typing it in the field opens.
 SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"}
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
-# No /home: the back arrow on a page and a right-click already show this list on its own.
+# No /home: a right-click shows this list on its own. A page steps back to the screen before it.
 COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
             ("/connections", "what was found"), ("/refresh", "reload every bot"),
             ("/feedback", "open a GitHub issue"))
@@ -95,9 +95,9 @@ def _field(label: str, command: str, value: str) -> dict:
     return {**control_block("field", label, command), "value": value}
 
 
-def _back() -> list:
-    """The line on top of a page. Pulling it or clicking it goes back to the chat."""
-    return [role_panel("more", back="page/chat"), plain_block("more"), role_panel("bot")]
+def _back(where: str = "page/chat") -> list:
+    """The line on top of a page. Pulling it or clicking it goes to the screen before this one."""
+    return [role_panel("more", back=where), plain_block("more"), role_panel("bot")]
 
 
 def settings(state: dict) -> list:
@@ -180,7 +180,7 @@ def bot_form(state: dict) -> list:
     from botwidget.acp_bots import blank
     form = state.get("bot_form") or blank()
     editing = bool(form.get("stored_id"))
-    blocks = _back() + [_heading("Edit bot" if editing else "New bot")]
+    blocks = _back("page/bots") + [_heading("Edit bot" if editing else "New bot")]
     blocks += [
         _field("Name", "field/name", form.get("name") or ""),
         _button(f"Face: {form.get('face') or 'automatic'}", "cycle/face"),
@@ -202,7 +202,7 @@ def bot_form(state: dict) -> list:
 
 def widget_json(state: dict) -> list:
     """The whole settings file, for a change the form does not cover. The key is not in the text."""
-    blocks = _back() + [_heading("widget.json"),
+    blocks = _back("page/bots") + [_heading("widget.json"),
                         _row(("Checked before saving. The previous file is kept as widget.json.bak. "
                               "A key pasted here is refused; only key_file belongs in this file.", "dim"))]
     if state.get("json_error"):
@@ -270,7 +270,7 @@ def connection_form(state: dict) -> list:
     from botwidget.acp_bots import blank_connection
     form = state.get("connection_form") or blank_connection()
     editing = bool(form.get("stored_id"))
-    blocks = _back() + [_heading("Edit connection" if editing else "New connection")]
+    blocks = _back("page/connections") + [_heading("Edit connection" if editing else "New connection")]
     blocks += [
         _field("Name", "field/name", form.get("name") or ""),
         _field("Model address", "field/base_url", form.get("base_url") or ""),
