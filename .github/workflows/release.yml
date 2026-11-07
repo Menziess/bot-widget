@@ -1,6 +1,7 @@
 name: release
 
-# A tag like v0.1.0 builds the apps and puts them on GitHub Releases; starting it by hand only builds.
+# A tag like v0.1.0 runs the tests, then builds the apps and puts them on GitHub Releases.
+# Starting it by hand only builds, and only after those same tests pass.
 # The website links to releases/latest/download/<fixed name>, so the names must not change.
 on:
   push:
@@ -12,7 +13,11 @@ permissions:
   actions: read  # SignPath reads the unsigned files from this run's artifacts
 
 jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
   build:
+    needs: test
     strategy:
       fail-fast: false
       matrix:
