@@ -376,6 +376,7 @@ class EditPage(unittest.TestCase):
         }])
 
     def test_clicking_edit_opens_that_bots_page(self):
+        """Should mute and open Edit when the click lands on the row that sits over the text."""
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest
         from botwidget.qt_ui.controls import ItemRow
@@ -408,11 +409,17 @@ class EditPage(unittest.TestCase):
         self.app.processEvents()
         bubble = window.bubble
         row = next(w for w in bubble._control_widgets if isinstance(w, ItemRow))
+        self.assertGreater(bubble._text.children().index(row), bubble._text.children().index(bubble._doc))
+        mute = next(rect for _label, command, rect in row._hits if command == "mute/acp:local-bot")
+        QTest.mouseClick(row, Qt.LeftButton, Qt.NoModifier,
+                         QPoint(int(mute.center().x()), int(mute.center().y())))
+        self.app.processEvents()
+        self.assertEqual(config.muted_bots(), ["acp:local-bot"])
+        self.assertEqual(window._menu_page, "bots")
+        row = next(w for w in bubble._control_widgets if isinstance(w, ItemRow))
         edit = next(rect for _label, command, rect in row._hits if command == "page/bot/acp:local-bot")
-        # Where the text window receives the click that was meant for Edit on this row.
-        point = QPoint(int(row.geometry().x() + edit.center().x() - bubble._doc.x()),
-                       int(row.geometry().center().y() - bubble._doc.y()))
-        QTest.mouseClick(bubble._doc.viewport(), Qt.LeftButton, Qt.NoModifier, point)
+        QTest.mouseClick(row, Qt.LeftButton, Qt.NoModifier,
+                         QPoint(int(edit.center().x()), int(edit.center().y())))
         self.app.processEvents()
         self.assertIn("Edit bot", bubble.full_text)
         self.assertIn("Name: Local Bot", bubble.full_text)
@@ -534,3 +541,55 @@ class EditPage(unittest.TestCase):
             named["id"] = 0
             bubble._tick()
             self.assertFalse(bubble.isVisible(), "once the pointer was seen, leaving closes at once")
+
+
+class ItemRowPills(unittest.TestCase):
+    """Should light the Edit and Mute pills when the pointer is on them."""
+
+    def test_the_pill_under_the_pointer_turns_blue(self):
+        """Should paint the action under the pointer in the same blue as the other buttons."""
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui.controls import ItemRow
+
+        app = QApplication.instance() or QApplication([])
+        row = ItemRow("Local Bot", False, "bot/a", [
+            {"label": "Mute", "command": "mute/a"},
+            {"label": "Edit", "command": "page/bot/a"},
+            {"label": "Again", "command": "bot-remove/a"},
+        ])
+        row.resize(420, 36)
+        row.show()
+        app.processEvents()
+        self.assertTrue(row.hasMouseTracking())
+        edit = next(rect for _label, command, rect in row._hits if command == "page/bot/a")
+        again = next(rect for _label, command, rect in row._hits if command == "bot-remove/a")
+
+        def fill(rect):
+            from PySide6.QtGui import QImage
+            image = QImage(row.size(), QImage.Format_ARGB32_Premultiplied)
+            image.fill(0)
+            row.render(image)
+            return image.pixelColor(int(rect.left()) + 8, int(rect.center().y()))
+
+        def move(rect):
+            point = QPointF(rect.center())
+            app.sendEvent(row, QMouseEvent(
+                QEvent.Type.MouseMove, point, point, Qt.MouseButton.NoButton,
+                Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier))
+
+        idle = fill(edit)
+        self.assertLess(abs(idle.red() - idle.blue()), 8)
+        move(edit)
+        hot = fill(edit)
+        self.assertGreater(hot.blue(), hot.red() + 15)
+        self.assertEqual(row._hover, "page/bot/a")
+        move(again)
+        self.assertEqual(fill(edit).rgba(), idle.rgba())
+        armed = fill(again)
+        self.assertGreater(armed.alpha(), 200)
+        self.assertGreater(armed.blue(), armed.red() + 80)
+        app.sendEvent(row, QEvent(QEvent.Type.Leave))
+        self.assertIsNone(row._hover)
+        self.assertEqual(fill(edit).rgba(), idle.rgba())

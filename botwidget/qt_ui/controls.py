@@ -54,6 +54,8 @@ class ItemRow(QWidget):
         self._actions = [(str(action["label"]), str(action["command"])) for action in actions]
         self._hits: list[tuple[str, str, QRectF]] = []
         self._title_w = 0
+        self._hover: str | None = None
+        self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
 
@@ -76,15 +78,42 @@ class ItemRow(QWidget):
         self._hits = hits
         self._title_w = max(0, x - CONTROL_SWITCH_W - 8)
 
-    def press_at(self, x: float):
-        """The text window sits over this row, so the click arrives as a position."""
+    def mousePressEvent(self, event):
+        # Painted above the text. A press this row ignores never comes back as a release.
+        if event.button() == Qt.LeftButton:
+            event.accept()
+        else:
+            event.ignore()
+
+    def mouseMoveEvent(self, event):
+        self._follow(event.position().x())
+
+    def leaveEvent(self, event):
+        self._follow(None)
+        super().leaveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.press_at(event.position().x())
+
+    def _command_at(self, x: float) -> str | None:
         if self._actions and not self._hits:
             self._place()
         for _label, command, rect in self._hits:
             if rect.left() <= x <= rect.right():
-                self.chosen.emit(command)
-                return
-        self.chosen.emit(self._toggle)
+                return command
+        return None
+
+    def _follow(self, x: float | None):
+        hover = None if x is None else self._command_at(x)
+        if hover != self._hover:
+            self._hover = hover
+            self.update()
+
+    def press_at(self, x: float):
+        """x is in this row: its own click, or one the text still forwards."""
+        command = self._command_at(x)
+        self.chosen.emit(self._toggle if command is None else command)
 
     def paintEvent(self, _event):
         if self._actions and not self._hits:
@@ -107,13 +136,16 @@ class ItemRow(QWidget):
         title = QFontMetrics(font).elidedText(self._title, Qt.ElideRight, max(1, int(self._title_w)))
         painter.drawText(QRectF(CONTROL_SWITCH_W, 0, max(1, self._title_w), self.height()),
                          Qt.AlignVCenter | Qt.AlignLeft, title)
-        for label, _command, rect in self._hits:
+        for label, command, rect in self._hits:
             # "Again" is the second click that really removes; "Unmute" means the bot is muted.
             marked = label in ("Again", "Unmute")
+            # Drawn by hand, so the stylesheet hover of a normal button does not apply here.
+            hovered = command == self._hover and not marked
             painter.setPen(Qt.NoPen)
-            painter.setBrush(color(SAND_ACCENT) if marked else QColor(28, 28, 28, 14))
+            painter.setBrush(QColor(11, 109, 211, 26) if hovered else
+                             color(SAND_ACCENT) if marked else QColor(28, 28, 28, 14))
             painter.drawRoundedRect(rect, 14, 14)
-            painter.setPen(QColor("#ffffff") if marked else color(SAND_INK))
+            painter.setPen(color(SAND_ACCENT) if hovered else QColor("#ffffff") if marked else color(SAND_INK))
             painter.drawText(rect, Qt.AlignCenter, label)
 
 
