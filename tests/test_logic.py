@@ -1305,6 +1305,31 @@ class BubbleHover(unittest.TestCase):
         self.assertIn("Yo", self.window.bubble.full_text)
         self.assertFalse(self.window._asked)
 
+    def test_a_local_answer_opens_while_a_thought_is_still_set(self):
+        """Should open the speech bubble once the local bot has words, and not leave them behind the dots."""
+        class Link:
+            stopped = False
+
+            def active(self):
+                return True
+
+            def note(self):
+                return ""
+
+            def close(self):
+                pass
+
+        self.window.acp = Link()
+        self.window._seeded = True
+        self.window._asked = True
+        self.window._last_bot = "Yo"
+        self.window._sync_bubble({"messages": [{"role": "user", "text": "Hoi"},
+                                               {"role": "bot", "text": "Yo"}],
+                                  "activity": "thinking"})
+        self.assertEqual(self.window.bubble.kind, "say")
+        self.assertIn("Yo", self.window.bubble.full_text)
+        self.assertNotIn("thinking", self.window.bubble.full_text)
+
     def test_the_thinking_cloud_is_not_kept_open_by_its_dots(self):
         import time
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)

@@ -1463,15 +1463,17 @@ class FaceWindow(QWidget):
             pending = False
             if self.acp:
                 show_now = True  # the failure is the reply; the first look must not treat it as old news
-        if self._asked and self.acp and not self.acp.active() and not self._working and not self._sending and not self._outbox.items and not self._queue:
-            # The local turn already ended (it can finish before the next look). Dots would hide the answer.
+        spoken = bool(stored) and stored[-1].get("role") == "bot" and bool((stored[-1].get("text") or "").strip())
+        if self.acp and self._asked and not self._sending and not self._outbox.items and not self._queue and (
+                spoken or (not self.acp.active() and not self._working)):
+            # Words are already in, or the turn ended before this look. The dots must not hide them.
             show_now = True
             self._asked = False
             pending = False
         elif self._asked and not self.grok and not self.hermes and not self._working and not self._sending and not self._outbox.items and not self._queue:
             # Do not clear _asked: the dots should stay until an answer arrives.
             pass
-        if pending and not self.pinned:
+        if pending and not self.pinned and not show_now:
             if self._muted and not self._has_attention():
                 # Thinking is silenced: no cloud, until the face is clicked again.
                 self._shown_text = ""
@@ -1505,7 +1507,7 @@ class FaceWindow(QWidget):
         if self._asked and self.link and self.link.stopped:
             self._asked = False
         # Do not clear _asked here: keep the dots showing until an answer arrives or _answer_pending clears it.
-        if (self._working or self._sending or self._outbox.items or self._asked) and not (self.pinned or self._answer_view or reading):
+        if (self._working or self._sending or self._outbox.items or self._asked) and not (self.pinned or self._answer_view or reading or show_now):
             # The cloud closed itself. The chat stays away until this turn is over.
             return
         blocks = self._chat_blocks(messages, greet=force or self.pinned)
