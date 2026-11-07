@@ -1320,6 +1320,8 @@ class GrokEdges(unittest.TestCase):
             proc.kill.assert_called_once()
 
 
+@unittest.skipIf(sys.platform == "darwin",
+                 "the macOS offscreen plugin segfaults while this test raises windows")
 class MenuAndCatcher(unittest.TestCase):
     """Should run the bubble menu and the arc catcher without a desktop session."""
 
