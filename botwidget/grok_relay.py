@@ -67,7 +67,7 @@ def chief_prompt(topic: str) -> str:
         '{bot, state: start|done|stuck|needs_you, summary, ts}. '
         "Send one roster once as "
         "{bots:[{name, team, color, face, chat_url}, ...]}; a routine may resend roster and usage. "
-        "Do not ask Stefan to configure each bot."
+        "Do not ask the user to configure each bot."
     )
 
 

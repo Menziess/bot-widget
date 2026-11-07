@@ -400,6 +400,7 @@ class LinkGrokBotsTest(unittest.TestCase):
         for state in ("start", "done", "stuck", "needs_you"):
             self.assertIn(state, text)
         self.assertIn("roster", text.lower())
+        self.assertNotIn("Stefan", text)
 
     def test_link_channel_writes_config(self) -> None:
         out = grok_relay.link_channel(topic="bw-fixed-topic")
