@@ -1674,6 +1674,176 @@ class MenuAndCatcher(unittest.TestCase):
             self.assertTrue(extra._update_timer.isActive())
 
 
+class PlainPaths(unittest.TestCase):
+    """Should run the offscreen-callable bubble and face methods the coverage notes had called unreachable."""
+
+    def setUp(self):
+        from PySide6.QtWidgets import QApplication
+        self.app = QApplication.instance() or QApplication([])
+
+    def _face(self, agent_id, name, spot):
+        from botwidget.qt_ui.face import FaceWindow
+        window = FaceWindow(agent_id, name, spot=spot)
+        window._poll_timer.stop()
+        self.addCleanup(window.close_face)
+        return window
+
+    def test_paste_history_links_and_the_wheel(self):
+        """Should accept a pasted file, refuse a history step that is only a cursor move, and open a link."""
+        from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
+        from PySide6.QtGui import QDesktopServices, QTextCursor, QWheelEvent
+        from botwidget.qt_ui.bubble_window import BubbleEntry, BubbleText
+
+        entry = BubbleEntry()
+        self.addCleanup(entry.deleteLater)
+        pasted = QMimeData()
+        pasted.setUrls([QUrl.fromLocalFile("/tmp/note.txt")])
+        self.assertTrue(entry.canInsertFromMimeData(pasted))
+        entry.setPlainText("one\ntwo")
+        cursor = entry.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        entry.setTextCursor(cursor)
+        self.assertFalse(entry._walk_history(-1))
+        entry.setPlainText("only")
+        entry._recall = None
+        self.assertFalse(entry._walk_history(1))
+
+        text = BubbleText()
+        self.addCleanup(text.deleteLater)
+        opened = []
+        with mock.patch.object(QDesktopServices, "openUrl", side_effect=lambda url: opened.append(url.scheme()) or True):
+            text._open(QUrl("https://example.com/a"))
+            text._open(QUrl.fromLocalFile("/tmp/note.txt"))
+        self.assertEqual(opened, ["https", "file"])
+        wheel = QWheelEvent(
+            QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, 120),
+            Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+        text.wheelEvent(wheel)
+        self.assertFalse(wheel.isAccepted())
+
+    def test_a_pending_dot_a_return_home_a_bounce_and_a_coast(self):
+        """Should paint the pending dot, send the face home, bounce off another face, and coast to a stop."""
+        from PySide6.QtGui import QImage
+        home = self._face("home", "Home", (80, 80))
+        home.show()
+        home.has_pending = True
+        image = QImage(home.width(), home.height(), QImage.Format_ARGB32)
+        home.render(image)
+        home._set_semicircle({home.agent_id: {"visible": True, "size": 48, "x": 40, "y": 40}})
+        home._set_semicircle({})
+        self.assertFalse(home._semicircle_visible)
+        self.assertEqual(home.spot(), home._home)
+
+        other = self._face("other", "Other", (80, 80))
+        other.show()
+        home.faces = SimpleNamespace(faces={"home": home, "other": other})
+        pushed = home._bounce_off_faces(home.x(), home.y(), -30.0, 0.0)
+        self.assertNotEqual(pushed[:2], (home.x(), home.y()))
+        other.move(home.x() + 30, home.y())
+        home._bounce_off_faces(home.x(), home.y(), 50.0, 0.0)
+        home.faces = None
+
+        home._drag_origin = None
+        home._coasting = False
+        self.assertFalse(home._tick_coast())
+        home._coasting = True
+        home._dvx, home._dvy = 400.0, 0.0
+        self.assertTrue(home._tick_coast())
+        home._dvx, home._dvy = 10.0, 0.0
+        self.assertFalse(home._tick_coast())
+        self.assertFalse(home._coasting)
+
+    def test_each_backend_is_polled_without_a_live_server(self):
+        """Should draw a grok, hermes, harness and OpenBot poll from a stand-in link."""
+        home = self._face("home", "Home", (80, 80))
+
+        class Link:
+            def __init__(self):
+                self.is_polling = False
+                self._due = False
+                self._active = False
+                self.polled = 0
+
+            def due(self):
+                return self._due
+
+            def active(self):
+                return self._active
+
+            def note(self):
+                return "noted"
+
+            def chat(self):
+                return {"messages": [], "activity": ""}
+
+            def poll(self):
+                self.polled += 1
+
+            def attention(self):
+                return {"prompts": [], "approvals": [], "browserTakeovers": []}
+
+            def close(self):
+                return None
+
+            stopped = False
+
+        link = Link()
+        home.grok = link
+        link._due = True
+        home._poll_pending()
+        home._poll_thread.join(2)
+        self.app.processEvents()
+        self.assertEqual(link.polled, 1)
+        link._due = False
+        home._refreshing = True
+        home._poll_pending()
+        self.assertEqual(home._refresh_note, "noted")
+        link._active = True
+        home._poll_timer.stop()
+        home._poll_pending()
+        self.assertTrue(home._poll_timer.isActive())
+
+        home.grok = None
+        home.hermes = link
+        link._active = False
+        home._poll_timer.stop()
+        home._refreshing = True
+        home._poll_pending()
+        self.assertEqual(home._refresh_note, "noted")
+        home._refreshing = False
+        home._poll_pending()
+
+        home.hermes = None
+        home.acp = link
+        link._active = False
+        home._refreshing = True
+        home._poll_pending()
+        self.assertEqual(home._refresh_note, "noted")
+        link._active = True
+        home._refreshing = True
+        home._poll_timer.stop()
+        home._poll_pending()
+        self.assertTrue(home._poll_timer.isActive())
+        link._active = False
+        link.chat = lambda: {"messages": [], "activity": "working"}
+        home._refreshing = False
+        home._poll_timer.stop()
+        home._poll_pending()
+        self.assertTrue(home._poll_timer.isActive())
+
+        home.acp = None
+        home._asked = False
+        home.has_pending = False
+        home._refreshing = False
+        home._poll_timer.stop()
+        pending = {"prompts": [{"requestId": "p"}], "approvals": [], "browserTakeovers": []}
+        with mock.patch("botwidget.qt_ui.face.api_get", return_value=pending), \
+                mock.patch("botwidget.qt_ui.face.latest_chat",
+                           return_value={"messages": [], "activity": ""}):
+            home._poll_pending()
+        self.assertTrue(home.has_pending)
+
+
 class Wheel(unittest.TestCase):
     """Should put the harness package in the wheel. The widget imports it, and CI installs the wheel."""
 
