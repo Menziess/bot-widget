@@ -73,9 +73,60 @@ class Defaults(unittest.TestCase):
         model = ChatCompletions("http://127.0.0.1:9/v1", "local")
         started = clock.monotonic()
         with self.assertRaises(ModelError) as caught:
-            model.ready(timeout=2.0)
+            model.ready(timeout=2.0, wait=30.0)
         self.assertLess(clock.monotonic() - started, 5.0)
         self.assertIn("no model server", str(caught.exception))
+        self.assertIn("Connection refused", str(caught.exception))
+
+    def test_a_server_that_accepts_and_then_answers_is_still_loading(self):
+        """Should wait out a first quiet accept, which is the proxy while the model loads."""
+        import socket
+        import threading
+        import time as clock
+        from harness.agent.models import ChatCompletions
+
+        gate = threading.Event()
+        done = threading.Event()
+
+        def serve():
+            server = socket.socket()
+            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server.bind(("127.0.0.1", 0))
+            server.listen(5)
+            port.append(server.getsockname()[1])
+            gate.set()
+            seen = 0
+            while not done.is_set():
+                server.settimeout(0.2)
+                try:
+                    conn, _addr = server.accept()
+                except socket.timeout:
+                    continue
+                seen += 1
+                if seen == 1:
+                    clock.sleep(0.6)
+                    conn.close()
+                    continue
+                conn.settimeout(1)
+                try:
+                    conn.recv(4096)
+                except OSError:
+                    pass
+                body = b"{}"
+                conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n" + body)
+                conn.close()
+            server.close()
+
+        port = []
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        self.assertTrue(gate.wait(2))
+        self.addCleanup(done.set)
+        model = ChatCompletions(f"http://127.0.0.1:{port[0]}/v1", "local")
+        started = clock.monotonic()
+        model.ready(timeout=0.2, wait=2.0)
+        self.assertLess(clock.monotonic() - started, 2.0)
+        self.assertGreater(clock.monotonic() - started, 0.2)
 
     def test_the_default_model_server_is_the_local_llama_cpp_one(self):
         from harness.agent.models import from_environment

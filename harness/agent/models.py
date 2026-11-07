@@ -5,6 +5,7 @@ Only the standard library is used, so the agent starts with nothing but python a
 """
 
 import json
+import time
 import urllib.error
 import urllib.request
 
@@ -39,23 +40,40 @@ class ChatCompletions:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    def ready(self, timeout: float = 3.0) -> None:
+    def ready(self, timeout: float = 3.0, wait: float = 30.0) -> None:
         """Answer now whether anything is at the base URL, so a missing server is a sentence instead
         of a three-minute hang. Any answer at all counts: a bad key is the turn's error, not this one.
         Then ask the server how large its context is, if it tells (llama.cpp does).
+
+        Connection refused fails at once. A port that accepts and then stays quiet is a model still
+        loading behind the proxy, so try again until wait seconds.
         """
+        deadline = time.monotonic() + max(wait, timeout)
+        while True:
+            slice_s = deadline - time.monotonic()
+            if slice_s <= 0:
+                self._missing(TimeoutError("timed out"))
+            try:
+                self._probe(min(timeout, slice_s))
+                return
+            except (urllib.error.URLError, OSError) as error:
+                reason = getattr(error, "reason", error)
+                if not isinstance(reason, TimeoutError) or time.monotonic() >= deadline:
+                    self._missing(reason, error)
+
+    def _missing(self, reason, error: BaseException | None = None) -> None:
+        # strerror is "Connection refused". str(reason) is the long "[Errno 111] ..." line.
+        detail = getattr(reason, "strerror", None) or reason
+        raise ModelError(f"no model server at {self.base_url} ({detail}). Start it, or change "
+                         f"the address in Connections.") from error
+
+    def _probe(self, timeout: float) -> None:
         request = urllib.request.Request(f"{self.base_url}/models", headers=self._headers())
         try:
             with urllib.request.urlopen(request, timeout=timeout) as reply:
                 reply.read(1)
         except urllib.error.HTTPError:
             return self._read_props(timeout)
-        except (urllib.error.URLError, OSError) as error:
-            reason = getattr(error, "reason", error)
-            # strerror is "Connection refused". str(reason) is the long "[Errno 111] ..." line.
-            detail = getattr(reason, "strerror", None) or reason
-            raise ModelError(f"no model server at {self.base_url} ({detail}). Start it, or change "
-                             f"the address in Connections.") from error
         self._read_props(timeout)
 
     def _read_props(self, timeout: float) -> None:
