@@ -101,26 +101,33 @@ class Power(unittest.TestCase):
                 return ["AC", "BAT"]
             raise OSError("no")
 
+        root = "/sys/class/power_supply"
+        ac_online = os.path.join(root, "AC", "online")
+        bat_status = os.path.join(root, "BAT", "status")
         files = {
-            "/sys/class/power_supply/AC/type": "Mains\n",
-            "/sys/class/power_supply/AC/online": "0\n",
-            "/sys/class/power_supply/BAT/type": "Battery\n",
-            "/sys/class/power_supply/BAT/status": "Discharging\n",
+            os.path.join(root, "AC", "type"): "Mains\n",
+            ac_online: "0\n",
+            os.path.join(root, "BAT", "type"): "Battery\n",
+            bat_status: "Discharging\n",
         }
 
+        # open() is patched, so the miss path must call the real one or it calls itself.
+        real_open = open
+
         def open_path(path, *args, **kwargs):
-            if path in files:
-                return io.StringIO(files[path])
-            return open(path, *args, **kwargs)
+            text = files.get(os.fspath(path))
+            if text is not None:
+                return io.StringIO(text)
+            return real_open(path, *args, **kwargs)
 
         with mock.patch.object(power.subprocess, "run", side_effect=OSError("no profiles")), \
                 mock.patch.object(power.os, "listdir", side_effect=listing), \
                 mock.patch("builtins.open", open_path):
             self.assertTrue(power._probe())
-            files["/sys/class/power_supply/AC/online"] = "1\n"
+            files[ac_online] = "1\n"
             self.assertFalse(power._probe())
-            files["/sys/class/power_supply/AC/online"] = "0\n"
-            files["/sys/class/power_supply/BAT/status"] = "Charging\n"
+            files[ac_online] = "0\n"
+            files[bat_status] = "Charging\n"
             self.assertFalse(power._probe())
         with mock.patch.object(power.subprocess, "run", side_effect=OSError("no")), \
                 mock.patch.object(power.os, "listdir", side_effect=OSError("no sysfs")):
@@ -174,21 +181,26 @@ class Hermes(unittest.TestCase):
         proc = mock.Mock()
         proc.pid = 9
         proc.wait.side_effect = [subprocess.TimeoutExpired("h", 1), None]
-        with mock.patch.object(hermesbot.os, "killpg") as kill:
-            hermesbot._stop_group(proc)
-            self.assertEqual(kill.call_count, 2)
-        proc.wait.side_effect = None
-        proc.wait.return_value = 0
-        with mock.patch.object(hermesbot.os, "killpg", side_effect=ProcessLookupError):
-            hermesbot._stop_group(proc)
-        killpg = hermesbot.os.killpg
-        try:
-            del hermesbot.os.killpg
+        if hasattr(hermesbot.os, "killpg"):
+            with mock.patch.object(hermesbot.os, "killpg") as kill:
+                hermesbot._stop_group(proc)
+                self.assertEqual(kill.call_count, 2)
+            proc.wait.side_effect = None
+            proc.wait.return_value = 0
+            with mock.patch.object(hermesbot.os, "killpg", side_effect=ProcessLookupError):
+                hermesbot._stop_group(proc)
+            killpg = hermesbot.os.killpg
+            try:
+                del hermesbot.os.killpg
+                proc.kill.reset_mock()
+                hermesbot._stop_group(proc)
+                proc.kill.assert_called_once()
+            finally:
+                hermesbot.os.killpg = killpg
+        else:
             proc.kill.reset_mock()
             hermesbot._stop_group(proc)
             proc.kill.assert_called_once()
-        finally:
-            hermesbot.os.killpg = killpg
 
         with mock.patch.object(hermesbot.subprocess, "Popen", side_effect=OSError("missing")):
             self.assertEqual(hermesbot.run("hoi", 1).rc, 127)
@@ -440,7 +452,7 @@ class SmallModules(unittest.TestCase):
                 mock.patch.object(instance.os, "kill") as kill, \
                 mock.patch.object(instance.time, "sleep"):
             instance.ensure_single_instance(pid, markers=(b"botwidget",))
-        self.assertEqual(kill.call_args_list[-1].args[1], __import__("signal").SIGKILL)
+        self.assertEqual(kill.call_args_list[-1].args[1], getattr(signal, "SIGKILL", signal.SIGTERM))
 
         child = mock.Mock()
         child.poll.return_value = None
@@ -881,7 +893,7 @@ class OtherSystems(unittest.TestCase):
         with mock.patch.object(macos.os.path, "isdir",
                                side_effect=lambda path: str(path).startswith("/Applications")):
             command = macos.stable_app_command()
-        self.assertEqual(command, ["open", "/Applications/Bot Widget.app", "--args"])
+        self.assertEqual(command, ["open", os.path.join("/Applications", "Bot Widget.app"), "--args"])
         with mock.patch.object(macos.os.path, "isdir", return_value=False):
             self.assertIsNone(macos.stable_app_command())
 
@@ -1014,7 +1026,9 @@ class LinuxX(unittest.TestCase):
         self.assertTrue(linux.is_shown_here(1))
         linux.move_to_active_space(1)
         self.assertFalse(linux.register_hotkey(lambda: None))
-        self.assertTrue(linux._platform_plugin("libqxcb.so"))
+        if sys.platform.startswith("linux"):
+            # libqxcb.so is the Linux plugin name. macOS and Windows ship another file.
+            self.assertTrue(linux._platform_plugin("libqxcb.so"))
         # The suite replaces these three so a test cannot steal focus or play a sound. Reload runs the real ones.
         held = {name: getattr(linux, name) for name in ("activate_app", "play_notification", "hide_from_dock")}
         importlib.reload(linux)
@@ -1287,19 +1301,23 @@ class GrokEdges(unittest.TestCase):
         proc.pid = 4
         proc.wait.return_value = 0
         proc.kill = mock.Mock()
-        killpg = grokbot.os.killpg
-        try:
-            del grokbot.os.killpg
+        if hasattr(grokbot.os, "killpg"):
+            killpg = grokbot.os.killpg
+            try:
+                del grokbot.os.killpg
+                grokbot._stop_group(proc)
+                proc.kill.assert_called_once()
+            finally:
+                grokbot.os.killpg = killpg
+            proc.wait.side_effect = [subprocess.TimeoutExpired("g", 1), None]
+            with mock.patch.object(grokbot.os, "killpg") as kill:
+                grokbot._stop_group(proc)
+            self.assertEqual(kill.call_count, 2)
+            with mock.patch.object(grokbot.os, "killpg", side_effect=OSError("no")):
+                grokbot._stop_group(proc)
+        else:
             grokbot._stop_group(proc)
             proc.kill.assert_called_once()
-        finally:
-            grokbot.os.killpg = killpg
-        proc.wait.side_effect = [subprocess.TimeoutExpired("g", 1), None]
-        with mock.patch.object(grokbot.os, "killpg") as kill:
-            grokbot._stop_group(proc)
-        self.assertEqual(kill.call_count, 2)
-        with mock.patch.object(grokbot.os, "killpg", side_effect=OSError("no")):
-            grokbot._stop_group(proc)
 
 
 class MenuAndCatcher(unittest.TestCase):
@@ -1643,13 +1661,15 @@ class MenuAndCatcher(unittest.TestCase):
             faces.offer_semicircle(0, 0)
         with mock.patch.object(type(faces._catcher), "underMouse", return_value=True):
             self.assertTrue(faces._pointer_on_arc())
-        with mock.patch("botwidget.qt_ui.faces.sys.platform", "darwin"), \
-                mock.patch("botwidget.qt_ui.faces.check_updates", return_value=True), \
-                mock.patch("botwidget.qt_ui.faces.QGuiApplication.platformName", return_value="xcb"):
-            extra = Faces()
-        self.addCleanup(self._close, extra)
-        self.assertTrue(extra._edge_timer.isActive())
-        self.assertTrue(extra._update_timer.isActive())
+        if sys.platform.startswith("linux"):
+            # Pretending this is Cocoa crashes the macOS offscreen plugin.
+            with mock.patch("botwidget.qt_ui.faces.sys.platform", "darwin"), \
+                    mock.patch("botwidget.qt_ui.faces.check_updates", return_value=True), \
+                    mock.patch("botwidget.qt_ui.faces.QGuiApplication.platformName", return_value="xcb"):
+                extra = Faces()
+            self.addCleanup(self._close, extra)
+            self.assertTrue(extra._edge_timer.isActive())
+            self.assertTrue(extra._update_timer.isActive())
 
 
 class Wheel(unittest.TestCase):
@@ -1659,8 +1679,11 @@ class Wheel(unittest.TestCase):
         """Should pack harness/acp_client.py next to botwidget."""
         out = tempfile.mkdtemp(prefix="botwidget-wheel-")
         self.addCleanup(shutil.rmtree, out, True)
-        done = subprocess.run(["uv", "build", "--wheel", "--out-dir", out], cwd=ROOT,
-                              capture_output=True, text=True, timeout=180)
+        # The runners install with pip and do not have uv. A checkout that has uv can build the same wheel.
+        uv = shutil.which("uv")
+        command = (["uv", "build", "--wheel", "--out-dir", out] if uv
+                   else [sys.executable, "-m", "pip", "wheel", ".", "--no-deps", "-w", out])
+        done = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=180)
         self.assertEqual(done.returncode, 0, done.stderr[-800:])
         wheel = next(name for name in os.listdir(out) if name.endswith(".whl"))
         names = zipfile.ZipFile(os.path.join(out, wheel)).namelist()
