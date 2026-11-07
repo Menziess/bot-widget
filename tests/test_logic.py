@@ -5693,10 +5693,12 @@ class MenuPages(unittest.TestCase):
         blocks = menu_pages.connections(self.STATE)
         text = self.text(blocks)
         self.assertEqual(self.commands(blocks), [
-            "page/chat", "connect/openbot", "connect/grokbot", "action/link-grok", "page/connection"])
+            "page/chat", "connect/openbot", "connect/grokbot", "action/link-grok",
+            "connect/hermesbot", "page/connection"])
         self.assertIn("☑ OpenBot", text)
         self.assertIn("local API is off", text)
         self.assertIn("☐ Grok Bot", text)
+        self.assertIn("☐ Hermes Bot", text)
         self.assertIn("Not found", text)
         self.assertIn("Link Grok bots", text)
         ready = self.text(menu_pages.connections({**self.STATE, "automation_ready": True, "gbot": True}))
@@ -5705,7 +5707,8 @@ class MenuPages(unittest.TestCase):
         linked = menu_pages.connections({**self.STATE, "grok_relay": "bw-x"})
         self.assertEqual(
             self.commands(linked),
-            ["page/chat", "connect/openbot", "connect/grokbot", "action/copy-grok-prompt", "page/connection"],
+            ["page/chat", "connect/openbot", "connect/grokbot", "action/copy-grok-prompt",
+             "connect/hermesbot", "page/connection"],
         )
         self.assertIn("bw-x", self.text(linked))
 
@@ -5713,6 +5716,9 @@ class MenuPages(unittest.TestCase):
         text = self.text(menu_pages.connections({**self.STATE, "wanted": ["grokbot"]}))
         self.assertIn("☑ Grok Bot", text)
         self.assertIn("Waiting for Grok Bot", text)
+        found = self.text(menu_pages.connections({**self.STATE, "hermes": True}))
+        self.assertIn("☑ Hermes Bot", found)
+        self.assertIn("Detected", found)
 
     def test_a_saved_connection_is_its_own_switch_with_edit_and_remove(self):
         """Should put the switch, edit and remove on that connection, not on a button at the bottom."""
@@ -5722,7 +5728,7 @@ class MenuPages(unittest.TestCase):
         ]}
         blocks = menu_pages.connections(state)
         self.assertEqual(self.commands(blocks), [
-            "page/chat", "connect/openbot", "connect/grokbot", "action/link-grok",
+            "page/chat", "connect/openbot", "connect/grokbot", "action/link-grok", "connect/hermesbot",
             "connection-toggle/here", "page/connection/here", "connection-remove/here",
             "connection-toggle/there", "page/connection/there", "connection-remove/there",
             "page/connection"])

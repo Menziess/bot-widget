@@ -247,6 +247,14 @@ def connections(state: dict) -> list:
         blocks.append(_button("Copy chief prompt", "action/copy-grok-prompt"))
     else:
         blocks.append(_button("Link Grok bots", "action/link-grok"))
+    blocks.append(plain_block("gap"))
+    hermes = state.get("hermes")
+    blocks.append(_toggle("Hermes Bot", "connect/hermesbot", hermes or "hermesbot" in wanted))
+    if hermes:
+        note = "Detected"
+    else:
+        note = "Waiting for Hermes Bot to be installed" if "hermesbot" in wanted else "Not found"
+    blocks.append({**_row((note, "dim")), "indent": 44})
     blocks += [plain_block("gap"), _heading("Model connections"),
                _row(("Each one is on or off, like OpenBot. Off stops the bots that use it. "
                      "The key stays in its file.", "dim"))]

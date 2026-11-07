@@ -15,6 +15,7 @@ from botwidget import __version__, acp_bots, acplink, channel, checkout, grok_re
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
+    HERMES_URL,
     OPENBOT_URL,
     STATE_PATH,
     UNLINKED_ID,
@@ -529,7 +530,7 @@ class Faces(QObject):
         "debug": lambda faces, on: faces._set_debug(on),
     }
     CONNECTIONS = {"openbot": "openbot", "grokbot": "gbot", "hermesbot": "hermes"}
-    LINKS = {"openbot": OPENBOT_URL, "grokbot": GROKBOT_URL, "hermesbot": updates.DOWNLOAD_URL, "download": updates.DOWNLOAD_URL}
+    LINKS = {"openbot": OPENBOT_URL, "grokbot": GROKBOT_URL, "hermesbot": HERMES_URL, "download": updates.DOWNLOAD_URL}
 
     def _stop_guest(self, ident: str):
         guest = self._arc_guests.pop(ident, None)

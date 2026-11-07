@@ -20,6 +20,7 @@ STATE_PATH = os.path.join(APP_DIR, "faces.json")
 
 OPENBOT_URL = "https://openbot.run/"
 GROKBOT_URL = "https://x.ai/bot"
+HERMES_URL = "https://hermes-agent.nousresearch.com/"
 
 # The face shown as long as none of the user's bots is found.
 UNLINKED_ID = "unlinked"
