@@ -152,6 +152,21 @@ class Markdown(unittest.TestCase):
         self.assertEqual(len(lines), theme.BUBBLE_CODE_LINES + 1)
         self.assertEqual(lines[-1], "\u2026")
 
+    def test_an_unclosed_fence_still_keeps_the_lines(self):
+        """Should keep the code when the closing fence never arrives."""
+        blocks = markdown.md_blocks("```\nprint(1)")
+        self.assertEqual(blocks[-1]["lines"], ["print(1)"])
+
+    def test_a_broken_link_keeps_its_address(self):
+        """Should show the address itself when it cannot be parsed."""
+        self.assertEqual(markdown.url_host("http://[::1"), "http://[::1")
+
+    def test_a_blank_turn_is_skipped(self):
+        """Should leave out a turn that has no words."""
+        blocks = markdown.conversation_blocks(
+            [{"role": "user", "text": "  "}, {"role": "bot", "text": "hoi"}], "Robo")
+        self.assertEqual(markdown.block_text(blocks), "hoi")
+
     def test_block_text_is_plain(self):
         self.assertEqual(markdown.block_text(markdown.md_blocks("**bold** and *italic*")), "bold and italic")
         self.assertEqual(markdown.block_text(markdown.md_blocks("# Heading")), "Heading")
@@ -193,6 +208,34 @@ class AvatarProfile(unittest.TestCase):
         profile = avatar.avatar_profile("", None)
         self.assertIn(profile["shape"], avatar.SUPPORTED_SHAPES)
         self.assertGreater(profile["bottom"], 0)
+
+    def test_a_hard_look_stays_inside_the_face_and_a_mark_can_be_drawn(self):
+        """Should clamp a turn that would put the eyes outside, and draw a mark and a body."""
+        from botwidget import body3d
+        from botwidget.grok_marks import GROK_MARKS
+        dx, dy = avatar.grok_look(80, 80)
+        self.assertLessEqual((dx * dx + dy * dy) ** 0.5, avatar.LOOK_MAX + 0.05)
+        shape = next(name for name in GROK_MARKS if name not in avatar.GROK_SHAPES)
+        self.assertTrue(avatar.mark_path(shape, 10, 0, 0).startswith("M"))
+        self.assertTrue(avatar.mark_drawn({"grok": True, "shape": shape}))
+        self.assertIn("C", avatar.silhouette_path(avatar.silhouette_radii("cercle"), 10, 0, 0))
+        curve, _shift = avatar.expressed_eye("sleepy", 0, (0.26, 0.57, 0.0), 0.8, 1.0, 0.2)
+        self.assertGreater(len(curve), 2)
+        profile = avatar.avatar_profile("agent-1", None)
+        self.assertIn("M", avatar.body_path(profile, 10, 20, 40, 50, 50))
+        for name in avatar.SUPPORTED_SHAPES:
+            avatar.openbot_surface(name, 0.2, 0.1)
+        self.assertEqual(avatar.xml_escape("a<b>&"), "a&lt;b&gt;&amp;")
+        pulled = avatar._within([(1.0, 0.0), (2.0, 0.0)])([(4.0, 0.0)])
+        self.assertEqual(len(pulled), 1)
+        self.assertEqual(avatar.avatar_svg("rest", "agent-1")[:4], "<svg")
+        points = body3d.radii_points((1.0, 0.8, 1.0, 0.8))
+        self.assertEqual(len(body3d.radii_of(points, 8)), 8)
+        self.assertEqual(len(body3d._stroke([(0.0, 0.0)], 0.1)), 28)
+        self.assertEqual(body3d._hull([(0.0, 0.0), (1.0, 0.0)]), [(0.0, 0.0), (1.0, 0.0)])
+        solid = body3d._solid({"kind": "roundedSlab", "half_depth": 0.2, "edge": 0.05,
+                               "ring": ((1.0, 1.0), (1.0, -1.0), (-1.0, -1.0), (-1.0, 1.0))})
+        self.assertGreater(len(solid), 4)
 
     def test_a_grok_bot_wears_the_shape_and_colour_grok_bot_draws_for_it(self):
         profile = avatar.avatar_profile("grok:General", None, {"shape": "blob", "color": "black"})
@@ -633,6 +676,12 @@ class BubbleLayout(unittest.TestCase):
         self.assertEqual(rects[0][0], 0)
         self.assertGreater(rects[1][0], rects[0][0] + rects[0][1], "a gap between the panels")
         self.assertEqual(rects[-1][0] + rects[-1][1], content_height(panels))
+
+    def test_a_block_the_layout_does_not_know_is_left_out(self):
+        """Should skip a kind it cannot draw, and a panel that then has no lines."""
+        laid, _width = bubble_layout.md_layout(self.measure, [{"kind": "nope"}], 200)
+        self.assertEqual(laid, [])
+        self.assertEqual(bubble_layout.bubble_panels(self.measure, [{"kind": "nope"}]), [])
 
     def test_bubble_height_cap_is_four_face_heights_plus_chrome(self):
         from botwidget.avatar import AVATAR_SIZE
@@ -1559,6 +1608,24 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_new_answer_sounds_when_the_face_is_out_of_view(self):
         self.assertEqual(self.answer_sounds(visible=False), 1)
+
+    def test_a_reply_opens_even_when_those_words_were_already_prepared(self):
+        """Should open the answer by itself when the face already knows the words."""
+        from botwidget.markdown import block_text
+        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
+        self.assertFalse(self.window.bubble.isVisible())
+        reply = self.MESSAGES + [{"role": "bot", "text": "Nieuw."}]
+        messages = self.window._with_local(reply)
+        self.window._shown_text = block_text(self.window._chat_blocks(messages, greet=False))
+        self.window._sync_bubble({"messages": reply, "activity": ""})
+        self.assertEqual(self.window.bubble.kind, "say")
+
+    def test_parking_on_the_arc_keeps_an_open_command_list(self):
+        """Should leave the right-click list open when the face is placed on the arc."""
+        self.window.open_command_menu()
+        self.assertTrue(self.window.bubble._list_only)
+        self.window._set_semicircle({self.window.agent_id: {"visible": True, "size": 48, "x": 20, "y": 20}})
+        self.assertTrue(self.window.bubble._list_only)
 
     def test_nothing_sounds_while_the_bot_is_still_working_and_one_beep_when_it_is_done(self):
         from unittest import mock
@@ -5661,6 +5728,27 @@ class MenuPages(unittest.TestCase):
             "page/connection"])
         self.assertIn("☑ Local · qwen", self.text(blocks))
         self.assertIn("☐ Other · off · other", self.text(blocks))
+
+    def test_a_grok_status_drops_the_repeated_name_and_names_who_it_talks_to(self):
+        """Should not say Grok Bot twice, and should name the bot it reached."""
+        text = self.text(menu_pages.connections({
+            **self.STATE, "gbot": True, "grok": "Grok Bot is ready", "grok_target": "local"}))
+        self.assertIn("is ready", text)
+        self.assertIn("talks to local", text)
+        self.assertNotIn("Grok Bot is ready", text)
+
+    def test_an_error_is_shown_on_the_page_that_caused_it(self):
+        """Should put a save error on that page, and offer remove only while editing."""
+        self.assertIn("bad json", self.text(menu_pages.widget_json({**self.STATE, "json_error": "bad json"})))
+        self.assertIn("no address", self.text(menu_pages.connections(
+            {**self.STATE, "connection_error": "no address"})))
+        form = menu_pages.connection_form({
+            **self.STATE, "connection_error": "no address",
+            "connection_form": {"id": "c1", "stored_id": "c1", "name": "Local"}})
+        text = self.text(form)
+        self.assertIn("no address", text)
+        self.assertIn("Remove connection", text)
+        self.assertEqual(menu_pages._command("Bots", "/bots"), ("Bots", "cmd:/bots"))
 
     def test_every_page_leads_back_to_the_chat(self):
         for page in menu_pages.PAGES:

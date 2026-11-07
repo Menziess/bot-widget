@@ -7,6 +7,7 @@ turns it into the dictionary the bubble draws from.
 import asyncio
 import inspect
 import os
+import shlex
 import time
 from dataclasses import dataclass, field
 
@@ -43,6 +44,11 @@ class Turn:
     @property
     def total_ms(self) -> int:
         return round((self.ended - self.started) * 1000) if self.ended else 0
+
+
+def split_command(command: str) -> list[str]:
+    """Split a command line. POSIX shlex treats \\ as an escape, which deletes a Windows path."""
+    return shlex.split(command, posix=(os.name != "nt"))
 
 
 def _text_of(content) -> str:

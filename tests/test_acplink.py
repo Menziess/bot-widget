@@ -75,6 +75,20 @@ class Configured(unittest.TestCase):
             link._environment()
         self.assertIn("/nonexistent/llm/key", str(caught.exception))
 
+    def test_a_prefixed_id_is_kept_once_and_the_connection_supplies_the_key(self):
+        """Should ignore a second bot with the same id, and read the key file from the connection."""
+        config = {"connections": [{"id": "c", "base_url": "http://127.0.0.1:9/v1", "model": "qwen",
+                                   "key_file": "/keys/one", "enabled": True}],
+                  "acp_bots": [
+                      {"id": "acp:same", "name": "One", "command": "python -m harness.agent", "connection": "c"},
+                      {"id": "acp:same", "name": "Two", "command": "python -m harness.agent", "connection": "c"},
+                  ]}
+        with mock.patch.object(acplink, "widget_config", return_value=config):
+            bots = acplink.configured_bots()
+        self.assertEqual([bot["id"] for bot in bots], ["acp:same"])
+        self.assertEqual(bots[0]["key_file"], "/keys/one")
+        self.assertEqual(bots[0]["env"]["HARNESS_MODEL"], "qwen")
+
 
 class AcpTurns(unittest.TestCase):
     def link(self, **kwargs) -> AcpLink:
@@ -125,7 +139,12 @@ class AcpTurns(unittest.TestCase):
                 return Turn(stop_reason="refusal", error="HTTP 401: invalid api key")
 
         async def fake_ensure():
-            return Stub()
+            # Boot may call this stand-in before the real opener clears the flag.
+            try:
+                return Stub()
+            finally:
+                with link._lock:
+                    link._booting = False
 
         link._ensure = fake_ensure
         link.send("hoi")
@@ -206,6 +225,80 @@ class AcpTurns(unittest.TestCase):
         self.assertTrue(wait_for(lambda: not link.active()))
         self.assertIn("did not start", link.chat()["failed"])
         self.assertTrue(link.stopped)
+
+    def test_a_second_send_waits_and_a_silent_turn_says_nothing_came_back(self):
+        """Should refuse a send while one is running, and say so when a turn ends with no words."""
+        import asyncio
+        from harness.acp_client import Turn, Update
+        link = self.link()
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertFalse(link.due())
+        self.assertFalse(link.is_polling)
+        link.poll()
+        link.request_fetch()
+        link._note = "old"
+        link.resume()
+        self.assertEqual(link.note(), "")
+        link._sending = True
+        ok, why = link.send("again")
+        self.assertFalse(ok)
+        self.assertIn("still answering", why)
+        link._sending = False
+        link._loading = True
+        link._updated(Update("text", "eerste"))
+        link._updated(Update("text", " tweede"))
+        self.assertEqual(link._history[-1]["text"], "eerste tweede")
+        link._loading = False
+        link._updated(Update("tool", "   "))
+        link._updated(Update("tool", "read file"))
+        self.assertIn("read file", link.chat()["activity"])
+        link._updated(Update("usage", extra={"used": 1, "size": 0}))
+        self.assertEqual(link.note(), "")
+        link.decide("no-such-request", False)
+        link.cancel()
+
+        class Stub:
+            async def prompt(self, text):
+                return Turn(stop_reason="end_turn")
+
+        async def fake_ensure():
+            try:
+                return Stub()
+            finally:
+                with link._lock:
+                    link._booting = False
+
+        link._ensure = fake_ensure
+        link.send("silent")
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertIn("no answer", link.note())
+        with mock.patch.object(acplink.os, "makedirs", side_effect=OSError("ro")):
+            link._save_session("abc")
+        with mock.patch.object(acplink, "PERMISSION_WAIT_S", 0.05):
+            answered = asyncio.run_coroutine_threadsafe(link._ask("Write"), link._loop).result(2)
+        self.assertFalse(answered)
+        self.assertIn("No answer", link.note())
+
+    def test_closing_a_client_that_fails_still_stops_the_loop(self):
+        """Should ignore a client that errors while closing, and a loop that is already gone."""
+        link = self.link()
+
+        class Bad:
+            async def __aexit__(self, *args):
+                raise RuntimeError("bye")
+
+        link._client = Bad()
+        link.close()
+        self.assertTrue(link._closed)
+
+    def test_closing_again_after_the_loop_has_stopped_still_finishes(self):
+        """Should give up when the background loop is already gone."""
+        link = self.link()
+        self.assertTrue(wait_for(lambda: not link.active()))
+        link.close()
+        link._closed = False
+        link.close()
+        self.assertTrue(link._closed)
 
 
 class AcpFace(unittest.TestCase):

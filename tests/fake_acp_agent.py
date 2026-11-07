@@ -71,11 +71,27 @@ def ask_permission(request_id, session_id: str, title: str) -> str:
             return message.get("result", {}).get("outcome", {}).get("optionId", "no")
 
 
+def _stdin_ready(seconds: float) -> bool:
+    """True when a line is waiting. select() only watches sockets on Windows, so a pipe never looks ready."""
+    if os.name != "nt":
+        import select
+        ready, _, _ = select.select([sys.stdin], [], [], seconds)
+        return bool(ready)
+    import ctypes
+    import msvcrt
+    handle = msvcrt.get_osfhandle(sys.stdin.fileno())
+    avail = ctypes.c_ulong()
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if ctypes.windll.kernel32.PeekNamedPipe(handle, None, 0, None, ctypes.byref(avail), None) and avail.value:
+            return True
+        time.sleep(0.01)
+    return False
+
+
 def read_while_busy(seconds: float) -> list[dict]:
     """Read whatever arrived on stdin during a wait, so a cancel is seen mid-turn."""
-    import select
-    ready, _, _ = select.select([sys.stdin], [], [], seconds)
-    if not ready:
+    if not _stdin_ready(seconds):
         return []
     line = sys.stdin.readline()
     if not line.strip():

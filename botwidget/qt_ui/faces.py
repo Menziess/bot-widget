@@ -1079,7 +1079,8 @@ class Faces(QObject):
         """
         on_top = always_on_top()
         guests = getattr(self, "_arc_guests", {})
-        for face in list(getattr(self, "faces", {}).values()) + list(guests.values()):
+        faces = list(getattr(self, "faces", {}).values()) + list(guests.values())
+        for face in faces:
             if not face.isVisible():
                 pass
             elif on_top or getattr(face, "_arc_guest", False):
@@ -1087,12 +1088,11 @@ class Faces(QObject):
             else:
                 face.lower()
                 send_behind_windows(native_id(face))
+        # After every face, so an arc guest cannot sit on top of a menu that was just opened.
+        for face in faces:
             bubble = getattr(face, "bubble", None)
             if bubble is not None and bubble.isVisible():
                 bubble.raise_()
-        for face in guests.values():
-            if face.isVisible():
-                face.raise_()
 
     def _drag_in_progress(self) -> bool:
         held = list(getattr(self, "faces", {}).values()) + list(getattr(self, "_arc_guests", {}).values())

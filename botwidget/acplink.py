@@ -11,12 +11,11 @@ import concurrent.futures
 import json
 import os
 import re
-import shlex
 import threading
 import time
 
 from botwidget.config import widget_config
-from harness.acp_client import AcpClient
+from harness.acp_client import AcpClient, split_command
 
 PREFIX = "acp:"
 DEFAULT_TARGET = "hermes-acp"
@@ -342,7 +341,7 @@ class AcpLink:
         room = self.room()
         os.makedirs(room, exist_ok=True)
         env = self._environment()
-        client = AcpClient(*shlex.split(self.target), cwd=room, env=env,
+        client = AcpClient(*split_command(self.target), cwd=room, env=env,
                            allow=self._ask, on_update=self._updated)
         await client.__aenter__()
         with self._lock:

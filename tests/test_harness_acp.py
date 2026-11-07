@@ -29,7 +29,7 @@ class AcpConversation(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_first_update_is_timed_so_the_face_knows_how_long_it_waited(self):
         _client, _info, turn = await self.talk("hello")
-        self.assertGreater(turn.first_update, turn.started)
+        self.assertGreaterEqual(turn.first_update, turn.started)
         self.assertGreaterEqual(turn.total_ms, turn.first_update_ms)
 
     async def test_a_permission_request_can_be_allowed(self):

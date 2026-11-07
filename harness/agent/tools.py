@@ -106,13 +106,12 @@ class Tools:
         """Connect to the MCP server, if one is configured; a broken one must not take the bot down."""
         if not self.mcp_command or self._session is not None:
             return
-        import shlex
-
+        from harness.acp_client import split_command
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
 
         try:
-            command = shlex.split(self.mcp_command)
+            command = split_command(self.mcp_command)
             params = StdioServerParameters(command=command[0], args=command[1:], env={**os.environ})
             read, write = await self._stack.enter_async_context(stdio_client(params))
             self._session = await self._stack.enter_async_context(ClientSession(read, write))

@@ -10,15 +10,14 @@ AFTER` cancels the turn after that many seconds, to see the cancelled stop reaso
 
 import argparse
 import asyncio
-import shlex
 import sys
 import time
 
-from harness.acp_client import AcpClient
+from harness.acp_client import AcpClient, split_command
 
 
 async def run(command: str, prompt: str, cwd: str | None, allow: bool, cancel_after: float) -> int:
-    client = AcpClient(*shlex.split(command), cwd=cwd, allow=lambda title: allow)
+    client = AcpClient(*split_command(command), cwd=cwd, allow=lambda title: allow)
     client.on_update = lambda update: print(f"  {update.kind}: {update.text}", flush=True)
     try:
         async with client:

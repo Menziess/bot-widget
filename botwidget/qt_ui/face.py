@@ -429,7 +429,10 @@ class FaceWindow(QWidget):
             return
         self._semicircle_visible = True
         self.pinned = False
-        self.bubble.close_bubble("semicircle")
+        # A right-click just opened this list and then parked the face on the arc. Closing it here
+        # made the menu vanish before the pointer could reach it, and the next faces covered it.
+        if not self.bubble._list_only:
+            self.bubble.close_bubble("semicircle")
         size = int(info["size"])
         if self.width() != size:
             self.setFixedSize(size, size)
@@ -784,7 +787,7 @@ class FaceWindow(QWidget):
         super().enterEvent(event)
         self._entered_at = time.monotonic()
         # Coming back onto the face, or onto a bot of the arc, cancels the close.
-        if self.faces is not None and self.faces._semicircle_phase != "idle":
+        if self.faces is not None and getattr(self.faces, "_semicircle_phase", "idle") != "idle":
             self.faces.semicircle_pointer_here()
 
     def leaveEvent(self, event):
@@ -793,7 +796,7 @@ class FaceWindow(QWidget):
         # Wayland cannot see the pointer in the gaps. The face that was right-clicked is not on the
         # arc, so leaving it has to start the hide too, not only leaving one of the bots.
         if self.isVisible() and self.faces is not None and (
-                self._semicircle_visible or self.faces._semicircle_phase != "idle"):
+                self._semicircle_visible or getattr(self.faces, "_semicircle_phase", "idle") != "idle"):
             self.faces.semicircle_pointer_left()
 
     def pointer_over(self) -> bool:
@@ -1520,8 +1523,8 @@ class FaceWindow(QWidget):
             self._shown_text = text
             if not self.bubble.shows("say", text, True):
                 self.bubble.show_blocks(blocks, "say", input=True, older=older, hover_field=hover_field)
-        elif blocks and (force or text != self._shown_text):
-            # Only new text brings the bubble back by itself; after it slid away it stays away.
+        elif blocks and (force or show_now or text != self._shown_text):
+            # A reply opens even when those words were already laid out for a later hover.
             self._shown_text = text
             self.bubble.show_blocks(blocks, "say", input=True, older=older, hover_field=hover_field)
         elif not blocks and self.bubble.kind and not self.bubble._list_only:

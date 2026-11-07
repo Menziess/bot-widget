@@ -108,10 +108,12 @@ class ItemRow(QWidget):
         painter.drawText(QRectF(CONTROL_SWITCH_W, 0, max(1, self._title_w), self.height()),
                          Qt.AlignVCenter | Qt.AlignLeft, title)
         for label, _command, rect in self._hits:
+            # "Again" is the second click that really removes; "Unmute" means the bot is muted.
+            marked = label in ("Again", "Unmute")
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(28, 28, 28, 14))
+            painter.setBrush(color(SAND_ACCENT) if marked else QColor(28, 28, 28, 14))
             painter.drawRoundedRect(rect, 14, 14)
-            painter.setPen(color(SAND_INK))
+            painter.setPen(QColor("#ffffff") if marked else color(SAND_INK))
             painter.drawText(rect, Qt.AlignCenter, label)
 
 

@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from botwidget import acp_bots, acplink, config
 from botwidget.avatar import GROK_HEX, avatar_profile
@@ -38,6 +39,11 @@ class ConfigFile(unittest.TestCase):
         saved = config.widget_config()
         self.assertEqual(saved["acp_bots"][0]["name"], "A")
         self.assertIs(saved["sound"], True)
+
+    def test_without_a_checkout_the_command_is_just_the_agent(self):
+        """Should not point PYTHONPATH at a folder that has no harness."""
+        with mock.patch.object(acp_bots.os.path, "isdir", return_value=False):
+            self.assertEqual(acp_bots.default_command(), f"{sys.executable} -m harness.agent")
 
     def test_a_file_that_cannot_be_read_is_not_replaced(self):
         with open(config.CONFIG_PATH, "w") as fh:
@@ -196,6 +202,76 @@ class BotForm(unittest.TestCase):
         profile = avatar_profile("acp:local", None, {"shape": "nuage", "color": "blue"})
         self.assertEqual(profile["shape"], "nuage")
         self.assertEqual(profile["hex"], GROK_HEX["blue"])
+
+    def test_a_form_that_cannot_be_saved_says_why(self):
+        """Should name the missing piece, and keep a pasted key out of the file."""
+        blank = acp_bots.blank()
+        self.assertIn("name", acp_bots.commit({**blank, "name": ""}, [])[1])
+        self.assertIn("name", acp_bots.commit({**blank, "name": "a\nb"}, [])[1])
+        self.assertIn("http", acp_bots.commit({**blank, "name": "Ada", "base_url": "ftp://x"}, [])[1])
+        self.assertIn("model", acp_bots.commit(
+            {**blank, "name": "Ada", "base_url": "http://x", "model": ""}, [])[1])
+        self.assertIn("key", acp_bots.commit(
+            {**blank, "name": "Ada", "base_url": "http://x", "model": "m", "key_file": ""}, [])[1])
+        self.assertIn("face", acp_bots.commit({**blank, "name": "Ada", "face": "nope"}, [])[1])
+        self.assertIn("colour", acp_bots.commit({**blank, "name": "Ada", "color": "nope"}, [])[1])
+        self.assertIn("id", acp_bots._entry({**blank, "name": "Ada", "stored_id": "ada"}, None, {"ada"})[1])
+        self.assertIn("connection", acp_bots.commit({**blank, "name": "Ada", "connection": "gone"}, [], [])[1])
+        saved, error = acp_bots.commit({**blank, "name": "Ada", "stored_id": "acp:ada"}, [])
+        self.assertEqual(error, "")
+        self.assertEqual(saved[0]["id"], "ada")
+        again, error = acp_bots.commit({**blank, "name": "Ada"}, saved)
+        self.assertEqual(error, "")
+        self.assertEqual(again[1]["id"], "ada-2")
+        legacy, error = acp_bots.commit({**blank, "name": "Ada 2", "stored_id": "ada"},
+                                        [{"name": "Ada", "command": "run"}])
+        self.assertEqual(error, "")
+        self.assertEqual(legacy[0]["id"], "ada")
+        self.assertEqual(acp_bots.cycle("face", "nope"), acp_bots.FACES[0])
+        self.assertEqual(acp_bots.cycle_connection("nope", []), "")
+        self.assertEqual(acp_bots.public_connections(["x", {"id": "", "name": "A"}, {"name": "A"}]), [])
+        base = acp_bots.blank_connection()
+        self.assertIn("name", acp_bots.commit_connection({**base, "name": "\n"}, [])[1])
+        self.assertIn("http", acp_bots.commit_connection({**base, "name": "A", "base_url": "nope"}, [])[1])
+        self.assertIn("model", acp_bots.commit_connection(
+            {**base, "name": "A", "base_url": "http://x", "model": ""}, [])[1])
+        self.assertIn("key", acp_bots.commit_connection(
+            {**base, "name": "A", "base_url": "http://x", "model": "m", "key_file": ""}, [])[1])
+        made, error = acp_bots.commit_connection({**base, "name": "A"}, [])
+        self.assertEqual(error, "")
+        self.assertEqual(acp_bots.cycle_connection("nope", made), made[0]["id"])
+        self.assertEqual(acp_bots.cycle_connection(made[0]["id"], made), "")
+        self.assertEqual(acp_bots.parse_editor('{"acp_bots": [{"name": "A", "command": "c"}]}')[1], "")
+        self.assertEqual(acp_bots.parse_editor('{"connections": [{"id": "a", "name": "A"}]}')[1], "")
+        self.assertIsNone(acp_bots.set_connection_on(made, "missing", True))
+        off = acp_bots.set_connection_on(made, made[0]["id"], False)
+        back, error = acp_bots.commit_connection({**base, "name": "B"}, off)
+        self.assertEqual(error, "")
+        self.assertEqual(back[0].get("enabled"), False)
+        on = acp_bots.set_connection_on(off, made[0]["id"], True)
+        self.assertNotIn("enabled", on[0])
+        self.assertEqual(acp_bots.plan([], [{"id": "a"}]), [("open", "a")])
+        self.assertEqual(acp_bots.without(None, "acp:a"), [])
+        self.assertFalse(acp_bots.connection_in_use("nope", "a"))
+        self.assertIn("JSON", acp_bots.parse_editor("{")[1])
+        self.assertIn("object", acp_bots.parse_editor("[]")[1])
+        self.assertIn("api_key", acp_bots.parse_editor('{"api_key": "x"}')[1])
+        self.assertIn("list", acp_bots.parse_editor('{"acp_bots": {}}')[1])
+        self.assertIn("object", acp_bots.parse_editor('{"acp_bots": [1]}')[1])
+        self.assertIn("name", acp_bots.parse_editor('{"acp_bots": [{}]}')[1])
+        self.assertIn("env", acp_bots.parse_editor(
+            '{"acp_bots": [{"name": "A", "command": "c", "env": []}]}')[1])
+        self.assertIn("face", acp_bots.parse_editor(
+            '{"acp_bots": [{"name": "A", "command": "c", "face": "nope"}]}')[1])
+        self.assertIn("colour", acp_bots.parse_editor(
+            '{"acp_bots": [{"name": "A", "command": "c", "color": "nope"}]}')[1])
+        self.assertIn("list", acp_bots.parse_editor('{"connections": {}}')[1])
+        self.assertIn("object", acp_bots.parse_editor('{"connections": [1]}')[1])
+        self.assertIn("name", acp_bots.parse_editor('{"connections": [{}]}')[1])
+        self.assertIn("id", acp_bots.parse_editor(
+            '{"connections": [{"id": "a", "name": "A"}, {"id": "a", "name": "B"}]}')[1])
+        self.assertIn("token", acp_bots.parse_editor('{"bots": [{"token": "x"}]}')[1])
+        self.assertNotIn("x", acp_bots.public_text({"items": [{"token": "x"}], "name": "A"}))
 
 
 class WidgetSave(unittest.TestCase):
@@ -443,6 +519,7 @@ class EditPage(unittest.TestCase):
         with mock.patch.object(QGuiApplication, "platformName", return_value="xcb"), \
                 mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
                 mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer):
+            bubble._physics.stop()
             self.assertTrue(window.pointer_near(bubble), "the pointer is on the bots page")
             row.press_at(edit.center().x())
             self.app.processEvents()

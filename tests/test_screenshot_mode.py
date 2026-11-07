@@ -236,6 +236,63 @@ class ScreenshotOverlay(unittest.TestCase):
         # paintEvent should not raise
         overlay.paintEvent(QPaintEvent(QRect(0, 0, 400, 300)))
 
+    def test_a_drag_a_failed_picture_and_a_missing_screen_stay_in_process(self):
+        """Should cancel a tiny drag, ignore a middle click, and stop when the picture will not encode."""
+        from PySide6.QtCore import QEvent, QPointF
+        from PySide6.QtGui import QImage, QKeyEvent, QMouseEvent, QPixmap
+        from botwidget.qt_ui.screenshot import (
+            _finalize_screenshot, enter_screenshot_mode, pixmap_png_bytes, screen_grab)
+
+        window = self.face.FaceWindow("shot", "Shot", spot=(300, 400))
+        self.addCleanup(window.close_face)
+        window._poll_timer.stop()
+        window._anim_timer.stop()
+        window.faces = mock.Mock()
+        window.faces.faces = {}
+        window.on_user_message = mock.Mock()
+        overlay = enter_screenshot_mode(window)
+        self.addCleanup(overlay.close)
+        overlay.mousePressEvent(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(3, 3), Qt.MouseButton.MiddleButton,
+            Qt.MouseButton.MiddleButton, Qt.KeyboardModifier.NoModifier))
+        self.assertFalse(overlay._mouse_down)
+        overlay.mouseMoveEvent(QMouseEvent(
+            QEvent.Type.MouseMove, QPointF(4, 4), Qt.MouseButton.NoButton,
+            Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier))
+        overlay.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key_A, Qt.KeyboardModifier.NoModifier))
+        self.assertIsNone(overlay.grab_region())
+        overlay._rect = (1, 1, 8, 8)
+        grabbed = overlay.grab_region()
+        self.assertTrue(grabbed is None or hasattr(grabbed, "isNull"))
+        shot = screen_grab((1, 1, 8, 8))
+        self.assertTrue(shot is None or hasattr(shot, "isNull"))
+        with mock.patch("botwidget.qt_ui.screenshot.QGuiApplication.primaryScreen", return_value=None):
+            self.assertIsNone(overlay.grab_region())
+            self.assertIsNone(screen_grab((0, 0, 2, 2)))
+        picture = QPixmap(8, 8)
+        picture.fill(Qt.red)
+        with mock.patch.object(QImage, "save", return_value=False):
+            self.assertIsNone(pixmap_png_bytes(picture))
+        _finalize_screenshot(window, [], (0, 0, 1, 1), QPixmap())
+        window.on_user_message.assert_not_called()
+        overlay._rect = (0, 0, 20, 20)
+        overlay._mouse_down = True
+        with mock.patch.object(overlay, "grab_region", return_value=None):
+            overlay.mouseReleaseEvent(QMouseEvent(
+                QEvent.Type.MouseButtonRelease, QPointF(20, 20), Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+        again = enter_screenshot_mode(window)
+        self.addCleanup(again.close)
+        again.mouseReleaseEvent(QMouseEvent(
+            QEvent.Type.MouseButtonRelease, QPointF(3, 3), Qt.MouseButton.RightButton,
+            Qt.MouseButton.RightButton, Qt.KeyboardModifier.NoModifier))
+        again.mousePressEvent(QMouseEvent(
+            QEvent.Type.MouseButtonPress, QPointF(2, 2), Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+        again.mouseReleaseEvent(QMouseEvent(
+            QEvent.Type.MouseButtonRelease, QPointF(3, 3), Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+
 
 class ScreenshotPngEncoding(unittest.TestCase):
     """pixmap_png_bytes encodes a QPixmap as valid PNG bytes."""

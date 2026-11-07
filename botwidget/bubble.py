@@ -170,7 +170,9 @@ def panel_svg(panels: list, box_w: int, ox: float = 0, oy: float = 0, spots: lis
                 # The group is two gaps wide; its middle dot sits in the middle of the cloud.
                 spot = (ox + box_w / 2 - DOTS_GAP, tops[n] + line_height(line) / 2, ink, line.get("phase", 0.0))
                 if spots is None:
-                    out.append(dots_svg(*spot))
+                    # The spot is (x, y, ink, phase), the order the patch path stores. dots_svg takes the phase first.
+                    x, y, ink, phase = spot
+                    out.append(dots_svg(x, y, phase, ink))
                 else:
                     spots.append(spot)
             elif line["kind"] == "more":
