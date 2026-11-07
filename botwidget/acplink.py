@@ -234,12 +234,12 @@ class AcpLink:
             return self._note or self._context
 
     def cancel(self) -> None:
-        """Stop the running turn; the agent ends it with the cancelled stop reason. With nothing
-        running there is nothing to stop, and a cancel sent anyway would end the next turn."""
-        if not self.active():
+        """Stop the turn that is answering. Starting up is not a turn: a cancel then would end the next one."""
+        with self._lock:
+            sending = self._sending
+        if not sending or self._client is None:
             return
-        if self._client is not None:
-            asyncio.run_coroutine_threadsafe(self._client.cancel(), self._loop)
+        asyncio.run_coroutine_threadsafe(self._client.cancel(), self._loop)
 
     def close(self) -> None:
         """Stop the agent process and the loop behind it."""
