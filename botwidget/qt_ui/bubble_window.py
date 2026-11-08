@@ -16,6 +16,7 @@ from PySide6.QtCore import (
     QBuffer,
     QByteArray,
     QEasingCurve,
+    QEvent,
     QIODevice,
     QPoint,
     QRect,
@@ -878,6 +879,7 @@ class BubbleWindow(QWidget):
         self._entry.dismissed.connect(face.unpin)
 
         self._held = None  # QRect on the screen the window still covers after the card shrank under the pointer
+        self._tapped = False  # a finger touched this bubble: there is no hover to keep it open, so it stays
         self._physics = QTimer(self)
         self._physics.setInterval(16)
         self._physics.timeout.connect(self._tick)
@@ -1240,7 +1242,13 @@ class BubbleWindow(QWidget):
     def holding(self) -> bool:
         """The field has the keyboard, or words are selected to copy: the bubble stays for as long as one of those
         lasts. Words typed in a field you left stay as a draft; the bubble may go."""
-        return (self._input and (self._entry.hasFocus() or self._keep_draft)) or self._selecting()
+        return self._tapped or (self._input and (self._entry.hasFocus() or self._keep_draft)) or self._selecting()
+
+    def eventFilter(self, watched, event):
+        if (event.type() == QEvent.MouseButtonPress and event.source() != Qt.MouseEventNotSynthesized
+                and isinstance(watched, QWidget) and watched.window() is self):
+            self._tapped = True
+        return False
 
     def _selecting(self) -> bool:
         return self._doc.hasFocus() and self._doc.textCursor().hasSelection()
@@ -2479,6 +2487,8 @@ class BubbleWindow(QWidget):
             self._growth = None
             self.setWindowOpacity(1.0)
             self._was_near = False
+            self._tapped = False
+            QApplication.instance().removeEventFilter(self)
             self._near_at = 0.0
             self._had_focus = False
             self._wants_keys = False
@@ -2491,6 +2501,7 @@ class BubbleWindow(QWidget):
             self._list_only = False
             self._placed()
             return
+        QApplication.instance().installEventFilter(self)
         self.changed = time.monotonic()
         if not self._dots_on and self._dots_lines:
             self._dots_on = True

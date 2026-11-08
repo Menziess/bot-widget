@@ -3057,6 +3057,20 @@ class BubbleHover(unittest.TestCase):
             bubble.close_bubble("refresh")
             self.assertIsNone(bubble.holding_area(), "nor once closed")
 
+    def test_a_tap_keeps_the_bubble_open_without_a_hover(self):
+        """Should keep the bubble while a finger has touched it: a touch screen has no pointer to hover with."""
+        from unittest import mock
+        from PySide6.QtCore import QEvent, Qt
+        bubble = self.window.bubble
+        bubble.show_blocks(self.window._chat_blocks(self.MESSAGES, greet=True), "say")
+        self.assertFalse(bubble.holding())
+        tap = mock.Mock(**{"type.return_value": QEvent.MouseButtonPress,
+                           "source.return_value": Qt.MouseEventSynthesizedBySystem})
+        bubble.eventFilter(bubble, tap)
+        self.assertTrue(bubble.holding())
+        bubble.place("")
+        self.assertFalse(bubble.holding())
+
     def test_a_held_area_over_a_face_leaves_that_face_clickable(self):
         """The window that keeps a page's area must not take the clicks meant for a face under it: the face's
         spot is cut out of the window's shape (and so of its input) for as long as the area is held."""
