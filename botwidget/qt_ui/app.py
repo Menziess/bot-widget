@@ -4,7 +4,6 @@ import os
 import signal
 import sys
 
-import certifi
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
@@ -67,7 +66,9 @@ def main():
         run()
         return
     # The bundled OpenSSL looks for certificates in a folder of the build machine, so every https call failed.
-    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+    if getattr(sys, "frozen", False):
+        import certifi
+        os.environ.setdefault("SSL_CERT_FILE", certifi.where())
     # An update that was staged earlier takes effect now: the widget quits and starts again.
     updates.clean_staging()
     if auto_update() and updates.install_staged():
