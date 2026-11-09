@@ -852,6 +852,8 @@ class BubbleWindow(QWidget):
         self._entry.resized.connect(self._entry_resized)
         self._entry.attached.connect(self._attach)
         self._slash = SlashList(self._card)
+        self._slash.wheeled.connect(self._on_list_wheel)
+        self._list_pull = (0.0, 0.0)  # how far the command list was pulled, and when
         self._slash.chosen.connect(self._run_command)
         self._menu_line = MenuHandle(self)
         self._entry.textChanged.connect(self._update_commands)
@@ -1054,7 +1056,7 @@ class BubbleWindow(QWidget):
         self._dots_lines = []
         self._slash.show_rows(list(menu_pages.commands()))
         # As wide as the commands and their notes need, so nothing is cut; never wider than a chat bubble.
-        # No page line here: a wheel must not leave this list for the chat. A page has that line.
+        # No line to see here, but pulling the list up far enough goes back to the chat, see _on_list_wheel.
         self._geom = ([], max(MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60)), 0)
         self._built = ("commands",)
         self._growth = None
@@ -1984,6 +1986,18 @@ class BubbleWindow(QWidget):
         self._show_pull()
         if self._pull_px >= PULL_PX and self._growth is None and now >= self._older_until:
             self._pull_done()
+
+    def _on_list_wheel(self, pixels: float, momentum: bool):
+        """Scrolling up on the command list pulls it as far as a page's line, and then goes back to the chat."""
+        if not self._list_only or momentum or pixels <= 0:
+            return
+        now = time.monotonic()
+        pulled, last = self._list_pull
+        pulled = (pulled if now - last < 0.5 else 0.0) + pixels
+        self._list_pull = (pulled, now)
+        if pulled >= PULL_PX:
+            self._list_pull = (0.0, 0.0)
+            self.face.open_input()
 
     def _leave_menu(self) -> bool:
         """The line on the command list closes it. True when that line was pulled or tapped."""

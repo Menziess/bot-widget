@@ -826,7 +826,8 @@ class FaceWindow(QWidget):
         if not x_knows and QGuiApplication.applicationState() == Qt.ApplicationInactive:
             now = time.monotonic()
             self._inactive_since = self._inactive_since or now
-            if now - self._inactive_since > INACTIVE_GRACE_S:
+            # A bubble that keeps the area of the page it replaced was just clicked: you are busy with it.
+            if now - self._inactive_since > INACTIVE_GRACE_S and bubble.holding_area() is None:
                 return False
         else:
             self._inactive_since = 0.0

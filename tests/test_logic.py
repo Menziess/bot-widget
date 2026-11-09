@@ -2645,6 +2645,21 @@ class BubbleHover(unittest.TestCase):
             bubble._tick()
             self.assertFalse(bubble.isVisible(), "out of it: closed at once, the pointer had been on the bubble")
 
+    def test_the_held_area_stays_while_the_app_is_inactive(self):
+        """Should keep the page's area as hover area after a click even when the app is not the active one, as it is
+        on macOS: the bubble does not take the focus, and a smaller page would otherwise close after a second."""
+        import time
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive):
+            bubble, _page = self.back_arrow_leaves_the_pointer_outside()
+            self.assertIsNotNone(bubble.holding_area())
+            self.window._inactive_since = time.monotonic() - 5
+            bubble._was_near = True  # the pointer was on the bubble: leaving it closes it
+            bubble._tick()
+            self.assertTrue(bubble.isVisible())
+
     def test_on_xwayland_the_window_keeps_the_page_area_so_x_names_the_bubble_until_the_pointer_leaves(self):
         """XWayland only knows the pointer over X windows: after the back arrow the bubble's own window keeps
         the area of the page, see-through around the smaller card, so the X server names the bubble there."""
@@ -3056,6 +3071,30 @@ class BubbleHover(unittest.TestCase):
             self.assertIsNone(bubble.holding_area(), "nothing held while yielding")
             bubble.close_bubble("refresh")
             self.assertIsNone(bubble.holding_area(), "nor once closed")
+
+    def test_scrolling_up_on_the_command_list_goes_back_to_the_chat(self):
+        """Should pull the command list like a page's line: one notch does nothing, enough of them open the chat."""
+        from PySide6.QtCore import QPoint, QPointF, Qt
+        from PySide6.QtGui import QWheelEvent
+        from PySide6.QtWidgets import QApplication
+        self.window.faces = type("Faces", (), {"close_bubbles_except": lambda _s, _i: None,
+                                               "release_bots_arc": lambda _s: None,
+                                               "raise_bubbles": lambda _s: None})()
+        self.window.open_command_menu()
+        self.finish_growth()
+        bubble = self.window.bubble
+        self.assertTrue(bubble._list_only)
+
+        def wheel():
+            QApplication.sendEvent(bubble._slash, QWheelEvent(
+                QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, 120), Qt.NoButton, Qt.NoModifier,
+                Qt.NoScrollPhase, False))
+        wheel()
+        self.assertTrue(bubble._list_only, "one notch only pulls")
+        for _ in range(4):
+            wheel()
+        self.finish_growth()
+        self.assertFalse(bubble._list_only)
 
     def test_a_tap_keeps_the_bubble_open_without_a_hover(self):
         """Should keep the bubble while a finger has touched it: a touch screen has no pointer to hover with."""
