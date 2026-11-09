@@ -613,8 +613,7 @@ class FaceWindow(QWidget):
             box = getattr(self, "_drag_box", AVATAR_SIZE)
             cx = x + box / 2
             cy = y + box / 2
-            size = arc_drag_size(self.faces._in_hotspot(cx, cy), getattr(self, "_arc_guest", False),
-                                 len(self.faces.faces), AVATAR_SIZE)
+            size = arc_drag_size(self.faces._in_hotspot(cx, cy), getattr(self, "_arc_guest", False), AVATAR_SIZE)
             if size < AVATAR_SIZE and self.bubble.isVisible():
                 self.pinned = False
                 self.bubble.close_bubble("drag")

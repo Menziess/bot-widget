@@ -519,6 +519,53 @@ class GrokAvatarFallback(unittest.TestCase):
         self.assertFalse(opened.contains(QPoint(100, 60)), "the gap between the bots falls through")
         self.assertIsNotNone(app)
 
+    def test_a_bot_that_joins_the_arc_takes_the_last_slot_and_the_others_glide_up(self):
+        """Should move every bot of the arc from where it is to its new slot, the new one from where it was let go."""
+        from unittest import mock
+        from botwidget.qt_ui import faces as faces_module
+        from botwidget.qt_ui.faces import ARC_MOVE_S, Faces
+
+        class Timer:
+            active = False
+            def start(self): self.active = True
+            def stop(self): self.active = False
+
+        faces = Faces.__new__(Faces)
+        faces._hotspot = lambda: (800.0, 0.0)
+        faces._semicircle_phase, faces._semicircle_timer = "visible", Timer()
+        faces._emit_semicircle = lambda: None
+        faces.faces = {}
+        faces._arc_order = ["a"]
+        alone = faces._semicircle_positions(["a"])["a"]
+        faces._semicircle = {"a": {"x": alone[0], "y": alone[1], "slot_x": alone[0], "slot_y": alone[1]},
+                             "new": {"x": 700.0, "y": 300.0, "slot_x": 700.0, "slot_y": 300.0}}
+        faces._arc_order.append("new")
+        faces._glide_to_slots()
+        slots = faces._semicircle_positions(["a", "new"])
+        self.assertTrue(faces._semicircle_timer.active)
+        self.assertEqual((faces._semicircle["new"]["x"], faces._semicircle["new"]["y"]), (700.0, 300.0),
+                         "it starts where it was let go, not in its slot")
+        self.assertEqual((faces._semicircle["a"]["x"], faces._semicircle["a"]["y"]), alone, "the others start where they are")
+        start = time.monotonic()
+        with mock.patch.object(faces_module.time, "monotonic", return_value=start + ARC_MOVE_S / 2):
+            faces._semicircle_tick()
+        self.assertNotEqual(faces._semicircle["a"]["x"], alone[0], "on its way")
+        with mock.patch.object(faces_module.time, "monotonic", return_value=start + ARC_MOVE_S + 0.01):
+            faces._semicircle_tick()
+        for bid, slot in slots.items():
+            self.assertEqual((faces._semicircle[bid]["x"], faces._semicircle[bid]["y"]), slot)
+
+    def test_the_arc_stays_up_while_the_bubble_of_one_of_its_bots_is_open(self):
+        """Should not hide the arc under a bubble that opened from it: hovering that bubble is not leaving."""
+        from types import SimpleNamespace
+        from botwidget.qt_ui.faces import Faces
+        faces = Faces.__new__(Faces)
+        bubble = SimpleNamespace(visible=True, isVisible=lambda: bubble.visible)
+        faces._arc_guests = {"g": SimpleNamespace(bubble=bubble)}
+        self.assertTrue(faces._arc_bubble_open())
+        bubble.visible = False
+        self.assertFalse(faces._arc_bubble_open())
+
     def test_a_bot_of_the_arc_let_go_inside_the_arc_glides_back_to_its_slot(self):
         """Dragging a hidden bot around inside the arc and letting go: it snaps back like a drag-in does."""
         from unittest import mock
@@ -564,14 +611,13 @@ class GrokAvatarFallback(unittest.TestCase):
     def test_arc_bots_leave_the_centre_one_at_a_time_and_return_last_first(self):
         """Should hold later bots until the one before them has started, and reverse that on the way back."""
         from botwidget.qt_ui.faces import ARC_MOVE_S, ARC_STEP_S, arc_drop, arc_progress
-        self.assertEqual(arc_drop(True, False, 2), "off")
-        self.assertEqual(arc_drop(True, False, 1), "snap")
-        self.assertEqual(arc_drop(False, True, 1), "on")
-        self.assertEqual(arc_drop(False, False, 2), "out")
+        self.assertEqual(arc_drop(True, False), "off", "also the last face may go into the arc")
+        self.assertEqual(arc_drop(True, True), "snap")
+        self.assertEqual(arc_drop(False, True), "on")
+        self.assertEqual(arc_drop(False, False), "out")
         from botwidget.qt_ui.faces import arc_drag_size
-        self.assertEqual(arc_drag_size(True, False, 2, 68), 48)
-        self.assertEqual(arc_drag_size(False, False, 2, 68), 68)
-        self.assertEqual(arc_drag_size(True, False, 1, 68), 68, "the last face stays full")
+        self.assertEqual(arc_drag_size(True, False, 68), 48)
+        self.assertEqual(arc_drag_size(False, False, 68), 68)
         self.assertEqual(arc_progress(0, 0), 0.0)
         self.assertGreater(arc_progress(ARC_MOVE_S * 0.5, 0), 0)
         self.assertEqual(arc_progress(ARC_STEP_S * 0.5, 1), 0.0)

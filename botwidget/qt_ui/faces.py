@@ -60,19 +60,18 @@ ARC_STEP_S = 0.12          # pause before the next bot leaves the centre
 ARC_MOVE_S = 0.26          # one bot's trip
 
 
-def arc_drag_size(inside: bool, guest: bool, enabled: int, full: int,
-                  small: int = SEMICIRCLE_SLOT_SIZE) -> int:
+def arc_drag_size(inside: bool, guest: bool, full: int, small: int = SEMICIRCLE_SLOT_SIZE) -> int:
     """A face dragged into the arc shrinks, so it is obvious it is leaving the desktop."""
-    if guest or (inside and enabled > 1):
+    if guest or inside:
         return small
     return full
 
 
-def arc_drop(inside: bool, guest: bool, enabled: int) -> str:
+def arc_drop(inside: bool, guest: bool) -> str:
     """What a drop does: turn off into the arc, turn on outside it, or leave it."""
     if guest and not inside:
         return "on"
-    if not guest and inside and enabled > 1:
+    if not guest and inside:
         return "off"
     if not guest and not inside:
         return "out"
@@ -984,7 +983,7 @@ class Faces(QObject):
             return False
         cx = face.x() + face.width() / 2
         cy = face.y() + face.height() / 2
-        kind = arc_drop(self._in_hotspot(cx, cy), getattr(face, "_arc_guest", False), len(self.faces))
+        kind = arc_drop(self._in_hotspot(cx, cy), getattr(face, "_arc_guest", False))
         if kind == "off":
             self._disable_into_arc(face)
             return True
@@ -1024,20 +1023,32 @@ class Faces(QObject):
     def _disable_into_arc(self, face):
         """The dropped face turns off and stays in the arc as a hidden bot."""
         bid = face.agent_id
+        x, y = face.x() + face.width() / 2, face.y() + face.height() / 2
         bots = {bot["id"]: bot for bot in _all_bots()}
+        face.setWindowOpacity(0.0)  # macOS fades a closing window out, which shows as a ghost where the guest left
         self.toggle(bid, False)
         bot = bots.get(bid)
         if bot and bid not in self._arc_guests:
             self._spawn_guest(bot)
         if bid not in self._semicircle:
             self._arc_order.append(bid)
-            sx, sy = self._semicircle_positions(self._arc_order)[bid]
             self._semicircle[bid] = {
-                "x": sx, "y": sy, "slot_x": sx, "slot_y": sy,
-                "from_x": sx, "from_y": sy, "to_x": sx, "to_y": sy,
+                "x": x, "y": y, "slot_x": x, "slot_y": y,
+                "from_x": x, "from_y": y, "to_x": x, "to_y": y,
                 "rank": None, "visible": True, "size": SEMICIRCLE_SLOT_SIZE,
             }
+        self._glide_to_slots()
         self._emit_semicircle()
+
+    def _glide_to_slots(self):
+        """The bots of the arc moved up for one that came or went: each glides from where it is to its new slot."""
+        now = time.monotonic()
+        for bid, (sx, sy) in self._semicircle_positions(self._arc_order).items():
+            info = self._semicircle[bid]
+            info["snap_from"] = (info["x"], info["y"])
+            info["slot_x"], info["slot_y"] = sx, sy
+            info["snap_t0"] = now
+        self._semicircle_timer.start()
 
     def _enable_outside(self, face):
         """A hidden bot dropped outside the arc becomes a normal face there."""
@@ -1052,6 +1063,7 @@ class Faces(QObject):
         if guest is not None:
             guest._semicircle_visible = False
             guest.close_face()
+        self._glide_to_slots()
         self.toggle(bid, True)
         live = self.faces.get(bid)
         if live is not None:
@@ -1140,8 +1152,14 @@ class Faces(QObject):
         if self._semicircle_phase != "idle":
             self._semicircle_hide_timer.start()
 
+    def _arc_bubble_open(self) -> bool:
+        """A bot of the arc has its bubble up: the arc stays for as long as you are busy with it."""
+        return any(face.bubble.isVisible() for face in self._arc_guests.values())
+
     def _pointer_on_arc(self) -> bool:
         """The pointer is on a face or on a bot of the arc."""
+        if self._arc_bubble_open():
+            return True
         catcher = getattr(self, "_catcher", None)
         if catcher is not None and catcher.underMouse():
             return True
@@ -1155,6 +1173,7 @@ class Faces(QObject):
         if self._in_hotspot(gx, gy) or self._pointer_over_arc(gx, gy):
             return True
         widgets = list(self.faces.values()) + list(self._arc_guests.values())
+        widgets += [face.bubble for face in self._arc_guests.values()]
         catcher = getattr(self, "_catcher", None)
         if catcher is not None:
             widgets.append(catcher)
@@ -1200,7 +1219,7 @@ class Faces(QObject):
     def _semicircle_hide(self):
         """The pointer stayed away from the face and the arc, unless /bots still holds it."""
         self._semicircle_hide_timer.stop()
-        if self._bots_page_open():
+        if self._bots_page_open() or self._arc_bubble_open():
             return
         self.hide_semicircle()
 

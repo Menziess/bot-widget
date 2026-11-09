@@ -1,5 +1,6 @@
 """The native window behind a widget."""
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QGuiApplication
 
 from botwidget.system.current import raise_window as os_raise_window
@@ -19,9 +20,12 @@ def native_id(widget) -> int:
 
 
 def raise_window(widget) -> None:
-    """widget.raise_(), except where that activates the app (macOS). Only for a window that is shown."""
-    if QGuiApplication.platformName() != "cocoa" or not os_raise_window(native_id(widget)):
+    """widget.raise_(), except on macOS, where that activates the app."""
+    if QGuiApplication.platformName() != "cocoa":
         widget.raise_()
+        return
+    # Straight from a showEvent the window would show for a moment at the spot it was created on.
+    QTimer.singleShot(0, lambda: widget.isVisible() and os_raise_window(native_id(widget)))
 
 
 def set_flags(widget, flags) -> None:
