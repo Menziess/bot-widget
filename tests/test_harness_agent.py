@@ -78,6 +78,20 @@ class Defaults(unittest.TestCase):
         self.assertIn("no model server", str(caught.exception))
         self.assertIn("Connection refused", str(caught.exception))
 
+    def test_a_probe_that_timed_out_on_a_closed_port_is_still_a_missing_server(self):
+        """Should not wait out the whole time when the probe timed out only because a refusal is slow, as on Windows."""
+        import time as clock
+        import urllib.error
+        from unittest import mock
+        from harness.agent.models import ChatCompletions, ModelError
+        model = ChatCompletions("http://127.0.0.1:9/v1", "local")
+        started = clock.monotonic()
+        with mock.patch.object(ChatCompletions, "_probe", side_effect=urllib.error.URLError(TimeoutError("timed out"))):
+            with self.assertRaises(ModelError) as caught:
+                model.ready(timeout=0.5, wait=30.0)
+        self.assertLess(clock.monotonic() - started, 6.0)
+        self.assertIn("Connection refused", str(caught.exception))
+
     def test_a_server_that_accepts_and_then_answers_is_still_loading(self):
         """Should wait out a first quiet accept, which is the proxy while the model loads."""
         import socket

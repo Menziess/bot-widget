@@ -5,8 +5,10 @@ Only the standard library is used, so the agent starts with nothing but python a
 """
 
 import json
+import socket
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -60,10 +62,24 @@ class ChatCompletions:
                 reason = getattr(error, "reason", error)
                 if not isinstance(reason, TimeoutError) or time.monotonic() >= deadline:
                     self._missing(reason, error)
+                self._refused(timeout, error)
+
+    def _refused(self, timeout: float, error: BaseException) -> None:
+        """A quiet port may be a model still loading, or on Windows a closed one: a refusal there takes about two
+        seconds, longer than the probe waits. Only a refusal says nothing is listening."""
+        parts = urllib.parse.urlsplit(self.base_url)
+        try:
+            socket.create_connection((parts.hostname, parts.port or (443 if parts.scheme == "https" else 80)),
+                                     timeout=max(timeout, 4.0)).close()
+        except ConnectionRefusedError as refused:
+            self._missing(refused, error)
+        except OSError:
+            pass
 
     def _missing(self, reason, error: BaseException | None = None) -> None:
         # strerror is "Connection refused". str(reason) is the long "[Errno 111] ..." line.
-        detail = getattr(reason, "strerror", None) or reason
+        detail = "Connection refused" if isinstance(reason, ConnectionRefusedError) else (
+            getattr(reason, "strerror", None) or reason)
         raise ModelError(f"no model server at {self.base_url} ({detail}). Start it, or change "
                          f"the address in Connections.") from error
 
