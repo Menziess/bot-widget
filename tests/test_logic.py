@@ -2606,6 +2606,34 @@ class BubbleHover(unittest.TestCase):
             bubble._tick()
             self.assertTrue(bubble.isVisible())
 
+    def test_the_hold_is_not_given_up_while_the_card_is_still_shrinking_under_the_pointer(self):
+        """Should keep the page's area until the pointer is on the card it shrinks to. The card is animated: while it
+        is still as big as the page, the pointer is on it, and letting go then closed the bubble when it had shrunk."""
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        state = {**self.settings_state(), "bots": [{"id": f"a{i}", "name": f"Bot {i}", "on": True,
+                                                    "source": "OpenBot"} for i in range(8)]}
+        self.window.faces = type("Faces", (), {
+            "menu_state": lambda _s: state, "menu_command": lambda _s, command, page, fields=None: command.split("/", 1)[1],
+            "close_bubbles_except": lambda _s, _i: None, "hold_arc": lambda _s: None,
+            "release_bots_arc": lambda _s: None, "raise_bubbles": lambda _s: None})()
+        with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive):
+            self.window.open_menu("bots")
+            self.finish_growth()
+            bubble = self.window.bubble
+            page = bubble.frameGeometry()
+            self.where["at"] = (page.center().x(), page.bottom() - 30)
+            bubble._tick()
+            bubble.command.emit("page/bot/a3")
+            self.assertIsNotNone(bubble.holding_area())
+            for _ in range(5):
+                bubble._tick()
+                self.assertTrue(bubble.isVisible(), "the card has not yet shrunk to where the pointer is")
+            self.finish_growth()
+            bubble._tick()
+            self.assertTrue(bubble.isVisible(), "the pointer is still in the area the page covered")
+
     def test_on_xwayland_the_window_keeps_the_page_area_so_x_names_the_bubble_until_the_pointer_leaves(self):
         """XWayland only knows the pointer over X windows: after the back arrow the bubble's own window keeps
         the area of the page, see-through around the smaller card, so the X server names the bubble there."""

@@ -1032,7 +1032,10 @@ class BubbleWindow(QWidget):
         if not self.face.pointer_known():
             return False
         px, py = self.face._pointer()
-        return self.card().contains(QPoint(int(px), int(py)))
+        # The card it shrinks to, not the one on screen: that is animated, and still as big as the page it replaced.
+        width, height = self._final_size()
+        tx, ty, _tip = self._goal()
+        return QRect(int(tx), int(ty), width, height).contains(QPoint(int(px), int(py)))
 
     def _show_command_menu(self):
         self._list_only = True
