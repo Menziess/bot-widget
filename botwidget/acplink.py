@@ -259,11 +259,12 @@ class AcpLink:
                 task.cancel()
             await asyncio.gather(*rest, return_exceptions=True)
 
+        # Not waited for: closing runs on the Qt thread, and an agent that is slow to stop froze every animation.
+        stop = lambda _future=None: self._loop.call_soon_threadsafe(self._loop.stop)
         try:
-            asyncio.run_coroutine_threadsafe(shutdown(), self._loop).result(5)
+            asyncio.run_coroutine_threadsafe(asyncio.wait_for(shutdown(), 5), self._loop).add_done_callback(stop)
         except Exception:
-            pass  # a dead agent has nothing left to close
-        self._loop.call_soon_threadsafe(self._loop.stop)
+            stop()  # a dead agent has nothing left to close
 
     # ── the agent, in the background ────────────────────────────
 

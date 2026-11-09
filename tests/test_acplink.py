@@ -291,6 +291,21 @@ class AcpTurns(unittest.TestCase):
         link.close()
         self.assertTrue(link._closed)
 
+    def test_closing_does_not_wait_for_an_agent_that_is_slow_to_stop(self):
+        """Should return at once: close runs on the Qt thread, where a wait freezes every animation."""
+        link = self.link()
+        self.assertTrue(wait_for(lambda: not link.active()))
+
+        class Slow:
+            async def __aexit__(self, *args):
+                await asyncio.sleep(1.5)
+
+        link._client = Slow()
+        start = time.monotonic()
+        link.close()
+        self.assertLess(time.monotonic() - start, 0.5)
+        self.assertTrue(wait_for(lambda: not link._thread.is_alive(), timeout=4), "the loop stops afterwards")
+
     def test_closing_again_after_the_loop_has_stopped_still_finishes(self):
         """Should give up when the background loop is already gone."""
         link = self.link()
