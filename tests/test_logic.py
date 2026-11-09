@@ -3096,6 +3096,26 @@ class BubbleHover(unittest.TestCase):
         self.finish_growth()
         self.assertFalse(bubble._list_only)
 
+    def test_the_command_list_has_the_pages_line_hidden_until_the_pointer_comes_near(self):
+        """Should show the same fading line as a page: invisible at rest, there when the pointer is at the top."""
+        from botwidget.qt_ui.bubble_window import LINE_FADE_S
+        self.window.faces = type("Faces", (), {"close_bubbles_except": lambda _s, _i: None,
+                                               "release_bots_arc": lambda _s: None,
+                                               "raise_bubbles": lambda _s: None})()
+        self.window.open_command_menu()
+        self.finish_growth()
+        bubble = self.window.bubble
+        self.assertEqual(bubble._back_command(), "close")
+        self.assertTrue(bubble._menu_line.isVisible())
+        self.assertEqual(bubble._line_shown, 0.0, "hidden at rest")
+        card = bubble.card()
+        self.where["at"] = (card.center().x(), card.top() + 4)
+        moment = 100.0
+        while moment < 100.0 + LINE_FADE_S * 2:
+            bubble._watch_arrow(moment)
+            moment += 0.016
+        self.assertEqual(bubble._line_shown, 1.0, "the pointer at the top brings it")
+
     def test_a_tap_keeps_the_bubble_open_without_a_hover(self):
         """Should keep the bubble while a finger has touched it: a touch screen has no pointer to hover with."""
         from unittest import mock
@@ -5952,12 +5972,12 @@ class MenuInBubble(unittest.TestCase):
         QApplication.sendEvent(self.window, QMouseEvent(QEvent.MouseButtonPress, point, point, Qt.RightButton,
                                                         Qt.RightButton, Qt.NoModifier))
 
-    def test_the_command_list_has_no_page_line(self):
-        """Should keep the right-click list free of the page line, so a wheel does not leave it for the chat."""
+    def test_the_command_list_has_the_page_line(self):
+        """Should give the right-click list the same line as a page, to go back to the chat."""
         self.right_click()
         bubble = self.window.bubble
-        self.assertEqual(bubble._back_command(), "")
-        self.assertFalse(bubble._menu_line.isVisible())
+        self.assertEqual(bubble._back_command(), "close")
+        self.assertTrue(bubble._menu_line.isVisible())
         self.assertTrue(bubble._list_only)
 
     def test_a_right_click_opens_the_bubble_with_a_slash_and_the_list_of_commands(self):

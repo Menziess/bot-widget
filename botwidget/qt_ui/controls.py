@@ -172,7 +172,7 @@ class SlashList(QWidget):
 
     ROW_H = 36
     chosen = Signal(str)
-    wheeled = Signal(float, bool)  # pixels scrolled (up is positive), and whether it is only coasting
+    wheeled = Signal(float, bool, bool)  # pixels scrolled (up is positive), coasting, a finger on the pad
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -204,8 +204,8 @@ class SlashList(QWidget):
 
     def wheelEvent(self, event):
         phase = event.phase()
-        pixels = event.pixelDelta().y() or event.angleDelta().y() / 120 * 40
-        self.wheeled.emit(float(pixels), phase == Qt.ScrollMomentum)
+        pixels = event.pixelDelta().y() or event.angleDelta().y() / 120 * 40  # one notch, as in the bubble
+        self.wheeled.emit(float(pixels), phase == Qt.ScrollMomentum, phase in (Qt.ScrollBegin, Qt.ScrollUpdate))
         event.accept()
 
     def mouseMoveEvent(self, event):

@@ -494,6 +494,9 @@ class MenuHandle(QLabel):
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.hide()
 
+    def mousePressEvent(self, event):
+        self.bubble._line_active = time.monotonic()  # a touch shows the line, as on a page
+
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.bubble._arrow_clicked()
@@ -852,8 +855,8 @@ class BubbleWindow(QWidget):
         self._entry.resized.connect(self._entry_resized)
         self._entry.attached.connect(self._attach)
         self._slash = SlashList(self._card)
-        self._slash.wheeled.connect(self._on_list_wheel)
-        self._list_pull = (0.0, 0.0)  # how far the command list was pulled, and when
+        self._slash.wheeled.connect(lambda *scrolled: self._list_only and self._on_pulled(*scrolled))
+        self._menu_line_at = (0, 0, 1, 0)
         self._slash.chosen.connect(self._run_command)
         self._menu_line = MenuHandle(self)
         self._entry.textChanged.connect(self._update_commands)
@@ -1056,8 +1059,11 @@ class BubbleWindow(QWidget):
         self._dots_lines = []
         self._slash.show_rows(list(menu_pages.commands()))
         # As wide as the commands and their notes need, so nothing is cut; never wider than a chat bubble.
-        # No line to see here, but pulling the list up far enough goes back to the chat, see _on_list_wheel.
-        self._geom = ([], max(MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60)), 0)
+        # The same line a page has: hidden until you come near it, and pulling or tapping it goes back to the chat.
+        width = max(MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60))
+        panels = bubble_panels(measure, [role_panel("more", back="close"), plain_block("more")], width)
+        self._geom = (panels, width, content_height(panels))
+        self._line_shown, self._line_active, self._line_tick = 0.0, None, 0.0
         self._built = ("commands",)
         self._growth = None
         self.setWindowOpacity(1.0)
@@ -1549,12 +1555,18 @@ class BubbleWindow(QWidget):
         if not line:
             self._menu_line.hide()
             return
-        svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{box_w}" height="{line}">'
-               f'{more_svg(0, 0, box_w)}</svg>')
-        self._menu_line.setPixmap(svg_pixmap(svg))
+        self._menu_line_at = (x, y, box_w, line)
         self._menu_line.setGeometry(x, y, box_w, line)
+        self._redraw_menu_line()
         self._menu_line.show()
         self._menu_line.raise_()
+
+    def _redraw_menu_line(self):
+        """The command list's line as it looks now: faded in or out, pulled, under the pointer."""
+        _x, _y, box_w, line = self._menu_line_at
+        svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{box_w}" height="{line}">'
+               f'{more_svg(0, 0, box_w, self._more_progress, self._more_hover, self._line_shown)}</svg>')
+        self._menu_line.setPixmap(svg_pixmap(svg))
 
     def _layout_children(self, pix):
         """Chrome, text area, link row and input field in their places."""
@@ -1653,6 +1665,9 @@ class BubbleWindow(QWidget):
 
     def _set_text(self):
         """The shapes behind the text; the words themselves are the text document."""
+        if self._list_only:
+            self._redraw_menu_line()
+            return
         self._stamp_line_shown()
         # A new picture can resize the text, and the bar then jumps. That is not the user scrolling.
         self._placing_scroll += 1
@@ -1987,25 +2002,12 @@ class BubbleWindow(QWidget):
         if self._pull_px >= PULL_PX and self._growth is None and now >= self._older_until:
             self._pull_done()
 
-    def _on_list_wheel(self, pixels: float, momentum: bool):
-        """Scrolling up on the command list pulls it as far as a page's line, and then goes back to the chat."""
-        if not self._list_only or momentum or pixels <= 0:
-            return
-        now = time.monotonic()
-        pulled, last = self._list_pull
-        pulled = (pulled if now - last < 0.5 else 0.0) + pixels
-        self._list_pull = (pulled, now)
-        if pulled >= PULL_PX:
-            self._list_pull = (0.0, 0.0)
-            self.face.open_input()
-
     def _leave_menu(self) -> bool:
-        """The line on the command list closes it. True when that line was pulled or tapped."""
+        """The line on the command list goes back to the chat. True when that line was pulled or tapped."""
         if self._back_command() != "close":
             return False
-        self.face.pinned = False
-        self.face._answer_view = False
-        self.close_bubble("menu")
+        self._pull_px = 0.0
+        self.face.open_input()
         return True
 
     def _pull_done(self):

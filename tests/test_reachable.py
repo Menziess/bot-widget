@@ -1978,9 +1978,10 @@ class OffscreenCalls(unittest.TestCase):
         bubble._show_blocks(blocks, "say")
         self.assertEqual(bubble._line_shown, 0.0)
         bubble._geom[0][0]["back"] = "close"
-        home.pinned = True
+        opened = []
+        home.open_input = lambda: opened.append(True)
         bubble._arrow_clicked()
-        self.assertFalse(home.pinned)
+        self.assertEqual(opened, [True], "the line on the command list goes to the chat")
         bubble._geom = ([{"role": "more", "back": "close", "lines": [{"kind": "more"}]}], 20, 10)
         bubble._pull_done()
         bubble.kind = "say"

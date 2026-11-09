@@ -322,17 +322,16 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self._finish()
         self._assert_chat_field()
 
-    def test_should_leave_the_command_list_without_a_page_back_line(self):
-        """Should keep a right-click list as it is: no page line, and a wheel there does not open the chat."""
+    def test_should_leave_the_command_list_for_the_chat_when_scrolled_up_past_the_top(self):
+        """Should go back to the chat when a right-click list is pulled far enough, as a page goes back."""
         self.right_click()
         self._finish()
         self.assertTrue(self.bubble._list_only)
-        self.assertEqual(self.bubble._back_command(), "")
+        self.assertEqual(self.bubble._back_command(), "close")
         self._wheel_up(4)
         self._finish()
-        self.assertTrue(self.bubble._list_only)
+        self.assertFalse(self.bubble._list_only)
         self.assertIsNone(self.window._menu_page)
-        self.assertNotIn("Hello from the bot.", self.bubble.full_text)
 
     def test_should_still_close_the_chat_when_escape_is_pressed_there(self):
         from PySide6.QtCore import Qt
