@@ -1,5 +1,9 @@
 """The native window behind a widget."""
 
+from PySide6.QtGui import QGuiApplication
+
+from botwidget.system.current import raise_window as os_raise_window
+
 
 def native_id(widget) -> int:
     """The id of the window the system really shows.
@@ -12,6 +16,12 @@ def native_id(widget) -> int:
     wid = widget.winId()  # makes the native window when there is none yet
     handle = widget.windowHandle()
     return int(handle.winId()) if handle is not None else int(wid)
+
+
+def raise_window(widget) -> None:
+    """widget.raise_(), except where that activates the app (macOS). Only for a window that is shown."""
+    if QGuiApplication.platformName() != "cocoa" or not os_raise_window(native_id(widget)):
+        widget.raise_()
 
 
 def set_flags(widget, flags) -> None:

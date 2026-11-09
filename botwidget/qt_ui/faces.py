@@ -35,7 +35,7 @@ from botwidget.config import (
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
 from botwidget.qt_ui import desktops, glass
 from botwidget.qt_ui.bubble_window import mark_before_show
-from botwidget.qt_ui.native import native_id, set_flags
+from botwidget.qt_ui.native import native_id, raise_window, set_flags
 from botwidget.qt_ui.prewarm import prewarm
 from botwidget.qt_ui.face import FaceWindow
 from botwidget.system.current import (
@@ -1085,7 +1085,7 @@ class Faces(QObject):
             if not face.isVisible():
                 pass
             elif on_top or getattr(face, "_arc_guest", False):
-                face.raise_()
+                raise_window(face)
             else:
                 face.lower()
                 send_behind_windows(native_id(face))
@@ -1093,7 +1093,7 @@ class Faces(QObject):
         for face in faces:
             bubble = getattr(face, "bubble", None)
             if bubble is not None and bubble.isVisible():
-                bubble.raise_()
+                raise_window(bubble)
 
     def _drag_in_progress(self) -> bool:
         held = list(getattr(self, "faces", {}).values()) + list(getattr(self, "_arc_guests", {}).values())

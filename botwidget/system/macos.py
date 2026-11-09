@@ -242,6 +242,15 @@ def clear_backdrop(win_id: int) -> None:
             pass
 
 
+def raise_window(win_id: int) -> bool:
+    """To the front of its layer without activating the app: Qt's raise() does, and with the app in the
+    background macOS then takes you to a desktop where one of its windows last was."""
+    objc = _objc()
+    window = _send(objc, ctypes.c_void_p)(win_id, objc.sel_registerName(b"window"))
+    _send(objc, None)(window, objc.sel_registerName(b"orderFrontRegardless"))
+    return True
+
+
 def before_show(win_id: int, layer: str = "") -> None:
     """Only GNOME needs a window marked before it is mapped."""
 

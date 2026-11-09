@@ -5045,8 +5045,9 @@ class BubbleHover(unittest.TestCase):
         # global_pointer() is False on this platform (offscreen), so pointer_near()
         # falls back to underMouse(). Patch underMouse to stay False (pointer not on us),
         # but report the app as inactive (user switched away).
-        with mock.patch.object(type(bubble), "underMouse", return_value=False), \
-             mock.patch.object(type(self.window), "underMouse", return_value=False), \
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+             mock.patch.object(type(bubble), "underMouse", return_value=True), \
+             mock.patch.object(type(self.window), "underMouse", return_value=True), \
              mock.patch.object(QGuiApplication, "applicationState",
                                return_value=Qt.ApplicationInactive):
             # Advance time past CROSS_GAP_S so the leave path should fire
@@ -5057,6 +5058,21 @@ class BubbleHover(unittest.TestCase):
             self.window._inactive_since = time.monotonic() - 5
             bubble._tick()
         self.assertEqual(bubble.kind, "")
+
+    def test_a_pointer_known_everywhere_keeps_the_bubble_while_the_app_is_inactive(self):
+        """Should keep the bubble that a hover opened from another app: the pointer is still on the face."""
+        import time
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        self.hover()
+        self.finish_growth()
+        self.window._inactive_since = time.monotonic() - 5
+        centre = (self.window.x() + 5, self.window.y() + 5)
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=True), \
+             mock.patch.object(type(self.window), "_pointer", return_value=centre), \
+             mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive):
+            self.assertTrue(self.window.pointer_near(self.window.bubble))
 
 
 class BubbleScrollMemory(unittest.TestCase):

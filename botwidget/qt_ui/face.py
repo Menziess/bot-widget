@@ -823,7 +823,7 @@ class FaceWindow(QWidget):
         # The app is also inactive for a moment after a switch of desktop, with the pointer still on the bot: only
         # an app that stays inactive for a while means the user is elsewhere.
         x_knows = not global_pointer() and pointer_on(self) is not None
-        if not x_knows and QGuiApplication.applicationState() == Qt.ApplicationInactive:
+        if not x_knows and not global_pointer() and QGuiApplication.applicationState() == Qt.ApplicationInactive:
             now = time.monotonic()
             self._inactive_since = self._inactive_since or now
             # A bubble that keeps the area of the page it replaced was just clicked: you are busy with it.

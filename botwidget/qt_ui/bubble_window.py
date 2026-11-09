@@ -75,7 +75,7 @@ from botwidget.config import always_on_top, draft, set_draft
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_block, plain_text, role_panel
 from botwidget.qt_ui import desktops, glass, screens
-from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
+from botwidget.qt_ui.native import drop_hidden, native_id, raise_window, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
 from botwidget.qt_ui.controls import ActionButton, ItemRow, SlashList, Switch, TextEditor, TextField, ValueSlider
 from botwidget.qt_ui.measure import measure
@@ -704,7 +704,7 @@ class Trail(QWidget):
             desktops.apply(self)  # before it shows: it opens on this desktop
             self.show()
             desktops.apply(self)
-        self.raise_()
+        raise_window(self)
         self.update()
 
     def paintEvent(self, _event):
@@ -2300,7 +2300,7 @@ class BubbleWindow(QWidget):
         if faces is not None:
             faces.raise_bubbles()
         else:
-            self.raise_()
+            raise_window(self)
 
     def _final_size(self) -> tuple:
         """The window size once it has grown to its size."""

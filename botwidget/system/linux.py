@@ -122,6 +122,10 @@ def is_shown_here(win_id: int) -> bool:
     return True
 
 
+def raise_window(win_id: int) -> bool:
+    return False
+
+
 def move_to_active_space(win_id: int) -> None:
     pass
 
