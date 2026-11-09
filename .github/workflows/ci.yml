@@ -117,8 +117,9 @@ jobs:
           assert os.path.isfile(exe), "Bot Widget.exe missing"
           print("MSIX unpacked and checked")
 
+      # Not named BotWidget-*: a release downloads those, and this package carries a test identity.
       - uses: actions/upload-artifact@v4
         with:
-          name: BotWidget-Windows.msix
+          name: ci-msix-check
           path: dist/BotWidget-Windows.msix
           if-no-files-found: error
