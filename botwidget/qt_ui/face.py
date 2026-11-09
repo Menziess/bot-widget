@@ -65,7 +65,7 @@ from botwidget.openbot import (
 from botwidget import attachments, grokbot, hermesbot, menu_pages, power, __version__
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.bubble_window import BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window
-from botwidget.qt_ui.native import drop_hidden, native_id, set_flags
+from botwidget.qt_ui.native import drop_hidden, native_id, raise_window, set_flags
 from botwidget.qt_ui.render import hit_region, svg_pixmap
 from botwidget.qt_ui.text_doc import color
 from botwidget.sound import play_sound
@@ -419,6 +419,7 @@ class FaceWindow(QWidget):
                 return
             if self._semicircle_visible or getattr(self, "_arc_guest", False):
                 self._semicircle_visible = False
+                self._arc_mask_key = None
                 self.clearMask()
                 if getattr(self, "_arc_guest", False):
                     self.hide()
@@ -442,14 +443,16 @@ class FaceWindow(QWidget):
         if always_on_top() or getattr(self, "_arc_guest", False):
             if not getattr(self, "_semicircle_raised", False):
                 self._semicircle_raised = True
-                self.raise_()
+                raise_window(self)
         self._mask_arc()
         self.update()
 
     def _mask_arc(self):
         """Only the painted bot takes clicks while it sits on the arc. The square around it does not."""
         pixmap = getattr(self, "_pixmap", None)
-        if pixmap is not None and not pixmap.isNull():
+        key = (self.width(), pixmap.cacheKey()) if pixmap is not None else None
+        if key is not None and not pixmap.isNull() and key != getattr(self, "_arc_mask_key", None):
+            self._arc_mask_key = key  # a new mask on every frame of a glide makes the window server redo the shape
             self.setMask(hit_region(pixmap, self.width(), self.height()))
 
     def paintEvent(self, _event):
@@ -582,7 +585,7 @@ class FaceWindow(QWidget):
         self._press_pos = (point.x(), point.y())
         self._drag_origin = [self.spot()]
         self._drag_box = self.width()
-        self.raise_()
+        raise_window(self)
         self._drag_sample = (time.monotonic(), *self.spot())
         self._dvx = self._dvy = 0.0
         self._wall_kick = (0.0, 0.0)
