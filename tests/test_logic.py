@@ -17,6 +17,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -7156,6 +7157,17 @@ class Channel(unittest.TestCase):
         self.patch(channel.subprocess, "Popen", self.popen)
         channel.switch()
         self.assertEqual(self.launched, [["/x/python", "-m", "botwidget", "--dev"]])
+
+    def test_switching_leaves_the_bundle_of_the_packaged_app_out_of_the_other_environment(self):
+        """Should not hand the packaged app's Qt plugins to a local widget: its own Qt cannot load them."""
+        config.save_widget_config(local_command=["/x/python", "-m", "botwidget", "--dev"])
+        seen = []
+        self.patch(channel.subprocess, "Popen", lambda command, **kwargs: seen.append(kwargs["env"]))
+        with unittest.mock.patch.dict(os.environ, {"QT_PLUGIN_PATH": "/App/plugins", "SSL_CERT_FILE": "/App/c.pem",
+                                          "_PYI_ARCHIVE_FILE": "/App", "HOME": "/h"}):
+            channel.switch()
+        self.assertEqual(seen[0].get("HOME"), "/h")
+        self.assertFalse({"QT_PLUGIN_PATH", "SSL_CERT_FILE", "_PYI_ARCHIVE_FILE"} & set(seen[0]))
 
     def test_a_failed_start_keeps_the_login_item_and_this_widget(self):
         config.save_widget_config(local_command=["/missing"])

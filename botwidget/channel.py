@@ -4,6 +4,7 @@ Each version can start the other. The login item follows whichever one is runnin
 so only one of the two starts at login.
 """
 
+import os
 import subprocess
 
 from botwidget import startup
@@ -13,6 +14,7 @@ from botwidget.system.current import stable_app_command
 # A local widget exits with this to let the stable one take over; the dev mode then stops too,
 # instead of restarting it right away.
 HANDOVER_EXIT = 75
+BUNDLE_ENV = ("QT_PLUGIN_PATH", "SSL_CERT_FILE")
 
 
 def running() -> str:
@@ -50,7 +52,9 @@ def switch() -> bool:
     if login:
         startup.set_enabled(False)  # the other version registers itself
     try:
-        subprocess.Popen(command + (["--keep-login"] if login else []), start_new_session=True,
+        # The packaged app points Qt and SSL at its own bundle; a local widget with another Qt cannot start on that.
+        env = {k: v for k, v in os.environ.items() if k not in BUNDLE_ENV and not k.startswith("_PYI")}
+        subprocess.Popen(command + (["--keep-login"] if login else []), start_new_session=True, env=env,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except OSError:
         if login:
