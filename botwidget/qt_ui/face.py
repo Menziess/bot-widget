@@ -217,7 +217,8 @@ class FaceWindow(QWidget):
 
     def __init__(self, agent_id: str, name: str,
                  spot=None, slot: int = 0, thread_id: str | None = None, faces=None,
-                 hue: float | None = None, seed: str = "", avatar: dict | None = None):
+                 hue: float | None = None, seed: str = "", avatar: dict | None = None,
+                 link=None, guest: bool = False):
         super().__init__()
         self.agent_id = agent_id
         self.bot_name = name
@@ -226,8 +227,10 @@ class FaceWindow(QWidget):
         self.grok = grokbot.GrokLink(name) if grokbot.is_grok(agent_id) else None
         self.hermes = hermesbot.HermesLink(name) if hermesbot.is_hermes(agent_id) else None
         # An ACP agent is one more backend behind the same calls, so nothing below has to know which one it has.
-        self.acp = (acplink.AcpLink(acplink.target_for(agent_id), **acplink.options_for(agent_id))
-                    if acplink.is_acp(agent_id) else None)
+        # A bot on the arc has no agent of its own; one that was parked a moment ago hands its agent back (link).
+        self.acp = None if guest else link or (acplink.AcpLink(acplink.target_for(agent_id),
+                                                               **acplink.options_for(agent_id))
+                                               if acplink.is_acp(agent_id) else None)
         self.faces = faces
         self._hue = hue
         self._seed = seed or agent_id
@@ -1219,8 +1222,8 @@ class FaceWindow(QWidget):
         return not (self.pinned or self._sending or self._working or self._coasting
                     or self._drag_origin is not None)
 
-    def close_face(self):
-        """Hide this face and stop its timers."""
+    def close_face(self, keep_acp: bool = False):
+        """Hide this face and stop its timers. keep_acp leaves the agent running for whoever takes it over."""
         self._alive = False
         self._poll_timer.stop()
         glass.clear(self.bubble)
@@ -1229,7 +1232,7 @@ class FaceWindow(QWidget):
         if row is not None:
             row.close()
         self.close()
-        if self.acp:
+        if self.acp and not keep_acp:
             self.acp.close()
 
     # ── Polling ─────────────────────────────────────────────────

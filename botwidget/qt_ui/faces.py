@@ -55,6 +55,7 @@ SEMICIRCLE_RADIUS = 120   # pixels from top-centre
 SEMICIRCLE_SLOT_SIZE = 48  # bot diameter in the semicircle
 ARC_CATCH_X = 100  # half-width of the 200px top-edge catch rectangle
 ARC_CATCH_Y = 70   # depth of the 70px top-edge catch rectangle below the top edge
+NAP_S = 5 * 60             # a bot that left the desktop keeps its agent this long, so dragging it back is instant
 SEMICIRCLE_GAP = 16        # gap between bot slots
 ARC_STEP_S = 0.12          # pause before the next bot leaves the centre
 ARC_MOVE_S = 0.26          # one bot's trip
@@ -247,6 +248,7 @@ class Faces(QObject):
         self._semicircle = {}  # bot_id → where it sits on the arc right now
         self._arc_order = []
         self._arc_guests = {}  # hidden bots, shown only while the arc is up
+        self._naps = {}  # bot_id → the agent of a bot that left the desktop, kept for a moment
         self._arc_t0 = 0.0
         self._arc_mode = "out"
         self._semicircle_timer = QTimer(self)
@@ -406,9 +408,29 @@ class Faces(QObject):
         else:
             avatar = _avatar(bot)
         face = FaceWindow(bot["id"], bot["name"], spot, slot, bot.get("threadId"), self,
-                          bot.get("hue"), bot.get("seed"), avatar)
+                          bot.get("hue"), bot.get("seed"), avatar, link=self._naps.pop(bot["id"], None))
         self.faces[bot["id"]] = face
         face.show()
+
+    def _nap(self, bot_id: str, link):
+        """The agent of a bot that left the desktop keeps running; it stops if nobody asked for the bot back."""
+        if link is None:
+            return
+        self._naps[bot_id] = link
+        QTimer.singleShot(NAP_S * 1000, lambda: self._sleep(bot_id, link))
+
+    def _sleep(self, bot_id: str, link):
+        if self._naps.get(bot_id) is not link:
+            return
+        if link.active():
+            QTimer.singleShot(30_000, lambda: self._sleep(bot_id, link))  # an answer is still on its way
+            return
+        self._stop_nap(bot_id)
+
+    def _stop_nap(self, bot_id: str):
+        link = self._naps.pop(bot_id, None)
+        if link is not None:
+            link.close()
 
     def apply_relay(self, raw):
         """A roster opens a Grok face per bot. A status line shows on the face that bot already has."""
@@ -463,7 +485,8 @@ class Faces(QObject):
         if not on and agent_id in self.faces:
             gone = self.faces.pop(agent_id)
             page = gone._menu_page
-            gone.close_face()
+            gone.close_face(keep_acp=True)
+            self._nap(agent_id, gone.acp)
             if page and self.faces:
                 # The page was in the bubble of the face that went: it carries on in the bubble of another.
                 next(iter(self.faces.values())).open_menu(page)
@@ -546,15 +569,18 @@ class Faces(QObject):
             if action == "close":
                 if ident in self.faces:
                     self.toggle(ident, False)
+                self._stop_nap(ident)
                 self._stop_guest(ident)
             elif action == "open":
                 self._stop_guest(ident)
+                self._stop_nap(ident)
                 self.toggle(ident, True)
             elif action == "restart":
                 # The old process is the face, or a hidden guest. Either way only this bot stops.
                 page = getattr(self.faces.get(ident), "_menu_page", None)
                 if ident in self.faces:
                     self.toggle(ident, False)
+                self._stop_nap(ident)
                 self._stop_guest(ident)
                 self.toggle(ident, True)
                 if page and ident in self.faces:
@@ -896,7 +922,7 @@ class Faces(QObject):
     def _spawn_guest(self, bot: dict):
         avatar = self.avatar if (grokbot.is_grok(bot["id"]) or hermesbot.is_hermes(bot["id"])) else _avatar(bot)
         face = FaceWindow(bot["id"], bot["name"], None, 0, bot.get("threadId"), self,
-                          bot.get("hue"), bot.get("seed"), avatar)
+                          bot.get("hue"), bot.get("seed"), avatar, guest=True)
         face._arc_guest = True
         face._poll_timer.stop()
         # The catcher stays above ordinary windows. A guest on the bottom layer can never be grabbed.

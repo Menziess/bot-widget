@@ -287,6 +287,7 @@ class WidgetSave(unittest.TestCase):
         self.box = self.faces_cls.__new__(self.faces_cls)
         self.box.faces = {}
         self.box._arc_guests = {}
+        self.box._naps = {}
         self.box._semicircle = {}
         self.box._arc_order = []
         self.box.toggle = lambda ident, on: self.calls.append(("toggle", ident, on))
@@ -382,6 +383,8 @@ class EditPage(unittest.TestCase):
         from botwidget.qt_ui.controls import ItemRow
 
         box = self.Faces.__new__(self.Faces)
+
+        box._naps = {}
         box.faces = {}
         box.toggle = lambda *_args: None
         box.close_bubbles_except = lambda *_args: None
@@ -432,6 +435,8 @@ class EditPage(unittest.TestCase):
         from botwidget.qt_ui.controls import ActionButton, TextField
 
         box = self.Faces.__new__(self.Faces)
+
+        box._naps = {}
         box.faces = {}
         box._arc_guests = {}
         box._arc_order = []
@@ -489,6 +494,8 @@ class EditPage(unittest.TestCase):
         from botwidget.qt_ui.native import native_id
 
         box = self.Faces.__new__(self.Faces)
+
+        box._naps = {}
         box.faces = {}
         box.toggle = lambda *_args: None
         box.close_bubbles_except = lambda *_args: None

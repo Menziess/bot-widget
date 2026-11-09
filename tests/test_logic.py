@@ -373,6 +373,7 @@ class GrokAvatarFallback(unittest.TestCase):
 
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
+        faces._naps = {}
         faces.faces, faces.grok_avatars = {}, {}
         faces.live_avatar = {"shape": "blob", "color": "black"}
         saved = []
@@ -391,6 +392,7 @@ class GrokAvatarFallback(unittest.TestCase):
         from unittest import mock
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
+        faces._naps = {}
         faces._arc_from_bots = False
         faces._semicircle_hide_timer = mock.Mock()
         seen = []
@@ -419,6 +421,7 @@ class GrokAvatarFallback(unittest.TestCase):
         """Should put every face on the lower half of the circle, under the top edge."""
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
+        faces._naps = {}
         faces.faces = {"a": None, "b": None, "c": None}
         faces._hotspot = lambda: (800.0, 0.0)
         pos = faces._semicircle_positions()
@@ -431,6 +434,7 @@ class GrokAvatarFallback(unittest.TestCase):
         """Should open just under the top edge, not below the shallow catch strip."""
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
+        faces._naps = {}
         faces._hotspot = lambda: (800.0, 0.0)
         self.assertTrue(faces._pointer_over_arc(800, 60))
         self.assertFalse(faces._pointer_over_arc(800, 80))
@@ -449,6 +453,7 @@ class GrokAvatarFallback(unittest.TestCase):
         self.assertEqual((ARC_CATCH_X, ARC_CATCH_Y), (100, 70), "plain constants, not derived from the radius")
         app = QApplication.instance() or QApplication([])
         faces = Faces.__new__(Faces)
+        faces._naps = {}
         faces._hotspot = lambda: (800.0, 0.0)
         faces._catcher = QWidget()
         faces._place_catcher()
@@ -531,6 +536,8 @@ class GrokAvatarFallback(unittest.TestCase):
             def stop(self): self.active = False
 
         faces = Faces.__new__(Faces)
+
+        faces._naps = {}
         faces._hotspot = lambda: (800.0, 0.0)
         faces._semicircle_phase, faces._semicircle_timer = "visible", Timer()
         faces._emit_semicircle = lambda: None
@@ -555,11 +562,62 @@ class GrokAvatarFallback(unittest.TestCase):
         for bid, slot in slots.items():
             self.assertEqual((faces._semicircle[bid]["x"], faces._semicircle[bid]["y"]), slot)
 
+    def test_a_bot_that_leaves_the_desktop_keeps_its_agent_for_a_while_and_gets_it_back(self):
+        """Should hand the same agent to the new face, so dragging a bot back needs no start-up."""
+        from types import SimpleNamespace
+        from unittest import mock
+        from botwidget.qt_ui import faces as faces_module
+        from botwidget.qt_ui.faces import Faces
+        faces = Faces.__new__(Faces)
+        faces._naps, faces.pos, faces._save = {}, {}, lambda: None
+        link, closed = SimpleNamespace(active=lambda: False, close=lambda: None), []
+        face = SimpleNamespace(acp=link, _menu_page=None, close_face=lambda keep_acp=False: closed.append(keep_acp))
+        faces.faces = {"a": face}
+        with mock.patch.object(faces_module, "_all_bots", return_value=[]), \
+                mock.patch.object(faces_module.QTimer, "singleShot") as shot:
+            faces.toggle("a", False)
+        self.assertEqual(closed, [True], "the agent is not closed with the face")
+        self.assertIs(faces._naps["a"], link)
+        self.assertEqual(shot.call_args.args[0], faces_module.NAP_S * 1000)
+        with mock.patch.object(faces_module, "FaceWindow") as window:
+            faces._open({"id": "a", "name": "A"}, 0)
+        self.assertIs(window.call_args.kwargs["link"], link)
+        self.assertEqual(faces._naps, {}, "it is the face's again")
+
+    def test_a_parked_bots_agent_stops_when_nobody_asks_for_it_back_but_not_mid_answer(self):
+        """Should put the agent to sleep after the nap, and wait while an answer is still on its way."""
+        from types import SimpleNamespace
+        from unittest import mock
+        from botwidget.qt_ui import faces as faces_module
+        from botwidget.qt_ui.faces import Faces
+        faces = Faces.__new__(Faces)
+        stopped, busy = [], [True]
+        link = SimpleNamespace(active=lambda: busy[0], close=lambda: stopped.append(1))
+        faces._naps = {"a": link}
+        with mock.patch.object(faces_module.QTimer, "singleShot") as shot:
+            faces._sleep("a", link)
+        self.assertEqual((stopped, shot.call_count), ([], 1), "still answering: look again later")
+        busy[0] = False
+        faces._sleep("a", SimpleNamespace(), )
+        self.assertEqual(stopped, [], "a link that was handed back since is left alone")
+        faces._sleep("a", link)
+        self.assertEqual((stopped, faces._naps), ([1], {}))
+
+    def test_a_bot_on_the_arc_has_no_agent_of_its_own(self):
+        """Should not start an agent for each hidden bot the arc shows."""
+        from PySide6.QtWidgets import QApplication
+        from botwidget.qt_ui.face import FaceWindow
+        QApplication.instance() or QApplication([])
+        guest = FaceWindow("acp:ada", "Ada", None, 0, None, None, None, "s", None, guest=True)
+        self.addCleanup(guest.close_face)
+        self.assertIsNone(guest.acp)
+
     def test_the_arc_stays_up_while_the_bubble_of_one_of_its_bots_is_open(self):
         """Should not hide the arc under a bubble that opened from it: hovering that bubble is not leaving."""
         from types import SimpleNamespace
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
+        faces._naps = {}
         bubble = SimpleNamespace(visible=True, isVisible=lambda: bubble.visible)
         faces._arc_guests = {"g": SimpleNamespace(bubble=bubble)}
         self.assertTrue(faces._arc_bubble_open())
@@ -587,6 +645,8 @@ class GrokAvatarFallback(unittest.TestCase):
             def _set_semicircle(self, semicircle): self.seen.append((semicircle["g"]["x"], semicircle["g"]["y"]))
 
         faces = Faces.__new__(Faces)
+
+        faces._naps = {}
         guest = Guest()
         faces.faces, faces._arc_guests = {"a": None, "b": None}, {"g": guest}
         faces._hotspot = lambda: (800.0, 0.0)
@@ -3758,6 +3818,7 @@ class BubbleHover(unittest.TestCase):
     def test_the_bots_page_has_a_mute_switch_per_bot_that_works_for_a_bot_without_a_face(self):
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
+        faces._naps = {}
         faces.faces = {}
         self.assertEqual(faces.menu_command("mute/zz", "bots"), "bots")
         self.assertEqual(config.muted_bots(), ["zz"])
@@ -4042,6 +4103,7 @@ class BubbleHover(unittest.TestCase):
         from unittest import mock
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
+        faces._naps = {}
         faces.wanted = set()
         faces.menu_state = lambda: {"openbot": False, "gbot": True, "wanted": sorted(faces.wanted)}
         with mock.patch("botwidget.qt_ui.faces.QDesktopServices.openUrl") as opened:
@@ -4618,6 +4680,7 @@ class BubbleHover(unittest.TestCase):
         from unittest import mock
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
+        faces._naps = {}
         faces.faces, faces._arc_guests = {"t": self.window}, {}
         with mock.patch("botwidget.qt_ui.faces.save_widget_config") as save, \
                 mock.patch.object(self.window.bubble, "restyle") as restyle:
@@ -4667,6 +4730,7 @@ class BubbleHover(unittest.TestCase):
         other._pointer = lambda: self.where["at"]
         other.bubble.focus_entry = lambda: None
         registry = Faces.__new__(Faces)
+        registry._naps = {}
         registry.faces = {"t": self.window, "u": other}
         registry._arc_guests = {}
         registry.hold_arc = lambda: None
