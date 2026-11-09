@@ -3113,7 +3113,8 @@ class BubbleHover(unittest.TestCase):
         self.assertFalse(bubble.holding())
         tap = mock.Mock(**{"type.return_value": QEvent.MouseButtonPress,
                            "source.return_value": Qt.MouseEventSynthesizedBySystem})
-        bubble.eventFilter(bubble, tap)
+        from botwidget.qt_ui.bubble_window import _watch_taps
+        _watch_taps().eventFilter(bubble, tap)
         self.assertTrue(bubble.holding())
         bubble.place("")
         self.assertFalse(bubble.holding())
