@@ -1070,7 +1070,9 @@ class Faces(QObject):
         """The bots of the arc moved up for one that came or went: each glides from where it is to its new slot."""
         now = time.monotonic()
         for bid, (sx, sy) in self._semicircle_positions(self._arc_order).items():
-            info = self._semicircle[bid]
+            info = self._semicircle.get(bid)
+            if info is None:
+                continue
             info["snap_from"] = (info["x"], info["y"])
             info["slot_x"], info["slot_y"] = sx, sy
             info["snap_t0"] = now
