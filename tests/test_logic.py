@@ -2443,9 +2443,9 @@ class BubbleHover(unittest.TestCase):
         next(w for w in bubble._control_widgets if isinstance(w, Switch)).click()
         self.assertEqual(sent, ["toggle/sound"])
 
-    def test_the_arrow_on_a_page_leads_back_to_the_chat(self):
+    def test_the_arrow_on_a_page_leads_back_to_the_command_list_and_that_to_the_chat(self):
         bubble = self.open_settings()
-        self.assertEqual(bubble._geom[0][0]["back"], "page/chat")
+        self.assertEqual(bubble._geom[0][0]["back"], "page/commands")
         bubble.command.emit("page/chat")
         self.finish_growth()
         self.assertIsNone(self.window._menu_page)
@@ -2461,7 +2461,7 @@ class BubbleHover(unittest.TestCase):
         bubble.command.connect(sent.append)
         _x, y = self.message_point(0, down=4)
         self.click_at(bubble._shown_w(bubble._geom[1]) // 2, y)
-        self.assertEqual(sent, ["page/chat"])
+        self.assertEqual(sent, ["page/commands"])
 
     def test_pulling_the_line_of_a_page_far_enough_goes_back_too(self):
         bubble = self.open_settings()
@@ -2473,7 +2473,7 @@ class BubbleHover(unittest.TestCase):
         self.wheel_up(bubble)
         self.wheel_up(bubble)
         self.wheel_up(bubble)
-        self.assertEqual(sent, ["page/chat"])
+        self.assertEqual(sent, ["page/commands"])
 
     def top_line_alpha(self, bubble):
         """The darkest pixel of the thin line across the top of the page. 0 is invisible."""
@@ -5722,7 +5722,7 @@ class MenuPages(unittest.TestCase):
     def test_the_bots_page_has_a_switch_per_bot(self):
         blocks = menu_pages.bots(self.STATE)
         self.assertEqual(self.commands(blocks),
-                         ["page/chat", "bot/a", "mute/a", "bot/b", "mute/b", "page/bot", "page/widget-json"])
+                         ["page/commands", "bot/a", "mute/a", "bot/b", "mute/b", "page/bot", "page/widget-json"])
         self.assertNotIn("‹ Chat", self.text(blocks))
         self.assertIn("☑ Fritsie", self.text(blocks))
         self.assertIn("☐ Robo", self.text(blocks))
@@ -5732,7 +5732,7 @@ class MenuPages(unittest.TestCase):
         blocks = menu_pages.connections(self.STATE)
         text = self.text(blocks)
         self.assertEqual(self.commands(blocks), [
-            "page/chat", "connect/openbot", "connect/grokbot", "action/link-grok",
+            "page/commands", "connect/openbot", "connect/grokbot", "action/link-grok",
             "connect/hermesbot", "page/connection"])
         self.assertIn("☑ OpenBot", text)
         self.assertIn("local API is off", text)
@@ -5746,7 +5746,7 @@ class MenuPages(unittest.TestCase):
         linked = menu_pages.connections({**self.STATE, "grok_relay": "bw-x"})
         self.assertEqual(
             self.commands(linked),
-            ["page/chat", "connect/openbot", "connect/grokbot", "action/copy-grok-prompt",
+            ["page/commands", "connect/openbot", "connect/grokbot", "action/copy-grok-prompt",
              "connect/hermesbot", "page/connection"],
         )
         self.assertIn("bw-x", self.text(linked))
@@ -5767,7 +5767,7 @@ class MenuPages(unittest.TestCase):
         ]}
         blocks = menu_pages.connections(state)
         self.assertEqual(self.commands(blocks), [
-            "page/chat", "connect/openbot", "connect/grokbot", "action/link-grok", "connect/hermesbot",
+            "page/commands", "connect/openbot", "connect/grokbot", "action/link-grok", "connect/hermesbot",
             "connection-toggle/here", "page/connection/here", "connection-remove/here",
             "connection-toggle/there", "page/connection/there", "connection-remove/there",
             "page/connection"])
@@ -5796,8 +5796,8 @@ class MenuPages(unittest.TestCase):
         self.assertEqual(menu_pages._command("Bots", "/bots"), ("Bots", "cmd:/bots"))
 
     def test_a_nested_page_leads_back_to_the_page_it_came_from(self):
-        """Should step up one screen. A form returns to its list, and that list returns to the chat."""
-        back = {"settings": "page/chat", "bots": "page/chat", "connections": "page/chat",
+        """Should step up one screen: chat, the command list, a page of it, then a form."""
+        back = {"settings": "page/commands", "bots": "page/commands", "connections": "page/commands",
                 "bot": "page/bots", "connection": "page/connections", "widget-json": "page/bots"}
         for page in menu_pages.PAGES:
             self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], back[page])

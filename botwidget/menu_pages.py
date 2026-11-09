@@ -95,7 +95,7 @@ def _field(label: str, command: str, value: str) -> dict:
     return {**control_block("field", label, command), "value": value}
 
 
-def _back(where: str = "page/chat") -> list:
+def _back(where: str = "page/commands") -> list:
     """The line on top of a page. Pulling it or clicking it goes to the screen before this one."""
     return [role_panel("more", back=where), plain_block("more"), role_panel("bot")]
 

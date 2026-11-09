@@ -184,7 +184,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertNotIn("goes back to commands", self.bubble.full_text)
         self.assertEqual(self.bubble._scroll.verticalScrollBar().value(), 0)
         self.assertEqual(self.bubble._geom[0][0].get("role"), "more")
-        self.assertEqual(self.bubble._geom[0][0].get("back"), "page/chat")
+        self.assertEqual(self.bubble._geom[0][0].get("back"), "page/commands")
         self.assertEqual(self._top_line_alpha(), 0, "the line stays hidden until a scroll or a pointer")
 
     def _click_top_line(self):
@@ -236,25 +236,24 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self._assert_settings_in_same_bubble(before, id(self.bubble))
 
     def test_should_not_put_a_chat_link_on_any_page(self):
-        """Should leave every page heading as a title. The way back is the line on top, and it targets the chat."""
+        """Should leave every page heading as a title. The way back is the line on top, and it targets the command list."""
         for page in ("settings", "bots", "connections"):
             self.window.open_menu(page)
             self._finish()
             self._assert_no_chat_link()
 
-    def test_should_return_to_the_chat_when_the_top_line_is_clicked(self):
-        """Should open the chat, with its typing field, when the fading line on a page is clicked."""
-        self._open_chat()
-        entry = self.bubble._entry
+    def test_should_return_to_the_command_list_when_the_top_line_is_clicked(self):
+        """Should open the command list when the fading line on a page is clicked."""
         self.window.open_menu("settings")
         self._finish()
-        self.assertEqual(self.bubble._back_command(), "page/chat")
+        self.assertEqual(self.bubble._back_command(), "page/commands")
         self._click_top_line()
-        self.assertIs(self.bubble._entry, entry)
-        self._assert_chat_field()
+        self._finish()
+        self.assertIsNone(self.window._menu_page)
+        self.assertTrue(self.bubble._list_only)
 
-    def test_should_return_to_the_chat_when_scrolled_up_past_the_top(self):
-        """Should stay on the page for one notch, and go back to the chat once the line is pulled far enough."""
+    def test_should_return_to_the_command_list_when_scrolled_up_past_the_top(self):
+        """Should stay on the page for one notch, and go back to the command list once the line is pulled far enough."""
         self.window.open_menu("bots")
         self._finish()
         self._wheel_up()
@@ -263,7 +262,8 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertIn("Shift+click", self.bubble.full_text)
         self._wheel_up(3)
         self._finish()
-        self._assert_chat_field()
+        self.assertIsNone(self.window._menu_page)
+        self.assertTrue(self.bubble._list_only)
 
     def test_should_return_to_the_chat_with_the_field_on_a_left_click(self):
         """Should leave a page for the chat when its face is left-clicked, and never open settings that way."""
