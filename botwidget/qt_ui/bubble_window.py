@@ -1245,7 +1245,11 @@ class BubbleWindow(QWidget):
         return self._tapped or (self._input and (self._entry.hasFocus() or self._keep_draft)) or self._selecting()
 
     def eventFilter(self, watched, event):
-        if (event.type() == QEvent.MouseButtonPress and event.source() != Qt.MouseEventNotSynthesized
+        try:
+            pressed = event.type() == QEvent.MouseButtonPress  # PySide raises on event types it has no name for
+        except (ValueError, SystemError):
+            return False
+        if (pressed and event.source() != Qt.MouseEventNotSynthesized
                 and isinstance(watched, QWidget) and watched.window() is self):
             self._tapped = True
         return False
