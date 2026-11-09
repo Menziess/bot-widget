@@ -2634,6 +2634,23 @@ class BubbleHover(unittest.TestCase):
             bubble._tick()
             self.assertTrue(bubble.isVisible(), "the pointer is still in the area the page covered")
 
+    def test_the_hold_waits_for_the_growth_even_when_the_pointer_is_on_the_expected_card(self):
+        """Should not let go while the card still animates: where it ends up is worked out from the size it still has,
+        and it can end up somewhere else, with the pointer beside it."""
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive):
+            bubble, page = self.back_arrow_leaves_the_pointer_outside()
+            self.assertIsNotNone(bubble.holding_area())
+            width, height = bubble._final_size()
+            tx, ty, _tip = bubble._goal()
+            self.where["at"] = (int(tx) + width // 2, int(ty) + height // 2)
+            self.assertTrue(bubble._pointer_on_card(), "on the card it will have")
+            bubble._growth = object()
+            self.assertFalse(bubble._pointer_on_card(), "still animating: that place is a guess")
+            bubble._growth = None
+
     def test_on_xwayland_the_window_keeps_the_page_area_so_x_names_the_bubble_until_the_pointer_leaves(self):
         """XWayland only knows the pointer over X windows: after the back arrow the bubble's own window keeps
         the area of the page, see-through around the smaller card, so the X server names the bubble there."""

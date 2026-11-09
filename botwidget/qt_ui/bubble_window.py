@@ -1033,6 +1033,9 @@ class BubbleWindow(QWidget):
             return False
         px, py = self.face._pointer()
         # The card it shrinks to, not the one on screen: that is animated, and still as big as the page it replaced.
+        # While it animates even that is a guess: the place is worked out from the size it still has.
+        if self._growth is not None:
+            return False
         width, height = self._final_size()
         tx, ty, _tip = self._goal()
         return QRect(int(tx), int(ty), width, height).contains(QPoint(int(px), int(py)))
