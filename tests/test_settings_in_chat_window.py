@@ -183,12 +183,11 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertNotIn("‹ Chat", self.bubble.full_text)
         self.assertNotIn("goes back to commands", self.bubble.full_text)
         self.assertEqual(self.bubble._scroll.verticalScrollBar().value(), 0)
-        self.assertEqual(self.bubble._geom[0][0].get("role"), "more")
-        self.assertEqual(self.bubble._geom[0][0].get("back"), "page/commands")
-        self.assertEqual(self._top_line_alpha(), 0, "the line stays hidden until a scroll or a pointer")
+        self.assertEqual(self.bubble._back_command(), "page/commands")
+        self.assertNotEqual(self.bubble._geom[0][0].get("role"), "more", "no room for the line until it is asked for")
 
     def _click_top_line(self):
-        """A left click on the fading line, which is the first row even while it is faded out."""
+        """A left click on the line, the first row once it has come in."""
         from PySide6.QtCore import QEvent, QPointF, Qt
         from PySide6.QtGui import QMouseEvent
         from PySide6.QtWidgets import QApplication
@@ -247,6 +246,8 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.window.open_menu("settings")
         self._finish()
         self.assertEqual(self.bubble._back_command(), "page/commands")
+        self._wheel_up()
+        self._finish()
         self._click_top_line()
         self._finish()
         self.assertIsNone(self.window._menu_page)
@@ -257,6 +258,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.window.open_menu("bots")
         self._finish()
         self._wheel_up()
+        self._finish()
         self.assertEqual(self.window._menu_page, "bots", "one notch only pulls the line")
         self.assertGreater(self.bubble._pull_px, 0)
         self.assertIn("Shift+click", self.bubble.full_text)
@@ -328,7 +330,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self._finish()
         self.assertTrue(self.bubble._list_only)
         self.assertEqual(self.bubble._back_command(), "close")
-        self._wheel_up(4)
+        self._wheel_up(5)
         self._finish()
         self.assertFalse(self.bubble._list_only)
         self.assertIsNone(self.window._menu_page)
