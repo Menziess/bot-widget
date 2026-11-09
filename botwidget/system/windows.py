@@ -26,6 +26,34 @@ def _user32():
         return None
 
 
+def _kernel32():
+    if sys.platform != "win32":
+        return None
+    try:
+        return ctypes.WinDLL("kernel32", use_last_error=True)
+    except (AttributeError, OSError):
+        return None
+
+
+def is_msix(kernel=None) -> bool:
+    """True when running inside an MSIX package (Store policy 10.2.2)."""
+    kernel = kernel if kernel is not None else _kernel32()
+    if kernel is None:
+        return False
+    get = getattr(kernel, "GetCurrentPackageFullName", None)
+    if get is None:
+        return False
+    length = ctypes.c_uint32(0)
+    try:
+        # 15700 = APPMODEL_ERROR_NO_PACKAGE; 122 = ERROR_INSUFFICIENT_BUFFER (packaged).
+        code = get(ctypes.byref(length), None)
+    except (TypeError, OSError, AttributeError):
+        return False
+    if not isinstance(code, int):
+        return False
+    return code != 15700
+
+
 def hide_from_taskbar(win_id: int, user32=None) -> None:
     """No taskbar button: tool window on, app window off. Qt.Tool asks for the same; this holds also when Qt
     made the native window again."""
@@ -128,6 +156,9 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
 def launch_at_login() -> bool:
+    if is_msix():
+        # Manifest startupTask covers start-at-login under MSIX.
+        return True
     import winreg
     try:
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
@@ -138,7 +169,9 @@ def launch_at_login() -> bool:
 
 
 def set_launch_at_login(command: list, on: bool) -> None:
-    """A value under Run in the user's registry."""
+    """A value under Run in the user's registry. Under MSIX the manifest startupTask owns this."""
+    if is_msix():
+        return
     import subprocess
     import winreg
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
@@ -155,8 +188,7 @@ UPDATE_ASSET = "BotWidget-Windows-Setup.exe"
 
 
 def can_install_update() -> bool:
-    import sys
-    return getattr(sys, "frozen", False)
+    return bool(getattr(sys, "frozen", False)) and not is_msix()
 
 
 def install_update(installer: str) -> bool:
