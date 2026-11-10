@@ -142,6 +142,31 @@ usage lines, none cancelled or failed:
 | median turn | 2.5 s | not recorded per turn |
 | cost per turn | 0 (local model) | 0 (local model) |
 
+## H2 benchmark
+
+A deterministic, scripted benchmark lives in `harness.benchmark`. It runs five tasks
+without a live model, a network connection, or any API key:
+
+```
+python -m harness.benchmark --json --out /tmp/bw-h2-baseline.json
+```
+
+| Task | What it measures | Expected ok |
+| - | - | - |
+| `short_answer` | Scripted model returns a known string | true |
+| `tool_read` | Model calls `read_file`, answer contains a known token | true |
+| `topic_switch_recall` | Short thread keeps both user facts verbatim | true |
+| `compact_without_summary` | Long thread, no summary — older turns are dropped | **false** |
+| `compact_with_summary` | Same seed but a summary preserves the unique fact | true |
+
+The baseline report (`suite: "h2"`, `mode: "scripted"`) includes per-task metrics
+(`total_ms`, `output_tokens`, `path_steps`) and a run summary
+(`n`, `passed`, `failed`, `median_*`). Task D is expected to fail today so that
+later work (H4) can flip it and measure the improvement.
+
+No `--live` mode is required for the test suite. A live stub exists behind the
+`--live` flag but does not read any key files or connect to 127.0.0.1:8080.
+
 Read the difference carefully.
 
 - The input gap is about eighty times, and it is structural: OpenBot resends the developer
