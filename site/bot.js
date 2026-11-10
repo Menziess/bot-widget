@@ -165,7 +165,7 @@
     if (!dt) { schedule(F.BUSY_MS); return; }
     var now = performance.now();
 
-    if (homed && !dragging && !coasting) { home(); clamp(); }
+    if (homed && !dragging && !coasting) { home(); }  // do not clamp: the slot can scroll off-screen
     if (coasting) coast(dt);
     if (returning) glideHome(dt);
 
@@ -181,7 +181,9 @@
     hoverTick();
 
     var near = !!pointer && Math.hypot(pointer[0] - x, pointer[1] - y) < F.GAZE_NEAR * u + 40;
-    var interval = reduced ? F.STILL_MS : F.frameMs(!!dragging, !!(moving || coasting || returning), near, !!playing);
+    var following = scrolling && homed && !dragging && !coasting;
+    var faceMoving = !!(moving || coasting || returning || dragging || following);
+    var interval = faceMoving ? F.BUSY_MS : (reduced ? F.STILL_MS : F.frameMs(!!dragging, false, near, !!playing));
     schedule(interval);
   }
 
@@ -255,6 +257,25 @@
   }, { passive: true });
   document.addEventListener("pointerleave", function () { pointer = null; });
   window.addEventListener("resize", function () { layout(); });
+
+  // The face is position:fixed and, while homed, tracks #stage. Idle pacing is STILL_MS
+  // (100 ms), so a scroll would otherwise jump the face every few frames. A passive
+  // scroll listener kicks rAF and keeps full-rate frames for as long as it is moving.
+  var scrolling = false, scrollIdleTimer = 0;
+  function kickFrame() {
+    if (waitTimer) { clearTimeout(waitTimer); waitTimer = 0; }
+    if (!raf) raf = requestAnimationFrame(frame);
+  }
+  function onScroll() {
+    if (!homed || dragging || coasting) return;
+    scrolling = true;
+    if (scrollIdleTimer) clearTimeout(scrollIdleTimer);
+    scrollIdleTimer = setTimeout(function () { scrolling = false; scrollIdleTimer = 0; }, 100);
+    home();
+    place();
+    kickFrame();
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
 
   // ── Bubble: hover open, leave close (face.py / bubble_window.py) ────
 
