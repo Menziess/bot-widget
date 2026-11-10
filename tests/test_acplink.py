@@ -208,14 +208,21 @@ class AcpTurns(unittest.TestCase):
     def test_the_context_meter_and_the_compaction_notice_reach_the_note(self):
         from harness.acp_client import Update
         link = self.link()
+        # At 80%: show percentage.
         link._updated(Update("usage", extra={"used": 80, "size": 100}))
         self.assertEqual(link.note(), "Context 80% full.")
+        # Below 50%: silence (no chatter for nearly empty windows).
         link._updated(Update("usage", extra={"used": 20, "size": 100}))
-        self.assertEqual(link.note(), "Context 20% full.")
+        self.assertEqual(link.note(), "")
+        # Very small fraction (<1%) is also silent.
         link._updated(Update("usage", extra={"used": 100, "size": 131072}))
-        self.assertEqual(link.note(), "Context <1% full.")
+        self.assertEqual(link.note(), "")
+        # Compacted notice is always shown.
         link._updated(Update("usage", extra={"used": 20, "size": 100, "compacted": True}))
         self.assertEqual(link.note(), "Compacted older turns.")
+        # Size 0 shows nothing.
+        link._updated(Update("usage", extra={"used": 1, "size": 0}))
+        self.assertEqual(link.note(), "")
 
     def test_an_agent_that_cannot_start_does_not_hang_the_face(self):
         link = AcpLink(f"{sys.executable} -c 'raise SystemExit(1)'")

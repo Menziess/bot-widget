@@ -184,6 +184,22 @@ H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): same flags as the
 H2 baseline — four tasks pass, `compact_without_summary` still fails with
 "older turns dropped before summary exists".
 
+## H4 context window management
+
+The request is built against the model's own token window (`n_ctx` / `model_window`),
+or `HARNESS_CONTEXT_TOKENS`, or the 32000 default, minus a 2048-token completion
+margin. The character budget is derived from that window (four characters per token).
+Pinned prefix (system prompt, workspace rules, rolling summary, facts) is never
+evicted. Recent turns stay verbatim. If no rolling summary exists yet, older turns
+are kept as a cheap synchronous BACKGROUND extract (no model call, so the reply is
+never blocked). The existing background summarise still runs after the answer and
+later replaces the extract. The context-use note is quieter: it only shows
+"Context N% full." when the window is at least half full, still announces
+"Compacted older turns.", and stays silent for a nearly empty window.
+
+H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): all five tasks pass,
+including `compact_without_summary`.
+
 No `--live` mode is required for the test suite. A live stub exists behind the
 `--live` flag but does not read any key files or connect to 127.0.0.1:8080.
 

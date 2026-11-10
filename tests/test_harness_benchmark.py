@@ -46,13 +46,12 @@ class TestAsyncTasks(unittest.IsolatedAsyncioTestCase):
 class TestSyncTasks(unittest.TestCase):
     """Sync tasks (D, E) return the expected ok values."""
 
-    def test_d_compact_without_summary_fails(self):
-        """D: without a summary, older turns are dropped — ok must be False."""
+    def test_d_compact_without_summary_passes(self):
+        """D: without a summary, older turns are kept via BACKGROUND extract — ok must be True."""
         result = benchmark._run_sync_task("compact_without_summary",
                                           benchmark.task_compact_without_summary)
-        self.assertFalse(result["ok"],
-                         "compact_without_summary should fail (older turns dropped "
-                         "before summary)")
+        self.assertTrue(result["ok"],
+                        "compact_without_summary should keep older turns via BACKGROUND")
         self.assertIn("id", result)
         self.assertIn("reason", result)
 
@@ -106,13 +105,13 @@ class TestRunAll(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(summary["failed"], int)
 
     async def test_run_all_expected_ok_values(self):
-        """A, B, C, E pass; D fails."""
+        """A, B, C, D, E all pass — H4 fixed compact_without_summary."""
         report = await benchmark.run_all()
         by_id = {t["id"]: t["ok"] for t in report["tasks"]}
         self.assertTrue(by_id["short_answer"])
         self.assertTrue(by_id["tool_read"])
         self.assertTrue(by_id["topic_switch_recall"])
-        self.assertFalse(by_id["compact_without_summary"])
+        self.assertTrue(by_id["compact_without_summary"])
         self.assertTrue(by_id["compact_with_summary"])
 
     async def test_run_all_summary_matches_tasks(self):

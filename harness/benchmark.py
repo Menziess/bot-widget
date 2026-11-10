@@ -238,8 +238,8 @@ async def task_topic_switch_recall():
 def task_compact_without_summary():
     """D: long thread, no summary, the unique fact should still appear in context.
 
-    Today this is expected to fail: older turns are dropped before a background summary
-    exists. The baseline records ok:false so H4 can flip it.
+    H4 fixed this: older turns are now kept as a BACKGROUND extract when no summary
+    exists yet, so nothing vanishes between turns.
     """
     folder = tempfile.mkdtemp()
     try:

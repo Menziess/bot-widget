@@ -409,8 +409,12 @@ class AcpLink:
                     self._context = "Compacted older turns."
                 elif size:
                     percent = used * 100 / size
-                    shown = "<1" if percent < 1 else str(int(percent))
-                    self._context = f"Context {shown}% full."
+                    # Only show a percentage note when the window is at least half full.
+                    if percent >= 50:
+                        shown = "<1" if percent < 1 else str(int(percent))
+                        self._context = f"Context {shown}% full."
+                    else:
+                        self._context = ""
                 else:
                     self._context = ""
             elif update.kind == "text" and update.text:
