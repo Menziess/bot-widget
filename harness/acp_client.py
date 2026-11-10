@@ -150,7 +150,25 @@ class AcpClient:
             event = Update(kind={"agent_thought_chunk": "thought", "agent_message_chunk": "text",
                                  "user_message_chunk": "user"}[kind], text=_text_of(update.content))
         elif kind in ("tool_call", "tool_call_update"):
-            event = Update("tool", text=getattr(update, "title", "") or "",
+            title = getattr(update, "title", "") or ""
+            # H6 fix: on tool_call_update, do not re-emit the same title as a new tool line
+            # (AcpClient emits a "tool" update with the same title for both tool_call and
+            # tool_call_update, so the transcript lists the title twice).
+            if kind == "tool_call_update" and self._turn is not None:
+                last_tool_title = None
+                for u in reversed(self._turn.updates):
+                    if u.kind == "tool" and u.text:
+                        last_tool_title = u.text
+                        break
+                if last_tool_title == title:
+                    # Same title as the last tool event: only store the status, don't add a line.
+                    event = Update("tool", text="", extra={"status": getattr(update, "status", "") or ""})
+                    turn = self._turn
+                    if turn is not None:
+                        turn.updates.append(event)
+                    self.on_update(event)
+                    return
+            event = Update("tool", text=title,
                            extra={"status": getattr(update, "status", "") or ""})
         elif kind == "usage_update":
             event = Update("usage", extra={name: getattr(update, name, None)

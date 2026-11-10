@@ -7,6 +7,8 @@ turn path ever waits for a summary.
 """
 
 import asyncio
+import hashlib
+import json
 import sqlite3
 import inspect
 import os
@@ -149,9 +151,11 @@ class LeanAgent:
                 if cancelled or not calls:
                     break
                 messages.append({"role": "assistant", "content": "", "tool_calls": calls})
-                for call in calls:
+                # H6: execute tool calls with parallel reads, cheap-first, dedup, and guard-rails.
+                results = await self._execute_calls(session_id, store, calls)
+                for call, result in zip(calls, results):
                     messages.append({"role": "tool", "tool_call_id": call["id"],
-                                     "content": TOOL_OUTPUT + "\n" + await self._use_tool(session_id, store, call)})
+                                     "content": TOOL_OUTPUT + "\n" + result})
         except ModelError as error:
             store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                          "ms": round((time.monotonic() - started) * 1000), "error": str(error)[:300]})
@@ -240,6 +244,162 @@ class LeanAgent:
         await self._tool_call(session_id, call["id"], title, "completed", "completed")
         return self._note_tool(store, name, "ok", result)
 
+    # ── H6: parallel tool execution ───────────────────────────────────
+
+    # Cheap-first ordering: groups of tool names, cheapest first.
+    _CHEAP_FIRST = [
+        {"list_dir", "memory_read"},          # group 0: search/list/git-read/memory_read
+        {"read_file"},                         # group 1: read_file
+        {"write_file", "edit", "shell", "memory_forget"},  # group 2: writes
+    ]
+
+    def _tool_cost_key(self, name: str) -> int:
+        """Return a group index for cheap-first ordering (lower = cheaper)."""
+        for idx, group in enumerate(self._CHEAP_FIRST):
+            if name in group:
+                return idx
+        return len(self._CHEAP_FIRST)  # unknown tools go last
+
+    @staticmethod
+    def _call_cache_key(call: dict) -> str:
+        """Canonical JSON for deduplication: tool name + sorted arguments."""
+        name = (call.get("function") or {}).get("name") or ""
+        raw_args = (call.get("function") or {}).get("arguments") or "{}"
+        try:
+            args = json.loads(raw_args)
+            canonical = json.dumps({"name": name, "args": args}, sort_keys=True)
+        except json.JSONDecodeError:
+            canonical = raw_args
+        return hashlib.sha256(canonical.encode()).hexdigest()
+
+    async def _execute_calls(self, session_id: str, store: SessionStore, calls: list) -> list:
+        """Execute a list of tool calls. H6 features:
+        - Cheap-first ordering (within one model step only).
+        - Parallel read-only tools via asyncio.gather.
+        - Writes stay serial and go through _ask.
+        - No repeated calls: deduplicate by (name + args).
+        - Stop when good enough: skip writes if a read of the same path failed.
+        """
+        parallel = os.environ.get("HARNESS_TOOL_PARALLEL", "1") != "0"
+
+        # 1) Classify calls: read-only vs write, and detect no-tool errors.
+        classified = []  # list of dict with: call, tool, is_write, is_no_tool, cache_key
+        for call in calls:
+            name = (call.get("function") or {}).get("name") or ""
+            tool = self.tools.find(name)
+            cache_key = None
+            if tool is None:
+                classified.append({"call": call, "tool": None, "is_write": False,
+                                   "is_no_tool": True, "result": f"There is no tool called {name}."})
+                continue
+            cache_key = self._call_cache_key(call) if not tool.writes else None
+            classified.append({"call": call, "tool": tool, "is_write": tool.writes,
+                               "is_no_tool": False, "cache_key": cache_key})
+
+        # 2) Dedup reads (writes are NOT cached).
+        seen_cache_keys: dict[str, str] = {}  # cache_key -> result text
+        deduped = []
+        for item in classified:
+            if item.get("is_no_tool"):
+                deduped.append(item)
+                continue
+            ck = item.get("cache_key")
+            if ck is not None and ck in seen_cache_keys:
+                item["result"] = f"Already done earlier in this turn: {ck[:12]}."
+                item["deduped"] = True
+            deduped.append(item)
+            if ck is not None:
+                seen_cache_keys[ck] = None  # placeholder; will be filled after execution
+
+        # 3) Split reads and writes, order reads cheap-first.
+        reads = [item for item in deduped if not item["is_write"] and not item.get("deduped")]
+        writes = [item for item in deduped if item["is_write"] or item.get("deduped")]
+
+        if reads:
+            reads.sort(key=lambda item: self._tool_cost_key(
+                (item["call"].get("function") or {}).get("name") or ""))
+
+        # 4) Execute reads in parallel.
+        read_results = []
+        if reads:
+            if parallel:
+                coros = [self._run_single_call(session_id, store, item["call"], item["tool"])
+                         for item in reads]
+                raw = await asyncio.gather(*coros, return_exceptions=True)
+                for r in raw:
+                    if isinstance(r, Exception):
+                        read_results.append(f"tool error: {r}")
+                    else:
+                        read_results.append(r)
+            else:
+                for item in reads:
+                    r = await self._run_single_call(session_id, store, item["call"], item["tool"])
+                    read_results.append(r)
+
+        # Map read results back to their items.
+        read_idx = 0
+        for item in reads:
+            item["result"] = read_results[read_idx]
+            if item.get("cache_key"):
+                seen_cache_keys[item["cache_key"]] = read_results[read_idx]
+            read_idx += 1
+
+        # 5) Execute writes serially, checking "stop when good enough".
+        for item in writes:
+            if item.get("deduped"):
+                continue  # dedup already handled
+            if not await self._should_write(session_id, store, item["call"]):
+                item["result"] = ("Skipping write: the preceding read of this path failed or was denied.")
+                continue
+            item["result"] = await self._use_tool(session_id, store, item["call"])
+
+        # 6) Restore original order.
+        results = []
+        deduped_iter = iter(deduped)
+        for original in classified:
+            if original.get("is_no_tool"):
+                results.append(original["result"])
+                continue
+            # Advance deduped until we find the same call id.
+            while True:
+                d = next(deduped_iter)
+                if d["call"] is original["call"]:
+                    results.append(d["result"])
+                    break
+
+        return results
+
+    async def _should_write(self, session_id: str, store: SessionStore, call: dict) -> bool:
+        """Check if a preceding read of the same path failed or was denied.
+
+        If the model asked for a read then a write on the same path, and the read
+        failed or was denied, skip the write (the model should know the read failed).
+        """
+        path_arg = call.get("function", {}).get("arguments", "{}")
+        try:
+            args = json.loads(path_arg) if isinstance(path_arg, str) else path_arg
+        except json.JSONDecodeError:
+            return True
+
+        target_path = args.get("path", "")
+        if not target_path:
+            return True
+
+        # Look at the last tool result in the store for a read of the same path.
+        messages = store.messages()
+        for msg in reversed(messages):
+            if msg["role"] == "tool" and "read_file" in msg.get("text", ""):
+                if target_path in msg.get("text", ""):
+                    if "declined" in msg["text"].lower() or "cannot" in msg["text"].lower() or "failed" in msg["text"].lower():
+                        return False
+                    break
+        return True
+
+    async def _run_single_call(self, session_id: str, store: SessionStore, call: dict,
+                                tool: object) -> str:
+        """Run one tool call."""
+        return await self._use_tool(session_id, store, call)
+
     @staticmethod
     def _note_tool(store: SessionStore, name: str, outcome: str, answer: str) -> str:
         """One short line per call in the session, so a restart still knows what a tool did — or that
@@ -324,11 +484,11 @@ class LeanAgent:
         """Fold the older half into the summary, between turns; a second one at a time, never in a turn."""
         if self._summarising:
             return
-        older = context.to_summarise(store)
-        if not older:
-            return
         self._summarising = True
         try:
+            older = context.to_summarise(store)
+            if not older:
+                return
             text = "\n".join(f"{message['role']}: {message['text']}" for message in older)
             summary = await asyncio.to_thread(
                 self.model.complete,
