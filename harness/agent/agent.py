@@ -7,6 +7,7 @@ turn path ever waits for a summary.
 """
 
 import asyncio
+import sqlite3
 import inspect
 import os
 import threading
@@ -333,5 +334,7 @@ class LeanAgent:
                     await self._usage(session_id, store, compacted=True)
         except ModelError:
             pass  # the next turn still works; the summary is simply tried again later
+        except (OSError, sqlite3.OperationalError, sqlite3.ProgrammingError):
+            pass  # the session folder may already have been removed (tests, --live teardown)
         finally:
             self._summarising = False

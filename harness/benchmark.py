@@ -14,6 +14,8 @@ Run
     python -m harness.benchmark --out report.json
 
 The default mode is "scripted": no live model, no network, no API keys.
+Live mode (``--live``) measures the same tasks against a real model; see
+``harness.benchmark_live``. It is opt-in and never runs from the test suite.
 """
 
 import argparse
@@ -106,8 +108,11 @@ async def _run_async_task(name, runner):
     answer = result.get("answer", "")
     path_steps = result.get("path_steps", 0)
     reason = result.get("reason", "") or ("check did not pass" if not ok else "")
+    extra = {k: result[k] for k in
+             ("first_ms", "input_tokens", "output_tokens", "cached_tokens", "steps")
+             if k in result}
     return _make_result(name, ok=ok, answer=answer, path_steps=path_steps,
-                        reason=reason, elapsed=elapsed)
+                        reason=reason, elapsed=elapsed, extra=extra)
 
 
 def _run_sync_task(name, runner):
@@ -124,13 +129,16 @@ def _run_sync_task(name, runner):
     answer = result.get("answer", "")
     path_steps = result.get("path_steps", 0)
     reason = result.get("reason", "") or ("check did not pass" if not ok else "")
+    extra = {k: result[k] for k in
+             ("first_ms", "input_tokens", "output_tokens", "cached_tokens", "steps")
+             if k in result}
     return _make_result(name, ok=ok, answer=answer, path_steps=path_steps,
-                        reason=reason, elapsed=elapsed)
+                        reason=reason, elapsed=elapsed, extra=extra)
 
 
-def _make_result(name, ok, answer, path_steps, reason, elapsed):
-    """Build one task's metric dict."""
-    return {
+def _make_result(name, ok, answer, path_steps, reason, elapsed, extra=None):
+    """Build one task's metric dict. *extra* may override measured fields (live mode)."""
+    row = {
         "id": name,
         "ok": ok,
         "first_ms": 0,
@@ -142,6 +150,11 @@ def _make_result(name, ok, answer, path_steps, reason, elapsed):
         "path_steps": path_steps,
         "reason": reason,
     }
+    if extra:
+        for key in ("first_ms", "input_tokens", "output_tokens", "cached_tokens", "steps"):
+            if key in extra and extra[key] is not None:
+                row[key] = extra[key]
+    return row
 
 
 async def _run_task(name, runner, is_async=True):
@@ -335,14 +348,14 @@ def main(argv=None):
     parser.add_argument("--out", metavar="PATH", help="Write JSON report to file")
     parser.add_argument("--json", action="store_true", help="Print JSON report to stdout")
     parser.add_argument("--live", action="store_true",
-                        help="Stub flag: live benchmark mode is not yet implemented")
+                        help="Measure the same tasks against a real model (opt-in; not used by tests)")
     args = parser.parse_args(argv)
 
     if args.live:
-        print("Live benchmark mode is a stub. --live is not implemented yet.",
-              file=sys.stderr)
-
-    report = asyncio.run(run_all())
+        from harness.benchmark_live import run_all_live
+        report = asyncio.run(run_all_live())
+    else:
+        report = asyncio.run(run_all())
 
     if args.json:
         print(json.dumps(report, indent=2))

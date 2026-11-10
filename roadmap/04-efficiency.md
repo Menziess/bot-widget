@@ -200,9 +200,6 @@ later replaces the extract. The context-use note is quieter: it only shows
 H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): all five tasks pass,
 including `compact_without_summary`.
 
-No `--live` mode is required for the test suite. A live stub exists behind the
-`--live` flag but does not read any key files or connect to 127.0.0.1:8080.
-
 Read the difference carefully.
 
 - The input gap is about eighty times, and it is structural: OpenBot resends the developer

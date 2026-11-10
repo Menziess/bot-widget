@@ -141,17 +141,33 @@ class TestCLI(unittest.TestCase):
         finally:
             os.unlink(path)
 
-    def test_cli_live_is_stub(self):
-        """--live prints a stub message to stderr but does not fail."""
-        import io
-        original_stderr = sys.stderr
-        sys.stderr = io.StringIO()
-        try:
-            benchmark.main(["--live"])
-        finally:
-            stderr_output = sys.stderr.getvalue()
-            sys.stderr = original_stderr
-        self.assertIn("stub", stderr_output.lower())
+    def test_default_cli_stays_scripted(self):
+        """--live is opt-in; the default path never leaves scripted mode."""
+        source = open(benchmark.__file__).read()
+        self.assertIn("--live", source)
+        self.assertIn("run_all_live", source)
+        self.assertNotIn("8080", source)
+
+    def test_live_runner_with_injected_model_records_real_metrics(self):
+        """run_all_live accepts an injected model and never needs a key or a server."""
+        import asyncio
+        from harness.benchmark_live import run_all_live
+
+        model = benchmark.ScriptModel([
+            [("text", "PONG"),
+             ("usage", {"prompt_tokens": 11, "completion_tokens": 1,
+                         "prompt_tokens_details": {"cached_tokens": 2}})],
+        ] * 12)
+        report = asyncio.run(run_all_live(model))
+        self.assertEqual(report["mode"], "live")
+        self.assertIn("model", report)
+        dumped = json.dumps(report).lower()
+        self.assertNotIn("api_key", dumped)
+        self.assertNotIn("key_file", dumped)
+        by_id = {t["id"]: t for t in report["tasks"]}
+        self.assertTrue(by_id["short_answer"]["ok"], by_id["short_answer"].get("reason"))
+        self.assertGreaterEqual(by_id["short_answer"]["output_tokens"], 0)
+        self.assertIn("summary", report)
 
 
 class TestNoNetworkAndNoKeys(unittest.TestCase):
