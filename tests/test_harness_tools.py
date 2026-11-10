@@ -30,14 +30,21 @@ class Builtins(unittest.TestCase):
             read_file("~/.ssh/id_rsa")
 
     def test_a_write_is_marked_as_needing_permission(self):
-        self.assertEqual(Tools().tools, {}, "repo tools stay off until a workspace is set")
+        builtin_tools = Tools()
+        names = {t.name: t.writes for t in builtin_tools.tools.values()}
+        self.assertIn("read_file", names, "builtins are always offered")
+        self.assertIn("list_dir", names, "list_dir is a builtin")
+        self.assertIn("write_file", names, "write_file is a builtin")
+        self.assertTrue(names.get("write_file"), "write_file must require permission")
+        self.assertFalse(names.get("read_file"), "read_file must not require permission")
+        self.assertFalse(names.get("list_dir"), "list_dir must not require permission")
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)
-        names = {tool.name: tool.writes for tool in Tools(workspace=folder).tools.values()}
-        self.assertTrue(names, "a workspace offers file tools")
-        self.assertFalse(names.get("read_file") or names.get("list_dir") or names.get("search") or names.get("git_status"),
+        names_ws = {tool.name: tool.writes for tool in Tools(workspace=folder).tools.values()}
+        self.assertTrue(names_ws, "a workspace offers file tools")
+        self.assertFalse(names_ws.get("read_file") or names_ws.get("list_dir") or names_ws.get("search") or names_ws.get("git_status"),
                          "read tools must not require permission")
-        self.assertTrue(any(names[name] for name in names if name in ("write_file", "edit", "edit_file", "shell")),
+        self.assertTrue(any(names_ws[name] for name in names_ws if name in ("write_file", "edit", "edit_file", "shell")),
                         "writes and shell must require permission")
 
 

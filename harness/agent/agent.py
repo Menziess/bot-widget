@@ -35,7 +35,7 @@ class LeanAgent:
         self.bot = bot
         self.model = model
         workspace = os.environ.get("HARNESS_WORKSPACE") or ""
-        permission = os.environ.get("HARNESS_WORKSPACE_PERMISSIONS") or "ask"
+        permission = os.environ.get("HARNESS_WORKSPACE_PERMISSIONS") or "allow"
         permission = {"allowlist": "allow", "allow-for-session": "allow_session"}.get(permission, permission)
         diff_mode = os.environ.get("HARNESS_DIFF_PERMISSIONS") or "ask"
         self.diff_edit_mode = diff_mode  # ask | always | never

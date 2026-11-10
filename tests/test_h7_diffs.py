@@ -229,6 +229,7 @@ class H7DiffAlways(unittest.IsolatedAsyncioTestCase):
             agent.tools = Tools("", set(), workspace=self.workspace, permission="ask")
             for t in tools:
                 agent.tools.add(t)
+            agent.tools._add_workspace_tools()
 
             opened = await agent.new_session(cwd=self.workspace)
             session_id = opened.session_id
@@ -332,6 +333,7 @@ class H7UndoStack(unittest.IsolatedAsyncioTestCase):
             agent.tools = Tools("", set(), workspace=self.workspace, permission="ask")
             for t in tools:
                 agent.tools.add(t)
+            agent.tools._add_workspace_tools()
 
             opened = await agent.new_session(cwd=self.workspace)
             session_id = opened.session_id

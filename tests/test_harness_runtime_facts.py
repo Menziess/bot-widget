@@ -20,7 +20,7 @@ class RuntimeFacts(unittest.TestCase):
 
     def test_local_loopback_is_local_and_does_not_name_openrouter(self):
         text = context.runtime_facts(_Stub(
-            base_url="http://127.0.0.1:8080/v1", model="local",
+            base_url="http://127.0.0.1:8081/v1", model="local",
             reported_model="Qwen2.5-7B-Instruct", model_owned_by="llama.cpp"))
         self.assertIn("Qwen2.5-7B-Instruct", text)
         self.assertIn("llama.cpp", text)

@@ -12,7 +12,7 @@ from botwidget.avatar import GROK_HEX, SUPPORTED_SHAPES
 
 FACES = SUPPORTED_SHAPES
 COLORS = ("blue", "green", "violet", "orange", "red", "cyan", "magenta", "yellow")
-DEFAULT_BASE = "http://127.0.0.1:8080/v1"
+DEFAULT_BASE = "http://127.0.0.1:8081/v1"
 DEFAULT_MODEL = "local"
 DEFAULT_KEY = "~/.config/llm/key"
 # A pasted key hides under one of these names. The path in key_file is not a secret.
@@ -36,7 +36,7 @@ def blank() -> dict:
     """What New bot shows before anything is typed. With no connection picked, the address is the local server."""
     return {"id": "", "stored_id": "", "name": "", "face": "nuage", "color": "blue", "connection": "",
             "base_url": DEFAULT_BASE, "model": DEFAULT_MODEL, "key_file": DEFAULT_KEY,
-            "command": "", "workspace": "", "workspace_permissions": "ask"}
+            "command": "", "workspace": "", "workspace_permissions": "allow"}
 
 
 def fields_of(bot: dict) -> dict:
@@ -63,7 +63,7 @@ WS_PERMISSION_ALIASES = {"allowlist": "allow", "allow-for-session": "allow_sessi
 
 
 def normalise_workspace_permission(value: str) -> str:
-    raw = (value or "ask").strip()
+    raw = (value or "allow").strip()
     return WS_PERMISSION_ALIASES.get(raw, raw)
 
 

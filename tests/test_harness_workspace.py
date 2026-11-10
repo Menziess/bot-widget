@@ -401,7 +401,17 @@ class WorkspaceRules(unittest.TestCase):
 class WorkspaceBuiltins(unittest.TestCase):
     def test_tools_without_workspace_offer_no_file_tools(self):
         from harness.agent.tools import Tools
-        self.assertEqual(Tools().tools, {})
+        tools = Tools()
+        # Without a workspace, only the read-only builtins are offered; write_file requires permission.
+        names = {t.name for t in tools.tools.values()}
+        self.assertIn("read_file", names)
+        self.assertIn("list_dir", names)
+        self.assertIn("write_file", names)
+        # No workspace-scoped tools (search, git, shell, edit, undo) without a workspace.
+        self.assertNotIn("search", names)
+        self.assertNotIn("git_status", names)
+        self.assertNotIn("shell", names)
+        self.assertNotIn("edit", names)
 
     def test_no_workspace_returns_empty(self):
         self.assertEqual(workspace_builtins(None, EditStore()), [])

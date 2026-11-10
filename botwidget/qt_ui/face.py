@@ -1291,6 +1291,9 @@ class FaceWindow(QWidget):
             # The agent pushes its updates, so there is nothing to poll: draw what came in, and keep
             # the timer alive only while a turn runs.
             changed = self._set_attention(self.acp.attention())
+            # Also update the notification dot for pending approvals (Item 6).
+            if self._has_attention() != self.has_pending:
+                self.has_pending = self._has_attention()
             chat = self._latest()
             self._sync_bubble(chat, force=changed)
             if self._refreshing and not self.acp.active():

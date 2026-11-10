@@ -5,9 +5,9 @@ Every tool call is scoped to the workspace folder. When the workspace is empty
 
 Permission modes
 ----------------
-ask       – every action asks the user (default)
 allow     – auto-allow read, search and git-read inside the workspace; still
             ask for edit (write_file) and shell.
+ask       – every action asks the user.
 allow_session – like allow, but the permission is remembered only until the
                 process exits (a single session).
 

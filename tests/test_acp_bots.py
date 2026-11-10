@@ -127,7 +127,7 @@ class BotForm(unittest.TestCase):
         self.assertIn("harness.agent", first[0]["command"])
         self.assertNotIn("11434", json.dumps(first))
         self.assertEqual([row["id"] for row in second], ["local", "other"])
-        self.assertEqual({row["env"]["HARNESS_MODEL_BASE_URL"] for row in second}, {"http://127.0.0.1:8080/v1"})
+        self.assertEqual({row["env"]["HARNESS_MODEL_BASE_URL"] for row in second}, {"http://127.0.0.1:8081/v1"})
         self.assertEqual({row["env"]["HARNESS_MODEL"] for row in second}, {"local"})
         renamed, error = acp_bots.commit({**acp_bots.fields_of({"id": "acp:local", "name": "Local",
                                                                 "command": first[0]["command"], "env": first[0]["env"],
@@ -331,7 +331,7 @@ class WidgetSave(unittest.TestCase):
         bots_saved = saved["acp_bots"]
         self.assertEqual([row["env"]["HARNESS_MODEL"] for row in bots_saved], ["local", "local"])
         self.assertEqual([row["env"]["HARNESS_MODEL_BASE_URL"] for row in bots_saved],
-                         ["http://127.0.0.1:8080/v1", "http://127.0.0.1:8080/v1"])
+                         ["http://127.0.0.1:8081/v1", "http://127.0.0.1:8081/v1"])
         self.assertEqual([row["id"] for row in bots_saved], ["harness-check", "second-check"])
         self.assertEqual([call[1] for call in self.calls], ["acp:harness-check", "acp:second-check"])
 

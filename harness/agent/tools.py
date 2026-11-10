@@ -99,7 +99,6 @@ class Tools:
                  workspace: str = "", permission: str = "ask"):
         self.mcp_command = mcp_command
         self.read_only = read_only or set()
-        # File tools stay off until a workspace is set: unscope read/write is not offered.
         self.tools: dict[str, Tool] = {}
         self.workspace = workspace  # realpath or None
         self.permission = permission
@@ -107,11 +106,14 @@ class Tools:
         self._stack = AsyncExitStack()
         self._session = None
         self.problems: list[str] = []
-        self._add_workspace_tools()
+        # Always offer the builtins (read_file, list_dir, write_file) so the model
+        # can always suggest file operations even when no workspace is configured.
+        for tool in builtins():
+            self.tools[tool.name] = tool
         self._session_allows: set[str] = set()
 
     def _add_workspace_tools(self) -> None:
-        """Add workspace-scoped tools if a workspace is set."""
+        """Add workspace-scoped tools if a workspace is set; they override the builtins."""
         from harness.agent.workspace import EditStore, _edit_before, resolve_workspace, workspace_builtins
 
         resolved = resolve_workspace(self.workspace)
