@@ -180,6 +180,21 @@ def build(store, bot: str, model_window: int = 0, model=None) -> list[dict]:
         if extract:
             _push("system", extract)
 
+    # ── Memory retrieval (after facts and background, before turns) ─
+    # The query is the newest turns (not the oldest of the recent window).
+    try:
+        from harness.agent import memory as memory_mod
+        query = "\n".join(message["text"] for message in store.messages(limit=8))
+        memories = memory_mod.retrieve_memories(query, workspace=ws_path or None)
+        if memories:
+            mem_lines = [
+                f"[{m['scope']}{' [' + m['topic'] + ']' if m.get('topic') else ''}] {m['text']}"
+                for m in memories
+            ]
+            _push("system", "Relevant memories:\n" + "\n".join(mem_lines))
+    except Exception:
+        pass  # memory errors must never break the turn
+
     # ── Fill remaining budget with recent turns ────────────────────
     remaining = budget - used
     kept: list[dict] = []

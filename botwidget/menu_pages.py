@@ -4,20 +4,21 @@ Pure blocks, no toolkit. A clickable row is a piece with the style "cmd:<command
 produces that style, so no message from a bot can make a row of its own.
 """
 
+import time
 import urllib.parse
 
 from botwidget.config import QUIET_FROM, QUIET_TO
 from botwidget.markdown import control_block, plain_block, role_panel, text_block
 from botwidget.theme import BUBBLE_FONT
 
-PAGES = ("settings", "bots", "connections", "bot", "connection", "widget-json")
+PAGES = ("settings", "bots", "connections", "bot", "connection", "widget-json", "memory")
 # What typing it in the field opens.
-SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"}
+SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections", "/memory": "memory"}
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
 # No /home: a right-click shows this list on its own. A page steps back to the screen before it.
 COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
-            ("/connections", "what was found"), ("/refresh", "reload every bot"),
-            ("/feedback", "open a GitHub issue"))
+            ("/connections", "what was found"), ("/memory", "view/edit memories"),
+            ("/refresh", "reload every bot"), ("/feedback", "open a GitHub issue"))
 
 
 def commands() -> tuple:
@@ -309,6 +310,55 @@ def connection_form(state: dict) -> list:
     return blocks
 
 
+def memory_page(state: dict) -> list:
+    """View, add, and forget memories."""
+    try:
+        from harness.agent import memory as memory_mod
+        memories = memory_mod.list_memories()
+    except Exception:
+        memories = []
+
+    blocks = _back("page/bots") + [_heading("Memory")]
+    if not memories:
+        blocks.append(_row(("No memories stored yet", "dim")))
+    else:
+        for m in memories:
+            scope = m.get("scope", "?")
+            topic = f" [{m['topic']}]" if m.get("topic") else ""
+            mem_id = m.get("id", "")
+            ts = m.get("ts", 0)
+            time_str = time.strftime("%b %d %H:%M", time.localtime(ts)) if ts else ""
+            label = f"[{scope}{topic}] {m.get('text', '')} · {time_str}"
+            blocks.append({**_row((label, "dim")), "actions": [
+                ("Forget", f"cmd:memory-forget/{mem_id}"),
+            ]})
+    blocks += [plain_block("gap"),
+               _button("New memory", "page/memory/new"),
+               _button("Back to memories", "page/memory/list")]
+    return blocks
+
+
+def memory_add(state: dict) -> list:
+    """Add a new memory."""
+    blocks = _back("page/memory/list") + [_heading("New memory")]
+    error = state.get("memory_error", "")
+    if error:
+        blocks.append(_row((error, "b")))
+    blocks += [
+        _field("Text", "field/memory_text", state.get("_memory_text", "")),
+        _field("Scope (user/project/topic)", "field/memory_scope", state.get("_memory_scope", "user")),
+        _field("Topic (optional)", "field/memory_topic", state.get("_memory_topic", "")),
+        plain_block("gap"),
+        _button("Save memory", "action/memory-save"),
+    ]
+    return blocks
+
+
+def memory_list(state: dict) -> list:
+    """Back to the memory list."""
+    return memory_page(state)
+
+
 def page_blocks(page: str, state: dict) -> list:
     if page == "widget-json":
         return widget_json(state)
@@ -316,4 +366,10 @@ def page_blocks(page: str, state: dict) -> list:
         return bot_form(state)
     if page == "connection" or (isinstance(page, str) and page.startswith("connection/")):
         return connection_form(state)
+    if page == "memory":
+        return memory_page(state)
+    if page == "memory/new":
+        return memory_add(state)
+    if page == "memory/list":
+        return memory_list(state)
     return {"settings": settings, "bots": bots, "connections": connections}.get(page, settings)(state)

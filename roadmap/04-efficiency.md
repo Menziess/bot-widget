@@ -213,3 +213,24 @@ Read the difference carefully.
 - Cost per finished task, the figure the plan wants, is 0 on both sides with a local model and
   cannot be measured for a hosted model without paid credit. The comparison that would settle it
   needs the same model on both backends and a real task set.
+
+## H5 durable topic-scoped memory
+
+The bot can now store memories that survive compaction and restarts. Three scopes:
+**user** (per bot), **project** (keyed by workspace), and **topic** (scoped to a topic name).
+Storage is a JSON-lines file per scope in `~/.local/share/botwidget/harness/memory/`
+(configurable via `HARNESS_MEMORY_DIR`).
+
+Topic assignment is lexical: token overlap (Jaccard-like) with a 0.15 threshold decides
+whether a message belongs to an existing topic or starts a new one. Retrieval injects
+top-k memories (default 10, ~2k chars) into the system message after facts, using the same
+overlap scoring with a 2× boost for matching topics.
+
+Three tools are registered with the agent: `memory_write` (text, scope, topic),
+`memory_read` (query), and `memory_forget` (id or text match). Writes follow the existing
+permission-asking flow. A Memory page in the bubble menu lets users list, add, and forget
+memories.
+
+H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): all five tasks still pass,
+including `compact_without_summary`. Memory retrieval is silent when the file does not
+exist yet, so it does not affect the benchmark.

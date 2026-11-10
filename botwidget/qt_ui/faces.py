@@ -548,6 +548,10 @@ class Faces(QObject):
             "hermes": hermesbot.is_hermes_installed(),
             "wanted": sorted(self.wanted),
             "grok_relay": grok_relay.channel(),
+            "memory_error": getattr(self, "_memory_error", ""),
+            "_memory_text": getattr(self, "_memory_text", ""),
+            "_memory_scope": getattr(self, "_memory_scope", "user"),
+            "_memory_topic": getattr(self, "_memory_topic", ""),
         }
 
     TOGGLES = {
@@ -621,6 +625,13 @@ class Faces(QObject):
                 if command.startswith("field/"):
                     draft[command[len("field/"):]] = value
             self._connection_draft = draft
+        elif page == "memory" or (isinstance(page, str) and page.startswith("memory/")):
+            if "field/memory_text" in fields:
+                self._memory_text = fields.get("field/memory_text", "")
+            if "field/memory_scope" in fields:
+                self._memory_scope = fields.get("field/memory_scope", "user")
+            if "field/memory_topic" in fields:
+                self._memory_topic = fields.get("field/memory_topic", "")
 
     def _open_bot_form(self, face_id: str):
         bots = {bot["id"]: bot for bot in acplink.configured_bots()}
@@ -803,6 +814,12 @@ class Faces(QObject):
             if topic:
                 QApplication.clipboard().setText(grok_relay.chief_prompt(topic))
             return "connections"
+        elif kind == "action" and name == "memory-save":
+            self._save_memory()
+            return "memory"
+        elif kind == "memory-forget":
+            self._forget_memory(name)
+            return "memory"
         return None
 
     def _set_debug(self, on: bool):
@@ -810,6 +827,29 @@ class Faces(QObject):
         if not startup.from_checkout():
             return
         save_widget_config(debug=bool(on))
+
+    def _save_memory(self) -> None:
+        """Persist a new memory from the form fields."""
+        try:
+            from harness.agent.memory import write_memory
+            text = str(getattr(self, "_memory_text", "") or "").strip()
+            if not text:
+                self._memory_error = "Memory text is required."
+                return
+            scope = str(getattr(self, "_memory_scope", "user") or "user")
+            topic = str(getattr(self, "_memory_topic", "") or "")
+            write_memory(text, scope, topic)
+            self._memory_error = ""
+        except Exception as error:
+            self._memory_error = str(error)[:200]
+
+    def _forget_memory(self, memory_id: str) -> None:
+        """Forget a memory by ID."""
+        try:
+            from harness.agent.memory import forget_memory
+            forget_memory(memory_id)
+        except Exception:
+            pass
 
     def _set_glass(self, percent: int):
         save_widget_config(glass_clear=percent)

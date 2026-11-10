@@ -5986,7 +5986,8 @@ class MenuPages(unittest.TestCase):
     def test_a_nested_page_leads_back_to_the_page_it_came_from(self):
         """Should step up one screen: chat, the command list, a page of it, then a form."""
         back = {"settings": "page/commands", "bots": "page/commands", "connections": "page/commands",
-                "bot": "page/bots", "connection": "page/connections", "widget-json": "page/bots"}
+                "bot": "page/bots", "connection": "page/connections", "widget-json": "page/bots",
+                "memory": "page/bots"}
         for page in menu_pages.PAGES:
             self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], back[page])
         self.assertEqual(self.commands(menu_pages.page_blocks("nonsense", self.STATE)),

@@ -112,6 +112,8 @@ class LeanAgent:
     async def _answer(self, session_id: str, store: SessionStore) -> PromptResponse:
         await self.tools.start()
         self.tools.add(self._pin(store))
+        for t in self._memory_tools():
+            self.tools.add(t)
         started = time.monotonic()
         first = 0.0
         answer = []
@@ -189,6 +191,11 @@ class LeanAgent:
 
         return Tool("pin_fact", "Keep one fact in every later request, even after older turns are summarised.",
                     {"type": "object", "properties": {"fact": {"type": "string"}}, "required": ["fact"]}, pin)
+
+    def _memory_tools(self) -> list:
+        """Three memory tools for durable, topic-scoped storage."""
+        from harness.agent.memory import memory_tools_for
+        return memory_tools_for(workspace=os.environ.get("HARNESS_WORKSPACE") or "")
 
     async def _usage(self, session_id: str, store: SessionStore, compacted: bool = False) -> None:
         """The context meter, and a one-line notice when a summary has just landed."""
