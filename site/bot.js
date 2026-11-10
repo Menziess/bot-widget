@@ -282,7 +282,7 @@
     [/install|download|get you|setup|set up|start|run/, "On a Mac with Apple Silicon, run curl -fsSL https://bot-widget.com/install.sh | sh in Terminal. On Windows: run the installer. On Linux: unpack the archive and run ./botwidget/install.sh. With uv, one line does it everywhere: uv tool install git+https://github.com/Menziess/bot-widget"],
     [/windows|linux|mac|system|platform|support/, "I run on macOS, Windows and Linux. The download button above picks the right one for you."],
     [/openbot|grok/, "I'm only the face. I talk to OpenBot or Grok Bot on your computer; without either I tell you so and point you to both."],
-    [/free|cost|price|pay|licen|open source/, "Free, and the source is on GitHub."],
+    [/free|cost|price|pay|licen|open source/, "Free under the MIT license, and the source is on GitHub."],
     [/privacy|data|private|secure|safe|track|send/, "I talk to the bot on your own machine. The only thing I ask the internet is whether there is a newer release on GitHub, and that can be switched off."],
     [/update/, "I check GitHub for a newer release, download it, verify its checksum and restart into it when nobody is using me."],
     [/click|chat|bubble|type|talk|use/, "Click my face to open this bubble and type to your bot. While it works I read, and the bubble turns into a thought cloud. Right-click me to switch bots and open Settings."],

@@ -7,92 +7,20 @@
 <meta name="description" content="What Bot Widget sends over the network.">
 <meta property="og:title" content="Privacy — Bot Widget">
 <meta property="og:description" content="What Bot Widget sends over the network.">
-<meta name="theme-color" content="#f6f7fb" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#101218" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f7fb">
 <link rel="icon" href="/face.svg">
 <style>
-  :root { --ink: #1c1c1c; --soft: #1c1c1c99; --line: #1c1c1c1f; --accent: #0b6dd3; }
+  :root { --ink: #1c1c1c; --soft: #1c1c1c8f; --line: #1c1c1c1f; --accent: #0b6dd3; color-scheme: light; }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
-         color: var(--ink); background: radial-gradient(900px 520px at 12% -8%, #d9e6ff, #0000 70%),
-         radial-gradient(800px 480px at 100% 6%, #ffe0ea, #0000 70%), #f6f7fb; background-attachment: fixed; }
+  body { margin: 0; font: 17px/1.55 "Noto Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         color: var(--ink); background: radial-gradient(900px 520px at 12% -8%, #c9dcff, #0000 70%),
+         radial-gradient(800px 480px at 100% 6%, #ffd3e2, #0000 70%), #f6f7fb; background-attachment: fixed; }
   main { max-width: 680px; margin: 0 auto; padding: 72px 24px 96px; }
-  #stage { width: 204px; aspect-ratio: 1; margin: 0 auto 8px; }
-  #stage img { width: 100%; height: 100%; display: block; }
-  body.live #stage img { visibility: hidden; }
-  .try { text-align: center; color: var(--soft); font-size: 15px; margin: 0 0 28px; }
-  #home { display: none; font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
-  body.away #home { display: inline; }
-  #bot { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; display: none; will-change: transform; }
-  body.live #bot { display: block; }
-  #bot canvas { display: block; }
-  #bot-hit { position: absolute; border-radius: 50%; pointer-events: auto; cursor: grab; touch-action: none; }
-  #bot.grabbed #bot-hit { cursor: grabbing; }
-  #bubble { position: fixed; left: 0; top: 0; z-index: 11; width: min(320px, calc(100vw - 16px));
-            background: linear-gradient(180deg, #ffffffc2, #eef3fbc2); -webkit-backdrop-filter: blur(22px) saturate(1.5);
-            backdrop-filter: blur(22px) saturate(1.5); border-radius: 20px;
-            box-shadow: 0 10px 32px #00000026, 0 0 0 1px #1c1c1c1a, inset 0 0 0 1px #ffffffe6; padding: 12px 14px;
-            font-size: 15px; line-height: 1.45; opacity: 0; visibility: hidden; transition: opacity .18s, visibility .18s;
-            will-change: transform; --tail: 40px; }
-  #bubble[data-open="true"] { opacity: 1; visibility: visible; }
-  #bubble::after { content: ""; position: absolute; background: #f2f6fce6; }
-  #bubble[data-side="above"]::after { left: calc(var(--tail) - 9px); bottom: -8px; width: 18px; height: 8px; clip-path: polygon(0 0, 100% 0, 50% 100%); }
-  #bubble[data-side="below"]::after { left: calc(var(--tail) - 9px); top: -8px; width: 18px; height: 8px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-  #bubble[data-side="right"]::after { top: calc(var(--tail) - 9px); left: -8px; width: 8px; height: 18px; clip-path: polygon(100% 0, 100% 100%, 0 50%); }
-  #bubble[data-side="left"]::after { top: calc(var(--tail) - 9px); right: -8px; width: 8px; height: 18px; clip-path: polygon(0 0, 100% 50%, 0 100%); }
-  #log { max-height: 220px; overflow-y: auto; }
-  #log p { margin: 0 0 8px; overflow-wrap: anywhere; }
-  #log .you { text-align: right; color: var(--soft); }
-  #log .dots i { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--ink);
-                 opacity: .25; animation: dot 1s infinite; }
-  #log .dots i:nth-child(2) { animation-delay: .15s; } #log .dots i:nth-child(3) { animation-delay: .3s; }
-  @keyframes dot { 0%, 100% { opacity: .2; transform: translateY(0); } 40% { opacity: .9; transform: translateY(-3px); } }
-  #bubble.say #chat-only { display: none; }
-  #chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
-  #chips button { font: inherit; font-size: 13px; background: #1c1c1c0f; border: 0; border-radius: 999px; padding: 4px 10px; cursor: pointer; color: var(--ink); }
-  #chips button:hover { background: #1c1c1c1f; }
-  #ask-text { width: 100%; font: inherit; font-size: 15px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #ffffff96; }
-  #ask-text:focus { outline: 2px solid var(--accent); outline-offset: 1px; background: #ffffffd8; }
-  @media (prefers-reduced-motion: reduce) { #bubble { transition: none; } #log .dots i { animation: none; opacity: .6; } }
   h1 { font-size: 40px; line-height: 1.15; text-align: center; margin: 0 0 12px; letter-spacing: -0.02em; }
-  .lead { text-align: center; color: var(--soft); font-size: 19px; margin: 0 auto 40px; max-width: 520px; }
-  .download { background: linear-gradient(180deg, #ffffffb8, #eef3fbb8); -webkit-backdrop-filter: blur(22px) saturate(1.5);
-              backdrop-filter: blur(22px) saturate(1.5); border-radius: 22px; padding: 28px; text-align: center;
-              box-shadow: 0 10px 32px #0000001a, 0 0 0 1px #1c1c1c14, inset 0 0 0 1px #ffffffe6; }
-  .button { display: inline-block; background: var(--ink); color: #fff; text-decoration: none; font-weight: 600;
-            padding: 14px 28px; border-radius: 12px; font-size: 18px; }
-  .button:hover { background: #000; }
-  .hint { color: var(--soft); font-size: 15px; margin: 16px 0 0; }
-  code { font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #1c1c1c0f;
+  code { font: 14px "DejaVu Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #1c1c1c0f;
          padding: 2px 6px; border-radius: 6px; }
-  pre { text-align: left; background: #1c1c1c; color: #fff; border-radius: 12px; padding: 16px 18px; overflow-x: auto;
-        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 20px 0 0; }
-  .others { margin: 20px 0 0; font-size: 15px; color: var(--soft); text-align: center; }
-  .others a { color: var(--accent); margin: 0 6px; }
-  [data-os] { display: none; }
-  body[data-detected="mac"] [data-os="mac"], body[data-detected="windows"] [data-os="windows"],
-  body[data-detected="linux"] [data-os="linux"], body[data-detected="other"] [data-os="other"] { display: block; }
-  h2 { font-size: 22px; margin: 56px 0 12px; letter-spacing: -0.01em; }
-  ul { padding-left: 20px; } li { margin: 6px 0; }
   a { color: var(--accent); }
   footer { margin-top: 64px; color: var(--soft); font-size: 14px; text-align: center; }
-  :root { color-scheme: light dark; }
-  @media (prefers-color-scheme: dark) {
-    :root { --ink: #ececec; --soft: #ececec99; --line: #ffffff26; --accent: #7ab8ff; }
-    body { background: radial-gradient(900px 520px at 12% -8%, #1d2b49, #0000 70%),
-           radial-gradient(800px 480px at 100% 6%, #3b2030, #0000 70%), #101218; background-attachment: fixed; }
-    #bubble, .download { background: linear-gradient(180deg, #2b2e3ac2, #1c1f29c2);
-      box-shadow: 0 10px 32px #0000008c, 0 0 0 1px #ffffff1f, inset 0 0 0 1px #ffffff14; }
-    #bubble::after { background: #232631e6; }
-    .button { background: var(--ink); color: #101218; }
-    .button:hover { background: #fff; }
-    code { background: #ffffff14; }
-    pre { background: #0a0b0f; box-shadow: 0 0 0 1px #ffffff1a; }
-    #chips button { background: #ffffff14; }
-    #chips button:hover { background: #ffffff26; }
-    #ask-text { background: #ffffff12; }
-    #ask-text:focus { background: #ffffff1f; }
-  }
 </style>
 </head>
 <body>
@@ -100,7 +28,7 @@
   <h1>Privacy</h1>
   <p>Bot Widget talks to the bot apps on your own computer (OpenBot, Grok Bot). On its own it only asks GitHub (<code>api.github.com</code>) whether there is a newer release, and downloads that release from GitHub Releases; <strong>Check for updates</strong> on the /settings page switches that off. <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a> applies to those requests. Anything else, such as /feedback opening a GitHub issue in your browser, only happens when you ask for it.</p>
   <p><a href="/">← Back to Bot Widget</a></p>
-  <footer><a href="https://github.com/Menziess/bot-widget">Source on GitHub</a> · <a href="/#code-signing">Code signing policy</a> · <a href="/privacy">Privacy</a></footer>
+  <footer>MIT license · <a href="https://github.com/Menziess/bot-widget">Source on GitHub</a> · <a href="/#code-signing">Code signing policy</a> · <a href="/privacy">Privacy</a></footer>
 </main>
 </body>
 </html>

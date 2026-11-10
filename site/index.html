@@ -4,18 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bot Widget — a face for your bot</title>
-<meta name="description" content="An animated desktop face for OpenBot and Grok Bot. Click it to chat, watch it think.">
+<meta name="description" content="A 68 px animated desktop face for OpenBot and Grok Bot. Always within reach, while the rest of the screen stays yours.">
 <meta property="og:title" content="Bot Widget — a face for your bot">
-<meta property="og:description" content="An animated desktop face for OpenBot and Grok Bot. Click it to chat, watch it think.">
-<meta name="theme-color" content="#f6f7fb" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#101218" media="(prefers-color-scheme: dark)">
+<meta property="og:description" content="A 68 px animated desktop face for OpenBot and Grok Bot. Always within reach, while the rest of the screen stays yours.">
+<meta name="theme-color" content="#f6f7fb">
 <link rel="icon" href="face.svg">
 <style>
-  :root { --ink: #1c1c1c; --soft: #1c1c1c99; --line: #1c1c1c1f; --accent: #0b6dd3; }
+  :root { --ink: #1c1c1c; --soft: #1c1c1c8f; --line: #1c1c1c1f; --accent: #0b6dd3; color-scheme: light; }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 17px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
-         color: var(--ink); background: radial-gradient(900px 520px at 12% -8%, #d9e6ff, #0000 70%),
-         radial-gradient(800px 480px at 100% 6%, #ffe0ea, #0000 70%), #f6f7fb; background-attachment: fixed; }
+  body { margin: 0; font: 17px/1.55 "Noto Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         color: var(--ink); background: radial-gradient(900px 520px at 12% -8%, #c9dcff, #0000 70%),
+         radial-gradient(800px 480px at 100% 6%, #ffd3e2, #0000 70%), #f6f7fb; background-attachment: fixed; }
   main { max-width: 680px; margin: 0 auto; padding: 72px 24px 96px; }
   #stage { width: 204px; aspect-ratio: 1; margin: 0 auto 8px; }
   #stage img { width: 100%; height: 100%; display: block; }
@@ -55,18 +54,22 @@
   #ask-text:focus { outline: 2px solid var(--accent); outline-offset: 1px; background: #ffffffd8; }
   @media (prefers-reduced-motion: reduce) { #bubble { transition: none; } #log .dots i { animation: none; opacity: .6; } }
   h1 { font-size: 40px; line-height: 1.15; text-align: center; margin: 0 0 12px; letter-spacing: -0.02em; }
-  .lead { text-align: center; color: var(--soft); font-size: 19px; margin: 0 auto 40px; max-width: 520px; }
+  .lead { text-align: center; color: var(--soft); font-size: 19px; margin: 0 auto 12px; max-width: 520px; }
+  .lead + .lead { margin-bottom: 40px; }
   .download { background: linear-gradient(180deg, #ffffffb8, #eef3fbb8); -webkit-backdrop-filter: blur(22px) saturate(1.5);
-              backdrop-filter: blur(22px) saturate(1.5); border-radius: 22px; padding: 28px; text-align: center;
+              backdrop-filter: blur(22px) saturate(1.5); border-radius: 20px; padding: 28px; text-align: center;
               box-shadow: 0 10px 32px #0000001a, 0 0 0 1px #1c1c1c14, inset 0 0 0 1px #ffffffe6; }
   .button { display: inline-block; background: var(--ink); color: #fff; text-decoration: none; font-weight: 600;
             padding: 14px 28px; border-radius: 12px; font-size: 18px; }
   .button:hover { background: #000; }
   .hint { color: var(--soft); font-size: 15px; margin: 16px 0 0; }
-  code { font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #1c1c1c0f;
+  code { font: 14px "DejaVu Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #1c1c1c0f;
          padding: 2px 6px; border-radius: 6px; }
-  pre { text-align: left; background: #1c1c1c; color: #fff; border-radius: 12px; padding: 16px 18px; overflow-x: auto;
-        font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 20px 0 0; }
+  pre { text-align: left; background: linear-gradient(180deg, #ffffffc2, #eef3fbc2); color: var(--ink);
+        -webkit-backdrop-filter: blur(22px) saturate(1.5); backdrop-filter: blur(22px) saturate(1.5);
+        border-radius: 12px; padding: 16px 18px; overflow-x: auto;
+        font: 14px/1.5 "DejaVu Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 20px 0 0;
+        box-shadow: 0 10px 32px #0000001a, 0 0 0 1px #1c1c1c14, inset 0 0 0 1px #ffffffe6; }
   .others { margin: 20px 0 0; font-size: 15px; color: var(--soft); text-align: center; }
   .others a { color: var(--accent); margin: 0 6px; }
   [data-os] { display: none; }
@@ -76,23 +79,6 @@
   ul { padding-left: 20px; } li { margin: 6px 0; }
   a { color: var(--accent); }
   footer { margin-top: 64px; color: var(--soft); font-size: 14px; text-align: center; }
-  :root { color-scheme: light dark; }
-  @media (prefers-color-scheme: dark) {
-    :root { --ink: #ececec; --soft: #ececec99; --line: #ffffff26; --accent: #7ab8ff; }
-    body { background: radial-gradient(900px 520px at 12% -8%, #1d2b49, #0000 70%),
-           radial-gradient(800px 480px at 100% 6%, #3b2030, #0000 70%), #101218; background-attachment: fixed; }
-    #bubble, .download { background: linear-gradient(180deg, #2b2e3ac2, #1c1f29c2);
-      box-shadow: 0 10px 32px #0000008c, 0 0 0 1px #ffffff1f, inset 0 0 0 1px #ffffff14; }
-    #bubble::after { background: #232631e6; }
-    .button { background: var(--ink); color: #101218; }
-    .button:hover { background: #fff; }
-    code { background: #ffffff14; }
-    pre { background: #0a0b0f; box-shadow: 0 0 0 1px #ffffff1a; }
-    #chips button { background: #ffffff14; }
-    #chips button:hover { background: #ffffff26; }
-    #ask-text { background: #ffffff12; }
-    #ask-text:focus { background: #ffffff1f; }
-  }
 </style>
 </head>
 <body>
@@ -101,6 +87,7 @@
   <p class="try">Go on: grab me, throw me, or click me. <button id="home" type="button">Bring me back</button></p>
   <h1>A face for your bot</h1>
   <p class="lead">Bot Widget puts your OpenBot or Grok Bot on the desktop as a small animated face. Click it to chat. Watch it think.</p>
+  <p class="lead">It is 68 pixels, stays above other windows by default, and keeps off the taskbar, dock and alt-tab. The bubble is never wider than 45% of the screen, and it closes when you look away.</p>
 
   <div class="download">
     <div data-os="mac">
@@ -111,7 +98,7 @@
     </div>
     <div data-os="windows">
       <a class="button" href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-Windows-Setup.exe">Download for Windows</a>
-      <p class="hint">Run the installer, then find <strong>Bot Widget</strong> in the Start menu. Current releases are unsigned, so Windows SmartScreen may warn: choose <strong>More info</strong> and then <strong>Run anyway</strong>.</p>
+      <p class="hint">Run the installer, then find <strong>Bot Widget</strong> in the Start menu. Unsigned for now, so SmartScreen may warn: choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
     </div>
     <div data-os="linux">
       <a class="button" href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-Linux.tar.gz">Download for Linux</a>
@@ -129,14 +116,6 @@
     </p>
   </div>
 
-  <h2 id="code-signing">Code signing</h2>
-  <p>Windows releases are to be signed with free code signing provided by <a href="https://about.signpath.io/">SignPath.io</a>, certificate by <a href="https://signpath.org/">SignPath Foundation</a>. Until approved, Windows downloads are unsigned.</p>
-  <ul>
-    <li>Committers and reviewers: <a href="https://github.com/Menziess">Stefan Schenk (Menziess)</a></li>
-    <li>Approvers: <a href="https://github.com/Menziess">Stefan Schenk (Menziess)</a></li>
-  </ul>
-  <p>Every signed file is built by GitHub Actions from <a href="https://github.com/Menziess/bot-widget">this repository</a> (<code>.github/workflows/release.yml</code>), and each signing request is approved by hand. See also the <a href="/privacy">privacy policy</a>.</p>
-
   <h2>Prefer the command line?</h2>
   <p><a href="https://docs.astral.sh/uv/">uv</a> is for the command line and for development. On Linux the face stays tied to that terminal, so closing the terminal quits the face. For a start from the app menu, use the Linux download and <code>install.sh</code>. That command is <code>bot-widget</code>.</p>
   <pre>uv tool install git+https://github.com/Menziess/bot-widget
@@ -146,16 +125,25 @@ botwidget</pre>
   <h2>How it works</h2>
   <ul>
     <li><strong>Point at the face</strong> and the bubble opens with the latest answer and a field to reply; <strong>click</strong> it to keep the bubble open</li>
+    <li><strong>By default</strong> the face stays above other windows, and on macOS and Linux it is on every desktop</li>
+    <li><strong>Double-click the face</strong> to capture a screenshot for the chat</li>
+    <li><strong>On macOS</strong>, Control+Option+Space opens the chat from any app</li>
     <li><strong>While it works</strong>, the bubble turns into a thought cloud</li>
-    <li><strong>Scroll up</strong> at the top of a long answer to pull in the message before it</li>
-    <li><strong>Right-click the face</strong> to see which bot apps it found, switch bots on and off, and open Settings</li>
-    <li><strong>Settings</strong> is also where you quit the widget</li>
+    <li><strong>Right-click the face</strong> to switch bots, open Settings, and quit</li>
   </ul>
 
   <h2>What it needs</h2>
   <p>Bot Widget is the face, not the brain. It talks to <a href="https://openbot.run/">OpenBot</a> or <a href="https://x.ai/bot">Grok Bot</a>. Without either, the face tells you so and points you to both.</p>
 
-  <footer><a href="https://github.com/Menziess/bot-widget">Source on GitHub</a> · <a href="/#code-signing">Code signing policy</a> · <a href="/privacy">Privacy</a></footer>
+  <h2 id="code-signing">Code signing</h2>
+  <p>Windows downloads are unsigned for now, so SmartScreen may warn. When a certificate is in place, every signed file is built by GitHub Actions from <a href="https://github.com/Menziess/bot-widget">this repository</a> (<code>.github/workflows/release.yml</code>), and each signing request is approved by hand.</p>
+  <ul>
+    <li>Committers and reviewers: <a href="https://github.com/Menziess">Stefan Schenk (Menziess)</a></li>
+    <li>Approvers: <a href="https://github.com/Menziess">Stefan Schenk (Menziess)</a></li>
+  </ul>
+  <p>See also the <a href="/privacy">privacy policy</a>.</p>
+
+  <footer>MIT license · <a href="https://github.com/Menziess/bot-widget">Source on GitHub</a> · <a href="/#code-signing">Code signing policy</a> · <a href="/privacy">Privacy</a></footer>
 </main>
 <div id="bot">
   <canvas id="bot-canvas" aria-hidden="true"></canvas>
