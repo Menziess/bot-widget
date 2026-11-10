@@ -4105,15 +4105,21 @@ class BubbleHover(unittest.TestCase):
         faces = Faces.__new__(Faces)
         faces._naps = {}
         faces.wanted = set()
+        faces._stop_source = mock.Mock()
         faces.menu_state = lambda: {"openbot": False, "gbot": True, "wanted": sorted(faces.wanted)}
-        with mock.patch("botwidget.qt_ui.faces.QDesktopServices.openUrl") as opened:
+        with mock.patch("botwidget.qt_ui.faces.QDesktopServices.openUrl") as opened, \
+                mock.patch("botwidget.qt_ui.faces.set_source_enabled") as persist, \
+                mock.patch("botwidget.qt_ui.faces.source_enabled", return_value=True):
             Faces.menu_command(faces, "connect/openbot", "connections")
             self.assertEqual(opened.call_count, 1)
             self.assertEqual(faces.wanted, {"openbot"})
             Faces.menu_command(faces, "connect/openbot", "connections")
             self.assertEqual((opened.call_count, faces.wanted), (1, set()), "off again, nothing opened")
+            persist.assert_not_called()
             Faces.menu_command(faces, "connect/grokbot", "connections")
-            self.assertEqual((opened.call_count, faces.wanted), (1, set()), "a found one has nothing to open")
+            self.assertEqual((opened.call_count, faces.wanted), (1, set()), "a found one does not open a page")
+            persist.assert_called_once_with("grokbot", False)
+            faces._stop_source.assert_called_once_with("grokbot")
 
     def test_words_in_a_field_without_the_keyboard_do_not_keep_the_bubble(self):
         self.hover()
@@ -5925,6 +5931,13 @@ class MenuPages(unittest.TestCase):
              "connect/hermesbot", "page/connection"],
         )
         self.assertIn("bw-x", self.text(linked))
+
+    def test_an_installed_source_turned_off_shows_off_even_when_it_is_present(self):
+        """Should follow the persisted sources_off list, not treat installed as on."""
+        text = self.text(menu_pages.connections({**self.STATE, "openbot": True, "sources_off": ["openbot"]}))
+        self.assertIn("☐ OpenBot", text)
+        self.assertIn("Off. OpenBot is installed, but its bots are not shown.", text)
+        self.assertNotIn("☑ OpenBot", text)
 
     def test_a_connection_that_was_turned_on_but_not_found_stays_on_and_says_it_waits(self):
         text = self.text(menu_pages.connections({**self.STATE, "wanted": ["grokbot"]}))

@@ -72,6 +72,17 @@ from botwidget.bubble import (
     reading_seconds,
 )
 from botwidget.config import always_on_top, draft, set_draft
+
+
+def window_layer(face=None):
+    """Stay on top when the setting says so, or while the arc is open so a bubble can sit above guests."""
+    if always_on_top():
+        return Qt.WindowStaysOnTopHint
+    host = getattr(face, "faces", None)
+    if host is not None and getattr(host, "_semicircle_phase", "idle") != "idle":
+        return Qt.WindowStaysOnTopHint
+    return Qt.WindowStaysOnBottomHint
+
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_block, plain_text, role_panel
 from botwidget.qt_ui import desktops, glass, screens
@@ -608,7 +619,7 @@ class Trail(QWidget):
     def __init__(self, bubble):
         super().__init__()
         self.bubble = bubble
-        layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
+        layer = window_layer(getattr(bubble, "face", None))
         set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint
                   | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -1494,7 +1505,7 @@ class BubbleWindow(QWidget):
         The bubble can still raise above other bot faces; it must not sit above ordinary apps
         when its face is behind them.
         """
-        layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
+        layer = window_layer(getattr(self, "face", None))
         # It takes focus, or nothing can be typed in its field: the window manager gives the keyboard only to a
         # window that accepts focus. Opening by itself takes none (WA_ShowWithoutActivating); a click does.
         set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint)

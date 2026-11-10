@@ -64,7 +64,7 @@ from botwidget.openbot import (
 )
 from botwidget import attachments, grokbot, hermesbot, menu_pages, power, __version__
 from botwidget.qt_ui import desktops, glass, screens
-from botwidget.qt_ui.bubble_window import BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window
+from botwidget.qt_ui.bubble_window import BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window, window_layer
 from botwidget.qt_ui.native import drop_hidden, native_id, raise_window, set_flags
 from botwidget.qt_ui.render import hit_region, svg_pixmap
 from botwidget.qt_ui.text_doc import color
@@ -141,7 +141,7 @@ class ThinkingRow(QWidget):
         return THINKING_TEXT
 
     def _apply_flags(self):
-        layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
+        layer = window_layer(getattr(self, "face", None))
         set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.WindowTransparentForInput
                   | Qt.WindowDoesNotAcceptFocus)
 
@@ -352,7 +352,7 @@ class FaceWindow(QWidget):
 
     def _apply_flags(self):
         """Separate from the taskbar; above or below normal windows according to widget.json."""
-        layer = Qt.WindowStaysOnTopHint if always_on_top() else Qt.WindowStaysOnBottomHint
+        layer = window_layer(self)
         # Qt.Tool: no taskbar, dock or alt-tab on every OS. Linux also writes skip-taskbar before each map.
         tool = Qt.Tool if FACE_IS_TOOL else Qt.WindowType(0)
         # Mutter spends the first click on focusing a normal window, so a right-click never arrived

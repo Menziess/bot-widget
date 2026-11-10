@@ -169,3 +169,55 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
         QApplication.sendEvent(guest, QMouseEvent(
             QEvent.MouseButtonRelease, local, where, Qt.LeftButton, Qt.NoButton, Qt.NoModifier))
         self.assertIn("away", self.faces.faces)
+
+    def test_should_keep_the_arc_open_when_the_pointer_moves_onto_a_guest(self):
+        """Leave first (the hide timer starts), then enter a bot; the hide callback must not close."""
+        self._open_arc()
+        self.faces._arc_t0 = time.monotonic() - 10
+        self.faces._semicircle_tick()
+        self.assertEqual(self.faces._semicircle_phase, "visible")
+        guest = self.faces._arc_guests["away"]
+        self.assertTrue(guest.isVisible())
+        # The gap between leaving the catcher and entering a bot used to close the arc.
+        self._leave(self.faces._catcher)
+        self.assertTrue(self.faces._semicircle_hide_timer.isActive())
+        self._enter(guest)
+        self.assertTrue(guest.pointer_over())
+        self.faces._semicircle_hide()
+        self.assertEqual(self.faces._semicircle_phase, "visible")
+        self.assertIn("away", self.faces._arc_guests)
+
+    def test_should_keep_the_arc_open_when_the_pointer_moves_onto_a_desktop_face(self):
+        self._open_arc()
+        self.faces._arc_t0 = time.monotonic() - 10
+        self.faces._semicircle_tick()
+        self._leave(self.faces._catcher)
+        self.assertTrue(self.faces._semicircle_hide_timer.isActive())
+        self._enter(self.window)
+        self.assertTrue(self.window.pointer_over())
+        self.faces._semicircle_hide()
+        self.assertEqual(self.faces._semicircle_phase, "visible")
+
+
+    def test_should_put_an_open_bubble_on_the_top_layer_while_the_arc_is_open(self):
+        """On Linux a stay-behind bubble cannot raise above stay-on-top guests; share the top layer."""
+        from PySide6.QtCore import Qt
+        from botwidget.qt_ui.bubble_window import window_layer
+        with mock.patch("botwidget.qt_ui.bubble_window.always_on_top", return_value=False), \
+                mock.patch("botwidget.config.always_on_top", return_value=False):
+            self.assertEqual(window_layer(self.window), Qt.WindowStaysOnBottomHint)
+            self._open_arc()
+            self.assertEqual(self.faces._semicircle_phase, "showing")
+            self.assertEqual(window_layer(self.window), Qt.WindowStaysOnTopHint)
+            bubble = self.window.bubble
+            bubble._apply_flags()
+            flags = bubble.windowFlags()
+            self.assertTrue(bool(flags & Qt.WindowStaysOnTopHint), flags)
+            self.assertFalse(bool(flags & Qt.WindowStaysOnBottomHint), flags)
+            # Closing the arc puts a stay-behind bubble back below other windows.
+            self.faces._finish_arc()
+            self.assertEqual(self.faces._semicircle_phase, "idle")
+            self.assertEqual(window_layer(self.window), Qt.WindowStaysOnBottomHint)
+            bubble._apply_flags()
+            flags = bubble.windowFlags()
+            self.assertTrue(bool(flags & Qt.WindowStaysOnBottomHint), flags)

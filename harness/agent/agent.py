@@ -116,13 +116,13 @@ class LeanAgent:
         first = 0.0
         answer = []
         usage = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0}
-        messages = context.build(store, self.bot)
         cancelled = False
         steps = 0
         try:
             if not self._checked and hasattr(self.model, "ready"):
                 await asyncio.to_thread(self.model.ready)
                 self._checked = True
+            messages = context.build(store, self.bot, model=self.model)
             await self._usage(session_id, store)
             for _step in range(MAX_STEPS):
                 steps += 1
@@ -194,7 +194,7 @@ class LeanAgent:
         """The context meter, and a one-line notice when a summary has just landed."""
         if self.conn is None:
             return
-        used, size = context.meter(store, self.bot, getattr(self.model, "context_size", 0))
+        used, size = context.meter(store, self.bot, getattr(self.model, "context_size", 0), model=self.model)
         update = UsageUpdate(session_update="usage_update", used=used, size=size,
                              field_meta={"compacted": True} if compacted else None)
         await self.conn.session_update(session_id=session_id, update=update)

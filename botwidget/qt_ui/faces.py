@@ -30,6 +30,9 @@ from botwidget.config import (
     muted_bots,
     save_widget_config,
     set_muted,
+    set_source_enabled,
+    source_enabled,
+    sources_off,
     widget_config,
 )
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
@@ -117,15 +120,21 @@ def _avatar(bot: dict):
     return {"shape": shape, "color": colour}
 
 
+def _source_name(bot_id: str) -> str:
+    """The /connections switch that owns this bot, or empty for harness ACP bots."""
+    label = bot_source(bot_id)
+    return {"OpenBot": "openbot", "Grok Bot": "grokbot", "Hermes": "hermesbot"}.get(label, "")
+
+
 def _all_bots() -> list:
     """Every bot the widget can show a face for: the local ones, Grok Bot, Hermes Bot, and the ACP
-    bots the user configured in widget.json."""
-    bots = list(list_bots())
-    if gbot_installed():
+    bots the user configured in widget.json. A source turned off on /connections is left out."""
+    bots = list(list_bots()) if source_enabled("openbot") else []
+    if gbot_installed() and source_enabled("grokbot"):
         target = grokbot.target()
         bots.append({"id": grokbot.face_id(target), "name": target, "threadId": None,
                      "hue": None, "seed": grokbot.face_id(target), "status": "ready"})
-    if hermesbot.is_hermes_installed():
+    if hermesbot.is_hermes_installed() and source_enabled("hermesbot"):
         bots.append({"id": hermesbot.face_id(), "name": "Hermes Bot", "threadId": None,
                      "hue": None, "seed": hermesbot.face_id(), "status": "ready"})
     for bot in acplink.configured_bots():
@@ -533,6 +542,7 @@ class Faces(QObject):
             "confirm_remove": getattr(self, "_confirm_remove", ""),
             "json_text": getattr(self, "_json_text", ""), "json_error": getattr(self, "_json_error", ""),
             "openbot": openbot_installed(), "automation_ready": automation_ready(),
+            "sources_off": sorted(sources_off()),
             "gbot": gbot_installed(), "grok": self.grok_line(),
             "grok_target": grokbot.target(),
             "hermes": hermesbot.is_hermes_installed(),
@@ -762,12 +772,18 @@ class Faces(QObject):
                 set_muted(name, name not in muted_bots())
             return page
         elif kind == "connect" and name in self.CONNECTIONS:
-            if not self.menu_state()[self.CONNECTIONS[name]]:
-                if name in self.wanted:
-                    self.wanted.discard(name)
-                else:
-                    self.wanted.add(name)
-                    QDesktopServices.openUrl(QUrl(self.LINKS[name]))
+            if self.menu_state()[self.CONNECTIONS[name]]:
+                # Installed: persist on/off separately from whether the app is present.
+                on = source_enabled(name)
+                set_source_enabled(name, not on)
+                if on:
+                    self._stop_source(name)
+            elif name in self.wanted:
+                self.wanted.discard(name)
+            else:
+                self.wanted.add(name)
+                QDesktopServices.openUrl(QUrl(self.LINKS[name]))
+            return page
         elif kind == "open" and name in self.LINKS:
             QDesktopServices.openUrl(QUrl(self.LINKS[name]))
         elif kind == "action" and name == "update":
@@ -829,7 +845,8 @@ class Faces(QObject):
 
     def _edge_tick(self):
         pos = QCursor.pos()
-        if self._pointer_over_arc(pos.x(), pos.y()):
+        if (self._pointer_over_arc(pos.x(), pos.y()) or self._pointer_on_arc()
+                or self._over_arc_area(pos.x(), pos.y())):
             self.show_semicircle()
             self._semicircle_hide_timer.stop()
         else:
@@ -936,6 +953,37 @@ class Faces(QObject):
                             | Qt.WindowDoesNotAcceptFocus)
         self._arc_guests[bot["id"]] = face
 
+    def _stop_source(self, name: str) -> None:
+        """Close running faces that come from a source the user just turned off."""
+        for ident in list(self.faces):
+            if _source_name(ident) == name:
+                self.toggle(ident, False)
+
+    def _arc_open(self) -> bool:
+        return self._semicircle_phase != "idle"
+
+    def _restack_open_bubbles(self) -> None:
+        """While the arc is open, bubbles share the top layer so they sit above guest faces.
+
+        set_flags can unmap a window; restack() reapplies flags and shows a bubble that was already open,
+        so a /bots page does not vanish and start the hide timer.
+        """
+        for ident in list(self.faces):
+            face = self.faces.get(ident)
+            if face is None:
+                continue
+            for window in (getattr(face, "bubble", None), getattr(face, "thinking", None)):
+                if window is None:
+                    continue
+                restack = getattr(window, "restack", None)
+                if callable(restack) and window.isVisible():
+                    restack()
+                    continue
+                apply_flags = getattr(window, "_apply_flags", None)
+                if callable(apply_flags):
+                    apply_flags()
+        self.raise_bubbles()
+
     def show_semicircle(self):
         """Hidden bots leave the top centre one by one and sit on the arc. Desktop faces stay put."""
         self._watch_arc_pointer()
@@ -952,6 +1000,7 @@ class Faces(QObject):
             self._arc_t0 = time.monotonic()
             self._semicircle_phase = "showing"
             self._semicircle_timer.start()
+            self._restack_open_bubbles()
             return
         if self._semicircle_phase != "idle":
             return
@@ -976,6 +1025,7 @@ class Faces(QObject):
         self._semicircle_phase = "showing"
         self._semicircle_timer.start()
         self._emit_semicircle()
+        self._restack_open_bubbles()
 
     def hide_semicircle(self):
         """Back to the centre, last arrival first."""
@@ -1008,6 +1058,7 @@ class Faces(QObject):
         self._emit_semicircle()
         for face in guests:
             face.close_face()
+        self._restack_open_bubbles()
 
     def drop_arc(self, face) -> bool:
         """Drop inside the arc turns a face off. A drop outside turns a hidden bot on."""
@@ -1198,7 +1249,10 @@ class Faces(QObject):
         if catcher is not None and catcher.underMouse():
             return True
         for face in list(self.faces.values()) + list(self._arc_guests.values()):
-            if face.isVisible() and face.underMouse():
+            if not face.isVisible():
+                continue
+            over = face.pointer_over() if hasattr(face, "pointer_over") else face.underMouse()
+            if over:
                 return True
         return False
 
@@ -1253,7 +1307,12 @@ class Faces(QObject):
     def _semicircle_hide(self):
         """The pointer stayed away from the face and the arc, unless /bots still holds it."""
         self._semicircle_hide_timer.stop()
-        if self._bots_page_open() or self._arc_bubble_open():
+        if self._bots_page_open() or self._arc_bubble_open() or self._drag_in_progress():
+            return
+        if self._pointer_on_arc():
+            return
+        pos = QCursor.pos()
+        if self._over_arc_area(pos.x(), pos.y()):
             return
         self.hide_semicircle()
 

@@ -225,9 +225,12 @@ def connections(state: dict) -> list:
                         _row(("Turning one on that was not found opens its page.", "dim")),
                         plain_block("gap")]
     wanted = state.get("wanted", ())
+    off = set(state.get("sources_off") or ())
     openbot = state["openbot"]
-    blocks.append(_toggle("OpenBot", "connect/openbot", openbot or "openbot" in wanted))
-    if openbot and state["automation_ready"]:
+    blocks.append(_toggle("OpenBot", "connect/openbot", "openbot" not in off and (openbot or "openbot" in wanted)))
+    if "openbot" in off and openbot:
+        note = "Off. OpenBot is installed, but its bots are not shown."
+    elif openbot and state["automation_ready"]:
         note = "Detected, local API ready"
     elif openbot:
         note = "Detected, but the local API is off: in OpenBot open the bot's settings and turn on \"Local scripts\""
@@ -236,8 +239,11 @@ def connections(state: dict) -> list:
     blocks.append({**_row((note, "dim")), "indent": 44})
     blocks.append(plain_block("gap"))
     gbot = state["gbot"]
-    blocks.append(_toggle("Grok Bot", "connect/grokbot", gbot or "grokbot" in wanted))
-    if gbot:
+    blocks.append(_toggle("Grok Bot", "connect/grokbot", "grokbot" not in off and (gbot or "grokbot" in wanted)))
+    if "grokbot" in off and gbot:
+        line = ""
+        note = "Off. Grok Bot is installed, but its bots are not shown."
+    elif gbot:
         line = state["grok"]
         if line.startswith("Grok Bot"):
             line = line[len("Grok Bot"):].strip()
@@ -257,8 +263,10 @@ def connections(state: dict) -> list:
         blocks.append(_button("Link Grok bots", "action/link-grok"))
     blocks.append(plain_block("gap"))
     hermes = state.get("hermes")
-    blocks.append(_toggle("Hermes Bot", "connect/hermesbot", hermes or "hermesbot" in wanted))
-    if hermes:
+    blocks.append(_toggle("Hermes Bot", "connect/hermesbot", "hermesbot" not in off and (hermes or "hermesbot" in wanted)))
+    if "hermesbot" in off and hermes:
+        note = "Off. Hermes Bot is installed, but its bots are not shown."
+    elif hermes:
         note = "Detected"
     else:
         note = "Waiting for Hermes Bot to be installed" if "hermesbot" in wanted else "Not found"

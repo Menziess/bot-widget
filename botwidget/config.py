@@ -69,7 +69,7 @@ CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 SETTING_KEYS = ("drafts", "save_battery", "sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied",
                 "local_command", "muted_bots", "glass_clear", "grokbot_target", "hermesbot_target", "grok_relay",
-                "acp_bots", "connections", "debug")
+                "acp_bots", "connections", "debug", "sources_off")
 
 
 # With quiet hours on, the sound stays off from this hour until the other, around midnight.
@@ -212,3 +212,26 @@ def replace_widget_config(data: dict) -> str:
     if not _store(data):
         return "Could not save widget.json."
     return ""
+
+
+def sources_off() -> set[str]:
+    """Built-in sources the user turned off on /connections. Missing means all stay on."""
+    raw = widget_config().get("sources_off") or []
+    if not isinstance(raw, list):
+        return set()
+    return {str(item) for item in raw if item}
+
+
+def source_enabled(name: str) -> bool:
+    """True unless the user turned this source off. Installation is a separate fact."""
+    return name not in sources_off()
+
+
+def set_source_enabled(name: str, on: bool) -> dict:
+    """Persist on/off for a built-in source (openbot, grokbot, hermesbot) in widget.json."""
+    off = sources_off()
+    if on:
+        off.discard(name)
+    else:
+        off.add(name)
+    return save_widget_config(sources_off=sorted(off))

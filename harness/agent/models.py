@@ -23,6 +23,8 @@ class ChatCompletions:
         self.api_key = api_key
         self.timeout = timeout
         self.context_size = 0
+        self.reported_model = ""
+        self.model_owned_by = ""
 
     def _request(self, messages: list[dict], stream: bool, tools: list[dict] | None = None):
         payload = {"model": self.model, "messages": messages, "stream": stream}
@@ -83,13 +85,41 @@ class ChatCompletions:
         raise ModelError(f"no model server at {self.base_url} ({detail}). Start it, or change "
                          f"the address in Connections.") from error
 
+    def _apply_models_payload(self, payload) -> None:
+        """Record the model id and owner the server lists. Only what it returned, never a guess."""
+        rows = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            return
+        chosen = None
+        wanted = (self.model or "").strip()
+        for row in rows:
+            if isinstance(row, dict) and wanted and row.get("id") == wanted:
+                chosen = row
+                break
+        if chosen is None:
+            listed = [row for row in rows if isinstance(row, dict) and row.get("id")]
+            if len(listed) == 1:
+                chosen = listed[0]
+            elif wanted:
+                return
+            elif listed:
+                chosen = listed[0]
+        if not chosen:
+            return
+        self.reported_model = str(chosen.get("id") or "")
+        self.model_owned_by = str(chosen.get("owned_by") or "")
+
     def _probe(self, timeout: float) -> None:
         request = urllib.request.Request(f"{self.base_url}/models", headers=self._headers())
         try:
             with urllib.request.urlopen(request, timeout=timeout) as reply:
-                reply.read(1)
+                body = reply.read()
         except urllib.error.HTTPError:
             return self._read_props(timeout)
+        try:
+            self._apply_models_payload(json.loads(body))
+        except (ValueError, TypeError):
+            pass
         self._read_props(timeout)
 
     def _read_props(self, timeout: float) -> None:

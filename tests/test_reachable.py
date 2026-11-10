@@ -1509,7 +1509,7 @@ class MenuAndCatcher(unittest.TestCase):
             opened.assert_called()
             self.assertEqual(faces.menu_command("action/link-grok", "connections"), "connections")
             self.assertEqual(faces.menu_command("action/copy-grok-prompt", "connections"), "connections")
-            self.assertIsNone(faces.menu_command("connect/openbot", "connections"))
+            self.assertEqual(faces.menu_command("connect/openbot", "connections"), "connections")
             self.assertEqual(faces.menu_command("mute/nobody", "bots"), "bots")
             self.assertEqual(faces.menu_command("mute/home", "bots"), "bots")
         with mock.patch("botwidget.qt_ui.faces.startup.from_checkout", return_value=False):
