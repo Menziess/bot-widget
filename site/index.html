@@ -17,11 +17,12 @@
          radial-gradient(800px 480px at 100% 6%, #ffd3e2, #0000 70%), #f6f7fb; background-attachment: fixed; }
   main { max-width: 680px; margin: 0 auto; padding: 48px 24px 80px; }
   @media (max-width: 520px) { main { padding: 24px 16px 64px; } h1 { font-size: 32px; } }
-  #stage { width: 68px; aspect-ratio: 1; margin: 0 auto 16px; }
+  #stage { width: 68px; aspect-ratio: 1; margin: 0 auto 16px; position: relative; }
   #stage img { width: 100%; height: 100%; display: block; }
   body.live #stage img { visibility: hidden; }
-  #home { display: none; font: inherit; color: var(--accent); background: none; border: 0; padding: 0;
-          cursor: pointer; text-decoration: underline; margin: 0 auto 16px; }
+  #home { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+          display: none; font: inherit; color: var(--accent); background: none; border: 0; padding: 0;
+          margin: 0; cursor: pointer; text-decoration: underline; white-space: nowrap; z-index: 1; }
   body.away #home { display: block; }
   #bot { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; display: none; will-change: transform; }
   body.live #bot { display: block; }
@@ -94,8 +95,7 @@
 <body>
 <main>
   <div class="hero">
-  <div id="stage"><img src="face.svg" alt="The Bot Widget face"></div>
-  <button id="home" type="button">Bring me back</button>
+  <div id="stage"><img src="face.svg" alt="The Bot Widget face"><button id="home" type="button">Bring me back</button></div>
   <h1>A face for your bot</h1>
   <p class="lead">Tiny, above other windows by default, and never in your taskbar or dock. The bubble opens when you point at it and closes when the pointer leaves.</p>
 
