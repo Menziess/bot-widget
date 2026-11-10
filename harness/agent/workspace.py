@@ -60,6 +60,10 @@ MAX_RULE_CHARS = 8000  # size cap for rules injected into context
 
 PERMISSION_MODES = ("ask", "allow", "allow_session")
 
+# ── Diff mode aliases ────────────────────────────────────────────────
+
+DIFF_MODES = ("ask", "always", "never")
+
 
 def _resolve(path: str) -> str:
     """Expanduser + realpath on *path*. Raises ToolError on a cycle."""
@@ -232,10 +236,21 @@ def _ws_write(workspace: str, path: str, content: str) -> str:
 # ── Edit / undo ───────────────────────────────────────────────────────
 
 class EditStore:
-    """Keeps the last bytes per path so undo_edit can restore them."""
+    """Keeps a stack of edits so undo_edit restores the last applied edit first.
+
+    Each entry is (real_path, previous_bytes, new_content).  Undo pops the most
+    recent entry whose path matches, writes previous_bytes, and returns the text
+    that was restored.
+    """
 
     def __init__(self):
-        self._cache: dict[str, bytes] = {}  # real_path -> bytes before last edit
+        self._stack: list[tuple[str, bytes, str]] = []  # (path, prev_bytes, new_content)
+        self._cache: dict[str, bytes] = {}  # real_path -> bytes before last edit (for undo_edit tool)
+
+    def record(self, real_path: str, content: str) -> None:
+        """Record an edit on the stack for undo."""
+        prev = self._cache.get(real_path)
+        self._stack.append((real_path, prev, content))
 
     def before(self, real_path: str, content: str) -> str:
         """Record bytes before overwriting; return the real_path."""
@@ -253,6 +268,23 @@ class EditStore:
             return raw.decode()
         except OSError as err:
             raise ToolError(f"cannot restore {real_path}: {err.strerror}") from err
+
+    def undo_last(self) -> tuple[str, str] | None:
+        """Undo the most recent applied edit (LIFO), restoring its previous bytes.
+
+        Returns ``(real_path, restored_text)`` or None if the stack is empty.
+        Skips entries with no meaningful previous content (new files).
+        """
+        while self._stack:
+            real_path, prev_bytes, _content = self._stack.pop()
+            if prev_bytes is not None and prev_bytes != b"":
+                try:
+                    with open(real_path, "wb") as fh:
+                        fh.write(prev_bytes)
+                    return real_path, prev_bytes.decode(errors="replace")
+                except OSError:
+                    continue
+        return None
 
 
 # ── Git (read-only) ───────────────────────────────────────────────────
@@ -425,6 +457,12 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
               "required": ["path", "content"]},
              lambda a: _ws_diff(workspace, a["path"], a["content"])),
         # ── git (read-only) ──
+        Tool("undo_last",
+             "Undo the last applied edit across all files. Restores the most recent change first (LIFO).",
+             {"type": "object",
+              "properties": {},
+              "required": []},
+             lambda _a: _undo_last(edit)),
         Tool("git_status",
              "Git status inside the workspace. Read-only.",
              {"type": "object",
@@ -473,3 +511,12 @@ def _ws_diff(workspace: str, path: str, content: str) -> str:
 def _edit_before(edit: EditStore, real_path: str, content: str) -> None:
     """Record bytes before a write so undo can restore them."""
     edit.before(real_path, content)
+
+
+def _undo_last(edit: EditStore) -> str:
+    """Undo the most recent applied edit (LIFO)."""
+    result = edit.undo_last()
+    if result is None:
+        raise ToolError("nothing to undo")
+    real_path, restored = result
+    return f"Restored {real_path}."

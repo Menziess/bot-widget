@@ -168,8 +168,8 @@ later work (H4) can flip it and measure the improvement.
 
 A bot has no filesystem tools until a workspace folder is set (widget field, or
 `HARNESS_WORKSPACE`). Tools are then scoped to that folder: `read_file`, `list_dir`,
-`search`, `write_file`, `undo_edit`, `diff`, `git_status`, `git_log`, `git_diff`, and
-`shell`. Paths are realpath'd; `..` and symlink escapes are refused. Secret files
+`search`, `write_file`, `undo_edit`, `undo_last`, `diff`, `git_status`, `git_log`,
+`git_diff`, and `shell`. Paths are realpath'd; `..` and symlink escapes are refused. Secret files
 (`.env*`, keys, `.ssh` and similar) are denied. `git push`, `git reset --hard`,
 `git clean`, `git checkout --` and destructive `rm` are always refused. Project
 rules (`AGENTS.md`, `CLAUDE.md`, `.clinerules`) are loaded into the system prompt.
@@ -234,3 +234,37 @@ memories.
 H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): all five tasks still pass,
 including `compact_without_summary`. Memory retrieval is silent when the file does not
 exist yet, so it does not affect the benchmark.
+
+## H7 diffs in the bubble (always / ask / never)
+
+`write_file` now shows a unified diff in the permission bubble instead of just a
+title. The agent calls `diff` to produce the text, then hands it to
+`request_permission` with `kind="edit"` and `field_meta={"diff": text}` so the
+widget can render it in-line. Three permission options follow:
+
+- **Apply** — the write goes through (ask mode)
+- **Reject** — the write is dropped (ask mode)
+- **Never** — the diff is shown but the write is never applied, no bubble interaction needed
+- **Always** — the diff is shown and the write is applied automatically; the entry is still
+  recorded on the undo stack
+
+The undo stack is LIFO: `undo_last` pops the most recent edit entry and restores its
+previous bytes. New-file writes (no previous content) are recorded but skipped during
+undo so they do not erase the file.
+
+Hard denies from H3 still hold under `always`: secret paths and writes outside the
+workspace are refused by the write tool itself, regardless of the diff mode.
+
+The diff mode is controlled by the `HARNESS_DIFF_PERMISSIONS` environment variable,
+defaulting to `"ask"`. Valid values: `ask`, `always`, `never`. The existing
+`HARNESS_WORKSPACE_PERMISSIONS` (allow / allow_session) is orthogonal —
+`allow_session` still bypasses the diff entirely when a title was previously
+granted in the same session.
+
+`undo_last` is a new workspace-builtin tool registered alongside the existing
+`undo_edit`. It operates on the stack-based `_EditStore._stack` and restores the
+previous content of the most recent write.
+
+H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): all five tasks still
+pass. The diff path is only entered for `write_file` calls; other tools and the
+scripted benchmark tasks are unaffected.

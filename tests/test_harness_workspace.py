@@ -413,7 +413,7 @@ class WorkspaceBuiltins(unittest.TestCase):
         names = {t.name for t in tools}
         expected = {
             "list_dir", "read_file", "search",
-            "write_file", "undo_edit", "diff",
+            "write_file", "undo_edit", "undo_last", "diff",
             "git_status", "git_log", "git_diff",
             "shell",
         }
