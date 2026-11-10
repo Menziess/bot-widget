@@ -176,7 +176,7 @@ def _connection_label(state: dict, form: dict) -> str:
 
 
 def bot_form(state: dict) -> list:
-    """Name, face, colour and which connection answers. The address lives on that connection."""
+    """Name, face, colour, workspace and permission mode. The address lives on that connection."""
     from botwidget.acp_bots import blank
     form = state.get("bot_form") or blank()
     editing = bool(form.get("stored_id"))
@@ -188,6 +188,14 @@ def bot_form(state: dict) -> list:
         _face_preview(form),
         _button(_connection_label(state, form), "cycle/connection"),
     ]
+    # Workspace
+    ws = form.get("workspace") or ""
+    blocks.append(_field("Workspace", "field/workspace", ws))
+    ws_perm = form.get("workspace_permissions") or "ask"
+    ws_perms = ("ask", "allow", "allow_session")
+    if ws_perm not in ws_perms:
+        ws_perm = "ask"
+    blocks.append(_button(f"Permission: {ws_perm}", "cycle/workspace_permission"))
     # Next to Save: an error at the top stayed off screen once the form had been scrolled down.
     if state.get("bot_error"):
         blocks.append(_row((state["bot_error"], "b")))

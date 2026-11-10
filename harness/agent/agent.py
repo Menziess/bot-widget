@@ -31,9 +31,13 @@ class LeanAgent:
     def __init__(self, bot: str, model, folder: str | None = None, tools: Tools | None = None):
         self.bot = bot
         self.model = model
+        workspace = os.environ.get("HARNESS_WORKSPACE") or ""
+        permission = os.environ.get("HARNESS_WORKSPACE_PERMISSIONS") or "ask"
+        permission = {"allowlist": "allow", "allow-for-session": "allow_session"}.get(permission, permission)
         self.tools = tools or Tools(os.environ.get("HARNESS_MCP_SERVER") or "",
                                     {name.strip() for name in
-                                     (os.environ.get("HARNESS_MCP_READ_ONLY") or "").split(",") if name.strip()})
+                                     (os.environ.get("HARNESS_MCP_READ_ONLY") or "").split(",") if name.strip()},
+                                    workspace=workspace, permission=permission)
         self.folder = folder or os.environ.get("HARNESS_AGENT_DIR") or os.path.expanduser(
             f"~/.local/share/botwidget/harness/agent/{bot}")
         self.stores: dict[str, SessionStore] = {}
@@ -208,10 +212,16 @@ class LeanAgent:
             return f"There is no tool called {name}."
         title = f"{name} {arguments}"
         await self._tool_call(session_id, call["id"], title, "pending", "in_progress")
-        if tool.writes and not await self._ask(session_id, call["id"], title):
-            await self._tool_call(session_id, call["id"], title, "completed", "failed")
-            return self._note_tool(store, name, "declined by the user; nothing was done",
-                                   "The user declined this action. Do not try it another way.")
+        if tool.writes:
+            remembered = (getattr(self.tools, "permission", "ask") == "allow_session"
+                          and title in getattr(self.tools, "_session_allows", ()))
+            if not remembered:
+                if not await self._ask(session_id, call["id"], title):
+                    await self._tool_call(session_id, call["id"], title, "completed", "failed")
+                    return self._note_tool(store, name, "declined by the user; nothing was done",
+                                           "The user declined this action. Do not try it another way.")
+                if getattr(self.tools, "permission", "ask") == "allow_session":
+                    self.tools._session_allows.add(title)
         try:
             result = tool.run(arguments)
             if inspect.isawaitable(result):

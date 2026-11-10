@@ -163,7 +163,7 @@ async def task_short_answer():
              ("usage", {"prompt_tokens": 10, "completion_tokens": 8,
                          "prompt_tokens_details": {"cached_tokens": 2}})]
         ])
-        agent = LeanAgent("Bench", model, folder=folder, tools=Tools(""))
+        agent = LeanAgent("Bench", model, folder=folder, tools=Tools("", workspace=folder))
         session = (await agent.new_session(".")).session_id
         answer, path_steps = await _run_turn(agent, session,
                                               "What is the capital of France?")
@@ -196,7 +196,7 @@ async def task_tool_read():
 
         model = ScriptModel([tool_step, text_step])
         model.reply = type("Reply", (), {"close": lambda self: None})()
-        agent = LeanAgent("Bench", model, folder=folder, tools=Tools(""))
+        agent = LeanAgent("Bench", model, folder=folder, tools=Tools("", workspace=folder))
         session = (await agent.new_session(".")).session_id
         answer, path_steps = await _run_turn(agent, session,
                                               "Read data.txt and tell me the code.")
@@ -222,7 +222,7 @@ async def task_topic_switch_recall():
              ("usage", {"prompt_tokens": 15, "completion_tokens": 6,
                          "prompt_tokens_details": {"cached_tokens": 3}})]
         ])
-        agent = LeanAgent("Bench", model, folder=folder, tools=Tools(""))
+        agent = LeanAgent("Bench", model, folder=folder, tools=Tools("", workspace=folder))
         session = (await agent.new_session(".")).session_id
         agent.stores[session] = store
         answer, path_steps = await _run_turn(agent, session,

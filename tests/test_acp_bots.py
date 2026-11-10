@@ -273,6 +273,26 @@ class BotForm(unittest.TestCase):
         self.assertIn("token", acp_bots.parse_editor('{"bots": [{"token": "x"}]}')[1])
         self.assertNotIn("x", acp_bots.public_text({"items": [{"token": "x"}], "name": "A"}))
 
+    def test_workspace_is_saved_as_env_and_clears_when_empty(self):
+        blank = acp_bots.blank()
+        saved, error = acp_bots.commit({
+            **blank, "name": "Ada", "stored_id": "acp:ada",
+            "workspace": "/tmp/ws-example", "workspace_permissions": "allowlist",
+        }, [])
+        self.assertEqual(error, "")
+        env = saved[0].get("env") or {}
+        self.assertEqual(env.get("HARNESS_WORKSPACE"), "/tmp/ws-example")
+        self.assertEqual(env.get("HARNESS_WORKSPACE_PERMISSIONS"), "allow")
+        cleared, error = acp_bots.commit({
+            **blank, "name": "Ada", "stored_id": "acp:ada", "workspace": "",
+        }, saved)
+        self.assertEqual(error, "")
+        env = cleared[0].get("env") or {}
+        self.assertNotIn("HARNESS_WORKSPACE", env)
+        self.assertEqual(acp_bots.cycle("workspace_permission", "ask"), "allow")
+        self.assertEqual(acp_bots.cycle("workspace_permission", "allow-for-session"), "ask")
+        self.assertEqual(acp_bots.normalise_workspace_permission("allowlist"), "allow")
+
 
 class WidgetSave(unittest.TestCase):
     """Should add a bot from the same commands the page sends, chat, rename, recolour and remove it."""

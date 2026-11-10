@@ -35,7 +35,8 @@ def default_command() -> str:
 def blank() -> dict:
     """What New bot shows before anything is typed. With no connection picked, the address is the local server."""
     return {"id": "", "stored_id": "", "name": "", "face": "nuage", "color": "blue", "connection": "",
-            "base_url": DEFAULT_BASE, "model": DEFAULT_MODEL, "key_file": DEFAULT_KEY, "command": ""}
+            "base_url": DEFAULT_BASE, "model": DEFAULT_MODEL, "key_file": DEFAULT_KEY,
+            "command": "", "workspace": "", "workspace_permissions": "ask"}
 
 
 def fields_of(bot: dict) -> dict:
@@ -43,17 +44,35 @@ def fields_of(bot: dict) -> dict:
     env = bot.get("env") or {}
     face_id = bot.get("id") or ""
     stored = face_id[len(PREFIX):] if str(face_id).startswith(PREFIX) else str(face_id)
+    ws = env.get("HARNESS_WORKSPACE") or ""
+    ws_perm = env.get("HARNESS_WORKSPACE_PERMISSIONS") or "ask"
     return {"id": face_id, "stored_id": stored, "name": bot.get("name") or "",
             "face": bot.get("face") or "", "color": bot.get("color") or "",
             "connection": bot.get("connection") or "",
             "base_url": env.get("HARNESS_MODEL_BASE_URL") or DEFAULT_BASE,
             "model": env.get("HARNESS_MODEL") or DEFAULT_MODEL,
             "key_file": bot.get("key_file") or DEFAULT_KEY,
-            "command": bot.get("command") or ""}
+            "command": bot.get("command") or "",
+            "workspace": ws, "workspace_permissions": ws_perm}
+
+
+WS_PERMISSIONS = ("ask", "allow", "allow_session")
+# "allow" is the durable allowlist for reads/search/git-read; "allow_session"
+# remembers a granted write until the process exits.
+WS_PERMISSION_ALIASES = {"allowlist": "allow", "allow-for-session": "allow_session"}
+
+
+def normalise_workspace_permission(value: str) -> str:
+    raw = (value or "ask").strip()
+    return WS_PERMISSION_ALIASES.get(raw, raw)
 
 
 def cycle(kind: str, current: str) -> str:
-    options = FACES if kind == "face" else COLORS
+    if kind == "workspace_permission":
+        options = WS_PERMISSIONS
+        current = normalise_workspace_permission(current)
+    else:
+        options = FACES if kind == "face" else COLORS
     if current not in options:
         return options[0]
     return options[(options.index(current) + 1) % len(options)]
@@ -98,6 +117,16 @@ def _entry(fields: dict, previous: dict | None, taken: set) -> tuple:
     env = {key: str(value) for key, value in ((previous or {}).get("env") or {}).items()
            if str(key).startswith("HARNESS_") and not _secret(key)}
     env.update(HARNESS_BOT=name, HARNESS_MODEL_BASE_URL=base, HARNESS_MODEL=model)
+    ws = str(fields.get("workspace") or "").strip()
+    if ws and ws != "(none)":
+        env["HARNESS_WORKSPACE"] = ws
+    else:
+        env.pop("HARNESS_WORKSPACE", None)
+    ws_perm = normalise_workspace_permission(str(fields.get("workspace_permissions") or "").strip())
+    if ws_perm and ws_perm in WS_PERMISSIONS:
+        env["HARNESS_WORKSPACE_PERMISSIONS"] = ws_perm
+    else:
+        env.pop("HARNESS_WORKSPACE_PERMISSIONS", None)
     command = str(fields.get("command") or (previous or {}).get("command") or "").strip() or default_command()
     entry = {"id": stored, "name": name, "command": command, "env": env, "key_file": key_file}
     connection = str(fields.get("connection") or "").strip()
@@ -338,6 +367,10 @@ def _check_bots(rows) -> str:
         env = row.get("env")
         if env is not None and not isinstance(env, dict):
             return f"Bot {index} has an env that is not an object."
+        # Validate workspace_permissions if present.
+        ws_perm = (env or {}).get("HARNESS_WORKSPACE_PERMISSIONS")
+        if ws_perm and normalise_workspace_permission(ws_perm) not in WS_PERMISSIONS:
+            return f"Bot {index} has an invalid workspace_permissions value."
         face, color = row.get("face"), row.get("color")
         if face not in (None, "") and face not in FACES:
             return f"Bot {index} has a face the widget cannot draw."

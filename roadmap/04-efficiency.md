@@ -164,6 +164,26 @@ The baseline report (`suite: "h2"`, `mode: "scripted"`) includes per-task metric
 (`n`, `passed`, `failed`, `median_*`). Task D is expected to fail today so that
 later work (H4) can flip it and measure the improvement.
 
+## H3 workspace and permissions
+
+A bot has no filesystem tools until a workspace folder is set (widget field, or
+`HARNESS_WORKSPACE`). Tools are then scoped to that folder: `read_file`, `list_dir`,
+`search`, `write_file`, `undo_edit`, `diff`, `git_status`, `git_log`, `git_diff`, and
+`shell`. Paths are realpath'd; `..` and symlink escapes are refused. Secret files
+(`.env*`, keys, `.ssh` and similar) are denied. `git push`, `git reset --hard`,
+`git clean`, `git checkout --` and destructive `rm` are always refused. Project
+rules (`AGENTS.md`, `CLAUDE.md`, `.clinerules`) are loaded into the system prompt.
+
+Permission modes: `ask` (default; writes and shell wait for Accept), `allow`
+(allowlist: reads/search/git-read auto-run, writes and shell still ask), and
+`allow_session` (a granted write is remembered until the process exits). Aliases
+`allowlist` and `allow-for-session` are accepted. Clearing the folder drops the
+env vars; the Permission cycle button on the bot form updates the draft.
+
+H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): same flags as the
+H2 baseline — four tasks pass, `compact_without_summary` still fails with
+"older turns dropped before summary exists".
+
 No `--live` mode is required for the test suite. A live stub exists behind the
 `--live` flag but does not read any key files or connect to 127.0.0.1:8080.
 

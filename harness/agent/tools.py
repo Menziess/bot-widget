@@ -92,18 +92,43 @@ class Tools:
 
     HARNESS_MCP_SERVER names the command that starts the server; HARNESS_MCP_READ_ONLY is a comma
     list of its tools that never ask, so a read-only server is not a click per call.
+    HARNESS_WORKSPACE and HARNESS_WORKSPACE_PERMISSIONS scope the workspace.
     """
 
-    def __init__(self, mcp_command: str = "", read_only: set[str] | None = None):
+    def __init__(self, mcp_command: str = "", read_only: set[str] | None = None,
+                 workspace: str = "", permission: str = "ask"):
         self.mcp_command = mcp_command
         self.read_only = read_only or set()
-        self.tools: dict[str, Tool] = {tool.name: tool for tool in builtins()}
+        # File tools stay off until a workspace is set: unscope read/write is not offered.
+        self.tools: dict[str, Tool] = {}
+        self.workspace = workspace  # realpath or None
+        self.permission = permission
+        self._edit = None  # EditStore for undo
         self._stack = AsyncExitStack()
         self._session = None
         self.problems: list[str] = []
+        self._add_workspace_tools()
+        self._session_allows: set[str] = set()
+
+    def _add_workspace_tools(self) -> None:
+        """Add workspace-scoped tools if a workspace is set."""
+        from harness.agent.workspace import EditStore, _edit_before, resolve_workspace, workspace_builtins
+
+        resolved = resolve_workspace(self.workspace)
+        if resolved is None:
+            return
+        self.workspace = resolved
+        if self._edit is None:
+            self._edit = EditStore()
+        for tool in workspace_builtins(resolved, self._edit):
+            self.tools[tool.name] = tool
 
     async def start(self) -> None:
-        """Connect to the MCP server, if one is configured; a broken one must not take the bot down."""
+        """Connect to the MCP server, if one is configured; a broken one must not take the bot down.
+
+        Workspace tools are added eagerly here so they are available from the first turn.
+        """
+        self._add_workspace_tools()
         if not self.mcp_command or self._session is not None:
             return
         from harness.acp_client import split_command

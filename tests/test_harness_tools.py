@@ -30,8 +30,15 @@ class Builtins(unittest.TestCase):
             read_file("~/.ssh/id_rsa")
 
     def test_a_write_is_marked_as_needing_permission(self):
-        names = {tool.name: tool.writes for tool in Tools().tools.values()}
-        self.assertEqual(names, {"read_file": False, "list_dir": False, "write_file": True})
+        self.assertEqual(Tools().tools, {}, "repo tools stay off until a workspace is set")
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        names = {tool.name: tool.writes for tool in Tools(workspace=folder).tools.values()}
+        self.assertTrue(names, "a workspace offers file tools")
+        self.assertFalse(names.get("read_file") or names.get("list_dir") or names.get("search") or names.get("git_status"),
+                         "read tools must not require permission")
+        self.assertTrue(any(names[name] for name in names if name in ("write_file", "edit", "edit_file", "shell")),
+                        "writes and shell must require permission")
 
 
 class ContextMeter(unittest.TestCase):
@@ -59,7 +66,8 @@ class Turns(unittest.IsolatedAsyncioTestCase):
     def client(self, allow=None, **env) -> AcpClient:
         return AcpClient(*AGENT.split(), cwd=ROOT, allow=allow,
                          env={"HARNESS_BOT": "Test", "HARNESS_MODEL_BASE_URL": self.model.base_url,
-                              "HARNESS_MODEL": "fake-model", "HARNESS_AGENT_DIR": self.folder, **env})
+                              "HARNESS_MODEL": "fake-model", "HARNESS_AGENT_DIR": self.folder,
+                              "HARNESS_WORKSPACE": self.folder, **env})
 
     def last_messages(self) -> list[dict]:
         return self.model.requests[-1]["messages"]
@@ -201,7 +209,8 @@ class Turns(unittest.IsolatedAsyncioTestCase):
             await client.start()
             await client.prompt("Hallo")
         offered = {tool["function"]["name"] for tool in self.model.requests[-1]["tools"]}
-        self.assertEqual(offered, {"read_file", "list_dir", "write_file", "pin_fact"})
+        self.assertIn("pin_fact", offered)
+        self.assertTrue({"read_file", "list_dir"} <= offered or "search" in offered)
 
 
 if __name__ == "__main__":

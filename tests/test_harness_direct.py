@@ -120,7 +120,7 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
         model = ScriptModel([[("text", "hoi"),
                               ("usage", {"prompt_tokens": 4, "completion_tokens": 1,
                                          "prompt_tokens_details": {"cached_tokens": 2}})]])
-        agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools(""))
+        agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools("", workspace=self.folder))
         conn = Conn()
         agent.on_connect(conn)
         info = await agent.initialize(1)
@@ -180,7 +180,7 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
             wait_then_fail,
         ])
         model.reply = Reply(broken=True)
-        tools = Tools("")
+        tools = Tools("", workspace=self.folder)
         tools.add(Tool("echo_async", "echo", {"type": "object"}, async_tool))
         agent = LeanAgent("Ada", model, folder=self.folder, tools=tools)
         agent.conn = Conn(allow=False)
@@ -250,7 +250,7 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
                 return ""
 
         model = NoReady()
-        agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools(""))
+        agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools("", workspace=self.folder))
         session = (await agent.new_session(".")).session_id
         result = await agent.prompt(session, [Block("hoi")])
         self.assertEqual(result.stop_reason, "end_turn")
@@ -260,7 +260,7 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
     async def test_six_tool_steps_stop_the_loop(self):
         """Should end a tool loop that never settles."""
         model = ScriptModel([[("tool_calls", [call("pin_fact", {"fact": f"n{n}"})])] for n in range(6)])
-        agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools(""))
+        agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools("", workspace=self.folder))
         session = (await agent.new_session(".")).session_id
         result = await agent.prompt(session, [Block("loop")])
         self.assertEqual(result.stop_reason, "end_turn")
