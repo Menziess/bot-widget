@@ -221,3 +221,83 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
             bubble._apply_flags()
             flags = bubble.windowFlags()
             self.assertTrue(bool(flags & Qt.WindowStaysOnBottomHint), flags)
+
+    def _finish_hiding_arc(self):
+        """What happens after leaving /bots or the catcher: the hide timer fires and the arc finishes."""
+        if self.faces._semicircle_hide_timer.isActive():
+            self.faces._semicircle_hide()
+        if self.faces._semicircle_phase == "hiding":
+            self.faces._arc_t0 = time.monotonic() - 10
+            self.faces._semicircle_tick()
+        if self.faces._semicircle_phase != "idle":
+            self.faces._finish_arc()
+        self.app.processEvents()
+        # The face poll calls heal() whenever the pointer is on the bot; a remapped window
+        # used to look inconsistent and close the page.
+        self.window.bubble.heal()
+        self.app.processEvents()
+
+    def test_opening_the_edit_page_from_bots_keeps_the_panel_open(self):
+        """Should keep the bubble on the bot form after /bots releases the arc (9bbca67 restack)."""
+        self.window.open_menu("bots")
+        self.assertTrue(self.window.bubble.isVisible())
+        self.assertNotEqual(self.faces._semicircle_phase, "idle")
+        self.window.open_menu("bot")
+        self._finish_hiding_arc()
+        self.assertEqual(self.window._menu_page, "bot")
+        self.assertTrue(self.window.bubble.isVisible(), "edit page closed when the arc hid")
+        self.assertTrue(self.window.bubble.kind)
+
+    def test_every_menu_page_stays_open_when_the_arc_hides_or_restacks(self):
+        """Should keep the panel on every menu page, not only the bot form."""
+        from botwidget.menu_pages import PAGES
+        for page in PAGES:
+            with self.subTest(page=page):
+                self.window.open_menu("bots")
+                self.window.open_menu(page)
+                self._finish_hiding_arc()
+                self.assertEqual(self.window._menu_page, page)
+                self.assertTrue(self.window.bubble.isVisible(), f"{page} closed")
+                self.assertTrue(self.window.bubble.kind)
+
+    def test_heal_after_a_flag_remap_does_not_close_a_menu_page(self):
+        """set_flags hides and destroys the native window; the hover poll then calls heal()."""
+        from botwidget.menu_pages import PAGES
+        for page in PAGES:
+            with self.subTest(page=page):
+                self.window.open_menu(page)
+                bubble = self.window.bubble
+                self.assertTrue(bubble.isVisible(), page)
+                # Unchanged flags must not remap (and must not hide) a page that is already on the right layer.
+                bubble._apply_flags()
+                self.assertTrue(bubble.isVisible(), f"{page} hidden by a no-op flag update")
+                # A real remap (layer change, or Qt setWindowFlags) hides the widget the way Linux does.
+                created = bubble.windowHandle() is not None
+                bubble.setWindowFlags(bubble.windowFlags())
+                if created:
+                    bubble.destroy()
+                self.assertFalse(bubble.isVisible())
+                self.assertEqual(bubble.state(), "open")
+                bubble.heal()
+                self.assertEqual(self.window._menu_page, page)
+                self.assertTrue(bubble.isVisible(), f"{page} closed after heal")
+                self.assertTrue(bubble.kind)
+                self.assertTrue(bubble.consistent())
+
+    def test_restack_after_the_arc_closes_does_not_drop_a_menu_page(self):
+        """always_on_top off: leaving the arc changes the bubble layer and remaps the window."""
+        with mock.patch("botwidget.qt_ui.bubble_window.always_on_top", return_value=False), \
+                mock.patch("botwidget.config.always_on_top", return_value=False):
+            self.window.open_menu("bot")
+            self.assertTrue(self.window.bubble.isVisible())
+            self._open_arc()
+            self.faces._restack_open_bubbles()
+            self.app.processEvents()
+            self.window.bubble.heal()
+            self.assertTrue(self.window.bubble.isVisible())
+            self.faces._finish_arc()
+            self.app.processEvents()
+            self.window.bubble.heal()
+            self.assertEqual(self.window._menu_page, "bot")
+            self.assertTrue(self.window.bubble.isVisible(), "restack after the arc closed hid the edit page")
+            self.assertTrue(self.window.bubble.kind)

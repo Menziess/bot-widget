@@ -33,7 +33,12 @@ def set_flags(widget, flags) -> None:
 
     Qt would otherwise swap the native window only after the show, behind our back: skip-taskbar, the layer
     and send-behind all went to the old one, and winId() kept naming it.
+
+    If the flags are already in place, do nothing: setWindowFlags hides the widget and destroy() drops
+    the native window, which used to close a menu page that was already on the right layer.
     """
+    if int(widget.windowFlags()) == int(flags):
+        return
     created = widget.windowHandle() is not None
     widget.setWindowFlags(flags)
     if created:

@@ -2456,10 +2456,18 @@ class BubbleWindow(QWidget):
 
     def heal(self) -> bool:
         """Backstop: the bubble's state and its window disagree (open without a window, a window without being
-        open, open without the physics that closes it). Close it for real, so pointing at the face or a
-        right-click opens it again instead of the bot looking stuck. True when something was wrong."""
+        open, open without the physics that closes it).
+
+        set_flags destroys the native window and hides the widget so it can be remapped. That looks
+        like "open without a window". A menu page (or any open bubble) must be shown again, not closed,
+        or opening the bot edit form — and other pages — dismisses the panel.
+        """
         if self.consistent():
             return False
+        if self.state() == "open" and not self.isVisible():
+            self.show()
+            if self.consistent():
+                return False
         self.place("")
         self._release_bots_arc()
         return True
