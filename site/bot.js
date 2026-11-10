@@ -38,7 +38,8 @@
   function outCubic(t) { return 1 - Math.pow(1 - t, 3); }  // Qt QEasingCurve.OutCubic
 
   function layout() {
-    u = window.innerWidth < 640 ? 2.3 : 3;
+    // AVATAR_SIZE is 68 px (theme/avatar). u = 1 keeps bubble-to-face the same as the app.
+    u = 1;
     dpr = Math.min(window.devicePixelRatio || 1, 3);
     k = u * dpr;
     var box = (F.SIZE + 2 * PAD) * u;
@@ -283,7 +284,7 @@
   }
 
   function placeBubble() {
-    var w = bubble.offsetWidth, h = bubble.offsetHeight, gap = F.R * u + 10, vw = window.innerWidth, vh = window.innerHeight;
+    var w = bubble.offsetWidth, h = bubble.offsetHeight, gap = (F.R + 4 + 7) * u, vw = window.innerWidth, vh = window.innerHeight;
     var side = "above", left, top, tail;
     if (y - gap - h > 8) {
       left = Math.max(8, Math.min(vw - w - 8, x - w * 0.25)); top = y - gap - h; tail = x - left;
