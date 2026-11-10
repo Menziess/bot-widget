@@ -15,78 +15,87 @@
   body { margin: 0; font: 17px/1.55 "Noto Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
          color: var(--ink); background: radial-gradient(900px 520px at 12% -8%, #c9dcff, #0000 70%),
          radial-gradient(800px 480px at 100% 6%, #ffd3e2, #0000 70%), #f6f7fb; background-attachment: fixed; }
-  main { max-width: 680px; margin: 0 auto; padding: 72px 24px 96px; }
+  main { max-width: 680px; margin: 0 auto; padding: 48px 24px 80px; }
+  @media (max-width: 520px) { main { padding: 24px 16px 64px; } h1 { font-size: 32px; } }
   #stage { width: 204px; aspect-ratio: 1; margin: 0 auto 8px; }
   #stage img { width: 100%; height: 100%; display: block; }
   body.live #stage img { visibility: hidden; }
-  .try { text-align: center; color: var(--soft); font-size: 15px; margin: 0 0 28px; }
-  #home { display: none; font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
-  body.away #home { display: inline; }
+  #home { display: none; font: inherit; color: var(--accent); background: none; border: 0; padding: 0;
+          cursor: pointer; text-decoration: underline; margin: 0 auto 16px; }
+  body.away #home { display: block; }
   #bot { position: fixed; left: 0; top: 0; z-index: 10; pointer-events: none; display: none; will-change: transform; }
   body.live #bot { display: block; }
   #bot canvas { display: block; }
   #bot-hit { position: absolute; border-radius: 50%; pointer-events: auto; cursor: grab; touch-action: none; }
   #bot.grabbed #bot-hit { cursor: grabbing; }
-  #bubble { position: fixed; left: 0; top: 0; z-index: 11; width: min(320px, calc(100vw - 16px));
-            background: linear-gradient(180deg, #ffffffc2, #eef3fbc2); -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  /* Glass, type, radius, pad and shadow from botwidget/theme.py (see comments in bot.js). */
+  #bubble { position: fixed; left: 0; top: 0; z-index: 11; width: min(300px, 45vw, calc(100vw - 16px));
+            background: linear-gradient(180deg, #ffffffbd, #eef3fbbd); -webkit-backdrop-filter: blur(22px) saturate(1.5);
             backdrop-filter: blur(22px) saturate(1.5); border-radius: 20px;
-            box-shadow: 0 10px 32px #00000026, 0 0 0 1px #1c1c1c1a, inset 0 0 0 1px #ffffffe6; padding: 12px 14px;
-            font-size: 15px; line-height: 1.45; opacity: 0; visibility: hidden; transition: opacity .18s, visibility .18s;
-            will-change: transform; --tail: 40px; }
-  #bubble[data-open="true"] { opacity: 1; visibility: visible; }
+            box-shadow: 0 2px 12px 3px #0000003d, 0 0 0 1px #1c1c1c1f, inset 0 0 0 1px #ffffff;
+            padding: 12px; font: 15px/1.45 "Noto Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            opacity: 0; visibility: hidden; will-change: transform, opacity; --tail: 40px; }
+  #bubble[data-open="true"] { visibility: visible; }
   #bubble::after { content: ""; position: absolute; background: #f2f6fce6; }
-  #bubble[data-side="above"]::after { left: calc(var(--tail) - 9px); bottom: -8px; width: 18px; height: 8px; clip-path: polygon(0 0, 100% 0, 50% 100%); }
-  #bubble[data-side="below"]::after { left: calc(var(--tail) - 9px); top: -8px; width: 18px; height: 8px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
-  #bubble[data-side="right"]::after { top: calc(var(--tail) - 9px); left: -8px; width: 8px; height: 18px; clip-path: polygon(100% 0, 100% 100%, 0 50%); }
-  #bubble[data-side="left"]::after { top: calc(var(--tail) - 9px); right: -8px; width: 8px; height: 18px; clip-path: polygon(0 0, 100% 50%, 0 100%); }
+  #bubble[data-side="above"]::after { left: calc(var(--tail) - 7px); bottom: -7px; width: 14px; height: 7px; clip-path: polygon(0 0, 100% 0, 50% 100%); }
+  #bubble[data-side="below"]::after { left: calc(var(--tail) - 7px); top: -7px; width: 14px; height: 7px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+  #bubble[data-side="right"]::after { top: calc(var(--tail) - 7px); left: -7px; width: 7px; height: 14px; clip-path: polygon(100% 0, 100% 100%, 0 50%); }
+  #bubble[data-side="left"]::after { top: calc(var(--tail) - 7px); right: -7px; width: 7px; height: 14px; clip-path: polygon(0 0, 100% 50%, 0 100%); }
   #log { max-height: 220px; overflow-y: auto; }
   #log p { margin: 0 0 8px; overflow-wrap: anywhere; }
   #log .you { text-align: right; color: var(--soft); }
-  #log .dots i { display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--ink);
-                 opacity: .25; animation: dot 1s infinite; }
-  #log .dots i:nth-child(2) { animation-delay: .15s; } #log .dots i:nth-child(3) { animation-delay: .3s; }
-  @keyframes dot { 0%, 100% { opacity: .2; transform: translateY(0); } 40% { opacity: .9; transform: translateY(-3px); } }
+  #log .dots { display: flex; align-items: center; height: 26px; margin: 0 0 8px; position: relative; }
+  #log .dots i { position: absolute; display: block; border-radius: 50%; background: var(--ink); pointer-events: none; }
   #bubble.say #chat-only { display: none; }
+  #bubble:not(.pinned) #chips { display: none; }
   #chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
-  #chips button { font: inherit; font-size: 13px; background: #1c1c1c0f; border: 0; border-radius: 999px; padding: 4px 10px; cursor: pointer; color: var(--ink); }
+  #chips button { font: inherit; font-size: 13px; background: #1c1c1c0f; border: 0; border-radius: 4px; padding: 4px 10px; cursor: pointer; color: var(--ink); }
   #chips button:hover { background: #1c1c1c1f; }
-  #ask-text { width: 100%; font: inherit; font-size: 15px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: #ffffff96; }
+  #ask-text { width: 100%; font: inherit; font-size: 15px; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; background: #ffffff96; }
   #ask-text:focus { outline: 2px solid var(--accent); outline-offset: 1px; background: #ffffffd8; }
-  @media (prefers-reduced-motion: reduce) { #bubble { transition: none; } #log .dots i { animation: none; opacity: .6; } }
   h1 { font-size: 40px; line-height: 1.15; text-align: center; margin: 0 0 12px; letter-spacing: -0.02em; }
-  .lead { text-align: center; color: var(--soft); font-size: 19px; margin: 0 auto 12px; max-width: 520px; }
-  .lead + .lead { margin-bottom: 40px; }
-  .download { background: linear-gradient(180deg, #ffffffb8, #eef3fbb8); -webkit-backdrop-filter: blur(22px) saturate(1.5);
-              backdrop-filter: blur(22px) saturate(1.5); border-radius: 20px; padding: 28px; text-align: center;
-              box-shadow: 0 10px 32px #0000001a, 0 0 0 1px #1c1c1c14, inset 0 0 0 1px #ffffffe6; }
+  .lead { text-align: center; color: var(--soft); font-size: 19px; margin: 0 auto 28px; max-width: 520px; }
+  .hero { display: flex; flex-direction: column; min-height: calc(100vh - 48px); justify-content: center; padding-bottom: 16px; }
+  @media (min-width: 800px) {
+    .hero { min-height: calc(100vh - 48px); padding-bottom: 24px; }
+  }
+  .download { background: linear-gradient(180deg, #ffffffbd, #eef3fbbd); -webkit-backdrop-filter: blur(22px) saturate(1.5);
+              backdrop-filter: blur(22px) saturate(1.5); border-radius: 20px; padding: 24px; text-align: center;
+              box-shadow: 0 2px 12px 3px #0000003d, 0 0 0 1px #1c1c1c1f, inset 0 0 0 1px #ffffff; }
   .button { display: inline-block; background: var(--ink); color: #fff; text-decoration: none; font-weight: 600;
             padding: 14px 28px; border-radius: 12px; font-size: 18px; }
   .button:hover { background: #000; }
   .hint { color: var(--soft); font-size: 15px; margin: 16px 0 0; }
   code { font: 14px "DejaVu Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #1c1c1c0f;
          padding: 2px 6px; border-radius: 6px; }
-  pre { text-align: left; background: linear-gradient(180deg, #ffffffc2, #eef3fbc2); color: var(--ink);
+  pre { text-align: left; background: linear-gradient(180deg, #ffffffbd, #eef3fbbd); color: var(--ink);
         -webkit-backdrop-filter: blur(22px) saturate(1.5); backdrop-filter: blur(22px) saturate(1.5);
         border-radius: 12px; padding: 16px 18px; overflow-x: auto;
         font: 14px/1.5 "DejaVu Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 20px 0 0;
-        box-shadow: 0 10px 32px #0000001a, 0 0 0 1px #1c1c1c14, inset 0 0 0 1px #ffffffe6; }
+        box-shadow: 0 2px 12px 3px #0000003d, 0 0 0 1px #1c1c1c1f, inset 0 0 0 1px #ffffff; }
   .others { margin: 20px 0 0; font-size: 15px; color: var(--soft); text-align: center; }
   .others a { color: var(--accent); margin: 0 6px; }
   [data-os] { display: none; }
   body[data-detected="mac"] [data-os="mac"], body[data-detected="windows"] [data-os="windows"],
   body[data-detected="linux"] [data-os="linux"], body[data-detected="other"] [data-os="other"] { display: block; }
-  h2 { font-size: 22px; margin: 56px 0 12px; letter-spacing: -0.01em; }
-  ul { padding-left: 20px; } li { margin: 6px 0; }
+  details { margin: 28px 0 0; }
+  details > summary { cursor: pointer; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  details[open] > summary { margin-bottom: 8px; }
+  details ul { padding-left: 20px; } details li { margin: 6px 0; }
   a { color: var(--accent); }
-  footer { margin-top: 64px; color: var(--soft); font-size: 14px; text-align: center; }
+  footer { margin-top: 48px; color: var(--soft); font-size: 14px; text-align: center; }
+  @media (prefers-reduced-motion: reduce) {
+    #bubble { will-change: auto; }
+  }
 </style>
 </head>
 <body>
 <main>
+  <div class="hero">
   <div id="stage"><img src="face.svg" alt="The Bot Widget face"></div>
-  <p class="try">Go on: grab me, throw me, or click me. <button id="home" type="button">Bring me back</button></p>
+  <button id="home" type="button">Bring me back</button>
   <h1>A face for your bot</h1>
-  <p class="lead">Bot Widget puts your OpenBot or Grok Bot on the desktop as a small animated face. Click it to chat. Watch it think.</p>
   <p class="lead">Tiny, above other windows by default, and never in your taskbar or dock. The bubble opens when you point at it and closes when the pointer leaves.</p>
 
   <div class="download">
@@ -94,11 +103,10 @@
       <p>Paste this line into <strong>Terminal</strong>. It installs Bot Widget in your Applications folder and opens it, with no security warning.</p>
       <pre>curl -fsSL https://bot-widget.com/install.sh | sh</pre>
       <p class="hint">For Macs with Apple Silicon (M1 or newer).</p>
-      <p class="hint">Rather download it? <a href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-macOS.zip">Download for macOS</a>, unzip, drag <strong>Bot Widget</strong> into Applications and open it. The app is not notarized by Apple, so the first time macOS says <strong>“Bot Widget” Not Opened</strong>: click <strong>Done</strong>, open <strong>System Settings</strong> → <strong>Privacy &amp; Security</strong>, click <strong>Open Anyway</strong>, enter your password, then click <strong>Open Anyway</strong> once more. After that it opens normally.</p>
     </div>
     <div data-os="windows">
       <a class="button" href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-Windows-Setup.exe">Download for Windows</a>
-      <p class="hint">Run the installer, then find <strong>Bot Widget</strong> in the Start menu. Unsigned for now, so SmartScreen may warn: choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
+      <p class="hint">Unsigned for now, so SmartScreen may warn: choose <strong>More info</strong>, then <strong>Run anyway</strong>.</p>
     </div>
     <div data-os="linux">
       <a class="button" href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-Linux.tar.gz">Download for Linux</a>
@@ -109,46 +117,64 @@
     <div data-os="other">
       <p>Bot Widget is a desktop app. Open this page on a Mac, Windows or Linux computer.</p>
     </div>
+  </div>
+  </div>
+
+  <details>
+    <summary>How it works</summary>
+    <ul>
+      <li><strong>Point at the face</strong> and the bubble opens with the latest answer and a field to reply; <strong>click</strong> it to keep the bubble open</li>
+      <li>The face is 68 pixels, and the bubble is never wider than 45% of the screen</li>
+      <li><strong>By default</strong> the face stays above other windows, and on macOS and Linux it is on every desktop</li>
+      <li><strong>Double-click the face</strong> to capture a screenshot for the chat</li>
+      <li><strong>On macOS</strong>, Control+Option+Space opens the chat from any app</li>
+      <li><strong>While it works</strong>, the bubble turns into a thought cloud</li>
+      <li><strong>Right-click the face</strong> to switch bots, open Settings, and quit</li>
+    </ul>
+  </details>
+
+  <details>
+    <summary>What it needs</summary>
+    <p>Bot Widget is the face, not the brain. It talks to <a href="https://openbot.run/">OpenBot</a> or <a href="https://x.ai/bot">Grok Bot</a>. Without either, the face tells you so and points you to both.</p>
+  </details>
+
+  <details id="install">
+    <summary>Install</summary>
     <p class="others">All downloads:
       <a href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-macOS.zip">macOS</a>
       <a href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-Windows-Setup.exe">Windows</a>
       <a href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-Linux.tar.gz">Linux</a>
     </p>
-  </div>
-
-  <h2>Prefer the command line?</h2>
-  <p><a href="https://docs.astral.sh/uv/">uv</a> is for the command line and for development. On Linux the face stays tied to that terminal, so closing the terminal quits the face. For a start from the app menu, use the Linux download and <code>install.sh</code>. That command is <code>bot-widget</code>.</p>
-  <pre>uv tool install git+https://github.com/Menziess/bot-widget
+    <p>Rather download the Mac app? <a href="https://github.com/Menziess/bot-widget/releases/latest/download/BotWidget-macOS.zip">Download for macOS</a>, unzip, drag <strong>Bot Widget</strong> into Applications and open it. The app is not notarized by Apple, so the first time macOS says <strong>“Bot Widget” Not Opened</strong>: click <strong>Done</strong>, open <strong>System Settings</strong> → <strong>Privacy &amp; Security</strong>, click <strong>Open Anyway</strong>, enter your password, then click <strong>Open Anyway</strong> once more. After that it opens normally.</p>
+    <h3 style="font-size:17px;margin:24px 0 8px">Prefer the command line?</h3>
+    <p><a href="https://docs.astral.sh/uv/">uv</a> is for the command line and for development. On Linux the face stays tied to that terminal, so closing the terminal quits the face. For a start from the app menu, use the Linux download and <code>install.sh</code>. That command is <code>bot-widget</code>.</p>
+    <pre>uv tool install git+https://github.com/Menziess/bot-widget
 botwidget</pre>
-  <p class="hint">To leave the terminal and keep the face: <code>nohup botwidget &gt;/dev/null 2&gt;&amp;1 &amp;</code></p>
+    <p class="hint">To leave the terminal and keep the face: <code>nohup botwidget &gt;/dev/null 2&gt;&amp;1 &amp;</code></p>
+  </details>
 
-  <h2>How it works</h2>
-  <ul>
-    <li><strong>Point at the face</strong> and the bubble opens with the latest answer and a field to reply; <strong>click</strong> it to keep the bubble open</li>
-    <li>The face is 68 pixels, and the bubble is never wider than 45% of the screen</li>
-    <li><strong>By default</strong> the face stays above other windows, and on macOS and Linux it is on every desktop</li>
-    <li><strong>Double-click the face</strong> to capture a screenshot for the chat</li>
-    <li><strong>On macOS</strong>, Control+Option+Space opens the chat from any app</li>
-    <li><strong>While it works</strong>, the bubble turns into a thought cloud</li>
-    <li><strong>Right-click the face</strong> to switch bots, open Settings, and quit</li>
-  </ul>
+  <details id="code-signing">
+    <summary>Code signing</summary>
+    <p>Windows downloads are unsigned for now, so SmartScreen may warn. When a certificate is in place, every signed file is built by GitHub Actions from <a href="https://github.com/Menziess/bot-widget">this repository</a> (<code>.github/workflows/release.yml</code>), and each signing request is approved by hand.</p>
+    <ul>
+      <li>Committers and reviewers: <a href="https://github.com/Menziess">Stefan Schenk (Menziess)</a></li>
+      <li>Approvers: <a href="https://github.com/Menziess">Stefan Schenk (Menziess)</a></li>
+    </ul>
+    <p>See also the <a href="/privacy">privacy policy</a>.</p>
+  </details>
 
-  <h2>What it needs</h2>
-  <p>Bot Widget is the face, not the brain. It talks to <a href="https://openbot.run/">OpenBot</a> or <a href="https://x.ai/bot">Grok Bot</a>. Without either, the face tells you so and points you to both.</p>
-
-  <h2 id="code-signing">Code signing</h2>
-  <p>Windows downloads are unsigned for now, so SmartScreen may warn. When a certificate is in place, every signed file is built by GitHub Actions from <a href="https://github.com/Menziess/bot-widget">this repository</a> (<code>.github/workflows/release.yml</code>), and each signing request is approved by hand.</p>
-  <ul>
-    <li>Committers and reviewers: <a href="https://github.com/Menziess">Stefan Schenk (Menziess)</a></li>
-    <li>Approvers: <a href="https://github.com/Menziess">Stefan Schenk (Menziess)</a></li>
-  </ul>
-  <p>See also the <a href="/privacy">privacy policy</a>.</p>
+  <details>
+    <summary>FAQ</summary>
+    <p><strong>Is it free?</strong> Free under the MIT license, and the source is on GitHub.</p>
+    <p><strong>What does it need?</strong> OpenBot or Grok Bot on your computer. Without either, the face tells you so and points you to both.</p>
+    <p><strong>Which systems?</strong> macOS, Windows and Linux.</p>
+  </details>
 
   <footer>MIT license · <a href="https://github.com/Menziess/bot-widget">Source on GitHub</a> · <a href="/#code-signing">Code signing policy</a> · <a href="/privacy">Privacy</a></footer>
 </main>
 <div id="bot">
   <canvas id="bot-canvas" aria-hidden="true"></canvas>
-  <div id="bot-hit" role="button" tabindex="0" aria-label="The Bot Widget face. Click to talk, drag to throw."></div>
+  <div id="bot-hit" role="button" tabindex="0" aria-label="The Bot Widget face. Point at it to talk, drag to throw."></div>
 </div>
 <div id="bubble" data-open="false" aria-hidden="true">
   <div id="log" aria-live="polite"></div>
@@ -162,6 +188,17 @@ botwidget</pre>
 <script src="bot.js"></script>
 <script>
   document.body.dataset.detected = detectOS(navigator.userAgent, navigator.platform || "");
+  function openHash() {
+    var id = (location.hash || "").replace(/^#/, "");
+    if (!id) return;
+    var el = document.getElementById(id);
+    if (el && el.tagName === "DETAILS") {
+      el.open = true;
+      el.scrollIntoView({ block: "start" });
+    }
+  }
+  window.addEventListener("hashchange", openHash);
+  openHash();
 </script>
 </body>
 </html>

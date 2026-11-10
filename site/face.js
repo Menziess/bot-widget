@@ -18,13 +18,22 @@
   var EYE_FILL = "#f9f9f9";
 
   // stiffness, damping. Below 1 a property overshoots a little: that gives the wobble.
+  // botwidget/animation.py SPRINGS, REST, SETTLED, MAX_STEP, SUBSTEP, frame_ms.
   var SPRINGS = {
     dx: [320, 0.80], dy: [320, 0.80], scale: [900, 0.90], converge: [320, 0.90], happy: [400, 0.90],
-    lift: [500, 0.60], lean: [220, 0.32], sx: [260, 0.30], sy: [260, 0.30], zoom: [300, 1.0]
+    lift: [500, 0.60], lean: [220, 0.32], sx: [260, 0.30], sy: [260, 0.30],
+    zoom: [300, 1.0], pitch: [300, 0.95], yaw: [300, 0.95], roll: [300, 0.95], shift: [300, 0.95], morph: [160, 1.0]
   };
-  var REST = { dx: 0, dy: 0, scale: 1, converge: 0, happy: 0, lift: 0, lean: 0, sx: 1, sy: 1, zoom: 1 };
-  var SETTLED = { dx: 0.04, dy: 0.04, converge: 0.04, lift: 0.04, lean: 0.04, scale: 0.004, happy: 0.004, sx: 0.004, sy: 0.004, zoom: 0.002 };
+  var REST = { dx: 0, dy: 0, scale: 1, converge: 0, happy: 0, lift: 0, lean: 0, sx: 1, sy: 1, zoom: 1,
+    pitch: 0, yaw: 0, roll: 0, shift: 0, morph: 1 };
+  var SETTLED = { dx: 0.04, dy: 0.04, converge: 0.04, lift: 0.04, lean: 0.04, scale: 0.004, happy: 0.004,
+    sx: 0.004, sy: 0.004, zoom: 0.002, pitch: 0.05, yaw: 0.05, roll: 0.05, shift: 0.04, morph: 0.004 };
   var MAX_STEP = 1 / 30, SUBSTEP = 0.008;
+  var BUSY_MS = 16, IDLE_MS = 33, STILL_MS = 100;
+  function frameMs(held, moving, pointerNear, playing) {
+    if (held || pointerNear || (moving && !playing)) return BUSY_MS;
+    return (playing || moving) ? IDLE_MS : STILL_MS;
+  }
 
   function Animator() {
     this.value = {}; this.velocity = {}; this.target = {};
@@ -64,16 +73,33 @@
   };
   // Idle is calm (botwidget/motion.py): the still pose, and after a random 8 to 30 s a blink or, less
   // often, one of Grok Bot's idle clips as a look around; then still again. No breathing.
-  var IDLE_GAP = [8000, 30000], IDLE_BLINK_SHARE = 0.6;
+  // botwidget/motion.py: IDLE_GAP_S, IDLE_BLINK_SHARE, FIRST_WAIT_S, BLINK_SHUT, BLINK_OPEN, STANDARD_EASE.
+  var IDLE_GAP = [8000, 30000], IDLE_BLINK_SHARE = 0.6, FIRST_WAIT = [1000, 30000];
+  var BLINK_SHUT = 0.117, BLINK_OPEN = 0.26, STANDARD_EASE = [0.42, 0.0, 0.58, 1.0];
+  function cubicBezier(t, p1x, p1y, p2x, p2y) {
+    // Unit-interval Y for the CSS/Qt cubic-bezier; used as motion.ease does for STANDARD_EASE.
+    function cx(a, b) { return 3 * a * (1 - a) * (1 - a) * p1x + 3 * a * a * (1 - a) * p2x + a * a * a; }
+    function cy(a) { return 3 * a * (1 - a) * (1 - a) * p1y + 3 * a * a * (1 - a) * p2y + a * a * a; }
+    var lo = 0, hi = 1, mid = t;
+    for (var i = 0; i < 12; i++) { mid = (lo + hi) / 2; if (cx(mid) < t) lo = mid; else hi = mid; }
+    return cy((lo + hi) / 2);
+  }
+  function ease(x, curve) { return cubicBezier(Math.max(0, Math.min(1, x)), curve[0], curve[1], curve[2], curve[3]); }
+  function blinkAt(since) {
+    if (since < 0 || since >= BLINK_OPEN) return 0;
+    if (since < BLINK_SHUT) return ease(since / BLINK_SHUT, STANDARD_EASE);
+    return 1 - ease((since - BLINK_SHUT) / (BLINK_OPEN - BLINK_SHUT), STANDARD_EASE);
+  }
   var LOOKS = {
     Idle_D: [["turn1", 590], ["blink", 130], ["turn2", 1240], ["turn3", 110], ["blink", 130], ["turn3", 170], ["blink", 130], ["turn3", 1410], ["idle", 340], ["blink", 130], ["idle", 1620]],
     Idle_B: [["front", 900], ["turn5", 580], ["blink", 130], ["turn5", 10], ["turn6", 870], ["front", 970], ["blink", 130], ["front", 410], ["idle", 600]],
     Idle_A: [["front", 490], ["turn7", 670], ["blink", 130], ["turn7", 90], ["turn8", 400], ["turn9", 970], ["turn10", 180], ["turn11", 1070], ["blink", 130], ["front", 1920], ["idle", 600]]
   };
   function idleGap() { return IDLE_GAP[0] + Math.random() * (IDLE_GAP[1] - IDLE_GAP[0]); }
+  function firstWait() { return FIRST_WAIT[0] + Math.random() * (FIRST_WAIT[1] - FIRST_WAIT[0]); }
   // What the idle does next: a blink, or a look around.
   function idleNext() {
-    if (Math.random() < IDLE_BLINK_SHARE) return [["blink", 130], ["idle", 0]];
+    if (Math.random() < IDLE_BLINK_SHARE) return [["blink", Math.round(BLINK_OPEN * 1000)], ["idle", 0]];
     var names = Object.keys(LOOKS);
     return LOOKS[names[Math.floor(Math.random() * names.length)]];
   }
@@ -252,7 +278,8 @@
     ctx.fillStyle = EYE_FILL;
     for (var i = 0; i < 2; i++) {
       var e = BOT.eyes[i], x = (i === 0 ? -across : across) + (i === 0 ? v.converge : -v.converge) / R;
-      var laid = onSurface([x, 0, Math.sqrt(Math.max(0, 1 - x * x))], eyeShape(e[0], e[1] * e[3], e[2], v.happy, v.scale, arc), rot);
+      var lids = (v.lids == null ? 0 : v.lids), eyeScale = v.scale * (1 - lids);
+      var laid = onSurface([x, 0, Math.sqrt(Math.max(0, 1 - x * x))], eyeShape(e[0], e[1] * e[3], e[2], v.happy, eyeScale, arc), rot);
       if (!laid) continue;
       ctx.beginPath();
       laid.forEach(function (p, j) { if (j) ctx.lineTo(C + p[0] * R, C + p[1] * R); else ctx.moveTo(C + p[0] * R, C + p[1] * R); });
@@ -261,5 +288,5 @@
     ctx.restore();
   }
 
-  window.BotFace = { SIZE: SIZE, R: R, GAZE_NEAR: GAZE_NEAR, Animator: Animator, POSES: POSES, CYCLE: CYCLE, gaze: gaze, draw: draw, idleGap: idleGap, idleNext: idleNext };
+  window.BotFace = { SIZE: SIZE, R: R, GAZE_NEAR: GAZE_NEAR, Animator: Animator, POSES: POSES, CYCLE: CYCLE, gaze: gaze, draw: draw, idleGap: idleGap, firstWait: firstWait, idleNext: idleNext, blinkAt: blinkAt, BLINK_OPEN: BLINK_OPEN, frameMs: frameMs, BUSY_MS: BUSY_MS, IDLE_MS: IDLE_MS, STILL_MS: STILL_MS };
 })();

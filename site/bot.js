@@ -1,4 +1,5 @@
 // The face on this page: it follows the pointer, can be grabbed and thrown, and answers a few questions.
+// Bubble look, hover slack, open slide/fade and thinking dots are ported from the widget (constants noted below).
 (function () {
   var F = window.BotFace, canvas = document.getElementById("bot-canvas");
   var stage = document.getElementById("stage");
@@ -20,7 +21,21 @@
   var dragging = null, coasting = false, returning = false, happyUntil = 0;
   var pointer = null, pointerAt = 0;
   var mood = "idle", cycleI = 0, cycleLeft = 0, pose = "idle";
-  var thinking = false, pinned = false, sayUntil = 0, bubbleKept = 0;
+  var thinking = false, pinned = false, sayUntil = 0;
+  var blinkSince = -1;               // seconds into an idle blink, or -1
+  var openAnim = null;               // { t0, side } while the open slide/fade runs
+
+  // botwidget/qt_ui/face.py
+  var BUBBLE_HOVER_MARGIN = 24;
+  // botwidget/qt_ui/bubble_window.py
+  var GROW_MS = 240, OPEN_SLIDE = 14;
+  var OPEN_TOWARD = { above: [0, 1], below: [0, -1], right: [-1, 0], left: [1, 0] };
+  // botwidget/theme.py
+  var DOTS_R = 4.5, DOTS_GAP = 12, DOTS_MS = 32, DOTS_CYCLE_S = 1.2;
+  var DOTS_BURST_CYCLES = 2, DOTS_REST_S = 3.0, DOTS_START_PHASE = 0.18;
+  var dotsTimer = 0, dotsPhase = DOTS_START_PHASE, dotsCycles = 0, dotsRestUntil = 0, dotsEl = null;
+
+  function outCubic(t) { return 1 - Math.pow(1 - t, 3); }  // Qt QEasingCurve.OutCubic
 
   function layout() {
     u = window.innerWidth < 640 ? 2.3 : 3;
@@ -38,14 +53,18 @@
     draw();
   }
 
-  function draw() { F.draw(ctx, anim.value, k, PAD); }
+  function draw() {
+    var v = {};
+    for (var n in anim.value) v[n] = anim.value[n];
+    v.lids = blinkSince >= 0 ? F.blinkAt(blinkSince) : 0;
+    F.draw(ctx, v, k, PAD);
+  }
 
   function bounds() {
     var r = F.R * u * 1.1;
     return { l: r, t: r, r: window.innerWidth - r, b: window.innerHeight - r };
   }
 
-  // Returns true when it hit an edge: -1/1 for the side, so the caller can flatten the face against it.
   function clamp() {
     var b = bounds(), hitX = 0, hitY = 0;
     if (x < b.l) { x = b.l; hitX = -1; } else if (x > b.r) { x = b.r; hitX = 1; }
@@ -64,20 +83,27 @@
     x = r.left + r.width / 2; y = r.top + r.height / 2;
   }
 
-  // ── Mood: what the face wants to do when nobody is holding it ──────────
-
   function setPose(name) {
     var p = F.POSES[name];
-    if (p[0] !== null) anim.aim({ dx: p[0], dy: p[1] });  // a blink keeps the eyes where they look
+    if (name === "blink") {
+      blinkSince = 0;
+      pose = name;
+      return;
+    }
+    blinkSince = -1;
+    if (p[0] !== null) anim.aim({ dx: p[0], dy: p[1] });
     anim.aim({ scale: p[2], converge: 0, lift: 0 });
     pose = name;
   }
 
-  // Calm idle: still, then now and then a blink or a look (F.idleNext); work reads.
-  var idleWait = F.idleGap(), playing = null;
+  var idleWait = F.firstWait(), playing = null;
   function cycle(ms) {
     var m = thinking ? "work" : "idle";
-    if (m !== mood) { mood = m; cycleI = 0; cycleLeft = 0; playing = m === "work" ? F.CYCLE.work : null; idleWait = F.idleGap(); }
+    if (m !== mood) { mood = m; cycleI = 0; cycleLeft = 0; playing = m === "work" ? F.CYCLE.work : null; idleWait = F.idleGap(); blinkSince = -1; }
+    if (blinkSince >= 0) {
+      blinkSince += ms / 1000;
+      if (blinkSince >= F.BLINK_OPEN) blinkSince = -1;
+    }
     if (!playing) {
       if (pose !== "idle") setPose("idle");
       idleWait -= ms;
@@ -100,6 +126,7 @@
 
     if (dragging || now < happyUntil) {
       var moving = dragging && speed > 20;
+      blinkSince = -1;
       anim.aim({
         happy: moving ? 0.5 : 1, converge: 0, scale: 1, lift: 0,
         dx: moving ? Math.max(-8, Math.min(8, vx / speed * 8)) : 0,
@@ -112,37 +139,49 @@
       var g = F.gaze((pointer[0] - x) / u, (pointer[1] - y) / u);
       anim.aim({ dx: g.dx, dy: g.dy, converge: g.converge, scale: g.scale, lift: 0 });
       cycleLeft = 0;
+      if (blinkSince >= 0) {
+        blinkSince += ms / 1000;
+        if (blinkSince >= F.BLINK_OPEN) blinkSince = -1;
+      }
       return;
     }
     cycle(ms);
   }
 
-  // ── The loop ────────────────────────────────────────────────────────
+  // ── The loop (interval from animation.frame_ms) ─────────────────────
 
-  var last = 0, px = 0, py = 0;
+  var last = 0, px = 0, py = 0, raf = 0, waitTimer = 0;
+  function schedule(ms) {
+    if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    if (waitTimer) { clearTimeout(waitTimer); waitTimer = 0; }
+    if (ms <= F.BUSY_MS) raf = requestAnimationFrame(frame);
+    else waitTimer = setTimeout(function () { raf = requestAnimationFrame(frame); }, ms);
+  }
   function frame(t) {
-    requestAnimationFrame(frame);
+    raf = 0;
     var dt = last ? Math.min((t - last) / 1000, 0.05) : 0.016;
     last = t;
-    if (!dt) return;
+    if (!dt) { schedule(F.BUSY_MS); return; }
     var now = performance.now();
 
     if (homed && !dragging && !coasting) { home(); clamp(); }
     if (coasting) coast(dt);
     if (returning) glideHome(dt);
 
-    // Speed from what the face actually did, so a held pointer that stops also settles.
     var nvx = (x - px) / dt, nvy = (y - py) / dt;
     if (dragging || coasting || returning) { vx += (nvx - vx) * 0.35; vy += (nvy - vy) * 0.35; }
     else { vx = vy = 0; }
     px = x; py = y;
 
     aim(now, dt * 1000, Math.hypot(vx, vy));
-    var moving = anim.step(dt);
-    if (moving || dragging || coasting) draw();
+    var moving = anim.step(dt) || blinkSince >= 0;
+    if (moving || dragging || coasting || blinkSince >= 0) draw();
     place();
+    hoverTick();
 
-    if (sayUntil && now > sayUntil && !pinned && now > bubbleKept) closeBubble();
+    var near = !!pointer && Math.hypot(pointer[0] - x, pointer[1] - y) < F.GAZE_NEAR * u + 40;
+    var interval = reduced ? F.STILL_MS : F.frameMs(!!dragging, !!(moving || coasting || returning), near, !!playing);
+    schedule(interval);
   }
 
   function glideHome(dt) {
@@ -216,9 +255,33 @@
   document.addEventListener("pointerleave", function () { pointer = null; });
   window.addEventListener("resize", function () { layout(); });
 
-  // ── Bubble and talking ──────────────────────────────────────────────
+  // ── Bubble: hover open, leave close (face.py / bubble_window.py) ────
 
-  // Above the face if there is room, else beside it, else below.
+  function onFace() {
+    if (!pointer) return false;
+    var r = F.R * u * 1.1;
+    return Math.hypot(pointer[0] - x, pointer[1] - y) <= r;
+  }
+
+  function pointerNear() {
+    // face.pointer_near: on the face, or within BUBBLE_HOVER_MARGIN of the bubble.
+    if (onFace()) return true;
+    if (bubble.dataset.open !== "true") return false;
+    if (!pointer) return false;
+    var r = bubble.getBoundingClientRect(), m = BUBBLE_HOVER_MARGIN;
+    return pointer[0] >= r.left - m && pointer[0] <= r.right + m &&
+           pointer[1] >= r.top - m && pointer[1] <= r.bottom + m;
+  }
+
+  function bubbleOffset(side, progress) {
+    // Opening: full size at once, fades in and slides out from the face.
+    // Opacity = min(1, progress * 1.25); offset = OPEN_SLIDE * (1 - progress) toward the face.
+    var toward = OPEN_TOWARD[side] || [0, 0];
+    var p = reduced ? 1 : progress;
+    var slide = reduced ? 0 : OPEN_SLIDE * (1 - p);
+    return { dx: toward[0] * slide, dy: toward[1] * slide, opacity: reduced ? 1 : Math.min(1, p * 1.25) };
+  }
+
   function placeBubble() {
     var w = bubble.offsetWidth, h = bubble.offsetHeight, gap = F.R * u + 10, vw = window.innerWidth, vh = window.innerHeight;
     var side = "above", left, top, tail;
@@ -233,16 +296,55 @@
       left = Math.max(8, Math.min(vw - w - 8, x - w * 0.25)); top = Math.min(vh - h - 8, y + gap); tail = x - left;
     }
     var along = side === "above" || side === "below" ? w : h;
-    bubble.style.transform = "translate3d(" + left + "px," + top + "px,0)";
     bubble.style.setProperty("--tail", Math.max(18, Math.min(along - 18, tail)) + "px");
     bubble.dataset.side = side;
+    var p = 1;
+    if (openAnim) {
+      var t = Math.min(1, (performance.now() - openAnim.t0) / GROW_MS);
+      p = outCubic(t);
+      if (t >= 1) openAnim = null;
+    }
+    var off = bubbleOffset(side, p);
+    bubble.style.transform = "translate3d(" + (left + off.dx) + "px," + (top + off.dy) + "px,0)";
+    bubble.style.opacity = String(off.opacity);
   }
 
-  function openBubble() { bubble.dataset.open = "true"; bubble.setAttribute("aria-hidden", "false"); placeBubble(); }
-  function closeBubble() { bubble.dataset.open = "false"; bubble.setAttribute("aria-hidden", "true"); sayUntil = 0; }
+  function openBubble() {
+    var was = bubble.dataset.open === "true";
+    bubble.dataset.open = "true";
+    bubble.setAttribute("aria-hidden", "false");
+    if (!was) {
+      openAnim = reduced ? null : { t0: performance.now() };
+      bubble.style.opacity = reduced ? "1" : "0";
+    }
+    placeBubble();
+  }
 
-  bubble.addEventListener("pointerenter", function () { bubbleKept = performance.now() + 4000; });
-  bubble.addEventListener("pointermove", function () { bubbleKept = performance.now() + 4000; });
+  function closeBubble() {
+    // Qt place(""): hide at once; no close fade. Slack is the 24 px margin only.
+    openAnim = null;
+    bubble.dataset.open = "false";
+    bubble.setAttribute("aria-hidden", "true");
+    bubble.style.opacity = "0";
+    sayUntil = 0;
+  }
+
+  function hoverTick() {
+    var near = pointerNear();
+    if (near) {
+      if (bubble.dataset.open !== "true") {
+        // Pointing at the face opens the latest line and a field (README, face hover).
+        if (!pinned && !log.children.length) {
+          add("bot", "Hi! Grab me and throw me, or click me to keep this bubble open.");
+        }
+        bubble.classList.remove("say");
+        bubble.classList.add("chat");
+        openBubble();
+      }
+    } else if (!pinned && bubble.dataset.open === "true") {
+      closeBubble();
+    }
+  }
 
   function add(role, text) {
     var line = document.createElement("p");
@@ -254,19 +356,19 @@
     return line;
   }
 
-  function say(text, seconds) {
+  function say(text) {
     if (pinned) return;
     log.textContent = "";
     add("bot", text);
     bubble.classList.add("say");
     bubble.classList.remove("chat");
-    sayUntil = performance.now() + seconds * 1000;
     openBubble();
   }
 
   function togglePin() {
-    if (pinned) { pinned = false; closeBubble(); return; }
+    if (pinned) { pinned = false; bubble.classList.remove("pinned"); closeBubble(); return; }
     pinned = true;
+    bubble.classList.add("pinned");
     bubble.classList.remove("say"); bubble.classList.add("chat");
     if (!log.children.length || bubble.dataset.greeted !== "chat") {
       log.textContent = "";
@@ -277,6 +379,74 @@
     setTimeout(function () { input.focus({ preventScroll: true }); }, 30);
   }
 
+  // Thinking dots: theme.py DOTS_* and bubble.py dots_svg (phase wave, burst then rest).
+  function startDots(el) {
+    dotsEl = el;
+    dotsPhase = DOTS_START_PHASE;
+    dotsCycles = 0;
+    dotsRestUntil = 0;
+    if (dotsTimer) clearInterval(dotsTimer);
+    tickDots();
+    dotsTimer = setInterval(tickDots, DOTS_MS);
+  }
+  function stopDots() {
+    if (dotsTimer) { clearInterval(dotsTimer); dotsTimer = 0; }
+    dotsEl = null;
+  }
+  function tickDots() {
+    if (!dotsEl) { stopDots(); return; }
+    var now = performance.now();
+    if (dotsRestUntil) {
+      if (now < dotsRestUntil) {
+        paintDots(-1);
+        return;
+      }
+      dotsRestUntil = 0;
+      dotsPhase = DOTS_START_PHASE;
+    }
+    var before = dotsPhase;
+    dotsPhase = (dotsPhase + DOTS_MS / 1000 / DOTS_CYCLE_S) % 1;
+    if (dotsPhase < before) {
+      dotsCycles += 1;
+      if (dotsCycles >= DOTS_BURST_CYCLES) {
+        dotsCycles = 0;
+        paintDots(-1);
+        if (dotsTimer) { clearInterval(dotsTimer); dotsTimer = 0; }
+        dotsRestUntil = now + DOTS_REST_S * 1000;
+        setTimeout(function () {
+          if (!dotsEl) return;
+          dotsRestUntil = 0;
+          dotsPhase = DOTS_START_PHASE;
+          tickDots();
+          dotsTimer = setInterval(tickDots, DOTS_MS);
+        }, DOTS_REST_S * 1000);
+        return;
+      }
+    }
+    paintDots(dotsPhase);
+  }
+  function paintDots(phase) {
+    if (!dotsEl) return;
+    var dots = dotsEl.querySelectorAll("i");
+    var midY = 13;  // LINE_DOTS_H / 2
+    for (var i = 0; i < dots.length; i++) {
+      var lift = 0;
+      if (phase >= 0) {
+        var wave = (phase - i * 0.18) % 1;
+        if (wave < 0) wave += 1;
+        lift = (1 - Math.cos(2 * Math.PI * wave)) / 2;
+      }
+      var r = DOTS_R * (0.6 + 0.4 * lift);
+      var cx = DOTS_R + 1 + i * DOTS_GAP;
+      var cy = midY - 2.5 * lift;
+      dots[i].style.width = dots[i].style.height = (2 * r) + "px";
+      dots[i].style.left = (cx - r) + "px";
+      dots[i].style.top = (cy - r) + "px";
+      dots[i].style.opacity = String(0.35 + 0.6 * lift);
+    }
+    dotsEl.style.width = (2 * DOTS_GAP + 2 * DOTS_R + 2) + "px";
+  }
+
   var ANSWERS = [
     [/\b(hi|hello|hey|hoi|yo)\b/, "Hi! Ask me how to install me, what I need, or what I can do."],
     [/install|download|get you|setup|set up|start|run/, "On a Mac with Apple Silicon, run curl -fsSL https://bot-widget.com/install.sh | sh in Terminal. On Windows: run the installer. On Linux: unpack the archive and run ./botwidget/install.sh. With uv, one line does it everywhere: uv tool install git+https://github.com/Menziess/bot-widget"],
@@ -285,8 +455,8 @@
     [/free|cost|price|pay|licen|open source/, "Free under the MIT license, and the source is on GitHub."],
     [/privacy|data|private|secure|safe|track|send/, "I talk to the bot on your own machine. The only thing I ask the internet is whether there is a newer release on GitHub, and that can be switched off."],
     [/update/, "I check GitHub for a newer release, download it, verify its checksum and restart into it when nobody is using me."],
-    [/click|chat|bubble|type|talk|use/, "Click my face to open this bubble and type to your bot. While it works I read, and the bubble turns into a thought cloud. Right-click me to switch bots and open Settings."],
-    [/who|what are|what do|about|do you do|purpose/, "I'm a small animated face for your OpenBot or Grok Bot. I sit on your desktop, look at your pointer, show the latest answer and open a chat when you click me."],
+    [/click|chat|bubble|type|talk|use|point|hover/, "Point at my face and the bubble opens; click to keep it open and type. While it works I read, and the bubble turns into a thought cloud. Right-click me to switch bots and open Settings."],
+    [/who|what are|what do|about|do you do|purpose/, "I'm a small animated face for your OpenBot or Grok Bot. I sit on your desktop, look at your pointer, show the latest answer and open a chat when you point at me."],
     [/throw|drag|move|grab|fling|toss|play/, "Grab me and fling me around the window. I do the same on your desktop."],
     [/thank|nice|cool|great|love/, "Thank you! Now download me and I'll keep you company."],
     [/joke/, "Why did the bot sit on my desktop? To keep an eye on things. I have two."]
@@ -318,12 +488,14 @@
     text = text.trim();
     if (!text || thinking) return;
     add("you", text);
-    anim.kick("dy", 60);  // the nod: it went out
+    anim.kick("dy", 60);
     thinking = true; bubble.classList.add("thinking");
     var dots = add("bot dots", "");
     dots.innerHTML = "<i></i><i></i><i></i>";
+    startDots(dots);
     setTimeout(function () {
       thinking = false; bubble.classList.remove("thinking");
+      stopDots();
       if (dots.parentNode) dots.parentNode.removeChild(dots);
       reply(answer(text));
     }, 700 + Math.random() * 600);
@@ -334,14 +506,11 @@
     if (e.target.tagName === "BUTTON") ask(e.target.textContent);
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && pinned) { pinned = false; closeBubble(); }
+    if (e.key === "Escape" && pinned) { pinned = false; bubble.classList.remove("pinned"); closeBubble(); }
   });
-
-  // ── Go ──────────────────────────────────────────────────────────────
 
   layout();
   home(); px = x; py = y;
   document.body.classList.add("live");
-  requestAnimationFrame(frame);
-  if (!reduced) setTimeout(function () { say("Hi! Grab me and throw me, or click me to talk.", 9); }, 1200);
+  schedule(F.BUSY_MS);
 })();
