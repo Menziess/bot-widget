@@ -1345,6 +1345,40 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "")
 
+    def test_a_bubble_the_pointer_left_waits_a_moment_and_longer_while_the_pointer_moves_fast(self):
+        import time
+        from unittest import mock
+        from botwidget.qt_ui import bubble_window
+        self.hover()
+        bubble = self.window.bubble
+        bubble._tick()
+        with mock.patch.object(bubble_window, "LEAVE_MAX_S", 1.5):
+            self.where["at"] = (5000, 5000)
+            bubble._tick()
+            self.assertTrue(bubble.kind, "a moment of grace")
+            bubble._left_since = time.monotonic() - 1.0
+            bubble._pointer_speed = 2000.0
+            bubble._tick()
+            self.assertTrue(bubble.kind, "the pointer still moves fast: it may be on its way back")
+            bubble._left_since = time.monotonic() - 2.0
+            bubble._tick()
+            self.assertEqual(bubble.kind, "", "never longer than the limit")
+
+    def test_a_pointer_that_slowed_down_away_from_the_bubble_lets_it_go_after_the_grace(self):
+        import time
+        from unittest import mock
+        from botwidget.qt_ui import bubble_window
+        self.hover()
+        bubble = self.window.bubble
+        bubble._tick()
+        with mock.patch.object(bubble_window, "LEAVE_MAX_S", 1.5):
+            self.where["at"] = (5000, 5000)
+            bubble._tick()
+            bubble._left_since = time.monotonic() - 0.5
+            bubble._pointer_speed = 0.0
+            bubble._tick()
+            self.assertEqual(bubble.kind, "")
+
     def test_a_bubble_nobody_pointed_at_closes_after_the_time_to_read_it(self):
         import time
         from botwidget.bubble import reading_seconds

@@ -64,3 +64,9 @@ unittest.TestCase.run = _run_clean
 from botwidget import power as _power  # noqa: E402
 
 _power._probe = lambda: False
+
+# The grace a bubble gets after the pointer left depends on time and speed. Tests that are not about it expect the
+# bubble to go when the pointer is gone; the ones about the grace set it back.
+from botwidget.qt_ui import bubble_window as _bubble_window  # noqa: E402
+
+_bubble_window.LEAVE_MAX_S = 0.0

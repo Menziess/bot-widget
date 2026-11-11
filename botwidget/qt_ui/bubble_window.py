@@ -160,6 +160,11 @@ OLDER_END_SHARE = 0.4  # a message that came in above is shown from its end, wit
 # loads the message at once. On a page of the menu the same line is the way back, but it is not drawn until you
 # scroll, or the pointer or a press comes near it. It fades out again after a short idle.
 MORE_ZONE_PX = 28
+# A pointer that left the bubble does not close it at once: a moment of grace, and longer while the pointer still
+# moves fast (on its way somewhere, probably back), up to a limit.
+LEAVE_GRACE_S = 0.4
+LEAVE_MOVING_PX_S = 300
+LEAVE_MAX_S = 1.5
 FIELD_LINGER_S = 0.8  # the field for a message stays this long after the pointer left
 PULL_PX = 140
 WHEEL_PX = 40  # one notch of a mouse wheel, which has no pixel distance of its own
@@ -805,6 +810,9 @@ class BubbleWindow(QWidget):
         self._chrome_key = self._chrome_pix = None
         self._was_near = False
         self._near_at = 0.0
+        self._left_since = 0.0  # when the pointer left a bubble it had been on
+        self._pointer_seen = None  # (time, x, y) of the last tick, for the speed
+        self._pointer_speed = 0.0
         # Qt's enter/leave for this window. A leave newer than the last enter means the pointer is
         # gone, whatever underMouse() still says on XWayland.
         self._entered_at = None
@@ -1300,6 +1308,26 @@ class BubbleWindow(QWidget):
 
     def _selecting(self) -> bool:
         return self._doc.hasFocus() and self._doc.textCursor().hasSelection()
+
+    def _follow_speed(self, now: float):
+        """How fast the pointer moves, in pixels a second, smoothed over a few ticks."""
+        if not self.face.pointer_known():
+            self._pointer_seen, self._pointer_speed = None, 0.0
+            return
+        x, y = self.face._pointer()
+        if self._pointer_seen is not None and now > self._pointer_seen[0]:
+            then, ox, oy = self._pointer_seen
+            instant = ((x - ox) ** 2 + (y - oy) ** 2) ** 0.5 / (now - then)
+            self._pointer_speed = self._pointer_speed * 0.7 + instant * 0.3
+        self._pointer_seen = (now, x, y)
+
+    def _leave_grace(self, now: float) -> bool:
+        """True while a pointer that left the bubble may still come back: briefly, and while it moves fast."""
+        if not self.face.pointer_known():
+            return False  # the position is stale there: the bubble goes the moment the pointer is not on it
+        self._left_since = self._left_since or now
+        away = now - self._left_since
+        return away < LEAVE_MAX_S and (away < LEAVE_GRACE_S or self._pointer_speed > LEAVE_MOVING_PX_S)
 
     def shown_by_pointer(self):
         """The pointer is on the face, so it has been near: leaving takes the bubble with it, also when it was
@@ -2368,17 +2396,22 @@ class BubbleWindow(QWidget):
             self._slide.start()
             return
         pointer = self.face.pointer_near(self)
+        self._follow_speed(now)
         if pointer and self._held is not None and self._pointer_on_card():
             self._release_hold()  # on the card: the window can be the card again, the pointer stays inside
-        # A bubble the pointer really was on goes the moment it leaves, a thinking cloud of a busy bot too.
+        # A bubble the pointer really was on goes once it left, a thinking cloud of a busy bot too.
         # Only a bubble kept up for another reason waits for its answer before it counts as seen.
-        # No timer keeps a bubble the pointer has left: the hover margin (the transparent edge of the window,
-        # BUBBLE_HOVER_MARGIN where the pointer is known everywhere) is the slack, and leaving it closes at once.
+        # The hover margin (the transparent edge of the window, BUBBLE_HOVER_MARGIN where the pointer is known
+        # everywhere) is the slack. Leaving it starts a short grace (_leave_grace), longer while the pointer moves
+        # fast; where the pointer is not known, leaving closes at once.
         if pointer or self.holding():
             self.changed = now
+            self._left_since = 0.0
             self._was_near = self._was_near or bool(pointer) or (not awaiting and self._selecting())
             if pointer:
                 self._near_at = now
+        elif self._was_near and self._leave_grace(now):
+            self.changed = now
         elif self._was_near:
             # The pointer left the bubble: close it straight away. A thinking cloud of a bot that is still busy
             # shrinks back to its dots instead, which go by themselves after a while.
@@ -2493,6 +2526,7 @@ class BubbleWindow(QWidget):
             self._growth = None
             self.setWindowOpacity(1.0)
             self._was_near = False
+            self._left_since = 0.0
             self._tapped = False
             self._near_at = 0.0
             self._had_focus = False
