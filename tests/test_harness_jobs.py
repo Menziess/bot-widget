@@ -35,6 +35,11 @@ def quote(text: str) -> str:
     return subprocess.list2cmdline([text]) if os.name == "nt" else shlex.quote(text)
 
 
+def shown(text: str) -> str:
+    """How a string reads inside the repr of the arguments in a permission title: Windows paths get doubled backslashes."""
+    return repr(text)[1:-1]
+
+
 def py(code: str) -> str:
     return f"{sys.executable} -c {quote(code)}"
 
@@ -460,7 +465,7 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(agent.conn.asks), 1)
         title = agent.conn.asks[0]
         self.assertIn("shell_background", title)
-        self.assertIn(hook, title)
+        self.assertIn(shown(hook), title)
         self.assertIn(url, title)
 
     async def test_a_denied_model_hook_starts_nothing(self):
@@ -478,7 +483,7 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
         ])
         agent = self.agent(model, allow=False, permission="ask")
         await agent.prompt("s1", [Block("go")])
-        self.assertIn(hook, agent.conn.asks[0])
+        self.assertIn(shown(hook), agent.conn.asks[0])
         self.assertIn(server.url, agent.conn.asks[0])
         self.assertFalse(await self._until(
             lambda: bool(agent.jobs.jobs or server.hits or os.path.exists(out)), timeout=0.4))
