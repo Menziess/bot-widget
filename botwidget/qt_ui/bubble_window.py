@@ -1302,9 +1302,10 @@ class BubbleWindow(QWidget):
         return self.kind == kind and self.full_text == text and self._input == input and self.isVisible()
 
     def holding(self) -> bool:
-        """The field has the keyboard, or words are selected to copy: the bubble stays for as long as one of those
-        lasts. Words typed in a field you left stay as a draft; the bubble may go."""
-        return self._tapped or (self._input and (self._entry.hasFocus() or self._keep_draft)) or self._selecting()
+        """The field has the keyboard, or words are selected to copy, or a file waits to be sent, or a form has
+        been typed in: the bubble stays for as long as one of those lasts. Words typed in a field you left stay as a draft; the bubble may go."""
+        return (self._tapped or (self._input and (self._entry.hasFocus() or self._keep_draft)) or self._selecting()
+                or bool(self._attachments) or any(getattr(widget, "in_use", bool)() for widget in self._control_widgets))
 
     def _selecting(self) -> bool:
         return self._doc.hasFocus() and self._doc.textCursor().hasSelection()

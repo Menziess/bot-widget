@@ -1379,6 +1379,19 @@ class BubbleHover(unittest.TestCase):
             bubble._tick()
             self.assertEqual(bubble.kind, "")
 
+    def test_a_form_that_was_typed_in_keeps_the_bubble_until_it_is_back_as_it_was(self):
+        from botwidget.qt_ui.controls import TextField, TextEditor
+        bubble = self.window.bubble
+        field, editor = TextField("Name", "Ada", bubble), TextEditor("{}", bubble)
+        bubble._control_widgets = [field, editor]
+        self.assertFalse(bubble.holding(), "nothing changed")
+        field.edit.setText("Adam")
+        self.assertTrue(bubble.holding(), "a field was typed in")
+        field.edit.setText("Ada")
+        self.assertFalse(bubble.holding())
+        editor.setPlainText('{"a": 1}')
+        self.assertTrue(bubble.holding(), "the widget.json editor too")
+
     def test_a_bubble_nobody_pointed_at_closes_after_the_time_to_read_it(self):
         import time
         from botwidget.bubble import reading_seconds

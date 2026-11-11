@@ -6,6 +6,7 @@ Offscreen Qt only. A fake grabber stands in for screen grab. No display.
 import json
 import os
 import tempfile
+from pathlib import Path
 import time
 import unittest
 from unittest import mock
@@ -66,6 +67,22 @@ class ScreenshotMode(unittest.TestCase):
         self.assertTrue(all(o.isVisible() for o in group))
         overlay._cancel()
         self.assertFalse(any(o.isVisible() for o in group))
+
+    def test_a_picture_in_the_field_keeps_the_bubble_open_and_shows_in_it(self):
+        window = self._make_window()
+        self.addCleanup(window.close_face)
+        window.faces = mock.Mock()
+        window.faces.faces = {"t1": window}
+        window._pointer = lambda: (5000, 5000)
+        window.bubble.focus_entry = lambda: None
+        window.attach_to_draft([Path(tempfile.mkdtemp()) / "screenshot.png"])
+        bubble = window.bubble
+        self.assertTrue(bubble.isVisible())
+        self.assertTrue(bubble._attachment_row.isVisible())
+        window._sync_bubble(window._latest())
+        self.assertTrue(bubble.isVisible(), "the pointer is elsewhere, and a picture still waits to be sent")
+        self.assertTrue(bubble._attachment_row.isVisible())
+        self.assertTrue(bubble.holding())
 
     def test_double_click_enters_screenshot_mode(self):
         from botwidget.qt_ui.screenshot import ScreenshotOverlay

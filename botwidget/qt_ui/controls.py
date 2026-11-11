@@ -350,9 +350,14 @@ class TextField(QWidget):
         self.edit = QLineEdit(value, self)
         self.edit.setStyleSheet(FIELD_STYLE)
         self.edit.setFocusPolicy(Qt.StrongFocus)
+        self._initial = value
 
     def text_value(self) -> str:
         return self.edit.text()
+
+    def in_use(self) -> bool:
+        """Changed, or being typed in: the page around it must not go away."""
+        return self.edit.hasFocus() or self.edit.text() != self._initial
 
     def resizeEvent(self, _event):
         font = QFont(SAND_SANS)
@@ -378,6 +383,10 @@ class TextEditor(QPlainTextEdit):
         self.setStyleSheet(FIELD_STYLE)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setTabChangesFocus(True)
+        self._initial = value
 
     def text_value(self) -> str:
         return self.toPlainText()
+
+    def in_use(self) -> bool:
+        return self.hasFocus() or self.toPlainText() != self._initial

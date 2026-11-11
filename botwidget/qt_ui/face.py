@@ -1137,6 +1137,7 @@ class FaceWindow(QWidget):
 
     def attach_to_draft(self, files: list):
         """Files in the field as attachments, with the cursor there: nothing goes out until you send."""
+        self.pinned = True  # the field is there without the pointer on the bubble, and the bubble stays
         self.open_input()
         self.bubble.edit_text("", files)
 
