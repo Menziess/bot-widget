@@ -106,7 +106,7 @@ def options_for(agent_id: str) -> dict:
     bot = next((bot for bot in configured_bots() if bot["id"] == agent_id), None)
     if bot is None:
         return {}
-    return {"face": agent_id, "env": bot["env"], "key_file": bot["key_file"]}
+    return {"face": agent_id, "name": bot["name"], "env": bot["env"], "key_file": bot["key_file"]}
 
 
 def _bubble_line(text: str) -> str:
@@ -118,10 +118,11 @@ def _bubble_line(text: str) -> str:
 class AcpLink:
     """One bot on an ACP agent: a session that stays open, and one turn at a time."""
 
-    def __init__(self, target: str, face: str = "", env: dict | None = None, key_file: str = "",
+    def __init__(self, target: str, face: str = "", name: str = "", env: dict | None = None, key_file: str = "",
                  now=time.monotonic):
         self.target = target
         self.face = face or face_id(target)
+        self._name = name or target
         self.env = dict(env or {})
         self.key_file = key_file
         self.now = now
@@ -173,7 +174,7 @@ class AcpLink:
             self.failed = ""
             self.messages.append({"role": "user", "text": text})
             self._said = False
-            self._activity = f"Waking {self.target}…"
+            self._activity = f"Waking {self._name}…"
         asyncio.run_coroutine_threadsafe(self._turn(text), self._loop)
         return True, ""
 
