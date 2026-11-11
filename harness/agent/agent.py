@@ -12,7 +12,6 @@ import json
 import sqlite3
 import inspect
 import os
-import re
 import threading
 import time
 
@@ -28,27 +27,6 @@ from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
 
 MAX_STEPS = 6  # a tool loop that never settles must still end the turn
-
-
-def called_in_text(text: str, tools) -> list:
-    """The tool calls a model wrote out as JSON text instead of making them.
-
-    The local model now and then does that (its call inside the thinking, or a reply that quotes the call), and the
-    turn would end with only that text. Only a call to a tool that exists counts, and a write still asks.
-    """
-    calls = []
-    for found in re.finditer(r'\{\s*"name"\s*:\s*"([\w-]+)"\s*,\s*"arguments"\s*:', text):
-        if tools.find(found.group(1)) is None:
-            continue
-        rest = text[found.end():]
-        try:
-            arguments, _end = json.JSONDecoder().raw_decode(rest.lstrip())
-        except json.JSONDecodeError:
-            continue
-        if isinstance(arguments, dict):
-            calls.append({"id": f"text-{len(calls)}", "type": "function",
-                          "function": {"name": found.group(1), "arguments": json.dumps(arguments)}})
-    return calls
 
 
 class LeanAgent:
@@ -149,6 +127,7 @@ class LeanAgent:
         usage = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0}
         cancelled = False
         steps = 0
+        last = {}
         try:
             if not self._checked and hasattr(self.model, "ready"):
                 await asyncio.to_thread(self.model.ready)
@@ -158,7 +137,7 @@ class LeanAgent:
             for _step in range(MAX_STEPS):
                 steps += 1
                 calls = []
-                step_text = []
+                step_text, thought_chars, finish = [], 0, ""
                 async for kind, value in self._events(session_id, messages):
                     if kind == "cancelled":
                         cancelled = True
@@ -171,13 +150,20 @@ class LeanAgent:
                     if kind == "tool_calls":
                         calls = value
                         continue
+                    if kind == "finish":
+                        finish = value
+                        continue
+                    if kind == "thought":
+                        thought_chars += len(value)
                     if kind == "text" and not first:
                         first = time.monotonic()  # the first word, not the first event
                     if kind == "text":
                         answer.append(value)
                         step_text.append(value)
                     await self._chunk(session_id, "agent" if kind == "text" else "thought", value)
-                calls = calls or called_in_text("".join(step_text), self.tools)
+                # What the last step looked like, so a turn that ends on talk without the call can be explained.
+                last = {"finish": finish, "calls": len(calls), "thought_chars": thought_chars,
+                        "text_tail": "".join(step_text)[-200:]}
                 if cancelled or not calls:
                     break
                 messages.append({"role": "assistant", "content": "", "tool_calls": calls})
@@ -200,7 +186,7 @@ class LeanAgent:
         store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                      "ms": round((time.monotonic() - started) * 1000),
                      "first_ms": round((first - started) * 1000) if first else 0,
-                     "steps": steps,
+                     "steps": steps, "last_step": last,
                      "input_tokens": usage["prompt_tokens"] or sum(context.estimate(m["content"])
                                                                    for m in messages if m.get("content")),
                      "output_tokens": usage["completion_tokens"] or context.estimate(said),

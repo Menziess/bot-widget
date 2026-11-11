@@ -265,6 +265,9 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(usage[0]["bot"], "Test")
         self.assertGreater(usage[0]["output_tokens"], 0)
         self.assertGreater(usage[0]["first_ms"], 0, "the time to the first word is measured")
+        last = usage[0]["last_step"]
+        self.assertEqual(last["calls"], 0)
+        self.assertTrue(last["text_tail"].endswith("twee woorden. "), "a turn that ends on talk keeps how it ended")
 
     async def test_a_restart_keeps_the_conversation_and_sends_it_again(self):
         async with self.client() as client:
@@ -408,15 +411,3 @@ class Turns(unittest.IsolatedAsyncioTestCase):
 if __name__ == "__main__":
     unittest.main()
 
-
-class CalledInText(unittest.TestCase):
-    def test_a_call_written_as_text_is_found_only_for_a_tool_that_exists(self):
-        from harness.agent.agent import called_in_text
-        from harness.agent.tools import Tools
-        tools = Tools()
-        text = ('Ik roep aan:\n```json\n{"name": "delete_file", "arguments": {"path": "/x/a.txt"}}\n```\n'
-                '{"name": "no_such_tool", "arguments": {}}')
-        calls = called_in_text(text, tools)
-        self.assertEqual([call["function"]["name"] for call in calls], ["delete_file"])
-        self.assertEqual(json.loads(calls[0]["function"]["arguments"]), {"path": "/x/a.txt"})
-        self.assertEqual(called_in_text("Gewoon tekst, geen aanroep.", tools), [])

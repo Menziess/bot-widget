@@ -135,7 +135,7 @@ class ChatCompletions:
         self.context_size = int(settings.get("n_ctx") or props.get("n_ctx") or 0)
 
     def stream(self, messages: list[dict], tools: list[dict] | None = None, stop=None, opened=None):
-        """Yield events: ("text", str), ("thought", str), ("usage", dict) and ("tool_calls", list).
+        """Yield events: ("text", str), ("thought", str), ("usage", dict), ("finish", str) and ("tool_calls", list).
 
         A tool call streams in pieces too, so the pieces are joined by index and handed over once,
         when the model has finished the step.
@@ -164,6 +164,8 @@ class ChatCompletions:
                         yield "usage", usage
                     for choice in chunk.get("choices") or []:
                         delta = choice.get("delta") or {}
+                        if choice.get("finish_reason"):
+                            yield "finish", choice["finish_reason"]
                         if delta.get("reasoning_content"):
                             yield "thought", delta["reasoning_content"]
                         if delta.get("content"):
