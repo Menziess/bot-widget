@@ -56,6 +56,13 @@ class LeanAgent:
         self._replies: dict[str, object] = {}
         self._queues: dict[str, asyncio.Queue] = {}
         self._summarising = False
+        self.jobs = None  # background shell jobs; created once a workspace exists
+        self._job_tools_ready = False
+        self._tool_session = ""
+        self._inbox: dict[str, list[str]] = {}
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._aio = None
+        self._shutting = False
 
     # ── ACP ─────────────────────────────────────────────────────
 
@@ -111,19 +118,25 @@ class LeanAgent:
             store.add("user", text)
         store.set("open_turn", "1")
         self._cancelled.discard(session_id)
-        self._turns.add(session_id)
-        try:
-            response = await self._answer(session_id, store)
-            # Only a turn that ended says so. One cut off by a vanished client (an error, a cancelled task) leaves
-            # the flag, and the next start picks the turn up again.
-            store.set("open_turn", "")
-            return response
-        finally:
-            self._turns.discard(session_id)
-            self._cancelled.discard(session_id)
+        self._aio = asyncio.get_running_loop()
+        # The lock keeps a job result out of this turn. It is delivered after the lock drops.
+        async with self._session_lock(session_id):
+            self._turns.add(session_id)
+            try:
+                response = await self._answer(session_id, store)
+                # Only a turn that ended says so. One cut off by a vanished client (an error, a cancelled task) leaves
+                # the flag, and the next start picks the turn up again.
+                store.set("open_turn", "")
+                return response
+            finally:
+                self._turns.discard(session_id)
+                self._cancelled.discard(session_id)
 
     async def _answer(self, session_id: str, store: SessionStore) -> PromptResponse:
+        self._tool_session = session_id
+        self._aio = asyncio.get_running_loop()
         await self.tools.start()
+        self._ensure_job_tools()
         self.tools.add(self._pin(store))
         for t in self._memory_tools():
             self.tools.add(t)
@@ -224,6 +237,140 @@ class LeanAgent:
         """Three memory tools for durable, topic-scoped storage."""
         from harness.agent.memory import memory_tools_for
         return memory_tools_for(workspace=os.environ.get("HARNESS_WORKSPACE") or "")
+
+    def shutdown(self) -> None:
+        """Kill background jobs. The bubble closing does not call this; the agent process does."""
+        self._shutting = True
+        if self.jobs is not None:
+            self.jobs.shutdown()
+
+    def _session_lock(self, session_id: str) -> asyncio.Lock:
+        lock = self._locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[session_id] = lock
+        return lock
+
+    def _ensure_job_tools(self) -> None:
+        workspace = getattr(self.tools, "workspace", "") or ""
+        if not workspace or self._job_tools_ready:
+            return
+        from harness.agent.jobs import JobRunner, config_from_env
+
+        settings = config_from_env()
+        self.jobs = JobRunner(workspace, self._job_finished, **settings)
+        command = {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string"},
+                "timeout": {"type": "number",
+                            "description": "Seconds before the job is killed. Omit to let it run until it exits."},
+                "hook_command": {"type": "string",
+                                 "description": "Shell command run on exit. The JSON payload is its stdin."},
+                "hook_url": {"type": "string",
+                             "description": "Webhook called on exit with the JSON payload. No default URL."},
+                "hook_key_file": {"type": "string",
+                                  "description": "Path to a file with the webhook bearer token. Never the token itself."},
+            },
+            "required": ["command"],
+        }
+        self.tools.add(Tool(
+            "shell_background",
+            "Start a shell command in the background inside the workspace and return immediately. "
+            "Same permission, workspace scope and refusal rules as shell. The job keeps running after "
+            "this turn and after the bubble closes. When it exits, this session gets the exit code and "
+            "a short tail of the output as a new message. Optional hook_command and hook_url run then; "
+            "hook_key_file is a path to the webhook bearer token, never the token.",
+            command, self._start_job, writes=True))
+        self.tools.add(Tool(
+            "jobs",
+            "List background shell jobs for this session: id, status and command.",
+            {"type": "object", "properties": {}}, self._list_jobs))
+        self.tools.add(Tool(
+            "job_cancel",
+            "Stop one background shell job by id. Its result still arrives as a new message.",
+            {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
+            self._cancel_job))
+        self._job_tools_ready = True
+
+    def _start_job(self, arguments: dict) -> str:
+        if self.jobs is None:
+            raise ToolError("no workspace, so background shell is not available")
+        timeout = arguments.get("timeout")
+        result = self.jobs.start(
+            self._tool_session, arguments.get("command") or "",
+            timeout=None if timeout in (None, "") else float(timeout),
+            hook_command=str(arguments.get("hook_command") or ""),
+            hook_url=str(arguments.get("hook_url") or ""),
+            hook_key_file=str(arguments.get("hook_key_file") or ""))
+        self._ping_soon()
+        return result
+
+    def _list_jobs(self, _arguments: dict) -> str:
+        if self.jobs is None:
+            return "(no background jobs)"
+        return self.jobs.list(self._tool_session)
+
+    def _cancel_job(self, arguments: dict) -> str:
+        if self.jobs is None:
+            raise ToolError("no background jobs")
+        result = self.jobs.cancel(self._tool_session, str(arguments.get("job_id") or ""))
+        self._ping_soon()
+        return result
+
+    def _ping_soon(self, followup: bool | None = None) -> None:
+        session = self._tool_session
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._jobs_ping(session, followup))
+
+    async def _jobs_ping(self, session_id: str, followup: bool | None = None) -> None:
+        """A small note for the bubble: how many jobs are running, and whether a result is being read."""
+        if self.conn is None:
+            return
+        meta = {"jobs_only": True, "jobs": self.jobs.running_count() if self.jobs else 0}
+        if followup is not None:
+            meta["followup"] = followup
+        update = UsageUpdate(session_update="usage_update", used=0, size=0, field_meta=meta)
+        await self.conn.session_update(session_id=session_id, update=update)
+
+    def _job_finished(self, session_id: str, text: str) -> None:
+        """Watcher thread: queue the result. Never enter a turn that is already running."""
+        if self._shutting:
+            return
+        loop = self._aio
+        if loop is None or loop.is_closed():
+            self._inbox.setdefault(session_id, []).append(text)
+            return
+        loop.call_soon_threadsafe(self._enqueue_job, session_id, text)
+
+    def _enqueue_job(self, session_id: str, text: str) -> None:
+        self._inbox.setdefault(session_id, []).append(text)
+        asyncio.create_task(self._drain_jobs(session_id))
+
+    async def _drain_jobs(self, session_id: str) -> None:
+        """One finished job, then the next. Waits out a user turn instead of mixing with it."""
+        if self._shutting:
+            return
+        async with self._session_lock(session_id):
+            while self._inbox.get(session_id) and not self._shutting:
+                text = self._inbox[session_id].pop(0)
+                store = self.stores.setdefault(session_id, SessionStore(self.folder))
+                self._turns.add(session_id)
+                self._cancelled.discard(session_id)
+                try:
+                    store.set("open_turn", "1")
+                    store.add("user", text)
+                    await self._jobs_ping(session_id, followup=True)
+                    await self._chunk(session_id, "user", text)
+                    await self._answer(session_id, store)
+                    store.set("open_turn", "")
+                finally:
+                    self._turns.discard(session_id)
+                    self._cancelled.discard(session_id)
+                    await self._jobs_ping(session_id, followup=False)
 
     async def _usage(self, session_id: str, store: SessionStore, compacted: bool = False) -> None:
         """The context meter, and a one-line notice when a summary has just landed."""
@@ -364,7 +511,7 @@ class LeanAgent:
     _CHEAP_FIRST = [
         {"list_dir", "memory_read"},          # group 0: search/list/git-read/memory_read
         {"read_file"},                         # group 1: read_file
-        {"write_file", "delete_file", "edit", "shell", "memory_forget"},  # group 2: writes
+        {"write_file", "delete_file", "edit", "shell", "shell_background", "memory_forget"},  # group 2: writes
     ]
 
     def _tool_cost_key(self, name: str) -> int:

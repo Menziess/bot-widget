@@ -360,9 +360,14 @@ _REFUSED_SHELL = re.compile(
 )
 
 
+def shell_refused(command: str) -> bool:
+    """True when shell must not run this command. Background jobs use the same list."""
+    return bool(_REFUSED_SHELL.search(command or ""))
+
+
 def shell_run(workspace: str, command: str, timeout: int = 30) -> str:
     """Run a shell command inside the workspace.  Write-heavy patterns are refused."""
-    if _REFUSED_SHELL.search(command):
+    if shell_refused(command):
         raise ToolError("shell command refused: " + command[:120])
     try:
         proc = subprocess.run(

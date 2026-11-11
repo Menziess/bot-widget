@@ -129,11 +129,30 @@ You can add a bot from the widget instead of editing this file. `/bots`, then Ne
 
 - `name` is what the face is called. The face id stays as it was when the bot was added, so renaming it keeps its conversation
 - `command` starts the agent on stdio, from the bot's own folder under `~/.local/share/botwidget/harness/`. The example runs the lean agent from a checkout of this repository; any ACP agent works here
-- `env` holds `HARNESS_*` settings only: the model server, the model name, the bot's name
+- `env` holds `HARNESS_*` settings only: the model server, the model name, the bot's name, and the background-job hooks below
 - `key_file` is the path to a file with the API key, read at start and passed as `HARNESS_MODEL_API_KEY`. The key itself never goes in `widget.json`
 - The conversation is kept per bot; after a widget restart the face loads the same session and shows the history again
 - A write the bot asks about shows Accept and Decline in the bubble, and a running turn can be cancelled
 - The context meter under the conversation shows how full the context is, and a pin_fact tool keeps a fact through compaction
+
+The bot can leave a shell command running and keep talking. `shell_background` starts it (the same permission question as `shell`), `jobs` lists what is still running, and `job_cancel` stops one. When the command exits, the same session gets the exit code and a short tail of the output, and the bot answers that. The job keeps running when the bubble closes. It stops when the agent stops. While one is running, the line under the conversation says so.
+
+```json
+"env": {
+  "HARNESS_JOB_HOOK": "python3 -c 'import sys; sys.stdin.read()'",
+  "HARNESS_JOB_HOOK_URL": "http://127.0.0.1:9/hook",
+  "HARNESS_JOB_HOOK_KEY_FILE": "~/.config/llm/hook-token"
+}
+```
+
+- The hook command (`HARNESS_JOB_HOOK`) runs when a job exits. The JSON payload is its standard input. Leave it out and no command runs
+- The webhook (`HARNESS_JOB_HOOK_URL`) receives the same JSON. Leave it out and nothing is called
+- The key file (`HARNESS_JOB_HOOK_KEY_FILE`) is a path to a file with the bearer token for that webhook. The token stays out of this config
+- The job limit (`HARNESS_JOB_MAX`) is how many jobs may run at once. Unset means 4
+- The tail (`HARNESS_JOB_TAIL`) is how many characters of output are kept, from the end. Unset means 4000
+- The timeout (`HARNESS_JOB_TIMEOUT`) is an optional number of seconds after which a job is killed. Unset means it runs until it exits or the bot cancels it
+
+A hook set here is trusted, because you wrote it, the same way the bot's start command is. It still cannot run a command the shell tool always refuses. A hook the bot adds on one job is part of the permission question for that job. A hook that fails is logged and the bot keeps going. The payload is the job id, the command, the exit code, how long it ran, and a short tail of the output.
 
 A model server for the example above is llama.cpp:
 
