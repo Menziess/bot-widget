@@ -2961,7 +2961,8 @@ class BubbleHover(unittest.TestCase):
         with self.x_pointer(), mock.patch("time.monotonic", side_effect=lambda: clock[0]), \
                 mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive), \
                 mock.patch.object(face_module, "api_get", side_effect=OSError("no network in tests"), create=True), \
-                mock.patch("PySide6.QtGui.QDesktopServices.openUrl", return_value=True):
+                mock.patch("PySide6.QtGui.QDesktopServices.openUrl", return_value=True), \
+                mock.patch.object(window, "start_screenshot"):  # a dark overlay on every screen is not what is tested here
             for seed in range(10):
                 rnd = random.Random(seed)
                 log = []
