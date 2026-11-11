@@ -813,6 +813,11 @@ class FaceWindow(QWidget):
         on = pointer_on(self)
         if on is not None:
             return on
+        if global_pointer():
+            # A drag that ended elsewhere never delivers the leave, so underMouse() can stay true for good.
+            local = self.mapFromGlobal(QCursor.pos())
+            mask = self.mask()
+            return self.isVisible() and self.rect().contains(local) and (mask.isEmpty() or mask.contains(local))
         if self._left_at is not None and (self._entered_at is None or self._left_at > self._entered_at):
             return False
         if pointer_on_no_window():

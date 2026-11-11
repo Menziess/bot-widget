@@ -47,6 +47,8 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
         stack.enter_context(mock.patch("botwidget.qt_ui.faces.check_updates", return_value=False))
         stack.enter_context(mock.patch("botwidget.qt_ui.faces.threading.Thread", return_value=mock.Mock()))
         stack.enter_context(mock.patch("botwidget.qt_ui.face.latest_chat", return_value={"messages": [], "activity": ""}))
+        from PySide6.QtGui import QCursor
+        QCursor.setPos(5, 590)  # the pointer decides what is under it: start away from the arc and the faces
         self.faces = Faces()
         self.window = self.faces.faces["home"]
         self.window._poll_timer.stop()
@@ -73,6 +75,13 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
     def _enter(self, widget):
         from PySide6.QtCore import QEvent
         self.app.sendEvent(widget, QEvent(QEvent.Enter))
+
+    def _point_at(self, widget):
+        """The real pointer on the middle of a widget, and the enter that comes with it."""
+        from PySide6.QtCore import QPoint
+        from PySide6.QtGui import QCursor
+        QCursor.setPos(widget.mapToGlobal(QPoint(widget.width() // 2, widget.height() // 2)))
+        self._enter(widget)
 
     def right_click(self):
         from PySide6.QtCore import QEvent, QPointF, Qt
@@ -124,6 +133,23 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
         self.assertTrue(self.faces._semicircle_hide_timer.isActive(), "the pointer left, whatever the catcher says")
         self._settle_closed()
 
+    def test_a_bot_that_never_heard_the_pointer_leave_does_not_hold_the_arc(self):
+        """Should close after a bot was dropped back in the arc: it got the enter, and no leave."""
+        from PySide6.QtGui import QCursor
+        self._open_arc()
+        self.faces._arc_t0 = time.monotonic() - 10
+        self.faces._semicircle_tick()
+        guest = self.faces._arc_guests["away"]
+        self._point_at(guest)
+        self.assertTrue(guest.pointer_over())
+        hx, hy = self.faces._hotspot()
+        QCursor.setPos(int(hx), int(hy + 600))
+        self.assertTrue(guest.underMouse(), "Qt still says so: no leave came")
+        self.assertFalse(guest.pointer_over(), "the pointer is somewhere else")
+        self.faces.semicircle_pointer_left()
+        self.assertTrue(self.faces._semicircle_hide_timer.isActive())
+        self._settle_closed()
+
     def _settle_closed(self):
         if self.faces._semicircle_hide_timer.isActive():
             self.faces._semicircle_hide()
@@ -172,7 +198,7 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
         self.assertEqual(self.faces._semicircle_phase, "visible")
         guest = self.faces._arc_guests["away"]
         self.assertTrue(guest.isVisible())
-        self._enter(guest)
+        self._point_at(guest)
         self.assertTrue(guest.underMouse())
         self._leave(self.window)
         self.assertFalse(self.faces._semicircle_hide_timer.isActive())
@@ -197,7 +223,7 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
         # The gap between leaving the catcher and entering a bot used to close the arc.
         self._leave(self.faces._catcher)
         self.assertTrue(self.faces._semicircle_hide_timer.isActive())
-        self._enter(guest)
+        self._point_at(guest)
         self.assertTrue(guest.pointer_over())
         self.faces._semicircle_hide()
         self.assertEqual(self.faces._semicircle_phase, "visible")
@@ -209,7 +235,7 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
         self.faces._semicircle_tick()
         self._leave(self.faces._catcher)
         self.assertTrue(self.faces._semicircle_hide_timer.isActive())
-        self._enter(self.window)
+        self._point_at(self.window)
         self.assertTrue(self.window.pointer_over())
         self.faces._semicircle_hide()
         self.assertEqual(self.faces._semicircle_phase, "visible")
