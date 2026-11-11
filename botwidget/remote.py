@@ -80,7 +80,7 @@ def _call(path: str, body: dict | None = None) -> dict:
     except urllib.error.HTTPError as error:
         return json.load(error)
     except (OSError, ValueError):
-        sys.exit("The widget is not running (or its remote file is stale).")
+        sys.exit('The widget is not running, or remote control is off: set "remote_control": true in widget.json and restart it.')
 
 
 def main(args: list) -> None:

@@ -4,7 +4,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from botwidget import remote
+from botwidget import config, remote
 
 
 class FakeLink:
@@ -45,6 +45,23 @@ class RemoteTest(unittest.TestCase):
                 self.assertFalse(remote._call("decide", {"bot": "acp:x", "id": "r2", "accept": True, "by": "c"})["ok"])
             finally:
                 server.shutdown()
+
+    def test_remote_control_is_off_until_the_user_turns_it_on(self):
+        with tempfile.TemporaryDirectory() as folder:
+            old = config.CONFIG_PATH
+            self.addCleanup(setattr, config, "CONFIG_PATH", old)
+            config.CONFIG_PATH = os.path.join(folder, "widget.json")
+            config._config_read[:] = [None, {}]
+            self.assertFalse(config.remote_control())
+            config.save_widget_config(remote_control=True)
+            config._config_read[:] = [None, {}]
+            self.assertTrue(config.remote_control())
+
+    def test_the_commands_say_how_to_turn_it_on_when_nothing_answers(self):
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(remote, "INFO", os.path.join(folder, "none")):
+            with self.assertRaises(SystemExit) as stopped:
+                remote._call("")
+        self.assertIn("remote_control", str(stopped.exception))
 
 
 if __name__ == "__main__":

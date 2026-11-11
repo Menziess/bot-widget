@@ -165,7 +165,7 @@ The server then answers on `http://127.0.0.1:8080/v1`, and the model name to ask
 
 ## Talking to a bot from a shell
 
-A running widget answers three commands in a terminal, so a script or another agent can talk to the bot you see in the bubble. It is the same session and the same conversation.
+With remote control on, a running widget answers a few commands in a terminal, so a script or another agent can talk to the bot you see in the bubble. It is the same session and the same conversation. It is off until `widget.json` has `"remote_control": true` (edit it on the /settings page, or in the file) and the widget has restarted.
 
 ```bash
 botwidget bots

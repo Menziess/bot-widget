@@ -9,7 +9,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from botwidget import __version__, channel, remote, startup, updates
-from botwidget.config import auto_update
+from botwidget.config import auto_update, remote_control
 from botwidget.instance import ensure_single_instance
 from botwidget.qt_ui.faces import Faces
 from botwidget.qt_ui.fonts import install_font_fallbacks
@@ -96,7 +96,8 @@ def main():
     if "--keep-login" in sys.argv[1:]:
         startup.set_enabled(True)
     faces = Faces()
-    remote.serve(faces)
+    if remote_control():
+        remote.serve(faces)
     faces.hotkey_on = register_hotkey(faces.hotkey)
     faces.welcome(startup.apply_default())
     first = next(iter(faces.faces.values()), None)
