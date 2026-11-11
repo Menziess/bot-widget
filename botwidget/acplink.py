@@ -140,6 +140,8 @@ class AcpLink:
         self._note = ""
         self._context = ""
         self._sending = False
+        self._followup = False  # a background job finished and the bot is reading the result
+        self._jobs = 0
         self._said = False  # did this turn put any text in the bubble
         self._loading = False  # replaying a stored session: that text goes in front of the new message
         self._history: list[dict] = []
@@ -231,7 +233,7 @@ class AcpLink:
     def active(self) -> bool:
         """Is a turn running? The face then keeps looking, so a pushed answer is drawn at once."""
         with self._lock:
-            return self._sending or self._booting
+            return self._sending or self._booting or self._followup
 
     def due(self) -> bool:
         """Nothing to poll: the agent pushes its updates."""
@@ -255,9 +257,13 @@ class AcpLink:
 
     def note(self) -> str:
         """A grey line under the conversation: why it stopped, that a send is unsure, or how full the
-        context is."""
+        context is. A running background job adds a short count, and nothing else."""
         with self._lock:
-            return self._note or self._context
+            base = self._note or self._context
+            if not self._jobs:
+                return base
+            line = "1 background job" if self._jobs == 1 else f"{self._jobs} background jobs"
+            return f"{base} · {line}" if base else line
 
     def cancel(self) -> None:
         """Stop the turn that is answering. Starting up is not a turn: a cancel then would end the next one."""
@@ -424,6 +430,7 @@ class AcpLink:
 
     def _updated(self, update) -> None:
         """One pushed update: a thought is the activity, answer text is the answer, a tool is its title."""
+        wake = False
         with self._lock:
             if self._loading and update.kind in ("text", "user") and update.text:
                 role = "user" if update.kind == "user" else "bot"
@@ -437,19 +444,30 @@ class AcpLink:
             elif update.kind == "tool":
                 self._activity = _bubble_line(update.text) or self._activity
             elif update.kind == "usage":
-                used, size = update.extra.get("used") or 0, update.extra.get("size") or 0
-                if update.extra.get("compacted"):
-                    self._context = "Compacted older turns."
-                elif size:
-                    percent = used * 100 / size
-                    # Only show a percentage note when the window is at least half full.
-                    if percent >= 50:
-                        shown = "<1" if percent < 1 else str(int(percent))
-                        self._context = f"Context {shown}% full."
+                if update.extra.get("jobs_only"):
+                    # A job count must not wipe the context meter.
+                    if update.extra.get("jobs") is not None:
+                        self._jobs = int(update.extra.get("jobs") or 0)
+                    if update.extra.get("followup") is not None:
+                        self._followup = bool(update.extra.get("followup"))
+                    wake = True
+                else:
+                    used, size = update.extra.get("used") or 0, update.extra.get("size") or 0
+                    if update.extra.get("compacted"):
+                        self._context = "Compacted older turns."
+                    elif size:
+                        percent = used * 100 / size
+                        # Only show a percentage note when the window is at least half full.
+                        if percent >= 50:
+                            shown = "<1" if percent < 1 else str(int(percent))
+                            self._context = f"Context {shown}% full."
+                        else:
+                            self._context = ""
                     else:
                         self._context = ""
-                else:
-                    self._context = ""
+            elif update.kind == "user" and update.text:
+                self.messages.append({"role": "user", "text": update.text})
+                wake = True
             elif update.kind == "text" and update.text:
                 self._said = True
                 # shortcut: one answer message per turn; ACP message ids are ignored for now.
@@ -457,3 +475,7 @@ class AcpLink:
                     self.messages[-1]["text"] += update.text
                 else:
                     self.messages.append({"role": "bot", "text": update.text})
+                if self._followup:
+                    wake = True
+        if wake:
+            self._changed()

@@ -173,9 +173,13 @@ class AcpClient:
             event = Update("tool", text=title,
                            extra={"status": getattr(update, "status", "") or ""})
         elif kind == "usage_update":
-            event = Update("usage", extra={name: getattr(update, name, None)
-                                           for name in ("used", "size", "cost")}
-                           | {"compacted": bool((getattr(update, "field_meta", None) or {}).get("compacted"))})
+            meta = getattr(update, "field_meta", None) or {}
+            extra = {name: getattr(update, name, None) for name in ("used", "size", "cost")}
+            extra["compacted"] = bool(meta.get("compacted"))
+            for key in ("jobs", "followup", "jobs_only"):
+                if key in meta:
+                    extra[key] = meta[key]
+            event = Update("usage", extra=extra)
         else:
             return
         turn = self._turn
