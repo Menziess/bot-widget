@@ -78,7 +78,14 @@ class ScreenshotOverlay(QWidget):
         """Grab the selected rectangle from the screen. Returns None on cancel."""
         if self._rect is None or self._screen is None:
             return None
-        return self._screen.grabWindow(0, *self._rect)
+        # The whole screen, then the crop: on macOS the x and y of grabWindow(0, x, y, w, h) are desktop
+        # coordinates, so a rectangle of a screen that is not at (0, 0) came back empty or from another screen.
+        full = self._screen.grabWindow(0)
+        if full.isNull():
+            return None
+        ratio = full.width() / max(1, self._screen.geometry().width())  # pixels per point, 2 on a Retina screen
+        x, y, w, h = self._rect
+        return full.copy(QRect(round(x * ratio), round(y * ratio), round(w * ratio), round(h * ratio)))
 
     def paintEvent(self, _event):
         painter = QPainter(self)

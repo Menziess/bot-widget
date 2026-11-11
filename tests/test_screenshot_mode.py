@@ -52,6 +52,30 @@ class ScreenshotMode(unittest.TestCase):
         window._anim_timer.stop()
         return window
 
+    def test_the_picture_is_cropped_from_the_whole_screen_of_the_overlay_whatever_its_position(self):
+        from PySide6.QtCore import QRect
+        from PySide6.QtGui import QColor, QPixmap
+        from botwidget.qt_ui.screenshot import ScreenshotOverlay
+
+        class Screen:
+            """A Retina screen that sits above the main one: its origin is not (0, 0)."""
+            def geometry(self):
+                return QRect(-772, -1440, 100, 60)
+
+            def grabWindow(self, window, *rect):
+                assert not rect, "macOS reads these as desktop coordinates: ask for the whole screen"
+                pixmap = QPixmap(200, 120)
+                pixmap.fill(QColor("blue"))
+                return pixmap
+
+        window = self._make_window()
+        self.addCleanup(window.close_face)
+        overlay = ScreenshotOverlay(window, Screen())
+        self.addCleanup(overlay.close)
+        overlay._rect = (10, 20, 30, 15)
+        picture = overlay.grab_region()
+        self.assertEqual((picture.width(), picture.height()), (60, 30), "pixels, twice the points on this screen")
+
     def test_every_screen_gets_an_overlay_and_closing_one_closes_all(self):
         from PySide6.QtGui import QGuiApplication
         from botwidget.qt_ui.screenshot import enter_screenshot_mode
