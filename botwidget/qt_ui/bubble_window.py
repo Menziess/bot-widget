@@ -238,6 +238,7 @@ class BubbleEntry(QPlainTextEdit):
     completed = Signal()  # Tab: the command that is selected goes into the field
     chosen = Signal()  # Return: the command that is selected runs
     closed = Signal()  # Escape: only the list of commands goes away
+    used = Signal()  # a click or a key: the user is at the field themselves
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -263,6 +264,7 @@ class BubbleEntry(QPlainTextEdit):
     def mousePressEvent(self, event):
         # A click into the field asks for the keyboard, also where the window manager does not focus on click.
         self.window().activateWindow()
+        self.used.emit()
         super().mousePressEvent(event)
 
     def _document_resized(self, _size):
@@ -354,6 +356,7 @@ class BubbleEntry(QPlainTextEdit):
     def keyPressEvent(self, event):
         """Escape closes the bubble without sending anything and keeps what was typed; with the list of commands open it
         closes that."""
+        self.used.emit()
         if self.commands_open and not event.modifiers() & Qt.ShiftModifier:
             handled = {Qt.Key_Up: lambda: self.moved.emit(-1), Qt.Key_Down: lambda: self.moved.emit(1),
                        Qt.Key_Tab: self.completed.emit, Qt.Key_Escape: self.closed.emit}
@@ -810,6 +813,7 @@ class BubbleWindow(QWidget):
         self._chrome_key = self._chrome_pix = None
         self._was_near = False
         self._near_at = 0.0
+        self._focus_from_hover = False  # the field has the keyboard because the pointer rested on the face, not by the user
         self._left_since = 0.0  # when the pointer left a bubble it had been on
         self._pointer_seen = None  # (time, x, y) of the last tick, for the speed
         self._pointer_speed = 0.0
@@ -896,6 +900,7 @@ class BubbleWindow(QWidget):
         self._entry.returnPressed.connect(self._send)
         self._entry.resized.connect(self._entry_resized)
         self._entry.attached.connect(self._attach)
+        self._entry.used.connect(lambda: setattr(self, "_focus_from_hover", False))
         self._slash = SlashList(self._card)
         self._slash.wheeled.connect(lambda *scrolled: self._list_only and self._on_pulled(*scrolled))
         self._menu_line_at = (0, 0, 1, 0)
@@ -1293,9 +1298,16 @@ class BubbleWindow(QWidget):
         """The cursor into the field, asked for by the user. A field that is not there yet (the bubble is still
         growing) gets it as soon as it shows: Qt drops focus given to a hidden widget."""
         if self._input:
+            self._focus_from_hover = False
             self.activateWindow()
             self._entry.setFocus()
             self._wants_keys = self.focusWidget() is not self._entry
+
+    def focus_by_hover(self):
+        """The keyboard into the field because the pointer rested on the face: it is there to type, but that alone
+        does not keep the bubble open."""
+        self.focus_entry()
+        self._focus_from_hover = True
 
     def shows(self, kind: str, text: str, input: bool) -> bool:
         """Is exactly this already showing in the bubble? Then nothing needs to be redrawn."""
@@ -1304,7 +1316,8 @@ class BubbleWindow(QWidget):
     def holding(self) -> bool:
         """The field has the keyboard, or words are selected to copy, or a file waits to be sent, or a form has
         been typed in: the bubble stays for as long as one of those lasts. Words typed in a field you left stay as a draft; the bubble may go."""
-        return (self._tapped or (self._input and (self._entry.hasFocus() or self._keep_draft)) or self._selecting()
+        typing = self._entry.hasFocus() and (not self._focus_from_hover or bool(self._entry.text()))
+        return (self._tapped or (self._input and (typing or self._keep_draft)) or self._selecting()
                 or bool(self._attachments) or any(getattr(widget, "in_use", bool)() for widget in self._control_widgets))
 
     def _selecting(self) -> bool:

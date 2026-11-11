@@ -1379,6 +1379,35 @@ class BubbleHover(unittest.TestCase):
             bubble._tick()
             self.assertEqual(bubble.kind, "")
 
+    def focused_from_hover(self):
+        """The bubble open, and the keyboard in its field because the pointer rested on the face."""
+        from unittest import mock
+        self.hover()
+        bubble = self.window.bubble
+        bubble._tick()
+        self.assertTrue(bubble._input and bubble.kind)
+        del bubble.focus_entry  # the real one: these tests are about focus
+        patch = mock.patch.object(bubble._entry, "hasFocus", return_value=True)
+        patch.start()
+        self.addCleanup(patch.stop)
+        bubble.focus_by_hover()
+        return bubble
+
+    def test_keyboard_focus_from_resting_on_the_face_does_not_keep_the_bubble(self):
+        bubble = self.focused_from_hover()
+        self.assertFalse(bubble.holding(), "the keyboard is there, but the pointer only rested on the face")
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertEqual(bubble.kind, "", "so the bubble goes when the pointer does")
+
+    def test_a_click_or_a_key_in_the_field_after_resting_on_the_face_does_keep_the_bubble(self):
+        bubble = self.focused_from_hover()
+        bubble._entry.used.emit()  # a click in the field, or a key
+        self.assertTrue(bubble.holding(), "the user is at the field now")
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
+        self.assertTrue(bubble.kind)
+
     def test_a_form_that_was_typed_in_keeps_the_bubble_until_it_is_back_as_it_was(self):
         from botwidget.qt_ui.controls import TextField, TextEditor
         bubble = self.window.bubble

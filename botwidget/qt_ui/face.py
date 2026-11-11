@@ -960,7 +960,7 @@ class FaceWindow(QWidget):
             moved_lately = now - self._pointer_seen[1] < HOVER_FOCUS_MOVE_S
             if moved_lately and self.bubble.isVisible() and self.bubble.takes_input() and self.bubble.kind == "say":
                 self._activate_here()
-                self.bubble.focus_entry()
+                self.bubble.focus_by_hover()
 
     def _animate(self):
         """One frame: determine targets, step the springs, draw if something changed."""
