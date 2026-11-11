@@ -36,6 +36,7 @@ from botwidget.config import (
     always_on_top,
     automation_ready,
     muted_bots,
+    save_widget_config,
     set_muted,
     widget_config,
 )
@@ -1470,9 +1471,13 @@ class FaceWindow(QWidget):
             self._menu_page = None
         if self.bubble._list_only and self.bubble.isVisible() and not replace_menu:
             return  # the right-click menu is open: a busy bot's thinking cloud must not replace it
-        if not (openbot_installed() or gbot_installed()):
+        # Only the placeholder bot needs OpenBot or Grok Bot, and only the first time is it told so: a bot that has
+        # a backend of its own (the harness, say) works without either.
+        told_before = widget_config().get("unlinked_hint_shown") is True and not self._hint_shown
+        if not self.link and not (openbot_installed() or gbot_installed()) and not told_before:
             if self.pinned or force or not self._hint_shown:
                 self._hint_shown = True
+                save_widget_config(unlinked_hint_shown=True)
                 self.bubble.show_blocks(self._hint_blocks(), "hint",
                                         links=[("Get OpenBot", OPENBOT_URL), ("Get Grok Bot", GROKBOT_URL)])
             return

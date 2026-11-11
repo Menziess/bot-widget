@@ -85,7 +85,7 @@ botwidget
 - The face goes back to where you put it when its screen comes back
 - On macOS the face and its bubble are on every desktop. With Settings, Show on all desktops off the face stays on one, and Control+Option+Space on another desktop brings it there, and a window cannot be dragged into a full-screen app's desktop
 
-The widget needs OpenBot or Grok Bot. Without either, the face says so and links to both.
+The placeholder bot needs OpenBot or Grok Bot. Without either, its face says so once and links to both. A bot with a backend of its own, like the harness, never says it.
 
 ## Grok Bot
 

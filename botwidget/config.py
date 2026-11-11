@@ -67,7 +67,7 @@ WORK_POLL_INTERVAL = 1  # second, while the turn is running
 CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 
-SETTING_KEYS = ("drafts", "save_battery", "sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied",
+SETTING_KEYS = ("drafts", "save_battery", "sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied", "unlinked_hint_shown",
                 "local_command", "muted_bots", "glass_clear", "grokbot_target", "hermesbot_target", "grok_relay",
                 "acp_bots", "connections", "debug", "sources_off")
 
