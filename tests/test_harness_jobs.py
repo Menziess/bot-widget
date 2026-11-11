@@ -39,6 +39,15 @@ def py(code: str) -> str:
     return f"{sys.executable} -c {quote(code)}"
 
 
+def hook_script(folder: str, name: str = "hook.py") -> tuple[str, str]:
+    """Write stdin to a file next to the script. Paths have no spaces, so a permission title shows them."""
+    out = os.path.join(folder, name + ".json")
+    script = os.path.join(folder, name)
+    with open(script, "w") as fh:
+        fh.write("import pathlib, sys\npathlib.Path(sys.argv[1]).write_text(sys.stdin.read())\n")
+    return f"{sys.executable} {script} {out}", out
+
+
 def wait_until(predicate, timeout: float = 2.0) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -116,6 +125,7 @@ class HookServer:
 
     def close(self):
         self.httpd.shutdown()
+        self.httpd.server_close()
 
 
 class Jobs(unittest.TestCase):
@@ -432,3 +442,105 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent.jobs.hook_key_file, key)
         self.assertNotIn(SECRET, agent.jobs.hook_key_file)
         self.assertTrue(os.path.exists(out))
+
+    async def test_the_permission_title_includes_the_model_hook(self):
+        """Should show the model's hook command and URL in the question that approves the job."""
+        hook, _out = hook_script(self.folder, "title-hook.py")
+        url = "http://127.0.0.1:9/model-hook"
+        model = RecordingModel([
+            [("tool_calls", [call("shell_background", {
+                "command": py("import time; time.sleep(30)"),
+                "hook_command": hook,
+                "hook_url": url,
+            })])],
+            [("text", "started")],
+        ])
+        agent = self.agent(model, allow=True, permission="ask")
+        await agent.prompt("s1", [Block("go")])
+        self.assertEqual(len(agent.conn.asks), 1)
+        title = agent.conn.asks[0]
+        self.assertIn("shell_background", title)
+        self.assertIn(hook, title)
+        self.assertIn(url, title)
+
+    async def test_a_denied_model_hook_starts_nothing(self):
+        """Should start no job and run no hook when the user declines."""
+        hook, out = hook_script(self.folder, "denied-hook.py")
+        server = HookServer()
+        self.addCleanup(server.close)
+        model = RecordingModel([
+            [("tool_calls", [call("shell_background", {
+                "command": py("print('should-not-run')"),
+                "hook_command": hook,
+                "hook_url": server.url,
+            })])],
+            [("text", "no")],
+        ])
+        agent = self.agent(model, allow=False, permission="ask")
+        await agent.prompt("s1", [Block("go")])
+        self.assertIn(hook, agent.conn.asks[0])
+        self.assertIn(server.url, agent.conn.asks[0])
+        self.assertFalse(await self._until(
+            lambda: bool(agent.jobs.jobs or server.hits or os.path.exists(out)), timeout=0.4))
+
+    async def test_a_refused_model_hook_does_not_start_in_allow_mode(self):
+        """Should refuse a hook on the shell refusal list even when the workspace mode is allow."""
+        hook = "rm -rf /tmp/bw-model-hook"
+        server = HookServer()
+        self.addCleanup(server.close)
+        model = RecordingModel([
+            [("tool_calls", [call("shell_background", {
+                "command": py("print('should-not-run')"),
+                "hook_command": hook,
+                "hook_url": server.url,
+            })])],
+            [("text", "no")],
+        ])
+        agent = self.agent(model, allow=True, permission="allow")
+        await agent.prompt("s1", [Block("go")])
+        self.assertIn("refused", model.seen[-1])
+        self.assertFalse(await self._until(
+            lambda: bool(agent.jobs.jobs or server.hits), timeout=0.4))
+
+    async def test_an_approved_model_hook_gets_the_payload_and_the_key_is_not_logged(self):
+        """Should send the exit JSON to the model's hook command and URL, and not log the token."""
+        key = os.path.join(self.folder, "hook-token")
+        with open(key, "w") as fh:
+            fh.write(SECRET + "\n")
+        hook, out = hook_script(self.folder, "model-hook.py")
+        server = HookServer()
+        self.addCleanup(server.close)
+        model = RecordingModel([
+            [("tool_calls", [call("shell_background", {
+                "command": py("print('model-hook-job')"),
+                "hook_command": hook,
+                "hook_url": server.url,
+                "hook_key_file": key,
+            })])],
+            [("text", "started")],
+            [("text", "noted")],
+        ])
+        agent = self.agent(model, allow=True, permission="ask")
+        with self.assertLogs("harness.agent.jobs", level="INFO") as caught:
+            await agent.prompt("s1", [Block("go")])
+            self.assertTrue(await self._until(lambda: server.hits and os.path.exists(out)))
+        logged = "\n".join(caught.output)
+        self.assertNotIn(SECRET, logged)
+        self.assertEqual(agent.jobs.hook_command, "")
+        self.assertEqual(agent.jobs.hook_url, "")
+        self.assertEqual(agent.jobs.hook_key_file, "")
+        body, auth = server.hits[0]
+        self.assertEqual(auth, "Bearer " + SECRET)
+        payload = json.loads(body)
+        self.assertEqual(set(payload), {"job_id", "command", "exit_code", "duration", "summary"})
+        self.assertEqual(payload["exit_code"], 0)
+        self.assertIn("model-hook-job", payload["summary"])
+        self.assertNotIn(SECRET, body.decode())
+        with open(out) as fh:
+            shell_raw = fh.read()
+        shell_payload = json.loads(shell_raw)
+        self.assertEqual(shell_payload["job_id"], payload["job_id"])
+        self.assertIn("model-hook-job", shell_payload["summary"])
+        self.assertNotIn(SECRET, shell_raw)
+        self.assertEqual(agent.jobs.jobs["j1"].hook_key_file, key)
+        self.assertNotIn(SECRET, agent.jobs.jobs["j1"].hook_key_file)
