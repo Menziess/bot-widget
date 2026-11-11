@@ -86,7 +86,8 @@ def configured_bots() -> list[dict]:
             continue  # the same id twice would be one face with two agents
         bots.append({"id": PREFIX + ident, "name": name, "command": command, "env": env,
                      "key_file": key_file, "connection": str(entry.get("connection") or ""),
-                     "face": str(entry.get("face") or ""), "color": str(entry.get("color") or "")})
+                     "face": str(entry.get("face") or ""), "color": str(entry.get("color") or ""),
+                      "debug_launch": entry.get("debug_launch") is True})
     return bots
 
 
@@ -106,7 +107,8 @@ def options_for(agent_id: str) -> dict:
     bot = next((bot for bot in configured_bots() if bot["id"] == agent_id), None)
     if bot is None:
         return {}
-    return {"face": agent_id, "name": bot["name"], "env": bot["env"], "key_file": bot["key_file"]}
+    return {"face": agent_id, "name": bot["name"], "env": bot["env"],
+            "key_file": bot["key_file"], "debug_launch": bot.get("debug_launch", False)}
 
 
 def _bubble_line(text: str) -> str:
@@ -119,8 +121,9 @@ class AcpLink:
     """One bot on an ACP agent: a session that stays open, and one turn at a time."""
 
     def __init__(self, target: str, face: str = "", name: str = "", env: dict | None = None, key_file: str = "",
-                 now=time.monotonic):
+                 now=time.monotonic, debug_launch: bool = False):
         self.target = target
+        self.debug_launch = bool(debug_launch)
         self.face = face or face_id(target)
         self._name = name or target
         self.env = dict(env or {})
@@ -174,7 +177,9 @@ class AcpLink:
             self.failed = ""
             self.messages.append({"role": "user", "text": text})
             self._said = False
-            self._activity = f"Waking {self._name}…"
+            # Off by default: the raw launch command stays out of the bubble unless asked for.
+            self._activity = (f"Waking (target: {self.target})" if self.debug_launch
+                              else f"Waking {self._name}…")
         asyncio.run_coroutine_threadsafe(self._turn(text), self._loop)
         return True, ""
 
@@ -366,7 +371,8 @@ class AcpLink:
             self._booting = False
             # A send that is already waiting keeps the waking line; a startup load stays quiet.
             if self._sending:
-                self._activity = f"{info['name'] or self.target} is awake"
+                self._activity = (f"Waking (target: {self.target})" if self.debug_launch
+                                  else f"{info['name'] or self.target} is awake")
         return client
 
     async def _ask(self, title: str) -> bool:
