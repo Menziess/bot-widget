@@ -407,3 +407,16 @@ class Turns(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CalledInText(unittest.TestCase):
+    def test_a_call_written_as_text_is_found_only_for_a_tool_that_exists(self):
+        from harness.agent.agent import called_in_text
+        from harness.agent.tools import Tools
+        tools = Tools()
+        text = ('Ik roep aan:\n```json\n{"name": "delete_file", "arguments": {"path": "/x/a.txt"}}\n```\n'
+                '{"name": "no_such_tool", "arguments": {}}')
+        calls = called_in_text(text, tools)
+        self.assertEqual([call["function"]["name"] for call in calls], ["delete_file"])
+        self.assertEqual(json.loads(calls[0]["function"]["arguments"]), {"path": "/x/a.txt"})
+        self.assertEqual(called_in_text("Gewoon tekst, geen aanroep.", tools), [])

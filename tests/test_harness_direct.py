@@ -623,20 +623,17 @@ class Entrypoints(unittest.TestCase):
         import harness.agent.__main__ as entry
 
         async def streams():
-            return None, None
-
-        class Event:
-            async def wait(self):
-                return None
+            return mock.Mock(at_eof=lambda: True), None
 
         with mock.patch.object(entry, "stdio_streams", streams), \
+                mock.patch.object(entry.os, "_exit") as leave, \
                 mock.patch.object(entry, "AgentSideConnection") as side, \
                 mock.patch.object(entry, "from_environment", return_value=mock.Mock(model="local")), \
-                mock.patch.object(entry.asyncio, "Event", return_value=Event()), \
                 mock.patch.dict(os.environ, {"HARNESS_BOT": "Ada"}, clear=False):
             await entry.serve()
         agent = side.call_args.args[0](None)
         self.assertEqual(agent.bot, "Ada")
+        leave.assert_called_once_with(0)
 
     def test_serve_waits_on_the_connection(self):
         """Should build the named bot and wait until the client closes."""

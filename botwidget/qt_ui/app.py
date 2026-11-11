@@ -106,4 +106,7 @@ def main():
         code = app.exec()
     except KeyboardInterrupt:
         code = 0
+    for face in faces.faces.values():
+        if face.acp:
+            face.acp.close(wait=1.5)
     sys.exit(code)

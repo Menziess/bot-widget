@@ -12,6 +12,7 @@ import json
 import sqlite3
 import inspect
 import os
+import re
 import threading
 import time
 
@@ -27,6 +28,27 @@ from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
 
 MAX_STEPS = 6  # a tool loop that never settles must still end the turn
+
+
+def called_in_text(text: str, tools) -> list:
+    """The tool calls a model wrote out as JSON text instead of making them.
+
+    The local model now and then does that (its call inside the thinking, or a reply that quotes the call), and the
+    turn would end with only that text. Only a call to a tool that exists counts, and a write still asks.
+    """
+    calls = []
+    for found in re.finditer(r'\{\s*"name"\s*:\s*"([\w-]+)"\s*,\s*"arguments"\s*:', text):
+        if tools.find(found.group(1)) is None:
+            continue
+        rest = text[found.end():]
+        try:
+            arguments, _end = json.JSONDecoder().raw_decode(rest.lstrip())
+        except json.JSONDecodeError:
+            continue
+        if isinstance(arguments, dict):
+            calls.append({"id": f"text-{len(calls)}", "type": "function",
+                          "function": {"name": found.group(1), "arguments": json.dumps(arguments)}})
+    return calls
 
 
 class LeanAgent:
@@ -136,6 +158,7 @@ class LeanAgent:
             for _step in range(MAX_STEPS):
                 steps += 1
                 calls = []
+                step_text = []
                 async for kind, value in self._events(session_id, messages):
                     if kind == "cancelled":
                         cancelled = True
@@ -152,7 +175,9 @@ class LeanAgent:
                         first = time.monotonic()  # the first word, not the first event
                     if kind == "text":
                         answer.append(value)
+                        step_text.append(value)
                     await self._chunk(session_id, "agent" if kind == "text" else "thought", value)
+                calls = calls or called_in_text("".join(step_text), self.tools)
                 if cancelled or not calls:
                     break
                 messages.append({"role": "assistant", "content": "", "tool_calls": calls})

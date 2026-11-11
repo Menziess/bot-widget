@@ -257,8 +257,9 @@ class AcpLink:
             return
         asyncio.run_coroutine_threadsafe(self._client.cancel(), self._loop)
 
-    def close(self) -> None:
-        """Stop the agent process and the loop behind it."""
+    def close(self, wait: float = 0) -> None:
+        """Stop the agent process and the loop behind it. A widget that is quitting waits a moment for it, or the agent
+        outlives the widget."""
         if self._closed:
             return
         self._closed = True
@@ -281,6 +282,8 @@ class AcpLink:
             asyncio.run_coroutine_threadsafe(asyncio.wait_for(shutdown(), 5), self._loop).add_done_callback(stop)
         except Exception:
             stop()  # a dead agent has nothing left to close
+        if wait:
+            self._thread.join(wait)
 
     # ── the agent, in the background ────────────────────────────
 
