@@ -885,8 +885,10 @@ class Faces(QObject):
 
     def _edge_tick(self):
         pos = QCursor.pos()
-        if (self._pointer_over_arc(pos.x(), pos.y()) or self._pointer_on_arc()
-                or self._over_arc_area(pos.x(), pos.y())):
+        near = self._pointer_over_arc(pos.x(), pos.y()) or self._in_hotspot(pos.x(), pos.y())
+        # Only the top middle opens the arc. Once it is open, a pointer on a bot or on the arc keeps it open too.
+        if near or (self._semicircle_phase != "idle" and (
+                self._pointer_on_arc() or self._over_arc_area(pos.x(), pos.y()))):
             self.show_semicircle()
             self._semicircle_hide_timer.stop()
         else:

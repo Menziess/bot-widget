@@ -685,6 +685,8 @@ class FaceWindow(QWidget):
         """Enter screenshot mode: a double-click on the face, or /screenshot from the command list."""
         if getattr(self, "screenshot_face", None) is not None:
             return
+        self.pinned = False
+        self.bubble.close_bubble("screenshot")  # the command list it was started from goes with it
         self._press_pos = None
         self._drag_origin = None
         self._screenshot_active = True
@@ -1436,6 +1438,10 @@ class FaceWindow(QWidget):
         self._working = bool(chat.get("activity")) or self._has_attention()
         self._waiting = bool(chat.get("waiting"))
         self._place_thinking()
+        if getattr(self, "_screenshot_active", False):
+            # The screen is dark and the pointer is on the overlay: a bubble would only stay behind, empty.
+            self.bubble.close_bubble("screenshot")
+            return
         if not (self._working or self._waiting):
             self._answer_view = False
         # OpenBot: the last turn failed (a spent provider, say). The face shows it like Grok Bot offline.

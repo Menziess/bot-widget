@@ -92,6 +92,22 @@ class ScreenshotMode(unittest.TestCase):
         overlay._cancel()
         self.assertFalse(any(o.isVisible() for o in group))
 
+    def test_the_command_list_closes_when_the_screenshot_starts_and_no_empty_cloud_stays_behind(self):
+        window = self._make_window()
+        self.addCleanup(window.close_face)
+        window.faces = mock.Mock()
+        window.faces.faces = {"t1": window}
+        window.bubble.focus_entry = lambda: None
+        window._pointer = lambda: (5000, 5000)
+        window.open_command_menu()
+        self.assertTrue(window.bubble.isVisible())
+        window.on_user_message("/screenshot")
+        self.addCleanup(lambda: window._screenshot_overlay and window._screenshot_overlay.close())
+        self.assertFalse(window.bubble.isVisible(), "the list it was started from goes with it")
+        for _ in range(3):
+            window._sync_bubble(window._latest())
+        self.assertFalse(window.bubble.isVisible(), "no thinking cloud with nothing in it while the screen is dark")
+
     def test_a_picture_in_the_field_keeps_the_bubble_open_and_shows_in_it(self):
         window = self._make_window()
         self.addCleanup(window.close_face)
@@ -679,3 +695,4 @@ class EndToEnd(unittest.TestCase):
         window.on_user_message.assert_not_called()
         self.assertEqual([path.name for path in window.bubble._attachments], ["screenshot.png"],
                          "the picture waits in the field until you send it with a message")
+        self.assertTrue(window.bubble.isVisible(), "the bubble stays closed during the mode and opens for the picture")

@@ -150,6 +150,20 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
         self.assertTrue(self.faces._semicircle_hide_timer.isActive())
         self._settle_closed()
 
+    def test_a_pointer_on_a_bot_does_not_open_the_arc_and_the_top_middle_does(self):
+        """Should open from the top middle only; a bot on the desktop is not a reason."""
+        from PySide6.QtGui import QCursor
+        self._point_at(self.window)
+        self.faces._edge_tick()
+        self.assertEqual(self.faces._semicircle_phase, "idle")
+        hx, hy = self.faces._hotspot()
+        QCursor.setPos(int(hx), int(hy + 20))
+        self.faces._edge_tick()
+        self.assertNotEqual(self.faces._semicircle_phase, "idle")
+        self._point_at(self.window)  # open now: a pointer on a bot keeps it open
+        self.faces._edge_tick()
+        self.assertFalse(self.faces._semicircle_hide_timer.isActive())
+
     def _settle_closed(self):
         if self.faces._semicircle_hide_timer.isActive():
             self.faces._semicircle_hide()

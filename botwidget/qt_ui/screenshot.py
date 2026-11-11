@@ -235,6 +235,7 @@ def _finalize_screenshot(face, all_faces, rect, pixmap):
             # Capture failed — restore already happened above; just clean up.
             return
         path = attachments.store_bytes("screenshot.png", png_bytes)
+        _cleanup_screenshot_mode(face)  # first: while the mode lasts the bubble stays closed
         face.attach_to_draft([path])
     finally:
         _cleanup_screenshot_mode(face)
