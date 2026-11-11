@@ -339,6 +339,26 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(usage[-1]["estimated"], "a cancel before any usage chunk is an estimate, not a measured 0")
         self.assertGreater(usage[-1]["input_tokens"], 0)
 
+    async def test_a_turn_that_loses_its_client_stays_open_and_a_cancelled_one_does_not(self):
+        self.model.first_delay = 5.0
+        async with self.client() as client:
+            await client.start()
+            turn = asyncio.create_task(client.prompt("Hallo"))
+            await asyncio.sleep(0.5)
+            await client.cancel()
+            await asyncio.wait_for(turn, timeout=5)
+            store = SessionStore(self.folder)
+            self.addCleanup(store.close)
+            self.assertEqual(store.get("open_turn"), "", "the user cancelled: nothing to pick up")
+            turn = asyncio.create_task(client.prompt("Nog eens"))
+            await asyncio.sleep(0.5)
+            turn.cancel()  # the widget went away: the connection ends the turn
+            await asyncio.gather(turn, return_exceptions=True)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and store.get("open_turn") != "1":
+            await asyncio.sleep(0.1)
+        self.assertEqual(store.get("open_turn"), "1", "a turn cut off by a vanished client is picked up again")
+
     async def test_a_cancel_mid_stream_stops_the_answer_and_says_cancelled(self):
         self.model.first_delay = 0.0
         async with self.client() as client:

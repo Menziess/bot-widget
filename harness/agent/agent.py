@@ -113,9 +113,12 @@ class LeanAgent:
         self._cancelled.discard(session_id)
         self._turns.add(session_id)
         try:
-            return await self._answer(session_id, store)
-        finally:
+            response = await self._answer(session_id, store)
+            # Only a turn that ended says so. One cut off by a vanished client (an error, a cancelled task) leaves
+            # the flag, and the next start picks the turn up again.
             store.set("open_turn", "")
+            return response
+        finally:
             self._turns.discard(session_id)
             self._cancelled.discard(session_id)
 
