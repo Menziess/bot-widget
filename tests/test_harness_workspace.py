@@ -238,6 +238,26 @@ class SafeWalk(unittest.TestCase):
 
 # ── Write / Edit ──────────────────────────────────────────────────────
 
+class Delete(unittest.TestCase):
+    def test_a_file_moves_to_the_trash_and_nothing_else_can_be_deleted(self):
+        from unittest import mock
+        from harness.agent import tools, workspace
+        folder, trash = tempfile.mkdtemp(), tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        self.addCleanup(shutil.rmtree, trash, True)
+        with open(os.path.join(folder, "a.txt"), "w") as fh:
+            fh.write("keep me")
+        os.mkdir(os.path.join(folder, "sub"))
+        with mock.patch.object(tools, "TRASH", trash):
+            self.assertIn("Moved", workspace._ws_delete(folder, "a.txt"))
+            self.assertFalse(os.path.exists(os.path.join(folder, "a.txt")))
+            with open(os.path.join(trash, os.listdir(trash)[0])) as fh:
+                self.assertEqual(fh.read(), "keep me")
+            for bad in ("sub", "../outside.txt", "missing.txt"):
+                with self.assertRaises(Exception):
+                    workspace._ws_delete(folder, bad)
+
+
 class EditWrite(unittest.TestCase):
     def test_write_inside_workspace_works(self):
         folder = tempfile.mkdtemp()
@@ -423,7 +443,7 @@ class WorkspaceBuiltins(unittest.TestCase):
         names = {t.name for t in tools}
         expected = {
             "list_dir", "read_file", "search",
-            "write_file", "undo_edit", "undo_last", "diff",
+            "write_file", "delete_file", "undo_edit", "undo_last", "diff",
             "git_status", "git_log", "git_diff",
             "shell",
         }
@@ -435,6 +455,7 @@ class WorkspaceBuiltins(unittest.TestCase):
         tools = workspace_builtins(folder, EditStore())
         write_names = {t.name for t in tools if t.writes}
         self.assertIn("write_file", write_names)
+        self.assertIn("delete_file", write_names)
         self.assertIn("shell", write_names)
         self.assertNotIn("read_file", write_names)
         self.assertNotIn("list_dir", write_names)

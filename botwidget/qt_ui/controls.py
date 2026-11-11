@@ -1,13 +1,37 @@
 """Real form elements for the menu pages: a switch with its label, and a button."""
 
-from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
+from PySide6.QtCore import QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QAbstractButton, QLineEdit, QPlainTextEdit, QPushButton, QSlider, QWidget
 
 from botwidget.qt_ui.text_doc import color
 from botwidget.theme import BUBBLE_FONT, CONTROL_SWITCH_W, SAND_ACCENT, SAND_INK, SAND_INK_SOFT, SAND_SANS
 
 TRACK_W, TRACK_H, KNOB_PAD = 34, 20, 2
+
+
+class PointerWatch:
+    """Qt sends no hover to a window of an app that is not in front, which is the normal state of this widget, so
+    the pointer is looked up while the control shows. A control gives _pointer_moved: where the pointer is on it, or
+    None."""
+
+    def _watch_pointer(self):
+        self._watch = QTimer(self)
+        self._watch.setInterval(50)
+        self._watch.timeout.connect(self._follow_pointer)
+
+    def _follow_pointer(self):
+        point = self.mapFromGlobal(QCursor.pos())
+        on = self.rect().contains(point) and self.window().isVisible()
+        self._pointer_moved(point if on else None)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._watch.start()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._watch.stop()
 
 
 class Switch(QAbstractButton):
@@ -41,7 +65,7 @@ class Switch(QAbstractButton):
                          Qt.AlignVCenter | Qt.AlignLeft, self.text())
 
 
-class ItemRow(QWidget):
+class ItemRow(PointerWatch, QWidget):
     """One bot or one connection: its switch, its name, and only the actions that belong to it."""
 
     chosen = Signal(str)
@@ -55,6 +79,7 @@ class ItemRow(QWidget):
         self._hits: list[tuple[str, str, QRectF]] = []
         self._title_w = 0
         self._hover: str | None = None
+        self._watch_pointer()
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
@@ -84,6 +109,9 @@ class ItemRow(QWidget):
             event.accept()
         else:
             event.ignore()
+
+    def _pointer_moved(self, point):
+        self._follow(None if point is None else point.x())
 
     def mouseMoveEvent(self, event):
         self._follow(event.position().x())
@@ -149,7 +177,7 @@ class ItemRow(QWidget):
             painter.drawText(rect, Qt.AlignCenter, label)
 
 
-class ActionButton(QPushButton):
+class ActionButton(PointerWatch, QPushButton):
     """A button for something that happens once: an update, a link, quitting."""
 
     # A soft pill like the track of a switch. No min-height or tall padding: the page reserves one line
@@ -157,7 +185,7 @@ class ActionButton(QPushButton):
     STYLE = (f"QPushButton {{ background: rgba(28, 28, 28, 14); color: {SAND_INK}; border: none;"
              f" border-radius: 14px; padding: 0px 14px; min-height: 0px; font-family: '{SAND_SANS}';"
              f" font-size: {BUBBLE_FONT}px; }}"
-             f" QPushButton:hover {{ background: rgba(11, 109, 211, 26); color: {SAND_ACCENT}; }}"
+             f" QPushButton[hot=\"true\"] {{ background: rgba(11, 109, 211, 26); color: {SAND_ACCENT}; }}"
              f" QPushButton:pressed {{ background: rgba(11, 109, 211, 46); }}")
 
     def __init__(self, label: str, parent=None):
@@ -165,6 +193,14 @@ class ActionButton(QPushButton):
         self.setStyleSheet(self.STYLE)
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
+        self._watch_pointer()
+
+    def _pointer_moved(self, point):
+        hot = point is not None
+        if hot != self.property("hot"):
+            self.setProperty("hot", hot)
+            self.style().unpolish(self)
+            self.style().polish(self)
 
 
 class SlashList(QWidget):

@@ -50,7 +50,7 @@ import subprocess
 import tempfile
 from difflib import unified_diff
 
-from harness.agent.tools import Tool, ToolError
+from harness.agent.tools import Tool, ToolError, trash_file
 
 # ── Defaults ──────────────────────────────────────────────────────────
 
@@ -231,6 +231,13 @@ def _ws_write(workspace: str, path: str, content: str) -> str:
     except OSError as err:
         raise ToolError(f"cannot write {real}: {err.strerror}") from err
     return f"Wrote {len(content)} characters to {real}."
+
+
+def _ws_delete(workspace: str, path: str) -> str:
+    real = _check_inside(workspace, path)
+    if _is_secret_path(real):
+        raise ToolError("that path is private and is not deleted")
+    return trash_file(real)
 
 
 # ── Edit / undo ───────────────────────────────────────────────────────
@@ -439,6 +446,13 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
               },
               "required": ["path", "content"]},
              lambda a: _ws_write(workspace, a["path"], a["content"]),
+             writes=True),
+        Tool("delete_file",
+             "Delete one file inside the workspace. It moves to a trash folder, so it can be restored. Needs user permission.",
+             {"type": "object",
+              "properties": {"path": {"type": "string"}},
+              "required": ["path"]},
+             lambda a: _ws_delete(workspace, a["path"]),
              writes=True),
         Tool("undo_edit",
              "Undo the last write to a file in the workspace. Restores previous bytes.",

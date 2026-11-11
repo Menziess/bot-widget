@@ -345,7 +345,7 @@ class LeanAgent:
     _CHEAP_FIRST = [
         {"list_dir", "memory_read"},          # group 0: search/list/git-read/memory_read
         {"read_file"},                         # group 1: read_file
-        {"write_file", "edit", "shell", "memory_forget"},  # group 2: writes
+        {"write_file", "delete_file", "edit", "shell", "memory_forget"},  # group 2: writes
     ]
 
     def _tool_cost_key(self, name: str) -> int:
