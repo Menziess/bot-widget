@@ -33,7 +33,16 @@ tempfile.tempdir = os.path.realpath(tempfile.gettempdir())
 
 from botwidget import config as _config  # noqa: E402
 
-_config.CONFIG_PATH = os.path.join(tempfile.mkdtemp(prefix="botwidget-tests-"), "widget.json")
+_folder = tempfile.mkdtemp(prefix="botwidget-tests-")
+_config.CONFIG_PATH = os.path.join(_folder, "widget.json")
+
+# A test that answers a question must not write to the approval log of the person running it.
+from harness import approvals as _approvals  # noqa: E402
+
+_approvals.PATH = os.path.join(_folder, "approvals.jsonl")
+
+# ...and what a bot remembered must not leak into a test: a stored memory adds a message to every built context.
+os.environ["HARNESS_MEMORY_DIR"] = os.path.join(_folder, "memory")
 
 # ...and each test starts with no widget.json at all: a draft or setting of one test must not reach the next.
 import unittest  # noqa: E402

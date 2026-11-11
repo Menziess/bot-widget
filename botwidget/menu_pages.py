@@ -333,8 +333,7 @@ def memory_page(state: dict) -> list:
                 ("Forget", f"cmd:memory-forget/{mem_id}"),
             ]})
     blocks += [plain_block("gap"),
-               _button("New memory", "page/memory/new"),
-               _button("Back to memories", "page/memory/list")]
+               _button("New memory", "page/memory/new")]
     return blocks
 
 

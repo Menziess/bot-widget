@@ -150,17 +150,32 @@ A running widget answers three commands in a terminal, so a script or another ag
 botwidget bots
 botwidget ask acp:local "Say pong"
 botwidget read acp:local
+botwidget approve acp:local REQUEST_ID --as stefan
+botwidget decline acp:local REQUEST_ID --as stefan
 ```
 
 - Bots lists the ids of the bots that are running
 - Ask sends the text, waits until the bot is done (at most 5 minutes) and prints what it said
 - Read prints the conversation, the activity, the approvals that wait and the grey note under the conversation, as JSON
+- Approve and decline answer a question that waits, by the request id that Read and Ask show
+- The argument --as is required and names who answered
 
 Instead of a command line interface of its own, the widget serves these calls on 127.0.0.1 from a thread. The port and a token are in `bot_widget_remote.json` in the temp folder, readable by you only.
 
-- Ask stops and says so when the bot needs an approval, which is answered in the widget only
+- Ask stops and says so when the bot needs an approval, and prints the command that answers it
+- A question that nobody answers within 10 minutes is declined
 - The bubble does not animate for a message sent this way, the conversation is there when you open it
 - With the widget not running the commands say so and exit
+
+Every answer to a question is logged, whoever gave it.
+
+```json
+{"at": "2026-11-11 22:40:03", "request": "write_file /tmp/bot-probe/hello.txt", "decision": "accepted", "source": "cli", "by": "claude"}
+```
+
+- The file is `approvals.jsonl` in `~/.local/share/botwidget/harness`
+- The source is bubble, cli or timeout
+- The widget writes the file, the bot has an approval_log tool that only reads it
 
 ## Updates
 

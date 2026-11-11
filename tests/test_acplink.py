@@ -183,6 +183,21 @@ class AcpTurns(unittest.TestCase):
         self.assertTrue(wait_for(lambda: not link.active()))
         self.assertEqual(link.chat()["messages"][-1]["text"], "chose yes")
 
+    def test_an_answer_is_logged_with_who_gave_it_and_the_face_is_woken(self):
+        from harness import approvals
+        link = self.link()
+        woken = []
+        link.on_change = lambda: woken.append(1)
+        link.send("please ask")
+        self.assertTrue(wait_for(lambda: link.attention()["approvals"]))
+        self.assertGreaterEqual(len(woken), 2, "the message and the question each wake the face")
+        self.assertTrue(link.decide(link.attention()["approvals"][0]["requestId"], False, "cli", "claude"))
+        self.assertTrue(wait_for(lambda: not link.active()))
+        last = approvals.recent(1)
+        self.assertIn('"decision": "declined"', last)
+        self.assertIn('"source": "cli"', last)
+        self.assertIn('"by": "claude"', last)
+
     def test_declining_says_no_to_the_agent(self):
         link = self.link()
         link.send("please ask")

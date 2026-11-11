@@ -21,6 +21,10 @@ class FakeLink:
     def active(self):
         return False
 
+    def decide(self, request_id, accept, source, by):
+        self.decided = (request_id, accept, source, by)
+        return request_id == "r1"
+
     def note(self):
         return ""
 
@@ -36,6 +40,9 @@ class RemoteTest(unittest.TestCase):
                 self.assertTrue(remote._call("send", {"bot": "acp:x", "text": "hoi"})["ok"])
                 self.assertEqual(remote._call("acp:x")["messages"][0]["text"], "hoi")
                 self.assertIn("error", remote._call("nope"))
+                self.assertTrue(remote._call("decide", {"bot": "acp:x", "id": "r1", "accept": True, "by": "claude"})["ok"])
+                self.assertEqual(link.decided, ("r1", True, "cli", "claude"))
+                self.assertFalse(remote._call("decide", {"bot": "acp:x", "id": "r2", "accept": True, "by": "c"})["ok"])
             finally:
                 server.shutdown()
 

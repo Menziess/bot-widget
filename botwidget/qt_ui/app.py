@@ -58,7 +58,7 @@ def main():
     if "--version" in sys.argv[1:]:
         print(__version__)
         return
-    if sys.argv[1:2] in (["bots"], ["read"], ["ask"]):
+    if sys.argv[1:2] in (["bots"], ["read"], ["ask"], ["approve"], ["decline"]):
         remote.main(sys.argv[1:])
         return
     if "--login-item" in sys.argv[1:]:

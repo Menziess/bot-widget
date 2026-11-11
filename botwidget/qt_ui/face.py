@@ -213,6 +213,7 @@ class FaceWindow(QWidget):
     # Result of the POST from the sending thread back to the window.
     message_done = Signal(str, bool, bool, str)
     attention_done = Signal(bool, str)  # the answer to a question or approval went through, or why not
+    wake = Signal()  # the agent has news (a message or a question): look now, from any thread
     grok_polled = Signal()  # Grok Bot was asked for new answers
 
     def __init__(self, agent_id: str, name: str,
@@ -231,6 +232,8 @@ class FaceWindow(QWidget):
         self.acp = None if guest else link or (acplink.AcpLink(acplink.target_for(agent_id),
                                                                **acplink.options_for(agent_id))
                                                if acplink.is_acp(agent_id) else None)
+        if self.acp:
+            self.acp.on_change = self.wake.emit
         self.faces = faces
         self._hue = hue
         self._seed = seed or agent_id
@@ -264,6 +267,7 @@ class FaceWindow(QWidget):
         self._send_status = ""
         self._refused = False
         self.message_done.connect(self._on_message_done)
+        self.wake.connect(lambda: self._alive and self._poll_timer.start(0))
         self.grok_polled.connect(self._on_grok_polled)
         self._hint_shown = False
         self._shown_text = ""

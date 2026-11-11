@@ -8,6 +8,7 @@ runs asyncio in a background thread, so no Qt thread ever waits on the agent.
 
 import asyncio
 import concurrent.futures
+import getpass
 import json
 import os
 import re
@@ -15,12 +16,13 @@ import threading
 import time
 
 from botwidget.config import widget_config
+from harness import approvals
 from harness.acp_client import AcpClient, split_command
 
 PREFIX = "acp:"
 DEFAULT_TARGET = "hermes-acp"
 ACTIVITY_CHARS = 60
-PERMISSION_WAIT_S = 120
+PERMISSION_WAIT_S = 600
 
 
 def face_id(target: str = DEFAULT_TARGET) -> str:
@@ -145,6 +147,7 @@ class AcpLink:
         self._approvals = {}
         self._decisions = {}  # request id -> (future on the agent's loop, title)
         self._client = None
+        self.on_change = None  # the face sets it: a new message or question must wake it, even when it sleeps
         self._closed = False
         self._booting = True  # history loads at start, before the first message
         self._gate = None
@@ -181,6 +184,7 @@ class AcpLink:
             self._activity = (f"Waking (target: {self.target})" if self.debug_launch
                               else f"Waking {self._name}…")
         asyncio.run_coroutine_threadsafe(self._turn(text), self._loop)
+        self._changed()
         return True, ""
 
     def chat(self) -> dict:
@@ -198,15 +202,21 @@ class AcpLink:
                     "approvals": [{"requestId": rid, "reason": title}
                                   for rid, title in self._approvals.items()]}
 
-    def decide(self, request_id: str, accept: bool) -> None:
-        """Answer a permission request: Accept or Decline, as the bubble's buttons say."""
+    def _changed(self) -> None:
+        if self.on_change:
+            self.on_change()
+
+    def decide(self, request_id: str, accept: bool, source: str = "bubble", by: str = "") -> bool:
+        """Answer a permission request: Accept or Decline, as the bubble's buttons say. False when none waits."""
         with self._lock:
             pending = self._decisions.pop(request_id, None)
             if pending is None:
-                return
+                return False
             self._approvals.pop(request_id, None)
-        future, _title = pending
+        future, title = pending
+        approvals.record(title, "accepted" if accept else "declined", source, by or getpass.getuser())
         self._loop.call_soon_threadsafe(lambda: future.done() or future.set_result(accept))
+        return True
 
     def active(self) -> bool:
         """Is a turn running? The face then keeps looking, so a pushed answer is drawn at once."""
@@ -387,6 +397,7 @@ class AcpLink:
         with self._lock:
             self._approvals[request_id] = title
             self._decisions[request_id] = (future, title)
+        self._changed()
         try:
             return await asyncio.wait_for(future, PERMISSION_WAIT_S)
         except asyncio.TimeoutError:
@@ -394,6 +405,7 @@ class AcpLink:
                 self._decisions.pop(request_id, None)
                 self._approvals.pop(request_id, None)
                 self._note = "No answer in time, so the action was declined."
+            approvals.record(title, "declined", "timeout", "")
             return False
 
     def _updated(self, update) -> None:

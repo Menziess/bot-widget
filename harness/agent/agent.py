@@ -20,6 +20,7 @@ from acp.schema import (AgentMessageChunk, AgentThoughtChunk, InitializeResponse
                         PermissionOption, PromptResponse, TextContentBlock, ToolCallProgress, ToolCallStart,
                         ToolCallUpdate, UsageUpdate, UserMessageChunk)
 
+from harness import approvals
 from harness.agent import context
 from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
@@ -118,6 +119,8 @@ class LeanAgent:
         self.tools.add(self._pin(store))
         for t in self._memory_tools():
             self.tools.add(t)
+        self.tools.add(Tool("approval_log", "Who accepted or declined which action recently, and how (bubble, cli, timeout).",
+                            {"type": "object", "properties": {}}, lambda _args: approvals.recent()))
         started = time.monotonic()
         first = 0.0
         answer = []
