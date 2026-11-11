@@ -619,8 +619,10 @@ class Trail(QWidget):
     def __init__(self, bubble):
         super().__init__()
         self.bubble = bubble
-        layer = window_layer(getattr(bubble, "face", None))
-        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | layer | Qt.NoDropShadowWindowHint
+        # Trail always stays on top: it bridges the cloud and bot, and on Linux
+        # a WindowStaysOnBottomHint window leaves black artefacts during drag.
+        set_flags(self, Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
+                  | Qt.NoDropShadowWindowHint
                   | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -715,7 +717,11 @@ class Trail(QWidget):
             desktops.apply(self)  # before it shows: it opens on this desktop
             self.show()
             desktops.apply(self)
-        raise_window(self)
+        # Only raise when first shown: WindowStaysOnTopHint keeps it above everything.
+        # Raising every frame causes black artefacts on Linux/X11 during drag.
+        if not getattr(self, "_raised", False):
+            self._raised = True
+            raise_window(self)
         self.update()
 
     def paintEvent(self, _event):
