@@ -1246,7 +1246,10 @@ class FaceWindow(QWidget):
         """The latest chat of this bot: from Grok Bot or from the local OpenBot."""
         self._cleanup_local()
         chat = self.link.chat() if self.link else latest_chat(thread_id=self.thread_id)
-        if self._debug_on():
+        if getattr(self, "_screenshot_active", False):
+            # Screenshot mode: show "Watching…" instead of the Waking line.
+            chat = {**chat, "activity": "Watching…"}
+        elif self._debug_on():
             # Settings: the bot looks busy with a thought, and a click shows a message with every piece of markdown.
             chat = {**chat, "activity": menu_pages.DEBUG_THOUGHT,
                     "messages": [*(chat.get("messages") or []), {"role": "bot", "text": menu_pages.DEBUG_MESSAGE}]}

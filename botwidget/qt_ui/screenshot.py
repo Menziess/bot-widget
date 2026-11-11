@@ -85,8 +85,8 @@ class ScreenshotOverlay(QWidget):
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        # Dim the background slightly
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 40))
+        # Dim the background
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 70))
         if self._rect is not None:
             painter.setPen(QPen(QColor(255, 255, 255, 220), 2, Qt.DashLine))
             painter.setBrush(Qt.NoBrush)
