@@ -53,6 +53,10 @@ class SettingsInTheChatWindow(unittest.TestCase):
         stack.enter_context(mock.patch("botwidget.qt_ui.face.gbot_installed", return_value=True))
         # Offscreen still reports a cursor position. Trusting it closes a click-opened chat on CI.
         stack.enter_context(mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False))
+        # Whether the face is the active window depends on the machine: a bubble whose field once had the keyboard
+        # goes when another window has it, so these tests say that none does.
+        stack.enter_context(mock.patch("botwidget.qt_ui.bubble_window.QApplication.activeWindow",
+                                       side_effect=lambda: getattr(self, "window", None)))
         self.faces = self.Faces()
         self.window = self.faces.faces["home"]
         self.window._poll_timer.stop()
