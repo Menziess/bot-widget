@@ -1101,7 +1101,7 @@ class BubbleWindow(QWidget):
         self._growth = None
         self.setWindowOpacity(1.0)
         self.changed = time.monotonic()
-        self._layout_children(self._paint_chrome())
+        # place() does _paint_chrome() + _layout_children() + physics; no need to double-lay out.
         self.place("say")
 
     def _list_geom(self):
