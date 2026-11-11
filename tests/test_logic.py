@@ -1487,7 +1487,7 @@ class BubbleHover(unittest.TestCase):
         return 40, top + down - bubble._doc.y()
 
     def click(self, index, modifiers=None, confirm=True):
-        """A click on a message and, unless told otherwise, a press on the button that asks whether to copy."""
+        """A click on a message; copies directly. `confirm=True` is a no-op (kept for backwards compat)."""
         from PySide6.QtCore import Qt
         x, y = self.message_point(index)
         self.send_mouse("press", x, y, Qt.LeftButton, Qt.LeftButton, modifiers)
@@ -1495,30 +1495,29 @@ class BubbleHover(unittest.TestCase):
         if confirm and self.window.bubble._notice.asking:
             self.window.bubble._notice.clicked.emit()
 
-    def test_a_click_on_a_message_only_asks_and_copies_when_the_button_is_pressed(self):
+    def test_a_click_copies_immediately(self):
         from PySide6.QtWidgets import QApplication
         self.MESSAGES = [{"role": "bot", "text": "Een korte zin."}]
         self.hover()
         bubble = self.window.bubble
         QApplication.clipboard().setText("eerder")
         self.click(0, confirm=False)
-        self.assertTrue(bubble._notice.asking, "the message asks first, in its middle")
-        self.assertEqual(bubble._notice.text, "Copy")
-        self.assertEqual(self.clipboard(), "eerder", "nothing is copied by the click")
-        bubble._notice.clicked.emit()
-        self.assertEqual(self.clipboard(), "Een korte zin.")
-        self.assertFalse(bubble._notice.asking)
-        self.assertEqual(bubble._notice.text, "Copied", "and says so, as before")
+        self.assertEqual(self.clipboard(), "Een korte zin.", "copy is immediate, no confirmation needed")
+        self.assertTrue(bubble._notice.isVisible(), "a 'Copied' notice appears over the message")
+        self.assertFalse(bubble._notice.asking, "no ask button when copying directly")
 
-    def test_the_question_to_copy_goes_by_itself(self):
+    def test_copy_notice_fades_after_animation(self):
         self.MESSAGES = [{"role": "bot", "text": "Een korte zin."}]
         self.hover()
         bubble = self.window.bubble
         self.click(0, confirm=False)
-        self.assertTrue(bubble._notice.asking)
-        bubble._copy_ask_timer.timeout.emit()
-        self.assertFalse(bubble._notice.asking)
-        self.assertFalse(bubble._notice.isVisible())
+        self.assertTrue(bubble._notice.isVisible())
+        self.assertTrue(bubble._notice.asking is False, "shows as notice, not as button")
+        # The notice fades and hides itself after NOTICE_MS (1500 ms).
+        # Trigger the finish: the animation's finished signal calls hide().
+        bubble._notice._fade.stop()
+        bubble._notice._fade.finished.emit()
+        self.assertFalse(bubble._notice.isVisible(), "the notice hides after the animation finishes")
 
     def clipboard(self):
         from PySide6.QtWidgets import QApplication

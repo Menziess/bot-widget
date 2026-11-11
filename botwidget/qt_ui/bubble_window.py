@@ -1215,8 +1215,8 @@ class BubbleWindow(QWidget):
         elif panel and panel.get("queued"):
             self.edit_queued.emit(panel["queued"])
         elif panel:
-            self._ask_copy(panel["copy"] if shift else plain_text(panel["copy"]),
-                           "Copied markdown" if shift else "Copied", "Copy markdown" if shift else "Copy", y)
+            self._copied_to_clipboard(panel["copy"] if shift else plain_text(panel["copy"]),
+                                      "Copied markdown" if shift else "Copied", y)
         else:
             self._cancel_copy_ask()
 
