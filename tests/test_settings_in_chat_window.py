@@ -57,7 +57,27 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.window = self.faces.faces["home"]
         self.window._poll_timer.stop()
         self.bubble = self.window.bubble
+        # Who closed the bubble, for the message of a test that finds it closed.
+        self.closed_by = []
+        close, place = self.bubble.close_bubble, self.bubble.place
+
+        def traced_close(reason):
+            result = close(reason)
+            self.closed_by.append((f"close_bubble({reason!r})={result}", self._callers()))
+            return result
+
+        def traced_place(kind):
+            if not kind:
+                self.closed_by.append(("place('')", self._callers()))
+            return place(kind)
+
+        self.bubble.close_bubble, self.bubble.place = traced_close, traced_place
         self.addCleanup(self._close)
+
+    @staticmethod
+    def _callers():
+        import traceback
+        return [frame.name for frame in traceback.extract_stack()[-5:-2]]
 
     def _close(self):
         self.faces._semicircle_timer.stop()
@@ -225,7 +245,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertTrue(b.isVisible(), f"kind={b.kind!r} near={w.pointer_near(b)} was_near={b._was_near} "
                         f"holding={b.holding()} input={b._input} pinned={w.pinned} yielding={b._yielding} "
                         f"left_since={b._left_since} entry_focus={b._entry.hasFocus()} keep_draft={b._keep_draft} "
-                        f"changed={b.changed} state={b.state()} consistent={b.consistent()}")
+                        f"changed={b.changed} state={b.state()} consistent={b.consistent()} closed_by={self.closed_by}")
         self.assertIn("Hello from the bot.", self.bubble.full_text)
         self.assertNotIn("Sound on a new answer", self.bubble.full_text)
         self.assertFalse(self.bubble._list_only)

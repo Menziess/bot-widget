@@ -136,9 +136,9 @@ class AcpTurns(unittest.TestCase):
         self.addCleanup(shutil.rmtree, first.room(), True)
         first.send("hello")
         self.assertTrue(wait_for(lambda: not first.active()))
-        first.close()
+        first.close(wait=5)  # until its agent is gone: a process still open when its loop ends is a warning on Windows
         second = AcpLink(FAKE, face=face, env={"FAKE_ACP_INTERRUPTED": "1"})
-        self.addCleanup(second.close)
+        self.addCleanup(second.close, 5)
         self.assertTrue(wait_for(lambda: any("[resume]" in message["text"] for message in second.chat()["messages"])),
                         "the agent answered the turn that was cut off")
         self.assertTrue(wait_for(lambda: not second.active()))
