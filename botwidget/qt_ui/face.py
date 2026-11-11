@@ -1129,6 +1129,11 @@ class FaceWindow(QWidget):
         self._activate_here()
         self.bubble.focus_entry()
 
+    def attach_to_draft(self, files: list):
+        """Files in the field as attachments, with the cursor there: nothing goes out until you send."""
+        self.open_input()
+        self.bubble.edit_text("", files)
+
     def prompt_history(self) -> list:
         """What you sent before, oldest first, for the arrow keys in the field."""
         prompts = [m["text"] for m in (self._chat or {}).get("messages") or [] if m.get("role") == "user"]

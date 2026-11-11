@@ -635,3 +635,6 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(name, "screenshot.png")
         self.assertEqual(data[:4], b"\x89PNG")
         self.assertGreater(len(data), 0)
+        window.on_user_message.assert_not_called()
+        self.assertEqual([path.name for path in window.bubble._attachments], ["screenshot.png"],
+                         "the picture waits in the field until you send it with a message")

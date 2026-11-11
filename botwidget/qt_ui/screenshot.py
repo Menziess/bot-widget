@@ -2,7 +2,7 @@
 
 Double-click a face → that face aims big eyes at the mouse → a fullscreen overlay
 lets the user drag a rectangle → all faces are hidden for the grab → the selected
-region is captured → the face receives it as an attachment.
+region is captured → it waits in the face's field as an attachment, to send with a message.
 
 Escape or right-click on the overlay cancels.
 """
@@ -228,7 +228,7 @@ def _finalize_screenshot(face, all_faces, rect, pixmap):
             # Capture failed — restore already happened above; just clean up.
             return
         path = attachments.store_bytes("screenshot.png", png_bytes)
-        face.on_user_message("Screenshot", files=[path])
+        face.attach_to_draft([path])
     finally:
         _cleanup_screenshot_mode(face)
 

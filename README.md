@@ -56,7 +56,7 @@ botwidget
 - The cloud shows the thought as markdown, follows the end of it as it grows, and has the field below
 - What you type while the bot works waits in a queue under the thought, a click on one puts it back in the field to edit, and one goes out per finished turn
 - A turn that a restart cut off before it was answered is picked up again when the widget is back, and says so in the cloud. The bot sees what it already did and asks again for what needs permission
-- Double-click a face to take a screenshot: every screen goes dark, drag a rectangle on one of them, and the bot gets that picture. Escape or a right-click cancels
+- Double-click a face to take a screenshot: every screen goes dark, drag a rectangle on one of them, and the picture waits in the field as an attachment, so you can write something before you send it. Escape or a right-click cancels
 - A question or approval from the bot shows in the cloud with a button per answer, and typing in the field answers the open question
 - Shift+click a face to mute its thinking, a cross for a mouth shows it, and the choice is kept
 - Only one bubble is open at a time when you point at or click a face
