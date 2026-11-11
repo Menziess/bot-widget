@@ -40,7 +40,7 @@ from botwidget.qt_ui import desktops, glass
 from botwidget.qt_ui.bubble_window import mark_before_show
 from botwidget.qt_ui.native import native_id, raise_window, set_flags
 from botwidget.qt_ui.prewarm import prewarm
-from botwidget.qt_ui.face import FaceWindow
+from botwidget.qt_ui.face import FaceWindow, global_pointer
 from botwidget.system.current import (
     CAN_PICK_DESKTOPS,
     HOTKEY_LABEL,
@@ -1287,7 +1287,11 @@ class Faces(QObject):
             return True
         catcher = getattr(self, "_catcher", None)
         if catcher is not None and catcher.underMouse():
-            return True
+            # A drag that started on a bot of the arc ran through the catcher, which never hears the pointer leave.
+            # Where the platform knows the pointer, its position says whether it is still there.
+            pos = QCursor.pos()
+            if not global_pointer() or self._over_arc_area(pos.x(), pos.y()):
+                return True
         for face in list(self.faces.values()) + list(self._arc_guests.values()):
             if not face.isVisible():
                 continue

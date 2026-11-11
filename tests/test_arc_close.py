@@ -108,6 +108,22 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
         self.window.open_input()
         self.assertTrue(self.faces._semicircle_hide_timer.isActive())
 
+    def test_a_catcher_that_missed_the_leave_does_not_hold_the_arc(self):
+        """Should close after a bot was dragged out of the arc: that drag ran through the catcher."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QCursor
+        self._open_arc()
+        catcher = self.faces._catcher
+        catcher.setAttribute(Qt.WA_UnderMouse, True)
+        hx, hy = self.faces._hotspot()
+        QCursor.setPos(int(hx), int(hy + 20))
+        self.faces.semicircle_pointer_left()
+        self.assertFalse(self.faces._semicircle_hide_timer.isActive(), "the pointer really is on the arc")
+        QCursor.setPos(int(hx), int(hy + 600))
+        self.faces.semicircle_pointer_left()
+        self.assertTrue(self.faces._semicircle_hide_timer.isActive(), "the pointer left, whatever the catcher says")
+        self._settle_closed()
+
     def _settle_closed(self):
         if self.faces._semicircle_hide_timer.isActive():
             self.faces._semicircle_hide()
