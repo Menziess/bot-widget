@@ -1474,8 +1474,8 @@ class FaceWindow(QWidget):
             return  # the right-click menu is open: a busy bot's thinking cloud must not replace it
         # Only the placeholder bot needs OpenBot or Grok Bot, and only the first time is it told so: a bot that has
         # a backend of its own (the harness, say) works without either.
-        told_before = widget_config().get("unlinked_hint_shown") is True and not self._hint_shown
-        if not self.link and not (openbot_installed() or gbot_installed()) and not told_before:
+        if not self.link and not (openbot_installed() or gbot_installed()) and not (
+                widget_config().get("unlinked_hint_shown") is True and not self._hint_shown):
             if self.pinned or force or not self._hint_shown:
                 self._hint_shown = True
                 save_widget_config(unlinked_hint_shown=True)

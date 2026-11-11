@@ -12,9 +12,13 @@ for _name in ("activate_app", "play_notification", "hide_from_dock"):
     setattr(_current._os, _name, lambda *args, **kwargs: None)
 
 # An offscreen window has no native view: on macOS these two dereference it and crash the whole run. Only the
-# `current` aliases are replaced, so the tests of the macOS module itself still reach the real functions.
-for _name in ("send_behind_windows", "raise_window"):
-    setattr(_current, _name, lambda *args, **kwargs: None)
+# `current` aliases are replaced, so the tests of the macOS module itself still reach the real functions. Only on
+# macOS: the other systems have run them on offscreen windows without trouble, and the tests were written with them.
+import sys  # noqa: E402
+
+if sys.platform == "darwin":
+    for _name in ("send_behind_windows", "raise_window"):
+        setattr(_current, _name, lambda *args, **kwargs: None)
 
 # Tests that pretend to run on X11 must not call the real desktop functions of this system on an offscreen window.
 from botwidget.qt_ui import desktops  # noqa: E402
