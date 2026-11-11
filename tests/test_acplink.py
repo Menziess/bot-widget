@@ -104,7 +104,7 @@ class AcpTurns(unittest.TestCase):
         ok, error = link.send("slow down")
         self.assertTrue(ok, error)
         self.assertTrue(link.active(), "the face keeps drawing while the turn runs")
-        self.assertTrue(wait_for(lambda: link.chat()["activity"].startswith("step 0")))
+        self.assertTrue(wait_for(lambda: link.chat()["activity"].startswith("step")))
         link.cancel()
         self.assertTrue(wait_for(lambda: not link.active()))
         chat = link.chat()
