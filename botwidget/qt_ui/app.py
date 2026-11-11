@@ -8,7 +8,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
-from botwidget import __version__, channel, startup, updates
+from botwidget import __version__, channel, remote, startup, updates
 from botwidget.config import auto_update
 from botwidget.instance import ensure_single_instance
 from botwidget.qt_ui.faces import Faces
@@ -58,6 +58,9 @@ def main():
     if "--version" in sys.argv[1:]:
         print(__version__)
         return
+    if sys.argv[1:2] in (["bots"], ["read"], ["ask"]):
+        remote.main(sys.argv[1:])
+        return
     if "--login-item" in sys.argv[1:]:
         _login_item(sys.argv[sys.argv.index("--login-item") + 1:])
         return
@@ -93,6 +96,7 @@ def main():
     if "--keep-login" in sys.argv[1:]:
         startup.set_enabled(True)
     faces = Faces()
+    remote.serve(faces)
     faces.hotkey_on = register_hotkey(faces.hotkey)
     faces.welcome(startup.apply_default())
     first = next(iter(faces.faces.values()), None)

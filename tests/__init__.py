@@ -11,6 +11,11 @@ for _name in ("activate_app", "play_notification", "hide_from_dock"):
     setattr(_current, _name, lambda *args, **kwargs: None)
     setattr(_current._os, _name, lambda *args, **kwargs: None)
 
+# An offscreen window has no native view: on macOS these two dereference it and crash the whole run. Only the
+# `current` aliases are replaced, so the tests of the macOS module itself still reach the real functions.
+for _name in ("send_behind_windows", "raise_window"):
+    setattr(_current, _name, lambda *args, **kwargs: None)
+
 # Tests that pretend to run on X11 must not call the real desktop functions of this system on an offscreen window.
 from botwidget.qt_ui import desktops  # noqa: E402
 
@@ -22,6 +27,9 @@ desktops.move_to_active_space = lambda *args: None
 # The widget's own settings and drafts of a test go to a folder of its own, never to the widget.json of the person
 # running it.
 import tempfile  # noqa: E402
+
+# macOS temp folders sit behind a symlink (/var -> /private/var); the workspace code compares real paths.
+tempfile.tempdir = os.path.realpath(tempfile.gettempdir())
 
 from botwidget import config as _config  # noqa: E402
 

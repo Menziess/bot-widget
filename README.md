@@ -142,6 +142,26 @@ llama-server -m ~/models/qwen2.5-7b-instruct-q4_k_m.gguf --port 8080 --alias loc
 
 The server then answers on `http://127.0.0.1:8080/v1`, and the model name to ask for is `local`. Without `--api-key` the same URL works with an empty key file. With no `HARNESS_MODEL_BASE_URL` the widget assumes exactly this server and model; when nothing answers there, the turn stops with a line that says the server could not be reached instead of waiting.
 
+## Talking to a bot from a shell
+
+A running widget answers three commands in a terminal, so a script or another agent can talk to the bot you see in the bubble. It is the same session and the same conversation.
+
+```bash
+botwidget bots
+botwidget ask acp:local "Say pong"
+botwidget read acp:local
+```
+
+- Bots lists the ids of the bots that are running
+- Ask sends the text, waits until the bot is done (at most 5 minutes) and prints what it said
+- Read prints the conversation, the activity, the approvals that wait and the grey note under the conversation, as JSON
+
+Instead of a command line interface of its own, the widget serves these calls on 127.0.0.1 from a thread. The port and a token are in `bot_widget_remote.json` in the temp folder, readable by you only.
+
+- Ask stops and says so when the bot needs an approval, which is answered in the widget only
+- The bubble does not animate for a message sent this way, the conversation is there when you open it
+- With the widget not running the commands say so and exit
+
 ## Updates
 
 The widget updates itself, and you can switch that off. At each start, and every 6 hours after, it asks GitHub whether a newer release exists.

@@ -57,8 +57,8 @@ class MenuStutter(unittest.TestCase):
                     bubble._layout_children = counted_layout
 
                     # Now open the command menu
+                    # No event loop turn here: a timer of the earlier animation would add its own call.
                     bubble._show_command_menu()
-                    app.processEvents()
 
                     # Should be exactly one layout call
                     # (The previous buggy code had 2)
