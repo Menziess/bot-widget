@@ -221,7 +221,11 @@ class SettingsInTheChatWindow(unittest.TestCase):
 
     def _assert_chat_shown(self):
         self.assertIsNone(self.window._menu_page)
-        self.assertTrue(self.bubble.isVisible())
+        b, w = self.bubble, self.window
+        self.assertTrue(b.isVisible(), f"kind={b.kind!r} near={w.pointer_near(b)} was_near={b._was_near} "
+                        f"holding={b.holding()} input={b._input} pinned={w.pinned} yielding={b._yielding} "
+                        f"left_since={b._left_since} entry_focus={b._entry.hasFocus()} keep_draft={b._keep_draft} "
+                        f"changed={b.changed} state={b.state()} consistent={b.consistent()}")
         self.assertIn("Hello from the bot.", self.bubble.full_text)
         self.assertNotIn("Sound on a new answer", self.bubble.full_text)
         self.assertFalse(self.bubble._list_only)
