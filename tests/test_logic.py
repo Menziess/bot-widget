@@ -2402,6 +2402,24 @@ class BubbleHover(unittest.TestCase):
         bar.setValue(bar.maximum())
         self.assertLessEqual(bubble._notice.y() + bubble._notice.height(), bubble._scroll.viewport().height())
 
+    def test_an_over_full_bubble_scrolls_inside_itself_and_stays_on_the_screen(self):
+        self.MESSAGES = [{"role": "bot", "text": "\n\n".join(f"Regel {n}. " + "tekst " * 30 for n in range(60))}]
+        self.hover()
+        bubble = self.window.bubble
+        self.app.processEvents()
+        bar = bubble._scroll.verticalScrollBar()
+        screen = bubble.screen().availableGeometry()
+        self.assertGreater(bar.maximum(), 0, "the text is taller than the bubble, so it scrolls")
+        self.assertLessEqual(bubble.height(), screen.height(), "the bubble never outgrows the screen")
+        self.assertLessEqual(bubble._scroll.height(), bubble._text.height(), "the frame is smaller than the text")
+        size = bubble.size()
+        bar.setValue(bar.maximum())
+        self.app.processEvents()
+        self.assertEqual(bar.value(), bar.maximum())
+        self.assertEqual(bubble.size(), size, "scrolling moves the text, not the bubble")
+        bar.setValue(0)
+        self.assertEqual(bar.value(), 0)
+
     def test_shift_enter_starts_a_new_line_and_enter_sends(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
