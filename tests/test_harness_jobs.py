@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 import shlex
+import subprocess
 import shutil
 import sys
 import tempfile
@@ -29,8 +30,13 @@ JOB_ENV = (
 SECRET = "hook-bearer-token-9f3a"
 
 
+def quote(text: str) -> str:
+    """One argument for the shell a job runs in: cmd on Windows, which has no single quotes, and sh elsewhere."""
+    return subprocess.list2cmdline([text]) if os.name == "nt" else shlex.quote(text)
+
+
 def py(code: str) -> str:
-    return f"{sys.executable} -c {shlex.quote(code)}"
+    return f"{sys.executable} -c {quote(code)}"
 
 
 def wait_until(predicate, timeout: float = 2.0) -> bool:
@@ -199,7 +205,7 @@ class Hooks(unittest.TestCase):
         script = os.path.join(self.folder, "hook.py")
         with open(script, "w") as fh:
             fh.write("import pathlib, sys\npathlib.Path(sys.argv[1]).write_text(sys.stdin.read())\n")
-        self.hook_command = f"{sys.executable} {shlex.quote(script)} {shlex.quote(self.out)}"
+        self.hook_command = f"{sys.executable} {quote(script)} {quote(self.out)}"
         self.server = HookServer()
         self.addCleanup(self.server.close)
         self.done = []
@@ -404,7 +410,7 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
         ])
         agent = self.agent(
             model, allow=True,
-            HARNESS_JOB_HOOK=f"{sys.executable} {shlex.quote(script)} {shlex.quote(out)}",
+            HARNESS_JOB_HOOK=f"{sys.executable} {quote(script)} {quote(out)}",
             HARNESS_JOB_HOOK_URL=server.url,
             HARNESS_JOB_HOOK_KEY_FILE=key)
         with self.assertLogs("harness.agent.jobs", level="INFO") as caught:
