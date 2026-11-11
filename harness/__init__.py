@@ -3,3 +3,5 @@
 Phase 0 is `spike`, the client that talks ACP to an agent. Phase 1 fills the widget adapter
 from it (`botwidget/acplink.py`). Phase 2 is the lean agent in `harness/agent`.
 """
+
+RESUME_PROMPT = "[resume]"  # answer the last message again: a restart cut the turn off before it was answered

@@ -32,9 +32,11 @@ def pixmap_png_bytes(pixmap: QPixmap) -> bytes | None:
 class ScreenshotOverlay(QWidget):
     """Fullscreen transparent overlay: drag to select, Escape/right-click to cancel."""
 
-    def __init__(self, target_face):
+    def __init__(self, target_face, screen=None):
         super().__init__()
         self.target_face = target_face
+        self._screen = screen or QGuiApplication.primaryScreen()
+        self._group = [self]  # one overlay per screen: finishing or cancelling on one takes down all
         self._start = None
         self._rect = None
         self._mouse_down = False
@@ -67,20 +69,16 @@ class ScreenshotOverlay(QWidget):
         self.setWindowFlags(flags)
 
     def _position(self):
-        """Cover the entire virtual desktop."""
-        screen = QGuiApplication.primaryScreen()
-        if screen is not None:
-            self.setGeometry(screen.geometry())
+        """Cover this overlay's screen."""
+        if self._screen is not None:
+            self.setGeometry(self._screen.geometry())
         self.raise_()
 
     def grab_region(self) -> "QtGui.QPixmap | None":
         """Grab the selected rectangle from the screen. Returns None on cancel."""
-        if self._rect is None:
+        if self._rect is None or self._screen is None:
             return None
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
-            return None
-        return screen.grabWindow(0, *self._rect)
+        return self._screen.grabWindow(0, *self._rect)
 
     def paintEvent(self, _event):
         painter = QPainter(self)
@@ -133,8 +131,9 @@ class ScreenshotOverlay(QWidget):
         """User released: hide faces, grab, then restore."""
         from botwidget.qt_ui.screenshot import _restore_faces
 
-        # Hide the overlay itself (so it's not in the shot) and all faces.
-        self.hide()
+        # Hide the overlays themselves (so they are not in the shot) and all faces.
+        for overlay in self._group:
+            overlay.hide()
         all_faces = list(getattr(self.target_face.faces, "faces", {}).values())
         for f in all_faces:
             f.hide()
@@ -152,6 +151,14 @@ class ScreenshotOverlay(QWidget):
                 self._cancel_callback()
         self.close()
 
+    def close(self):
+        group, self._group = self._group, [self]
+        for overlay in group:
+            if overlay is not self:
+                overlay._group = [overlay]
+                overlay.close()
+        return super().close()
+
     def _cancel(self):
         """User cancelled: close overlay and call the cancel callback."""
         self.close()
@@ -159,10 +166,12 @@ class ScreenshotOverlay(QWidget):
             self._cancel_callback()
 
     def set_done_callback(self, callback):
-        self._done_callback = callback
+        for overlay in self._group:
+            overlay._done_callback = callback
 
     def set_cancel_callback(self, callback):
-        self._cancel_callback = callback
+        for overlay in self._group:
+            overlay._cancel_callback = callback
 
 
 def screen_grab(rect):
@@ -180,7 +189,14 @@ def enter_screenshot_mode(face):
     face.screenshot_face = face
     face._screenshot_active = True
 
-    overlay = ScreenshotOverlay(face)
+    # Every screen goes dark; the one the face is on takes the keyboard, so Escape works.
+    screens = list(QGuiApplication.screens()) or [None]
+    home = face.screen() if hasattr(face, "screen") else None
+    screens.sort(key=lambda screen: screen is home)
+    group = [ScreenshotOverlay(face, screen) for screen in screens]
+    for overlay in group:
+        overlay._group = group
+    overlay = group[-1]
 
     all_faces = list(getattr(face.faces, "faces", {}).values())
     all_faces.append(face)

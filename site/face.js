@@ -109,7 +109,7 @@
 
   // Where the eyes look when the pointer is at (vx, vy) from the face centre, in face units.
   // Over the face itself they look straight out at you; close by they follow and squint a little.
-  // Unlike the app, which only follows a pointer this near, the page keeps following from afar.
+  // Beyond GAZE_NEAR the app follows too, without the squint (avatar.eye_aim with far).
   function gaze(vx, vy) {
     var dist = Math.hypot(vx, vy);
     if (dist <= ON_FACE) return { dx: 0, dy: 0, converge: 0, scale: 1 };

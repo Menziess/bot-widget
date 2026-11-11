@@ -16,11 +16,12 @@ import threading
 import time
 
 from acp import PROTOCOL_VERSION
-from acp.schema import (AgentMessageChunk, AgentThoughtChunk, InitializeResponse, NewSessionResponse,
+from acp.schema import (AgentMessageChunk, AgentThoughtChunk, InitializeResponse, LoadSessionResponse,
+                        NewSessionResponse,
                         PermissionOption, PromptResponse, TextContentBlock, ToolCallProgress, ToolCallStart,
                         ToolCallUpdate, UsageUpdate, UserMessageChunk)
 
-from harness import approvals
+from harness import RESUME_PROMPT, approvals
 from harness.agent import context
 from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
@@ -84,7 +85,8 @@ class LeanAgent:
                 await self._chunk(session_id, "agent", message["text"])
                 continue
             await self._chunk(session_id, "user" if message["role"] == "user" else "agent", message["text"])
-        return None
+        # A turn that was open when the process went away: say so, so the widget can ask it to pick up again.
+        return LoadSessionResponse(field_meta={"interrupted": True}) if store.get("open_turn") else None
 
     async def cancel(self, session_id: str, **kwargs) -> None:
         """Stop the turn now. A cancel with no turn running is dropped: it used to arrive before the
@@ -105,12 +107,15 @@ class LeanAgent:
     async def prompt(self, session_id: str, prompt, **kwargs) -> PromptResponse:
         store = self.stores.setdefault(session_id, SessionStore(self.folder))
         text = "".join(block.text for block in prompt if getattr(block, "text", ""))
-        store.add("user", text)
+        if text != RESUME_PROMPT:
+            store.add("user", text)
+        store.set("open_turn", "1")
         self._cancelled.discard(session_id)
         self._turns.add(session_id)
         try:
             return await self._answer(session_id, store)
         finally:
+            store.set("open_turn", "")
             self._turns.discard(session_id)
             self._cancelled.discard(session_id)
 

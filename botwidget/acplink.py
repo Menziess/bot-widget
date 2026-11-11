@@ -16,7 +16,7 @@ import threading
 import time
 
 from botwidget.config import widget_config
-from harness import approvals
+from harness import RESUME_PROMPT, approvals
 from harness.acp_client import AcpClient, split_command
 
 PREFIX = "acp:"
@@ -147,6 +147,7 @@ class AcpLink:
         self._approvals = {}
         self._decisions = {}  # request id -> (future on the agent's loop, title)
         self._client = None
+        self._interrupted = False
         self.on_change = None  # the face sets it: a new message or question must wake it, even when it sleeps
         self._closed = False
         self._booting = True  # history loads at start, before the first message
@@ -166,7 +167,16 @@ class AcpLink:
         try:
             await self._ensure()
         except Exception:
-            pass
+            return
+        with self._lock:
+            resume = self._interrupted and not self._sending
+            if resume:
+                self._sending = True
+                self._said = False
+                self._activity = "Picking up where it stopped…"
+        if resume:
+            self._changed()
+            await self._turn(RESUME_PROMPT)
 
     # ── the calls the face knows ────────────────────────────────
 
@@ -379,6 +389,7 @@ class AcpLink:
                     self.messages[:0] = self._history
                     self._history = []
         self._save_session(info["session"])
+        self._interrupted = bool(info.get("interrupted"))
         self._client = client
         with self._lock:
             self._booting = False

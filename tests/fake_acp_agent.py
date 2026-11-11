@@ -154,7 +154,10 @@ def main() -> None:
             # The replay arrives before the result, as a real agent does, so the widget still has
             # _loading set and can put the history in front of the new message.
             chunk(params.get("sessionId", "s1"), "agent_message_chunk", "restored")
-            answer(request_id, {"sessionId": params.get("sessionId", "s1"), "modes": None})
+            result = {"sessionId": params.get("sessionId", "s1"), "modes": None}
+            if os.environ.get("FAKE_ACP_INTERRUPTED"):
+                result["_meta"] = {"interrupted": True}  # the last turn was cut off by a restart
+            answer(request_id, result)
         elif method == "session/prompt":
             run_prompt(request_id, params)
         elif method == "session/cancel":

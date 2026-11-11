@@ -51,15 +51,18 @@ GAZE_NEAR = CIRCLE_R * 2
 ON_FACE = CIRCLE_R * 1.1
 
 
-def eye_aim(vx: float, vy: float) -> tuple[float, float, float, float] | None:
+def eye_aim(vx: float, vy: float, far: bool = False) -> tuple[float, float, float, float] | None:
     """dx, dy, how close together the eyes are, and the length; None when the pointer is far away.
 
     On the face itself the eyes look straight out at you; between the face and GAZE_NEAR they
-    follow the pointer, and a bit of squint comes in as it gets closer.
+    follow the pointer, and a bit of squint comes in as it gets closer. With far, a pointer beyond
+    GAZE_NEAR (another screen, say) is followed too, without squint.
     """
     dist = (vx * vx + vy * vy) ** 0.5
     if dist >= GAZE_NEAR:
-        return None
+        if not far:
+            return None
+        return (round(vx / dist * 8, 1), round(vy / dist * 8, 1), 0.0, 1.0)
     if dist <= ON_FACE:
         return (0.0, 0.0, 0.0, 1.0)
     t = 1 - dist / GAZE_NEAR

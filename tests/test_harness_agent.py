@@ -269,6 +269,28 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(last["calls"], 0)
         self.assertTrue(last["text_tail"].endswith("twee woorden. "), "a turn that ends on talk keeps how it ended")
 
+    async def test_a_turn_cut_off_by_a_restart_is_offered_again_and_answered_without_a_second_user_line(self):
+        from harness import RESUME_PROMPT
+        async with self.client() as client:
+            await client.start()
+            session = client.session_id
+            await client.prompt("Maak een bestand.")
+        store = SessionStore(self.folder)
+        self.addCleanup(store.close)
+        store.add("user", "Nog een opdracht.")
+        store.set("open_turn", "1")  # the process went away in the middle of this turn
+        again = self.client()
+        async with again:
+            info = await again.start(load=session)
+            self.assertTrue(info["interrupted"])
+            turn = await again.prompt(RESUME_PROMPT)
+        self.assertEqual(turn.stop_reason, "end_turn")
+        users = [m["text"] for m in store.messages() if m["role"] == "user"]
+        self.assertEqual(users, ["Maak een bestand.", "Nog een opdracht."], "the resume prompt is not a message")
+        self.assertEqual(store.get("open_turn"), "", "an answered turn is closed")
+        async with self.client() as quiet:
+            self.assertFalse((await quiet.start(load=session))["interrupted"])
+
     async def test_a_restart_keeps_the_conversation_and_sends_it_again(self):
         async with self.client() as client:
             await client.start()

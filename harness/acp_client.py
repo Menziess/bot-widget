@@ -101,10 +101,12 @@ class AcpClient:
         """
         info = await self.conn.initialize(protocol_version=PROTOCOL_VERSION, client_capabilities={})
         session_id = ""
+        interrupted = False
         if load:
             try:
                 loaded = await self.conn.load_session(cwd=self.cwd or ".", session_id=load, mcp_servers=[])
                 session_id = getattr(loaded, "session_id", "") or load
+                interrupted = bool((getattr(loaded, "field_meta", None) or {}).get("interrupted"))
             except Exception:
                 session_id = ""  # nothing stored, or an agent without load: a new session is fine
         if not session_id:
@@ -115,7 +117,7 @@ class AcpClient:
         return {"protocol": info.protocol_version,
                 "name": getattr(getattr(info, "agent_info", None), "name", ""),
                 "version": getattr(getattr(info, "agent_info", None), "version", ""),
-                "session": self.session_id}
+                "session": self.session_id, "interrupted": interrupted}
 
     async def prompt(self, text: str) -> Turn:
         """Send one message and wait for the end of the turn, collecting what came in."""

@@ -130,6 +130,21 @@ class AcpTurns(unittest.TestCase):
         self.assertEqual([message["role"] for message in messages], ["bot", "user", "bot"])
         self.assertIn("restored", messages[0]["text"])
 
+    def test_a_turn_cut_off_by_a_restart_is_picked_up_again_without_a_message_from_you(self):
+        face = "acp:resume-" + next(tempfile._get_candidate_names())
+        first = AcpLink(FAKE, face=face)
+        self.addCleanup(shutil.rmtree, first.room(), True)
+        first.send("hello")
+        self.assertTrue(wait_for(lambda: not first.active()))
+        first.close()
+        second = AcpLink(FAKE, face=face, env={"FAKE_ACP_INTERRUPTED": "1"})
+        self.addCleanup(second.close)
+        self.assertTrue(wait_for(lambda: any("[resume]" in message["text"] for message in second.chat()["messages"])),
+                        "the agent answered the turn that was cut off")
+        self.assertTrue(wait_for(lambda: not second.active()))
+        self.assertNotIn("user", [message["role"] for message in second.chat()["messages"][1:]],
+                         "picking up again is not a new message of yours")
+
     def test_a_model_error_is_shown_in_the_note_instead_of_a_bare_refusal(self):
         from harness.acp_client import Turn
         link = self.link()

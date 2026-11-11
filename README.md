@@ -45,7 +45,7 @@ botwidget
 - Drag over the words to select them, the selection is copied when you let go, and "Copied" shows over the message and its words fade behind it for a moment
 - Clicking in the bubble never opens or closes it
 - The answer sound is off by default, and when on it only plays while the face is out of view (covered or on another desktop)
-- The eyes follow the pointer when it is near, and look at you when it is over the face
+- The eyes follow the pointer wherever it is, with a squint when it is near, and look at you when it is over the face
 - Every face is drawn as a 3D body, built the way Grok Bot builds its avatars (extruded, turned on a lathe, lofted or rounded), so when it turns, its outline and shading turn with it, and its eyes lie on its surface, so they curve and get narrower towards the edge.
 - Idle is calm: the face holds still and only now and then, after a random 8 to 30 seconds, blinks or looks around. When something happens it plays one of Grok Bot's own clips: a nod when your message goes out, an inspecting look while the bot thinks, a happy hop on the reply, surprise at a message nobody asked for, a sad face when a message is refused, confused and then sleepy when there is no route, and a bounce when you click it. While it holds still it draws only ten frames a second.
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
@@ -55,6 +55,8 @@ botwidget
 - Dots and thought, and chat and cloud, replace each other with a fade instead of growing into each other; a thought is read from the top while the cloud grows
 - The cloud shows the thought as markdown, follows the end of it as it grows, and has the field below
 - What you type while the bot works waits in a queue under the thought, a click on one puts it back in the field to edit, and one goes out per finished turn
+- A turn that a restart cut off before it was answered is picked up again when the widget is back, and says so in the cloud. The bot sees what it already did and asks again for what needs permission
+- Double-click a face to take a screenshot: every screen goes dark, drag a rectangle on one of them, and the bot gets that picture. Escape or a right-click cancels
 - A question or approval from the bot shows in the cloud with a button per answer, and typing in the field answers the open question
 - Shift+click a face to mute its thinking, a cross for a mouth shows it, and the choice is kept
 - Only one bubble is open at a time when you point at or click a face

@@ -53,6 +53,11 @@ class EyeAim(unittest.TestCase):
         self.assertIsNone(avatar.eye_aim(0, 900))
         self.assertIsNone(avatar.eye_aim(avatar.GAZE_NEAR, 0))
 
+    def test_far_away_it_still_follows_when_asked_to_and_never_squints(self):
+        dx, dy, conv, scale = avatar.eye_aim(4000, 0, far=True)
+        self.assertEqual((dx, dy, conv, scale), (8.0, 0.0, 0.0, 1.0))
+        self.assertLess(avatar.eye_aim(-300, -300, far=True)[1], 0)
+
     def test_on_the_face_it_looks_straight_at_you(self):
         self.assertEqual(avatar.eye_aim(0, 0), (0.0, 0.0, 0.0, 1.0))
         self.assertEqual(avatar.eye_aim(avatar.ON_FACE, 0), (0.0, 0.0, 0.0, 1.0))
@@ -1080,10 +1085,10 @@ class Rendering(unittest.TestCase):
     def test_near_the_face_it_follows_the_pointer(self):
         self.assertGreater(self.aimed((34 + 45, 34))["dx"], 0)
 
-    def test_far_away_it_goes_back_to_grok_bots_still_pose(self):
+    def test_far_away_the_eyes_still_follow_the_pointer_in_grok_bots_still_pose(self):
         from botwidget.motion import STILL
         target = self.aimed((900, 900))
-        self.assertEqual((target["dx"], target["dy"]), (0.0, 0.0))
+        self.assertEqual((target["dx"], target["dy"]), (5.7, 5.7))
         self.assertEqual((target["pitch"], target["yaw"], target["roll"]), STILL)
         self.assertEqual(target["zoom"], 1.0, "no breathing")
 

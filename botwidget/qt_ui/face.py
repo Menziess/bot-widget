@@ -1026,7 +1026,8 @@ class FaceWindow(QWidget):
         # Screenshot mode: the target face follows the mouse with its eyes (big, wide-open).
         if getattr(self, "screenshot_face", None) is not None:
             px, py = self._pointer()
-            target = eye_aim(px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2))
+            target = eye_aim(px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2),
+                             far=global_pointer())
             if target is not None:
                 dx, dy, converge, scale = target
                 a.aim(dx=dx, dy=dy, converge=converge, scale=scale,
@@ -1036,11 +1037,14 @@ class FaceWindow(QWidget):
         a.aim(happy=0.0)
         if self.motion.playing is None and not (self._working or self.has_pending):
             px, py = self._pointer()
-            target = eye_aim(px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2))
+            vx, vy = px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2)
+            target = eye_aim(vx, vy, far=global_pointer())
             if target is not None:
                 dx, dy, converge, scale = target
+                # Only the eyes follow a pointer from afar; the head keeps the still pose until it comes near.
+                turned = (pose["pitch"], pose["yaw"], pose["roll"]) if math.hypot(vx, vy) >= GAZE_NEAR else (0.0, 0.0, 0.0)
                 a.aim(dx=dx, dy=dy, converge=converge, scale=scale * (1 - pose["lids"]),
-                      pitch=0.0, yaw=0.0, roll=0.0, **moved)
+                      pitch=turned[0], yaw=turned[1], roll=turned[2], **moved)
                 self._show_face(pose["face"])
                 return
         a.aim(dx=0.0, dy=0.0, converge=0.0, scale=1 - pose["lids"],

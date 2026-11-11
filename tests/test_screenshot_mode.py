@@ -51,6 +51,22 @@ class ScreenshotMode(unittest.TestCase):
         window._anim_timer.stop()
         return window
 
+    def test_every_screen_gets_an_overlay_and_closing_one_closes_all(self):
+        from PySide6.QtGui import QGuiApplication
+        from botwidget.qt_ui.screenshot import enter_screenshot_mode
+        window = self._make_window()
+        self.addCleanup(window.close_face)
+        window.faces = mock.Mock()
+        window.faces.faces = {"t1": window}
+        screen = QGuiApplication.primaryScreen()
+        with mock.patch.object(QGuiApplication, "screens", return_value=[screen, screen]):
+            overlay = enter_screenshot_mode(window)
+        group = overlay._group
+        self.assertEqual(len(group), 2)
+        self.assertTrue(all(o.isVisible() for o in group))
+        overlay._cancel()
+        self.assertFalse(any(o.isVisible() for o in group))
+
     def test_double_click_enters_screenshot_mode(self):
         from botwidget.qt_ui.screenshot import ScreenshotOverlay
         window = self._make_window()
@@ -266,8 +282,9 @@ class ScreenshotOverlay(unittest.TestCase):
         self.assertTrue(grabbed is None or hasattr(grabbed, "isNull"))
         shot = screen_grab((1, 1, 8, 8))
         self.assertTrue(shot is None or hasattr(shot, "isNull"))
+        overlay._screen = None
+        self.assertIsNone(overlay.grab_region())
         with mock.patch("botwidget.qt_ui.screenshot.QGuiApplication.primaryScreen", return_value=None):
-            self.assertIsNone(overlay.grab_region())
             self.assertIsNone(screen_grab((0, 0, 2, 2)))
         picture = QPixmap(8, 8)
         picture.fill(Qt.red)
