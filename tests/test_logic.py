@@ -3176,6 +3176,7 @@ class BubbleHover(unittest.TestCase):
         with self.x_pointer(), mock.patch.object(QGuiApplication, "applicationState",
                                                  return_value=Qt.ApplicationInactive), \
                 mock.patch("PySide6.QtGui.QDesktopServices.openUrl", return_value=True), \
+                mock.patch("botwidget.qt_ui.screenshot.enter_screenshot_mode"), \
                 mock.patch("botwidget.qt_ui.face.api_get", side_effect=OSError("no network in tests")):
             for command, _note in menu_pages.commands():
                 with self.subTest(command=command):
@@ -4789,12 +4790,13 @@ class BubbleHover(unittest.TestCase):
     def test_every_command_in_the_list_opens_a_page(self):
         from botwidget import menu_pages
         for command, _note in menu_pages.commands():
-            if command in ("/refresh", "/feedback", "/debug"):
+            if command in ("/refresh", "/feedback", "/debug", "/screenshot"):
                 continue
             self.assertIn(command, menu_pages.SLASH)
         self.assertNotIn("/home", [command for command, _note in menu_pages.commands()],
                          "gone: the back arrow and a right-click show the list")
         self.assertNotIn("/refresh", menu_pages.SLASH, "reload, not a menu page")
+        self.assertNotIn("/screenshot", menu_pages.SLASH, "a mode with an overlay, not a menu page")
         self.assertNotIn("/feedback", menu_pages.SLASH, "a browser page, not a menu page")
 
     def second_face(self):

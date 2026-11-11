@@ -679,9 +679,12 @@ class FaceWindow(QWidget):
         """Double-click: enter screenshot mode for this face. Suppresses the normal click→open_input."""
         if event.button() != Qt.LeftButton:
             return
+        self.start_screenshot()
+
+    def start_screenshot(self):
+        """Enter screenshot mode: a double-click on the face, or /screenshot from the command list."""
         if getattr(self, "screenshot_face", None) is not None:
             return
-        # Enter screenshot mode
         self._press_pos = None
         self._drag_origin = None
         self._screenshot_active = True
@@ -1747,6 +1750,9 @@ class FaceWindow(QWidget):
             return
         if not files and text.strip().lower() == "/refresh":
             self.refresh()
+            return
+        if not files and text.strip().lower() == "/screenshot":
+            self.start_screenshot()
             return
         if not files and text.strip().lower() == "/feedback":
             self.open_feedback()

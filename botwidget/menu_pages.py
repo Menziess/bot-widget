@@ -18,7 +18,8 @@ SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"
 # No /home: a right-click shows this list on its own. A page steps back to the screen before it.
 COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
             ("/connections", "what was found"), ("/memory", "view/edit memories"),
-            ("/refresh", "reload every bot"), ("/feedback", "open a GitHub issue"))
+            ("/refresh", "reload every bot"), ("/screenshot", "drag a region, or double-click a face"),
+            ("/feedback", "open a GitHub issue"))
 
 
 def commands() -> tuple:
