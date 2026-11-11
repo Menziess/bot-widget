@@ -1661,7 +1661,8 @@ class MenuAndCatcher(unittest.TestCase):
             face._drag_origin = None
         with mock.patch.object(faces, "_in_hotspot", return_value=False):
             faces.offer_semicircle(0, 0)
-        with mock.patch.object(type(faces._catcher), "underMouse", return_value=True):
+        with mock.patch.object(type(faces._catcher), "underMouse", return_value=True), \
+                mock.patch.object(faces, "_over_arc_area", return_value=True):
             self.assertTrue(faces._pointer_on_arc())
         if sys.platform.startswith("linux"):
             # Pretending this is Cocoa crashes the macOS offscreen plugin.

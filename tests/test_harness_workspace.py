@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -238,6 +239,18 @@ class SafeWalk(unittest.TestCase):
 
 # ── Write / Edit ──────────────────────────────────────────────────────
 
+class Containment_Separators(unittest.TestCase):
+    def test_a_windows_path_is_inside_with_backslashes_and_any_case_and_not_beside_it(self):
+        import ntpath
+        from unittest import mock
+        from harness.agent import workspace
+        with mock.patch.object(workspace.os, "path", ntpath):
+            self.assertTrue(workspace._contains("C:\\Users\\Me\\work", "C:\\Users\\Me\\work\\sub\\a.txt"))
+            self.assertTrue(workspace._contains("C:\\Users\\Me\\work", "c:\\users\\me\\WORK"))
+            self.assertFalse(workspace._contains("C:\\Users\\Me\\work", "C:\\Users\\Me\\work-other\\a.txt"))
+            self.assertFalse(workspace._contains("C:\\Users\\Me\\work", "D:\\work\\a.txt"))
+
+
 class Delete(unittest.TestCase):
     def test_a_file_moves_to_the_trash_and_nothing_else_can_be_deleted(self):
         from unittest import mock
@@ -316,14 +329,11 @@ class GitTools(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.folder, True)
-        # Init a repo.
+        # Init a repo. Not through os.system and a shell redirect: cmd on Windows has no /dev/null.
         _write(os.path.join(self.folder, "README.md"), "hello")
-        os.chdir(self.folder)
-        os.system("git init -q >/dev/null 2>&1")
-        os.system('git config user.email "test@test.com" >/dev/null 2>&1')
-        os.system('git config user.name "Test" >/dev/null 2>&1')
-        os.system("git add -A >/dev/null 2>&1")
-        os.system('git commit -m "init" >/dev/null 2>&1')
+        for args in (["init", "-q"], ["config", "user.email", "test@test.com"], ["config", "user.name", "Test"],
+                     ["add", "-A"], ["commit", "-m", "init"]):
+            subprocess.run(["git", *args], cwd=self.folder, capture_output=True, check=True)
 
     def test_git_status_works(self):
         result = _git_run(self.folder, ["status"])
@@ -358,7 +368,7 @@ class GitTools(unittest.TestCase):
 
 class ShellTools(unittest.TestCase):
     def test_shell_echo_works(self):
-        result = shell_run("/tmp", "echo hello")
+        result = shell_run(tempfile.gettempdir(), "echo hello")
         self.assertIn("hello", result)
 
     def test_shell_git_push_is_refused(self):

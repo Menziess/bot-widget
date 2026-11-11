@@ -87,8 +87,11 @@ def resolve_workspace(path: str) -> str | None:
 
 def _contains(workspace: str, target: str) -> bool:
     """True when *target* lives inside *workspace* (or is the workspace itself)."""
-    tw = target + "/"
-    return tw.startswith(workspace + "/") or target == workspace
+    workspace, target = os.path.normcase(workspace), os.path.normcase(target)
+    try:
+        return os.path.commonpath([workspace, target]) == workspace
+    except ValueError:  # another drive on Windows
+        return False
 
 
 def _check_inside(workspace: str, target_path: str) -> str:
