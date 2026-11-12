@@ -1772,8 +1772,12 @@ class FaceWindow(QWidget):
         if open_question:
             self._give_answer(*open_question, [text])
             return
+        asking = bool(self.acp and self._attention.get("approvals"))
+        if asking:
+            self.acp.interrupt()
         if self._working and not self._debug_on():
-            self._queue.append({"text": text, "files": files, "id": uuid.uuid4().hex[:8]})
+            self._queue.insert(0 if asking else len(self._queue),
+                               {"text": text, "files": files, "id": uuid.uuid4().hex[:8]})
             self._sync_bubble(self._latest(), force=True)
             self._poll_timer.start(300)
             return

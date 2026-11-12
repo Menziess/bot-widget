@@ -2555,6 +2555,19 @@ class BubbleHover(unittest.TestCase):
         self.assertIn("Daarna dit", self.window.bubble.full_text)
         self.assertIn("Queued", self.window.bubble.full_text)
 
+    def test_a_message_typed_while_a_choice_waits_stops_the_turn_and_goes_out_first(self):
+        self.start_working()
+        self.window.on_user_message("Later")
+        self.window.acp = unittest.mock.Mock()
+        self.window._sync_bubble = lambda *args, **kwargs: None
+        self.window._attention = {"approvals": [{"requestId": "r1"}]}
+        self.window.on_user_message("Nu")
+        self.window.acp.interrupt.assert_called_once_with()
+        self.assertEqual([item["text"] for item in self.window._queue], ["Nu", "Later"])
+        self.window.acp = None
+        del self.window._sync_bubble
+        self.window._attention = {}
+
     def test_the_queue_goes_out_one_message_per_finished_turn(self):
         self.start_working()
         self.window.on_user_message("Eerste")

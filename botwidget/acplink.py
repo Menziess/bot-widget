@@ -294,6 +294,14 @@ class AcpLink:
 
     def close(self, wait: float = 0) -> None:
         """Stop the agent process and the loop behind it. A widget that is quitting waits a moment for it, or the agent
+    def interrupt(self) -> None:
+        """Decline what waits for an answer and stop the turn, so a new message can go out."""
+        with self._lock:
+            waiting = list(self._decisions)
+        for request_id in waiting:
+            self.decide(request_id, False)
+        self.cancel()
+
         outlives the widget."""
         if self._closed:
             return

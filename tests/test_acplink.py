@@ -221,6 +221,15 @@ class AcpTurns(unittest.TestCase):
         self.assertTrue(wait_for(lambda: not link.active()))
         self.assertEqual(link.chat()["messages"][-1]["text"], "chose no")
 
+    def test_a_message_while_a_choice_waits_declines_it_and_stops_the_turn(self):
+        link = self.link()
+        link.send("please ask")
+        self.assertTrue(wait_for(lambda: link.attention()["approvals"]))
+        link.interrupt()
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertEqual(link.attention()["approvals"], [])
+        self.assertTrue(link.send("next")[0], "the turn is over, so the next message goes out")
+
     def test_the_login_shell_path_is_used_and_a_failure_is_only_reported(self):
         done = mock.Mock(stdout="motd\n__PATH__/opt/homebrew/bin:/usr/bin", returncode=0)
         with mock.patch.object(acplink.subprocess, "run", return_value=done):
