@@ -577,6 +577,12 @@ class Faces(QObject):
         if guest is not None:
             guest.close_face()
 
+    def _close_bubbles(self):
+        """A save restarts the bot's face. A bubble left open would show the same page twice for a moment."""
+        for face in (*self.faces.values(), *self._arc_guests.values()):
+            face._menu_page = None
+            face.bubble.close_bubble("saved")
+
     def _apply_bots(self, before: list):
         """Open, restyle or restart only the bots this save changed. The widget itself stays up."""
         after = {bot["id"]: bot for bot in acplink.configured_bots()}
@@ -659,6 +665,7 @@ class Faces(QObject):
         save_widget_config(acp_bots=entries)
         if widget_config().get("acp_bots") != entries:
             return "Could not save widget.json."
+        self._close_bubbles()
         self._apply_bots(previous)
         return ""
 
@@ -670,6 +677,7 @@ class Faces(QObject):
         error = replace_widget_config(data)
         if error:
             return error
+        self._close_bubbles()
         self._apply_bots(previous)
         return ""
 
@@ -682,6 +690,7 @@ class Faces(QObject):
         save_widget_config(connections=rows)
         if widget_config().get("connections") != rows:
             return "Could not save widget.json."
+        self._close_bubbles()
         self._apply_bots(previous)
         return ""
 
@@ -755,13 +764,13 @@ class Faces(QObject):
             return page
         if kind == "action" and name == "save-bot":
             self._bot_error = self._commit_bot()
-            return page if self._bot_error else "bots"
+            return page if self._bot_error else None
         if kind == "action" and name == "save-json":
             self._json_error = self._commit_json()
-            return page if self._json_error else "bots"
+            return page if self._json_error else None
         if kind == "action" and name == "save-connection":
             self._connection_error = self._commit_connection()
-            return page if self._connection_error else "connections"
+            return page if self._connection_error else None
         if kind in ("bot-remove", "connection-remove"):
             if getattr(self, "_confirm_remove", "") != command:
                 self._confirm_remove = command

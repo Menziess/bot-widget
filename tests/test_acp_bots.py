@@ -338,8 +338,8 @@ class WidgetSave(unittest.TestCase):
         return self.box.menu_command("action/save-bot", "bot", fields)
 
     def test_add_chat_rename_recolour_and_remove_on_a_fresh_config(self):
-        self.assertEqual(self.save("Harness Check"), "bots")
-        self.assertEqual(self.save("Second Check", color="green"), "bots")
+        self.assertIsNone(self.save("Harness Check"), "the bubble is closed, not shown again")
+        self.assertIsNone(self.save("Second Check", color="green"))
         saved = json.load(open(config.CONFIG_PATH))
         self.assertNotIn(SENTINEL, json.dumps(saved), "the key file's contents stay out of widget.json")
         bots_saved = saved["acp_bots"]
@@ -363,20 +363,22 @@ class WidgetSave(unittest.TestCase):
         face.bot_name = "Harness Check"
         face._menu_page = None
         face.avatar = None
+        face.bubble = mock.Mock()
         face.setWindowTitle = lambda name: setattr(face, "title", name)
         face.set_avatar = lambda avatar: setattr(face, "avatar", avatar)
         self.box.faces["acp:harness-check"] = face
         self.calls.clear()
         self.box.menu_command("page/bot/acp:harness-check", "bots")
         self.box.menu_command("cycle/color", "bot/acp:harness-check")
-        self.assertEqual(self.box.menu_command("action/save-bot", "bot/acp:harness-check", {}), "bots")
+        self.assertIsNone(self.box.menu_command("action/save-bot", "bot/acp:harness-check", {}))
+        face.bubble.close_bubble.assert_called_with("saved")
         self.assertEqual(self.calls, [], "a new colour does not restart the agent")
         self.assertEqual(face.avatar["color"], "green")
         self.assertTrue(os.path.isdir(room), "recolouring leaves the session folder")
 
         self.box.menu_command("page/bot/acp:harness-check", "bots")
-        self.assertEqual(self.box.menu_command("action/save-bot", "bot/acp:harness-check",
-                                               {"field/name": "Renamed Check"}), "bots")
+        self.assertIsNone(self.box.menu_command("action/save-bot", "bot/acp:harness-check",
+                                                {"field/name": "Renamed Check"}))
         self.assertEqual([call[:2] for call in self.calls], [("toggle", "acp:harness-check"),
                                                              ("toggle", "acp:harness-check")])
         self.assertNotIn("acp:second-check", [call[1] for call in self.calls])
@@ -539,6 +541,7 @@ class EditPage(unittest.TestCase):
         window = self.FaceWindow("t", "Test", spot=(300, 400), faces=box)
         window._poll_timer.stop()
         self.addCleanup(window.close_face)
+        box.faces = {"t": window}
         window.open_menu("bot")
         self.app.processEvents()
         bubble = window.bubble
@@ -553,7 +556,8 @@ class EditPage(unittest.TestCase):
                        save.geometry().center().y() - bubble._doc.y())
         QTest.mouseClick(bubble._doc.viewport(), Qt.LeftButton, Qt.NoModifier, point)
         self.app.processEvents()
-        self.assertEqual(window._menu_page, "bots")
+        self.assertIsNone(window._menu_page)
+        self.assertFalse(bubble.kind, "saving closes the bubble at once")
         with open(config.CONFIG_PATH) as fh:
             names = [row["name"] for row in json.load(fh)["acp_bots"]]
         self.assertIn("Lokal", names)
