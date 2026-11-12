@@ -1442,7 +1442,8 @@ class MenuAndCatcher(unittest.TestCase):
         self.assertEqual(faces.menu_command("action/save-connection", "connection"), "connection")
         draft.update({"name": "Ada", "base_url": "http://127.0.0.1:9", "model": "m", "key_file": "/tmp/k"})
         faces._connection_draft = draft
-        self.assertEqual(faces.menu_command("action/save-connection", "connection"), "connections")
+        # A saved connection closes the bubble at once (ae401ea), so there is no next page.
+        self.assertIsNone(faces.menu_command("action/save-connection", "connection"))
         conn_id = widget_config()["connections"][0]["id"]
         self.assertEqual(faces.menu_command(f"connection-toggle/{conn_id}", "connections"), "connections")
         self.assertIsNone(faces._set_connection_on("missing"))
