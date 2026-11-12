@@ -2619,7 +2619,7 @@ class BubbleHover(unittest.TestCase):
     def open_settings(self):
         from botwidget import menu_pages
         self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
-                                               "menu_command": lambda _self, command, page: page,
+                                               "menu_command": lambda _self, command, page, fields=None: page,
                                                "close_bubbles_except": lambda _self, _id: None,
                                                "hold_arc": lambda _self: None,
                                                "raise_bubbles": lambda _self: None})()
@@ -2932,7 +2932,7 @@ class BubbleHover(unittest.TestCase):
         window.show()
         bubble = window.bubble
         window.faces = type("Faces", (), {"menu_state": lambda _self: state,
-                                          "menu_command": lambda _self, command, page: page,
+                                          "menu_command": lambda _self, command, page, fields=None: page,
                                           "close_bubbles_except": lambda _self, _id: None,
                                           "hold_arc": lambda _self: None,
                                           "raise_bubbles": lambda _self: None})()
@@ -3196,7 +3196,7 @@ class BubbleHover(unittest.TestCase):
         window = self.window
         window.show()
         window.faces = type("Faces", (), {"menu_state": lambda _self: state,
-                                          "menu_command": lambda _self, command, page: page,
+                                          "menu_command": lambda _self, command, page, fields=None: page,
                                           "close_bubbles_except": lambda _self, _id: None,
                                           "hold_arc": lambda _self: None,
                                           "raise_bubbles": lambda _self: None})()
@@ -3366,7 +3366,7 @@ class BubbleHover(unittest.TestCase):
         window = self.window
         window.show()
         window.faces = type("Faces", (), {"menu_state": lambda _self: state,
-                                          "menu_command": lambda _self, command, page: page,
+                                          "menu_command": lambda _self, command, page, fields=None: page,
                                           "close_bubbles_except": lambda _self, _id: None,
                                           "hold_arc": lambda _self: None,
                                           "raise_bubbles": lambda _self: None})()
@@ -4110,7 +4110,7 @@ class BubbleHover(unittest.TestCase):
 
     def stub_faces(self):
         self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
-                                               "menu_command": lambda _self, command, page: page,
+                                               "menu_command": lambda _self, command, page, fields=None: page,
                                                "close_bubbles_except": lambda _self, _id: None,
                                                "hold_arc": lambda _self: None,
                                                "raise_bubbles": lambda _self: None})()
