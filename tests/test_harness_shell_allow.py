@@ -40,10 +40,21 @@ class ReadOnlyClassifier(unittest.TestCase):
 
     def test_secrets_ask_and_paths_outside_the_workspace_are_read_free(self):
         for cmd in ("cat .env", "cat .env.production", "cat .ssh/id_rsa", "cat ~/.ssh/id_rsa", "cat .e*",
-                    "cat $HOME/x"):
+                    "cat $HOME/x", "cat ../../.env", "cat /home/x/.ssh/id_rsa", "cat /.env", "ls /root/.ssh",
+                    "cat ../../../../../../../../.env.local", "cat ../../../../../../../../home/x/.aws/credentials"):
             self.assertFalse(self.free(cmd), cmd)
         for cmd in ("cat /etc/passwd", "ls ../..", "cat .env.example", f"cat {self.ws}/a.txt"):
             self.assertTrue(self.free(cmd), cmd)
+
+    def test_root_is_not_a_secret_but_secret_names_still_ask_at_root(self):
+        from harness.agent.workspace import _is_secret_name, _is_secret_path
+        self.assertFalse(_is_secret_name(""))
+        self.assertFalse(_is_secret_path("/"))
+        self.assertTrue(_is_secret_path("/.env"))
+        self.assertTrue(_is_secret_path("/.ssh"))
+        deep = "../" * (self.ws.count("/") + 3)
+        self.assertTrue(self.free("ls /") and self.free(f"ls {deep}"))
+        self.assertFalse(self.free(f"cat {deep}.env") or self.free(f"cat {deep}.ssh/id_rsa"))
 
     def test_segments(self):
         self.assertEqual(shell_segments("ls -l | wc -l"), [["ls", "-l"], ["wc", "-l"]])

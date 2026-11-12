@@ -126,7 +126,7 @@ _SECRET_ENV_PREFIX = re.compile(r"^\.env(?!\.example$|\.template$)")
 
 def _is_secret_name(basename: str) -> bool:
     """Is *basename* a denied file name?"""
-    if basename in ("", ".", ".."):
+    if basename in (".", ".."):
         return True
     for pat_fn in _SECRET_PATTERNS:
         if pat_fn(basename):
@@ -518,7 +518,7 @@ def shell_segments(command: str) -> list[list[str]] | None:
     return segments
 
 
-def _args_not_private(args: list[str]) -> bool:
+def _args_not_private(workspace: str, args: list[str]) -> bool:
     for arg in args:
         if "$" in arg:
             return False
@@ -532,7 +532,9 @@ def _args_not_private(args: list[str]) -> bool:
         if any(_is_secret_dir(part) for part in arg.replace("\\", "/").split("/")):
             return False
         if arg.startswith(("/", "~")) or ".." in arg.split("/"):
-            if _is_secret_path(_resolve(arg)):
+            # Relative paths resolve against the workspace, not the process cwd.
+            target = arg if arg.startswith(("/", "~")) else os.path.join(workspace, arg)
+            if _is_secret_path(_resolve(target)):
                 return False
     return True
 
@@ -544,14 +546,14 @@ def _segment_read_only(workspace: str, tokens: list[str]) -> bool:
             return False
         if any(a == "-c" or a.startswith(("--output", "--ext-diff", "--exec-path", "--open-files")) for a in args):
             return False
-        return _args_not_private(args[1:])
+        return _args_not_private(workspace, args[1:])
     if name not in READONLY_COMMANDS:
         return False
     if name == "find" and any(a in _FIND_WRITES for a in args):
         return False
     if name in ("rg", "grep") and any(a.startswith(("--pre", "--hostname-bin")) for a in args):
         return False
-    return _args_not_private(args)
+    return _args_not_private(workspace, args)
 
 
 def is_read_only_command(workspace: str, command: str) -> bool:
