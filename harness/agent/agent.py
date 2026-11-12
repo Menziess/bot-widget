@@ -26,7 +26,8 @@ from harness.agent import context
 from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
-from harness.agent.workspace import _diff_text, _real_path, compute_edit, outside_workspace
+from harness.agent.workspace import (_diff_text, _real_path, compute_edit, outside_workspace,
+                                     shell_segments)
 
 MAX_STEPS = 30  # default for HARNESS_MAX_STEPS: a tool loop that never settles must still end the turn
 LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the same arguments this many times in a row
@@ -46,7 +47,7 @@ class LeanAgent:
         self.bot = bot
         self.model = model
         workspace = os.environ.get("HARNESS_WORKSPACE") or ""
-        permission = os.environ.get("HARNESS_WORKSPACE_PERMISSIONS") or "allow"
+        permission = os.environ.get("HARNESS_WORKSPACE_PERMISSIONS") or "ask"
         permission = {"allowlist": "allow", "allow-for-session": "allow_session"}.get(permission, permission)
         diff_mode = os.environ.get("HARNESS_DIFF_PERMISSIONS") or "ask"
         self.diff_edit_mode = diff_mode  # ask | always | never
@@ -63,6 +64,12 @@ class LeanAgent:
         self.shell_allow = ShellAllow(
             os.environ.get("HARNESS_SHELL_ALLOW_FILE") or os.path.join(self.folder, "shell-allow.json"),
             tuple((os.environ.get("HARNESS_SHELL_ALLOW") or "").split(",")))
+        try:
+            config = json.loads(os.environ.get("HARNESS_APPROVE") or "{}")
+        except ValueError:
+            config = {}
+        from harness.agent.workspace import ApproveRules, check_rules
+        self.rules = ApproveRules(os.path.join(self.folder, "approved.json"), config if not check_rules(config) else {})
         # HARNESS_SHELL_READONLY=0 makes every shell command ask again.
         self.shell_readonly_free = os.environ.get("HARNESS_SHELL_READONLY", "1") != "0"
         self.conn = None
@@ -452,14 +459,14 @@ class LeanAgent:
             title += " (outside the workspace)"
         await self._tool_call(session_id, call["id"], title, "pending", "in_progress")
         if tool.writes:
-            remembered = (getattr(self.tools, "permission", "ask") == "allow_session"
-                          and title in getattr(self.tools, "_session_allows", ()))
+            verdict = self._verdict(name, arguments)
+            remembered = verdict is True
             command = str(arguments.get("command") or "")
-            if name in ("shell", "shell_background") and not remembered and self._shell_free(command):
+            if name in ("shell", "shell_background") and verdict is None and self._shell_free(command):
                 remembered = True  # read-only, or a prefix the user saved: no question
             # H7: show diff in bubble for write_file, respect diff_edit_mode
-            if name in ("write_file", "edit") and not remembered:
-                result = await self._handle_write_file(session_id, call, arguments, store, title)
+            if name in ("write_file", "edit") and (not remembered or self.diff_edit_mode == "never"):
+                result = await self._handle_write_file(session_id, call, arguments, store, title, verdict is False)
                 return result
             if not remembered:
                 prefix = self._shell_prefix(command) if name in ("shell", "shell_background") else ""
@@ -470,8 +477,7 @@ class LeanAgent:
                                            "The user declined this action. Do not try it another way.")
                 if choice == "allow_always" and prefix:
                     self.shell_allow.add(getattr(self.tools, "workspace", "") or "", prefix)
-                if getattr(self.tools, "permission", "ask") == "allow_session":
-                    self.tools._session_allows.add(title)
+                self._remember(name, arguments)
         try:
             result = tool.run(arguments)
             if inspect.isawaitable(result):
@@ -483,7 +489,7 @@ class LeanAgent:
         return self._note_tool(store, name, "ok", result)
 
     async def _handle_write_file(self, session_id: str, call: dict, arguments: dict,
-                                  store: SessionStore, title: str) -> str:
+                                  store: SessionStore, title: str, denied: bool = False) -> str:
         """H7: Show a diff in the bubble for write_file and edit, then apply/reject/never."""
         name = (call.get("function") or {}).get("name") or "write_file"
         path = str(arguments.get("path", ""))
@@ -515,7 +521,7 @@ class LeanAgent:
         await self._tool_call(session_id, call["id"], diff_title, "pending", "in_progress")
 
         # 3) Decide based on diff_edit_mode
-        mode = "ask" if outside and self.diff_edit_mode == "always" else self.diff_edit_mode
+        mode = "ask" if (outside or denied) and self.diff_edit_mode == "always" else self.diff_edit_mode
 
         if mode == "never":
             # Show diff as proposal, do not apply
@@ -529,6 +535,7 @@ class LeanAgent:
                 await self._tool_call(session_id, call["id"], diff_title, "completed", "failed")
                 return self._note_tool(store, name, "declined by the user; nothing was done",
                                        "The user declined this action. Do not try it another way.")
+            self._remember(name, arguments)
 
         # mode is "always" or user approved: apply the write
         # Record bytes before write (for undo)
@@ -748,6 +755,34 @@ class LeanAgent:
         if outcome == "ok" and isinstance(answer, str) and answer:
             store.add_tool_result(name, shown, answer, path)
         return shown
+
+    def _approve_texts(self, name: str, arguments: dict) -> list[str]:
+        """The call as the text the approval rules match: the tool and the file or shell command it works on."""
+        if name in ("shell", "shell_background"):
+            return ["shell " + " ".join(segment) for segment in shell_segments(str(arguments.get("command") or "")) or []]
+        if name in ("write_file", "edit", "delete_file"):
+            workspace = getattr(self.tools, "workspace", "") or ""
+            return [f"{name} {_real_path(workspace, str(arguments.get('path') or ''))}"]
+        return [name]
+
+    def _verdict(self, name: str, arguments: dict) -> bool | None:
+        mode = getattr(self.tools, "permission", "ask")
+        return self.rules.decide(self._approve_texts(name, arguments), session=mode in ("allow", "allow_session"),
+                                 saved=mode == "allow")
+
+    def _remember(self, name: str, arguments: dict) -> None:
+        """An accepted call covers the same tool in the same folder (a shell command: the same command prefix)."""
+        mode = getattr(self.tools, "permission", "ask")
+        if mode not in ("allow", "allow_session") or self._verdict(name, arguments) is False:
+            return
+        if name in ("shell", "shell_background"):
+            prefix = self._shell_prefix(str(arguments.get("command") or ""))
+            rule = f"shell {prefix}" if prefix else ""
+        elif name in ("write_file", "edit", "delete_file"):
+            rule = f"{name} {os.path.dirname(self._approve_texts(name, arguments)[0].split(' ', 1)[1])}/"
+        else:
+            rule = name
+        self.rules.remember(rule, persist=mode == "allow")
 
     def _shell_free(self, command: str) -> bool:
         """A shell command that needs no question: read-only, or covered by a saved prefix."""

@@ -53,6 +53,12 @@ class ConfigFile(unittest.TestCase):
                 mock.patch.object(acp_bots.sys, "executable", path):
             self.assertEqual(split_command(acp_bots.default_command()), [path, "-m", "harness.agent"])
 
+    def test_approve_keys_are_checked_before_widget_json_is_saved(self):
+        row = {"name": "A", "command": "c", "approve": {"/^shell ls/": True}}
+        self.assertEqual(acp_bots.parse_editor(json.dumps({"acp_bots": [row]}))[1], "")
+        for bad in ({"x": "yes"}, {"/(/": True}):
+            self.assertIn("approve", acp_bots.parse_editor(json.dumps({"acp_bots": [{**row, "approve": bad}]}))[1])
+
     def test_a_file_that_cannot_be_read_is_not_replaced(self):
         with open(config.CONFIG_PATH, "w") as fh:
             fh.write("{not json")

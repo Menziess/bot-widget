@@ -108,16 +108,16 @@ class AgentFollowsCwd(unittest.IsolatedAsyncioTestCase):
 
 class OneDefaultPermission(unittest.TestCase):
     def test_new_and_existing_bots_agree(self):
-        self.assertEqual(acp_bots.blank()["workspace_permissions"], "allow")
-        self.assertEqual(acp_bots.fields_of({"env": {}})["workspace_permissions"], "allow")
-        self.assertEqual(acp_bots.fields_of({"env": {"HARNESS_WORKSPACE_PERMISSIONS": "ask"}})
-                         ["workspace_permissions"], "ask")
+        self.assertEqual(acp_bots.blank()["workspace_permissions"], "ask")
+        self.assertEqual(acp_bots.fields_of({"env": {}})["workspace_permissions"], "ask")
+        self.assertEqual(acp_bots.fields_of({"env": {"HARNESS_WORKSPACE_PERMISSIONS": "allow"}})
+                         ["workspace_permissions"], "allow")
 
     def test_the_agent_default_is_the_same(self):
         os.environ.pop("HARNESS_WORKSPACE_PERMISSIONS", None)
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)
-        self.assertEqual(LeanAgent("p", ScriptModel(), folder=folder).tools.permission, "allow")
+        self.assertEqual(LeanAgent("p", ScriptModel(), folder=folder).tools.permission, "ask")
 
 
 if __name__ == "__main__":

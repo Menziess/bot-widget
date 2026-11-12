@@ -130,7 +130,6 @@ class Tools:
         # can always suggest file operations even when no workspace is configured.
         for tool in builtins():
             self.tools[tool.name] = tool
-        self._session_allows: set[str] = set()
 
     def _add_workspace_tools(self) -> None:
         """Add workspace-scoped tools if a workspace is set; they override the builtins."""

@@ -154,6 +154,30 @@ The bot can leave a shell command running and keep talking. `shell_background` s
 
 A hook set here is trusted, because you wrote it, the same way the bot's start command is. It still cannot run a command the shell tool always refuses. A hook the bot adds on one job is part of the permission question for that job. A hook that fails is logged and the bot keeps going. The payload is the job id, the command, the exit code, how long it ran, and a short tail of the output.
 
+The bot asks before it writes, edits or deletes a file and before a shell command that is not read-only. Reading is free in any folder, except private files such as `.env` and `.ssh`. The Permission button on the edit page sets what an Accept leaves behind.
+
+```json
+"env": {
+  "HARNESS_WORKSPACE_PERMISSIONS": "allow"
+},
+"approve": {
+  "/^shell git (status|diff|log)\\b/": true,
+  "write_file /home/you/notes/": true,
+  "/\\.env\\b/i": false,
+  "shell rm": false
+}
+```
+
+- Permission `ask` asks every time. It is the default
+- Permission `allow_session` remembers an Accept until the agent stops
+- Permission `allow` remembers it for good, in `approved.json` in the bot's folder
+- Remembering covers the same tool in the same folder and the folders below it. For a shell command it covers the same command prefix, such as `git status`
+- A write or delete outside the workspace folder is allowed too, and its question says so
+- The `approve` object is written by hand. Each key is a start of the text `tool target`, such as `shell git status` or `write_file /home/you/notes/a.md`
+- Wrapped in slashes a key is a regular expression searched in that text, and `/i` ignores case
+- Value `true` runs without asking. Value `false` always asks, and it wins over `true` and over anything that was remembered
+- A shell command with several parts, such as `a && b`, is approved only when each part is
+
 A model server for the example above is llama.cpp:
 
 ```sh

@@ -13,9 +13,9 @@ Permission modes
 ----------------
 Reads, search and git-read are free in every mode. Writes (write_file, edit,
 delete_file) and shell commands ask, except read-only shell commands and saved prefixes.
-allow     – the default everywhere (form, config and agent).
-ask       – the same today; kept so older configs keep working.
-allow_session – like allow, but an approved action is remembered until the process exits.
+ask       – the default everywhere (form, config and agent): every one asks.
+allow_session – an approved action is remembered until the process exits.
+allow     – an approved action is remembered for good (write-allow.json in the bot's folder).
 
 Secret filtering
 ----------------
@@ -636,6 +636,85 @@ class ShellAllow:
             if not any(prefix_matches(p, seg) for p in saved):
                 return False
         return True
+
+
+# ── Approval rules ────────────────────────────────────────────────────
+
+_REGEX_KEY = re.compile(r"^/(.+)/(i?)$")
+
+
+def rule_matches(pattern: str, text: str) -> bool:
+    """A key of /regex/ or /regex/i is searched in *text*; any other key matches the start of it, up to a
+    word end (so ``shell git status`` covers ``shell git status -s`` but ``mkdir`` not ``mkdirx``)."""
+    regex = _REGEX_KEY.match(pattern)
+    if regex:
+        try:
+            return bool(re.search(regex.group(1), text, re.IGNORECASE if regex.group(2) else 0))
+        except re.error:
+            return False
+    return text == pattern or (text.startswith(pattern) and (pattern.endswith("/") or text[len(pattern)] in " /"))
+
+
+def check_rules(rules) -> str:
+    """Why *rules* is not a usable {pattern: true|false} map, or ''."""
+    if not isinstance(rules, dict):
+        return "approve has to be an object."
+    for pattern, allowed in rules.items():
+        if not isinstance(allowed, bool):
+            return f"approve: {pattern!r} has to be true or false."
+        regex = _REGEX_KEY.match(pattern)
+        if regex:
+            try:
+                re.compile(regex.group(1))
+            except re.error as error:
+                return f"approve: {pattern!r} is not a valid regular expression ({error})."
+    return ""
+
+
+class ApproveRules:
+    """What a tool call may do without asking, in the style of Copilot's autoApprove.
+
+    A call is described as text: ``shell git status``, ``write_file /home/me/proj/a.py`` or just the tool's
+    name. *config* maps keys (see rule_matches) to true (no question) or false (always ask, which wins).
+    What a user accepted is remembered as a prefix rule on top of that, for the session or for good.
+    """
+
+    def __init__(self, path: str, config: dict | None = None):
+        self.path = path
+        self.config = config or {}
+        self.session: list[str] = []
+        try:
+            with open(path) as fh:
+                data = json.load(fh)
+            self.saved = [p for p in data if isinstance(p, str)] if isinstance(data, list) else []
+        except (OSError, ValueError):
+            self.saved = []
+
+    def decide(self, texts: list[str], session: bool, saved: bool) -> bool | None:
+        """False when a rule says ask, True when every part is covered, else None (the user decides)."""
+        if not texts:
+            return None
+        if any(allowed is False and rule_matches(pattern, text)
+               for pattern, allowed in self.config.items() for text in texts):
+            return False
+        covering = [p for p, allowed in self.config.items() if allowed is True]
+        covering += (self.session if session else []) + (self.saved if saved else [])
+        return True if all(any(rule_matches(p, text) for p in covering) for text in texts) else None
+
+    def remember(self, prefix: str, persist: bool) -> None:
+        if not prefix:
+            return
+        if not persist:
+            self.session.append(prefix)
+            return
+        if prefix not in self.saved:
+            self.saved.append(prefix)
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+            with open(self.path, "w") as fh:
+                json.dump(self.saved, fh, indent=2)
+        except OSError:
+            self.session.append(prefix)  # still remembered until the agent stops
 
 
 # ── Context rules ─────────────────────────────────────────────────────

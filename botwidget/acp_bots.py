@@ -10,6 +10,7 @@ import sys
 
 from botwidget.acplink import PREFIX, _slug
 from botwidget.avatar import GROK_HEX, SUPPORTED_SHAPES
+from harness.agent.workspace import check_rules
 
 FACES = SUPPORTED_SHAPES
 COLORS = ("blue", "green", "violet", "orange", "red", "cyan", "magenta", "yellow")
@@ -28,8 +29,8 @@ def _secret(key: str) -> bool:
 def default_command() -> str:
     """The lean agent from this checkout, or the installed one when the checkout is not beside the package."""
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    if os.path.isdir(os.path.join(root, "harness")):
     quote = (lambda path: f'"{path}"') if os.name == "nt" else shlex.quote  # "Bot Widget.app" has a space
+    if os.path.isdir(os.path.join(root, "harness")):
         return f"env PYTHONPATH={quote(root)} {quote(sys.executable)} -m harness.agent"
     return f"{quote(sys.executable)} -m harness.agent"
 
@@ -38,7 +39,7 @@ def blank() -> dict:
     """What New bot shows before anything is typed. With no connection picked, the address is the local server."""
     return {"id": "", "stored_id": "", "name": "", "face": "nuage", "color": "blue", "connection": "",
             "base_url": DEFAULT_BASE, "model": DEFAULT_MODEL, "key_file": DEFAULT_KEY,
-            "command": "", "workspace": "", "workspace_permissions": "allow"}
+            "command": "", "workspace": "", "workspace_permissions": "ask"}
 
 
 def fields_of(bot: dict) -> dict:
@@ -47,7 +48,7 @@ def fields_of(bot: dict) -> dict:
     face_id = bot.get("id") or ""
     stored = face_id[len(PREFIX):] if str(face_id).startswith(PREFIX) else str(face_id)
     ws = env.get("HARNESS_WORKSPACE") or ""
-    ws_perm = env.get("HARNESS_WORKSPACE_PERMISSIONS") or "allow"
+    ws_perm = env.get("HARNESS_WORKSPACE_PERMISSIONS") or "ask"
     return {"id": face_id, "stored_id": stored, "name": bot.get("name") or "",
             "face": bot.get("face") or "", "color": bot.get("color") or "",
             "connection": bot.get("connection") or "",
@@ -59,13 +60,13 @@ def fields_of(bot: dict) -> dict:
 
 
 WS_PERMISSIONS = ("ask", "allow", "allow_session")
-# "allow" is the durable allowlist for reads/search/git-read; "allow_session"
-# remembers a granted write until the process exits.
+# "ask" asks every time, "allow_session" remembers an accepted action until the agent stops,
+# "allow" remembers it for good.
 WS_PERMISSION_ALIASES = {"allowlist": "allow", "allow-for-session": "allow_session"}
 
 
 def normalise_workspace_permission(value: str) -> str:
-    raw = (value or "allow").strip()
+    raw = (value or "ask").strip()
     return WS_PERMISSION_ALIASES.get(raw, raw)
 
 
@@ -131,6 +132,8 @@ def _entry(fields: dict, previous: dict | None, taken: set) -> tuple:
         env.pop("HARNESS_WORKSPACE_PERMISSIONS", None)
     command = str(fields.get("command") or (previous or {}).get("command") or "").strip() or default_command()
     entry = {"id": stored, "name": name, "command": command, "env": env, "key_file": key_file}
+    if (previous or {}).get("approve"):
+        entry["approve"] = previous["approve"]  # written by hand in widget.json, not in this form
     connection = str(fields.get("connection") or "").strip()
     if connection:
         entry["connection"] = connection
@@ -373,6 +376,10 @@ def _check_bots(rows) -> str:
         ws_perm = (env or {}).get("HARNESS_WORKSPACE_PERMISSIONS")
         if ws_perm and normalise_workspace_permission(ws_perm) not in WS_PERMISSIONS:
             return f"Bot {index} has an invalid workspace_permissions value."
+        if row.get("approve") is not None:
+            problem = check_rules(row["approve"])
+            if problem:
+                return f"Bot {index}: {problem}"
         face, color = row.get("face"), row.get("color")
         if face not in (None, "") and face not in FACES:
             return f"Bot {index} has a face the widget cannot draw."

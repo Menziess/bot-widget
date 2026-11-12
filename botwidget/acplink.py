@@ -86,6 +86,8 @@ def configured_bots() -> list[dict]:
             continue
         env = {key: str(value) for key, value in (entry.get("env") or {}).items()
                if str(key).startswith("HARNESS_") and str(key) != "HARNESS_MODEL_API_KEY"}
+        if isinstance(entry.get("approve"), dict):
+            env["HARNESS_APPROVE"] = json.dumps(entry["approve"])
         key_file = str(entry.get("key_file") or "")
         conn = links.get(str(entry.get("connection") or ""))
         if isinstance(conn, dict) and conn.get("enabled") is False:
@@ -292,8 +294,6 @@ class AcpLink:
             return
         asyncio.run_coroutine_threadsafe(self._client.cancel(), self._loop)
 
-    def close(self, wait: float = 0) -> None:
-        """Stop the agent process and the loop behind it. A widget that is quitting waits a moment for it, or the agent
     def interrupt(self) -> None:
         """Decline what waits for an answer and stop the turn, so a new message can go out."""
         with self._lock:
@@ -302,6 +302,8 @@ class AcpLink:
             self.decide(request_id, False)
         self.cancel()
 
+    def close(self, wait: float = 0) -> None:
+        """Stop the agent process and the loop behind it. A widget that is quitting waits a moment for it, or the agent
         outlives the widget."""
         if self._closed:
             return
@@ -404,6 +406,13 @@ class AcpLink:
         room = self.room()
         os.makedirs(room, exist_ok=True)
         env = self._environment()
+        path, problem = await asyncio.to_thread(login_path)
+        if path:
+            env.setdefault("PATH", path)
+        elif problem:
+            with self._lock:
+                self._note = (f"Could not read your shell's PATH ({problem}), so programs outside the system "
+                              "folders may not be found.")
         client = AcpClient(*split_command(self.target), cwd=room, env=env,
                            allow=self._ask, on_update=self._updated)
         await client.__aenter__()
@@ -414,13 +423,6 @@ class AcpLink:
         except BaseException:
             await client.__aexit__(None, None, None)  # a half-started agent still owns a process
             raise
-        path, problem = await asyncio.to_thread(login_path)
-        if path:
-            env.setdefault("PATH", path)
-        elif problem:
-            with self._lock:
-                self._note = (f"Could not read your shell's PATH ({problem}), so programs outside the system "
-                              "folders may not be found.")
         finally:
             with self._lock:
                 self._loading = False

@@ -193,10 +193,10 @@ def bot_form(state: dict) -> list:
     # Workspace
     ws = form.get("workspace") or ""
     blocks.append(_field("Workspace", "field/workspace", ws))
-    ws_perm = form.get("workspace_permissions") or "allow"
+    ws_perm = form.get("workspace_permissions") or "ask"
     ws_perms = ("ask", "allow", "allow_session")
     if ws_perm not in ws_perms:
-        ws_perm = "allow"
+        ws_perm = "ask"
     blocks.append(_button(f"Permission: {ws_perm}", "cycle/workspace_permission"))
     # Next to Save: an error at the top stayed off screen once the form had been scrolled down.
     if state.get("bot_error"):
