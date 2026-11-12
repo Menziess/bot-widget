@@ -297,6 +297,72 @@ class EditStore:
         return None
 
 
+# ── Exact-replace edit ────────────────────────────────────────────────
+
+def _miss_hint(text: str, old: str) -> str:
+    """Numbered lines closest to the first line of *old*, so the model need not re-read the file."""
+    from difflib import get_close_matches
+    wanted = next((ln.strip() for ln in old.splitlines() if ln.strip()), "")
+    lines = text.splitlines()
+    stripped = [ln.strip() for ln in lines]
+    if not wanted or not lines:
+        return ""
+    close = get_close_matches(wanted, stripped, n=3, cutoff=0.6)
+    if not close:
+        return ""
+    found = []
+    for hit in close:
+        at = stripped.index(hit)
+        found.append(f"{at + 1}: {lines[at]}")
+    return "\nClosest lines:\n" + "\n".join(found)
+
+
+def replace_once(text: str, old: str, new: str, replace_all: bool = False) -> str:
+    """Return *text* with *old* replaced by *new*. *old* must match exactly and, unless
+    *replace_all*, exactly once; otherwise ToolError says why."""
+    if not old:
+        raise ToolError("old_string is empty; use write_file to create or replace a whole file")
+    if old == new:
+        raise ToolError("old_string and new_string are identical; nothing to change")
+    count = text.count(old)
+    if count == 0:
+        raise ToolError("old_string was not found in the file (it must match exactly, including "
+                        "whitespace)." + _miss_hint(text, old))
+    if count > 1 and not replace_all:
+        raise ToolError(f"old_string matches {count} places; add surrounding lines so it matches once, "
+                        "or set replace_all")
+    return text.replace(old, new) if replace_all else text.replace(old, new, 1)
+
+
+def compute_edit(workspace: str, path: str, old: str, new: str, replace_all: bool = False) -> tuple[str, str, str]:
+    """Check an edit and return ``(real_path, before_text, after_text)`` without writing."""
+    real = _check_inside(workspace, path)
+    if _is_secret_path(real):
+        raise ToolError("that path is private and is not edited")
+    try:
+        with open(real, errors="replace") as fh:
+            before = fh.read()
+    except OSError as err:
+        raise ToolError(f"cannot read {real}: {err.strerror}") from err
+    return real, before, replace_once(before, old, new, replace_all)
+
+
+def _diff_text(path: str, before: str, after: str) -> str:
+    diff = unified_diff(before.splitlines(keepends=True), after.splitlines(keepends=True),
+                        fromfile=path, tofile=path, lineterm="")
+    return "\n".join(diff) or "(no diff)"
+
+
+def _ws_edit(workspace: str, path: str, old: str, new: str, replace_all: bool = False) -> str:
+    real, before, after = compute_edit(workspace, path, old, new, replace_all)
+    try:
+        with open(real, "w") as fh:
+            fh.write(after)
+    except OSError as err:
+        raise ToolError(f"cannot write {real}: {err.strerror}") from err
+    return f"Edited {real}.\n" + _diff_text(path, before, after)
+
+
 # ── Git (read-only) ───────────────────────────────────────────────────
 
 _GIT_WRITE_COMMANDS = (
@@ -454,6 +520,21 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
               },
               "required": ["path", "content"]},
              lambda a: _ws_write(workspace, a["path"], a["content"]),
+             writes=True),
+        Tool("edit",
+             "Replace one exact piece of text in a file inside the workspace. old_string must match the "
+             "file exactly and once (add surrounding lines to make it unique), or set replace_all. "
+             "Returns the diff. Needs user permission. Prefer this over write_file for changes to an existing file.",
+             {"type": "object",
+              "properties": {
+                  "path": {"type": "string"},
+                  "old_string": {"type": "string"},
+                  "new_string": {"type": "string"},
+                  "replace_all": {"type": "boolean"},
+              },
+              "required": ["path", "old_string", "new_string"]},
+             lambda a: _ws_edit(workspace, a["path"], a["old_string"], a["new_string"],
+                                bool(a.get("replace_all"))),
              writes=True),
         Tool("delete_file",
              "Delete one file inside the workspace. It moves to a trash folder, so it can be restored. Needs user permission.",

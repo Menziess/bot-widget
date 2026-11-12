@@ -399,7 +399,7 @@ class LeanAgent:
             remembered = (getattr(self.tools, "permission", "ask") == "allow_session"
                           and title in getattr(self.tools, "_session_allows", ()))
             # H7: show diff in bubble for write_file, respect diff_edit_mode
-            if name == "write_file" and not remembered:
+            if name in ("write_file", "edit") and not remembered:
                 result = await self._handle_write_file(session_id, call, arguments, store, title)
                 return result
             if not remembered:
@@ -421,21 +421,35 @@ class LeanAgent:
 
     async def _handle_write_file(self, session_id: str, call: dict, arguments: dict,
                                   store: SessionStore, title: str) -> str:
-        """H7: Show a diff in the bubble for write_file, then apply/reject/never."""
-        path = str(arguments.get("path", ""))
-        content = arguments.get("content", "")
+        """H7: Show a diff in the bubble for write_file and edit, then apply/reject/never."""
+        from harness.agent.workspace import _check_inside, compute_edit, _diff_text
 
-        # 1) Generate the diff text
-        diff_tool = self.tools.find("diff")
-        diff_text = ""
-        if diff_tool:
+        name = (call.get("function") or {}).get("name") or "write_file"
+        path = str(arguments.get("path", ""))
+        workspace = getattr(self.tools, "workspace", "") or ""
+
+        # 1) The proposed content and its diff. An edit that cannot apply fails here, before any prompt.
+        content = arguments.get("content", "")
+        if name == "edit":
             try:
-                diff_text = diff_tool.run({"path": path, "content": content})
-            except ToolError:
-                diff_text = "(cannot compute diff)"
+                _real, before, content = compute_edit(
+                    workspace, path, str(arguments.get("old_string", "")),
+                    str(arguments.get("new_string", "")), bool(arguments.get("replace_all")))
+            except ToolError as error:
+                await self._tool_call(session_id, call["id"], title, "completed", "failed")
+                return self._note_tool(store, name, f"failed: {error}", f"The tool failed: {error}")
+            diff_text = _diff_text(path, before, content)
+        else:
+            diff_text = ""
+            diff_tool = self.tools.find("diff")
+            if diff_tool:
+                try:
+                    diff_text = diff_tool.run({"path": path, "content": content})
+                except ToolError:
+                    diff_text = "(cannot compute diff)"
 
         # 2) Show the diff in the bubble (as a tool_call_update with kind="edit")
-        diff_title = f"write_file {path}"
+        diff_title = f"{name} {path}"
         await self._tool_call(session_id, call["id"], diff_title, "pending", "in_progress")
 
         # 3) Decide based on diff_edit_mode
@@ -444,23 +458,23 @@ class LeanAgent:
         if mode == "never":
             # Show diff as proposal, do not apply
             await self._tool_call(session_id, call["id"], diff_title, "completed", "completed")
-            return self._note_tool(store, "write_file", "skipped (diff mode: never)",
+            return self._note_tool(store, name, "skipped (diff mode: never)",
                                    f"Proposal for {path}:\n{diff_text}\n\nThe file was not changed (diff mode is 'never').")
 
         if mode == "ask":
             # Show diff, wait for user to apply or reject
             if not await self._ask_diff(session_id, call["id"], diff_title, diff_text):
                 await self._tool_call(session_id, call["id"], diff_title, "completed", "failed")
-                return self._note_tool(store, "write_file", "declined by the user; nothing was done",
+                return self._note_tool(store, name, "declined by the user; nothing was done",
                                        "The user declined this action. Do not try it another way.")
 
         # mode is "always" or user approved: apply the write
         # Record bytes before write (for undo)
         edit = getattr(self.tools, "_edit", None)
+        real_path = path
         if edit:
-            from harness.agent.workspace import _check_inside
             try:
-                real_path = _check_inside(self.tools.workspace, path) if self.tools.workspace else path
+                real_path = _check_inside(workspace, path) if workspace else path
                 # Read current on-disk content so undo restores it
                 try:
                     with open(real_path, "rb") as fh:
@@ -469,26 +483,26 @@ class LeanAgent:
                     existing = b""
                 edit.before(real_path, existing.decode(errors="replace"))
             except ToolError:
-                pass  # path is outside workspace or secret; _ws_write will refuse
+                pass  # path is outside workspace or secret; the tool will refuse
 
         # Now actually write
-        write_tool = self.tools.find("write_file")
+        write_tool = self.tools.find(name)
+        result = f"Wrote to {path}."
         if write_tool:
             try:
                 result = write_tool.run(arguments)
                 # Record on the undo stack for LIFO undo
                 if edit:
                     try:
-                        real_path = _check_inside(self.tools.workspace, path) if self.tools.workspace else path
-                        edit.record(real_path, content)
+                        edit.record(_check_inside(workspace, path) if workspace else path, content)
                     except ToolError:
                         pass
             except ToolError as error:
                 await self._tool_call(session_id, call["id"], diff_title, "completed", "failed")
-                return self._note_tool(store, "write_file", f"failed: {error}",
+                return self._note_tool(store, name, f"failed: {error}",
                                        f"The tool failed: {error}")
         await self._tool_call(session_id, call["id"], diff_title, "completed", "completed")
-        return self._note_tool(store, "write_file", "ok", f"Wrote to {path}.")
+        return self._note_tool(store, name, "ok", result if name == "edit" else f"Wrote to {path}.")
 
     async def _ask_diff(self, session_id: str, call_id: str, title: str, diff_text: str) -> bool:
         """Show a diff in the bubble and wait for Apply or Reject. Returns True if applied."""
