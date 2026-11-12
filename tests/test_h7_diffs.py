@@ -432,8 +432,8 @@ class H7HardDenies(unittest.IsolatedAsyncioTestCase):
             os.environ.pop("HARNESS_WORKSPACE", None)
             os.environ.pop("HARNESS_DIFF_PERMISSIONS", None)
 
-    async def test_out_of_workspace_blocked_in_always(self):
-        """Writing outside workspace is refused even in always mode."""
+    async def test_out_of_workspace_asks_even_in_always(self):
+        """Writing outside the workspace asks first, labelled, even in always mode; a decline writes nothing."""
         os.environ["HARNESS_WORKSPACE"] = self.workspace
         os.environ["HARNESS_DIFF_PERMISSIONS"] = "always"
         try:
@@ -457,8 +457,11 @@ class H7HardDenies(unittest.IsolatedAsyncioTestCase):
                     "arguments": json.dumps({"path": "/tmp/escape.txt", "content": "escaped\n"})
                 }
             }
+            conn._responses.append(("selected", "decline"))
             result = await agent._use_tool(session_id, store, call)
-            self.assertIn("outside", result.lower())
+            self.assertIn("(outside the workspace)", conn.permission_requests[0]["tool_call"].title)
+            self.assertIn("declined", result)
+            self.assertFalse(os.path.exists("/tmp/escape.txt"))
         finally:
             os.environ.pop("HARNESS_WORKSPACE", None)
             os.environ.pop("HARNESS_DIFF_PERMISSIONS", None)

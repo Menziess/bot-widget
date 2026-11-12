@@ -54,9 +54,7 @@ class EditTool(unittest.TestCase):
         self.assertIn("+2", out)
         self.assertEqual(open(path).read(), "one\n2\n")
 
-    def test_outside_workspace_and_secret_files_are_refused(self):
-        with self.assertRaises(ToolError):
-            self.tool.run({"path": "../x", "old_string": "a", "new_string": "b"})
+    def test_secret_files_are_refused(self):
         open(os.path.join(self.ws, ".env"), "w").write("K=v\n")
         with self.assertRaises(ToolError):
             self.tool.run({"path": ".env", "old_string": "v", "new_string": "w"})

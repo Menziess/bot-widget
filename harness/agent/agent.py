@@ -26,6 +26,7 @@ from harness.agent import context
 from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
+from harness.agent.workspace import _diff_text, _real_path, compute_edit, outside_workspace
 
 MAX_STEPS = 30  # default for HARNESS_MAX_STEPS: a tool loop that never settles must still end the turn
 LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the same arguments this many times in a row
@@ -446,6 +447,9 @@ class LeanAgent:
         if tool is None:
             return f"There is no tool called {name}."
         title = f"{name} {arguments}"
+        if name in ("write_file", "edit", "delete_file") and outside_workspace(
+                getattr(self.tools, "workspace", "") or "", str(arguments.get("path") or "")):
+            title += " (outside the workspace)"
         await self._tool_call(session_id, call["id"], title, "pending", "in_progress")
         if tool.writes:
             remembered = (getattr(self.tools, "permission", "ask") == "allow_session"
@@ -481,8 +485,6 @@ class LeanAgent:
     async def _handle_write_file(self, session_id: str, call: dict, arguments: dict,
                                   store: SessionStore, title: str) -> str:
         """H7: Show a diff in the bubble for write_file and edit, then apply/reject/never."""
-        from harness.agent.workspace import _check_inside, compute_edit, _diff_text
-
         name = (call.get("function") or {}).get("name") or "write_file"
         path = str(arguments.get("path", ""))
         workspace = getattr(self.tools, "workspace", "") or ""
@@ -508,11 +510,12 @@ class LeanAgent:
                     diff_text = "(cannot compute diff)"
 
         # 2) Show the diff in the bubble (as a tool_call_update with kind="edit")
-        diff_title = f"{name} {path}"
+        outside = outside_workspace(workspace, path)
+        diff_title = f"{name} {path}" + (" (outside the workspace)" if outside else "")
         await self._tool_call(session_id, call["id"], diff_title, "pending", "in_progress")
 
         # 3) Decide based on diff_edit_mode
-        mode = self.diff_edit_mode
+        mode = "ask" if outside and self.diff_edit_mode == "always" else self.diff_edit_mode
 
         if mode == "never":
             # Show diff as proposal, do not apply
@@ -533,7 +536,7 @@ class LeanAgent:
         real_path = path
         if edit:
             try:
-                real_path = _check_inside(workspace, path) if workspace else path
+                real_path = _real_path(workspace, path) if workspace else path
                 # Read current on-disk content so undo restores it
                 try:
                     with open(real_path, "rb") as fh:
@@ -553,7 +556,7 @@ class LeanAgent:
                 # Record on the undo stack for LIFO undo
                 if edit:
                     try:
-                        edit.record(_check_inside(workspace, path) if workspace else path, content)
+                        edit.record(_real_path(workspace, path) if workspace else path, content)
                     except ToolError:
                         pass
             except ToolError as error:

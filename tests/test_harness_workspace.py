@@ -17,7 +17,7 @@ from harness.agent.workspace import (
     search_files,
     shell_run,
     workspace_builtins,
-    _check_inside,
+    outside_workspace,
     _git_run,
     _is_secret_path,
     _is_secret_dir,
@@ -63,53 +63,16 @@ class Containment(unittest.TestCase):
         self.addCleanup(os.unlink, path)
         self.assertIsNone(resolve_workspace(path))
 
-    def test_check_inside_passes_for_path_inside(self):
-        folder = tempfile.mkdtemp()
+    def test_outside_workspace_sees_dotdot_and_symlinks(self):
+        folder = os.path.realpath(tempfile.mkdtemp())
+        other = os.path.realpath(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, folder, True)
-        target = os.path.join(folder, "sub", "a.txt")
-        _write(target, "hi")
-        result = _check_inside(folder, "sub/a.txt")
-        self.assertEqual(result, os.path.realpath(target))
-
-    def test_check_inside_rejects_path_outside(self):
-        folder = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, folder, True)
-        other = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, other, True)
-        target = os.path.join(other, "x.txt")
-        _write(target)
-        with self.assertRaises(Exception) as caught:
-            _check_inside(folder, target)
-        self.assertIn("outside", str(caught.exception).lower())
-
-    def test_path_traversal_dotdot_is_refused(self):
-        folder = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, folder, True)
-        inside = os.path.join(folder, "sub")
-        os.makedirs(inside)
-        outside_dir = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, outside_dir, True)
-        outside = os.path.join(outside_dir, "secret.txt")
-        _write(outside)
-        with self.assertRaises(Exception):
-            _check_inside(folder, os.path.join(inside, "..", os.pardir, "secret.txt"))
-
-
-# ── Symlink escape ────────────────────────────────────────────────────
-
-class SymlinkEscape(unittest.TestCase):
-    def test_symlink_outside_is_refused(self):
-        folder = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, folder, True)
-        outside = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, outside, True)
-        _write(os.path.join(outside, "secret.txt"))
-        # Create a symlink inside the workspace pointing outside.
-        link = os.path.join(folder, "link")
-        os.symlink(outside, link)
-        # Accessing through the symlink should still fail containment.
-        with self.assertRaises(Exception):
-            _check_inside(folder, "link/secret.txt")
+        os.symlink(other, os.path.join(folder, "link"))
+        self.assertFalse(outside_workspace(folder, "sub/a.txt"))
+        self.assertTrue(outside_workspace(folder, os.path.join(other, "x.txt")))
+        self.assertTrue(outside_workspace(folder, "../x.txt"))
+        self.assertTrue(outside_workspace(folder, "link/x.txt"))
 
 
 # ── Secrets ───────────────────────────────────────────────────────────
@@ -266,7 +229,7 @@ class Delete(unittest.TestCase):
             self.assertFalse(os.path.exists(os.path.join(folder, "a.txt")))
             with open(os.path.join(trash, os.listdir(trash)[0])) as fh:
                 self.assertEqual(fh.read(), "keep me")
-            for bad in ("sub", "../outside.txt", "missing.txt"):
+            for bad in ("sub", "missing.txt"):
                 with self.assertRaises(Exception):
                     workspace._ws_delete(folder, bad)
 
@@ -280,11 +243,23 @@ class EditWrite(unittest.TestCase):
         with open(os.path.join(folder, "note.txt")) as fh:
             self.assertEqual(fh.read(), "hello")
 
-    def test_write_outside_is_refused(self):
-        folder = tempfile.mkdtemp()
+    def test_reading_and_listing_work_in_any_folder_but_not_in_private_ones(self):
+        folder, other = tempfile.mkdtemp(), tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)
+        self.addCleanup(shutil.rmtree, other, True)
+        _write(os.path.join(other, "a.txt"), "hoi")
+        os.mkdir(os.path.join(other, ".ssh"))
+        self.assertEqual(_ws_read(folder, os.path.join(other, "a.txt")), "hoi")
+        self.assertIn("a.txt", _ws_list(folder, other))
         with self.assertRaises(Exception):
-            _ws_write(folder, "../outside.txt", "x")
+            _ws_list(folder, os.path.join(other, ".ssh"))
+
+    def test_write_outside_works_the_agent_asks_first(self):
+        folder, other = tempfile.mkdtemp(), tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        self.addCleanup(shutil.rmtree, other, True)
+        _ws_write(folder, os.path.join(other, "x.txt"), "x")
+        self.assertEqual(open(os.path.join(other, "x.txt")).read(), "x")
 
     def test_write_secret_is_refused(self):
         folder = tempfile.mkdtemp()

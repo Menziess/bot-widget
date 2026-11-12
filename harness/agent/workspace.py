@@ -1,7 +1,8 @@
 """Workspace-scoped file access for harness bots.
 
-Every tool call is scoped to the workspace folder. When the workspace is empty
-(unclosed string), no filesystem tools are offered at all.
+Reads, listings, writes and read-only shell commands may use any folder, as in OpenCode, except private paths.
+A write outside the workspace is labelled as such when it asks. When the workspace is empty (unclosed string), no filesystem tools are offered
+at all.
 
 Workspace
 ---------
@@ -10,7 +11,7 @@ else the home folder.
 
 Permission modes
 ----------------
-Reads, search and git-read inside the workspace are free in every mode. Writes (write_file, edit,
+Reads, search and git-read are free in every mode. Writes (write_file, edit,
 delete_file) and shell commands ask, except read-only shell commands and saved prefixes.
 allow     – the default everywhere (form, config and agent).
 ask       – the same today; kept so older configs keep working.
@@ -25,8 +26,8 @@ These are never read, listed, or entered during search.
 
 Containment
 -----------
-The workspace path is expanded and realpath'ed.  The result must be a prefix
-of the target's realpath, which blocks ``..`` and symlink escapes.
+The workspace path is expanded and realpath'ed.  A target outside it, also through ``..`` or a symlink, is
+labelled "(outside the workspace)" in the question for a write.
 
 Git tools
 ---------
@@ -97,21 +98,6 @@ def _contains(workspace: str, target: str) -> bool:
         return os.path.commonpath([workspace, target]) == workspace
     except ValueError:  # another drive on Windows
         return False
-
-
-def _check_inside(workspace: str, target_path: str) -> str:
-    """Resolve *target_path*, check it is inside *workspace*, and return the real path.
-
-    Relative paths are resolved against *workspace*.  Raises ToolError
-    when the resolved path falls outside the workspace.
-    """
-    # Resolve relative paths against the workspace directory.
-    if not os.path.isabs(target_path):
-        target_path = os.path.join(workspace, target_path)
-    real = _resolve(target_path)
-    if not _contains(workspace, real):
-        raise ToolError(f"path is outside the workspace: {target_path}")
-    return real
 
 
 # ── Secrets ───────────────────────────────────────────────────────────
@@ -206,14 +192,20 @@ def search_files(workspace: str, pattern: str, limit: int = 100) -> str:
 MAX_READ_CHARS = 5_000_000  # one read never loads more than this; large answers spill to a file
 
 
+def _real_path(workspace: str, path: str) -> str:
+    """The real path of a tool's path argument: relative to the workspace, any folder."""
+    path = os.path.expanduser(path)
+    return _resolve(path if os.path.isabs(path) else os.path.join(workspace, path))
+
+
+def outside_workspace(workspace: str, path: str) -> bool:
+    """A write there asks first, with a note that it leaves the workspace."""
+    return bool(workspace and path) and not _contains(workspace, _real_path(workspace, path))
+
+
 def _ws_read(workspace: str, path: str, offset: int = 0, limit: int = 0) -> str:
-    """The file's text. offset and limit are line numbers (offset counts from 1) for reading part of it.
-    The folder where large tool output spills is readable too."""
-    from harness.agent import spill
-    target = path if os.path.isabs(path) else os.path.join(workspace, path)
-    real = _resolve(target)
-    if not spill.in_spill_dir(real):
-        real = _check_inside(workspace, path)
+    """The file's text. offset and limit are line numbers (offset counts from 1) for reading part of it."""
+    real = _real_path(workspace, path)
     if _is_secret_path(real):
         raise ToolError("that path is private and is not read")
     try:
@@ -232,7 +224,9 @@ def _ws_read(workspace: str, path: str, offset: int = 0, limit: int = 0) -> str:
 
 
 def _ws_list(workspace: str, path: str = ".") -> str:
-    real = _check_inside(workspace, path)
+    real = _real_path(workspace, path)
+    if _is_secret_path(real):
+        raise ToolError("that path is private and is not listed")
     try:
         names = sorted(
             n for n in os.listdir(real)
@@ -244,7 +238,7 @@ def _ws_list(workspace: str, path: str = ".") -> str:
 
 
 def _ws_write(workspace: str, path: str, content: str) -> str:
-    real = _check_inside(workspace, path)
+    real = _real_path(workspace, path)
     if _is_secret_path(real):
         raise ToolError("that path is private and is not written")
     try:
@@ -258,7 +252,7 @@ def _ws_write(workspace: str, path: str, content: str) -> str:
 
 
 def _ws_delete(workspace: str, path: str) -> str:
-    real = _check_inside(workspace, path)
+    real = _real_path(workspace, path)
     if _is_secret_path(real):
         raise ToolError("that path is private and is not deleted")
     return trash_file(real)
@@ -357,7 +351,7 @@ def replace_once(text: str, old: str, new: str, replace_all: bool = False) -> st
 
 def compute_edit(workspace: str, path: str, old: str, new: str, replace_all: bool = False) -> tuple[str, str, str]:
     """Check an edit and return ``(real_path, before_text, after_text)`` without writing."""
-    real = _check_inside(workspace, path)
+    real = _real_path(workspace, path)
     if _is_secret_path(real):
         raise ToolError("that path is private and is not edited")
     try:
@@ -524,8 +518,7 @@ def shell_segments(command: str) -> list[list[str]] | None:
     return segments
 
 
-def _args_stay_inside(workspace: str, args: list[str]) -> bool:
-    from harness.agent import spill
+def _args_not_private(args: list[str]) -> bool:
     for arg in args:
         if "$" in arg:
             return False
@@ -539,8 +532,6 @@ def _args_stay_inside(workspace: str, args: list[str]) -> bool:
         if any(_is_secret_dir(part) for part in arg.replace("\\", "/").split("/")):
             return False
         if arg.startswith(("/", "~")) or ".." in arg.split("/"):
-            if not _contains(workspace, _resolve(arg)) and not spill.in_spill_dir(_resolve(arg)):
-                return False
             if _is_secret_path(_resolve(arg)):
                 return False
     return True
@@ -553,14 +544,14 @@ def _segment_read_only(workspace: str, tokens: list[str]) -> bool:
             return False
         if any(a == "-c" or a.startswith(("--output", "--ext-diff", "--exec-path", "--open-files")) for a in args):
             return False
-        return _args_stay_inside(workspace, args[1:])
+        return _args_not_private(args[1:])
     if name not in READONLY_COMMANDS:
         return False
     if name == "find" and any(a in _FIND_WRITES for a in args):
         return False
     if name in ("rg", "grep") and any(a.startswith(("--pre", "--hostname-bin")) for a in args):
         return False
-    return _args_stay_inside(workspace, args)
+    return _args_not_private(args)
 
 
 def is_read_only_command(workspace: str, command: str) -> bool:
@@ -795,7 +786,7 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
              {"type": "object",
               "properties": {"path": {"type": "string"}},
               "required": ["path"]},
-             lambda a: edit.undo(_check_inside(workspace, a["path"]))),
+             lambda a: edit.undo(_real_path(workspace, a["path"]))),
         # ── diff (read-only, before write) ──
         Tool("diff",
              "Show a unified diff between the current file and *content*. Read-only preview.",
@@ -844,7 +835,7 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
 
 
 def _ws_diff(workspace: str, path: str, content: str) -> str:
-    real = _check_inside(workspace, path)
+    real = _real_path(workspace, path)
     if _is_secret_path(real):
         raise ToolError("that path is private")
     try:

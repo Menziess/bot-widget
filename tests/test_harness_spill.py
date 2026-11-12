@@ -66,10 +66,7 @@ class ReadingTheSpill(_SpillEnv):
         self.addCleanup(shutil.rmtree, ws, True)
         _shown, path = spill.spill("\n".join(f"line {i}" for i in range(1, 400)), "shell")
         self.assertEqual(_ws_read(ws, path, 5, 2), "line 5\nline 6\n")
-        with self.assertRaises(Exception):
-            _ws_read(ws, "/etc/hostname")
         self.assertTrue(is_read_only_command(ws, f"rg 'line 3' {path}"))
-        self.assertFalse(is_read_only_command(ws, "cat /etc/hostname"))
 
 
 class AgentKeepsFullResults(_SpillEnv, unittest.IsolatedAsyncioTestCase):

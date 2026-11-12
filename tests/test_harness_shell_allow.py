@@ -38,12 +38,12 @@ class ReadOnlyClassifier(unittest.TestCase):
                     "ls\nrm a", "cat 'unbalanced", ""):
             self.assertFalse(self.free(cmd), repr(cmd))
 
-    def test_secrets_and_paths_outside_the_workspace_ask(self):
-        for cmd in ("cat .env", "cat .env.production", "cat .ssh/id_rsa", "cat ~/.ssh/id_rsa", "cat /etc/passwd",
-                    "ls ../..", "cat .e*", "cat $HOME/x"):
+    def test_secrets_ask_and_paths_outside_the_workspace_are_read_free(self):
+        for cmd in ("cat .env", "cat .env.production", "cat .ssh/id_rsa", "cat ~/.ssh/id_rsa", "cat .e*",
+                    "cat $HOME/x"):
             self.assertFalse(self.free(cmd), cmd)
-        self.assertTrue(self.free("cat .env.example"))
-        self.assertTrue(self.free(f"cat {self.ws}/a.txt"))
+        for cmd in ("cat /etc/passwd", "ls ../..", "cat .env.example", f"cat {self.ws}/a.txt"):
+            self.assertTrue(self.free(cmd), cmd)
 
     def test_segments(self):
         self.assertEqual(shell_segments("ls -l | wc -l"), [["ls", "-l"], ["wc", "-l"]])
