@@ -409,29 +409,21 @@ class LinkGrokBotsTest(unittest.TestCase):
         self.assertEqual(config.widget_config().get("grok_relay"), "bw-fixed-topic")
         self.assertEqual(grok_relay.channel(), "bw-fixed-topic")
 
-    def test_connections_page_shows_link_button_when_unlinked(self) -> None:
+    def test_connections_page_offers_link_or_copy(self) -> None:
         from botwidget import menu_pages
-        state = {
-            "openbot": False, "automation_ready": False, "gbot": False, "grok": "",
-            "wanted": (), "grok_relay": "",
-        }
-        blocks = menu_pages.connections(state)
-        commands = [b.get("command") for b in blocks if isinstance(b, dict) and b.get("command")]
-        self.assertIn("action/link-grok", commands)
-        self.assertNotIn("action/copy-grok-prompt", commands)
-
-    def test_connections_page_shows_copy_when_linked(self) -> None:
-        from botwidget import menu_pages
-        state = {
-            "openbot": False, "automation_ready": False, "gbot": True, "grok": "ok",
-            "wanted": (), "grok_relay": "bw-linked",
-        }
-        blocks = menu_pages.connections(state)
-        blob = json.dumps(blocks)
-        self.assertIn("bw-linked", blob)
-        commands = [b.get("command") for b in blocks if isinstance(b, dict) and b.get("command")]
-        self.assertIn("action/copy-grok-prompt", commands)
-        self.assertNotIn("action/link-grok", commands)
+        cases = (
+            ({"gbot": False, "grok": "", "grok_relay": ""}, "action/link-grok", "action/copy-grok-prompt", ""),
+            ({"gbot": True, "grok": "ok", "grok_relay": "bw-linked"}, "action/copy-grok-prompt", "action/link-grok", "bw-linked"),
+        )
+        for extra, present, absent, named in cases:
+            with self.subTest(present=present):
+                state = {"openbot": False, "automation_ready": False, "wanted": (), **extra}
+                blocks = menu_pages.connections(state)
+                commands = [b.get("command") for b in blocks if isinstance(b, dict) and b.get("command")]
+                self.assertIn(present, commands)
+                self.assertNotIn(absent, commands)
+                if named:
+                    self.assertIn(named, json.dumps(blocks))
 
     def test_menu_command_link_grok(self) -> None:
         from botwidget.qt_ui.faces import Faces

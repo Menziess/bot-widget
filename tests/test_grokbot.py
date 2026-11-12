@@ -476,15 +476,12 @@ class Sending(FakeGbot):
 class Target(unittest.TestCase):
     """Should talk to the bot of widget.json, and to General without one."""
 
-    def test_the_default_is_general(self):
+    def test_the_bot_comes_from_widget_json_or_general(self):
         from unittest import mock
-        with mock.patch.object(grokbot, "widget_config", return_value={}):
-            self.assertEqual(grokbot.target(), "General")
-
-    def test_widget_json_names_the_bot(self):
-        from unittest import mock
-        with mock.patch.object(grokbot, "widget_config", return_value={"grokbot_target": "Team"}):
-            self.assertEqual(grokbot.target(), "Team")
+        for saved, expected in (({}, "General"), ({"grokbot_target": "Team"}, "Team")):
+            with self.subTest(expected=expected):
+                with mock.patch.object(grokbot, "widget_config", return_value=saved):
+                    self.assertEqual(grokbot.target(), expected)
 
     def test_the_target_is_kept_in_widget_json(self):
         folder = tempfile.mkdtemp()
