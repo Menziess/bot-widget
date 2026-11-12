@@ -138,6 +138,14 @@ def set_draft(agent_id: str, text: str):
 _config_read: list = [None, {}]
 
 
+def named_text(data: dict, key: str, default: str) -> str:
+    """A non-empty string under key, or the default."""
+    configured = data.get(key)
+    if isinstance(configured, str) and configured.strip():
+        return configured.strip()
+    return default
+
+
 def widget_config() -> dict:
     """widget.json, or empty if the file is missing or broken."""
     # Read on every animation frame by some callers, so only again when the file changed.
