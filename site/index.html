@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bot Widget — a face for your bot</title>
-<meta name="description" content="A tiny animated desktop face for OpenBot and Grok Bot. Always within reach, while the rest of the screen stays yours.">
+<meta name="description" content="A tiny animated desktop face for your own AI bot, with OpenBot and Grok Bot as options. Always within reach, while the rest of the screen stays yours.">
 <meta property="og:title" content="Bot Widget — a face for your bot">
-<meta property="og:description" content="A tiny animated desktop face for OpenBot and Grok Bot. Always within reach, while the rest of the screen stays yours.">
+<meta property="og:description" content="A tiny animated desktop face for your own AI bot, with OpenBot and Grok Bot as options. Always within reach, while the rest of the screen stays yours.">
 <meta name="theme-color" content="#f6f7fb">
 <link rel="icon" href="face.svg">
 <style>
@@ -133,7 +133,13 @@
 
   <details>
     <summary>What it needs</summary>
-    <p>Bot Widget is the face, not the brain. It talks to <a href="https://openbot.run/">OpenBot</a> or <a href="https://x.ai/bot">Grok Bot</a>. Without either, the face tells you so and points you to both.</p>
+    <p>Bot Widget is the face, not the brain. The brain is a bot of your own: an agent program on your computer that Bot Widget starts and talks to over <a href="https://agentclientprotocol.com/">ACP</a>, the Agent Client Protocol. Bot Widget comes with a small agent of its own that reads files, runs shell commands and keeps notes. It always asks before it writes, edits or deletes a file or runs a command that is not read-only. Any other ACP agent works the same way.</p>
+    <p>The agent needs a model to think with. Any server that speaks the OpenAI chat API will do, on your own computer or in the cloud. The easiest way to start is <a href="https://github.com/ggml-org/llama.cpp">llama.cpp</a>, which runs a model entirely on your own machine:</p>
+    <pre>llama-server -m ~/models/qwen2.5-7b-instruct-q4_k_m.gguf --port 8080 --alias local \
+  --ctx-size 32768 --api-key "$(cat ~/.config/llm/key)"</pre>
+    <p>Then type <strong>/bots</strong> in the bubble and choose <strong>New bot</strong>. The form is already filled in for this server: address <code>http://127.0.0.1:8080/v1</code>, model <code>local</code>, key file <code>~/.config/llm/key</code>. The file holds the key, and the widget never stores the key itself. Give the bot a name and a face, save, and click it to talk.</p>
+    <p class="hint">Rather use a hosted model? Change the address, model name and key file in the same form.</p>
+    <p>Already use <a href="https://openbot.run/">OpenBot</a> or <a href="https://x.ai/bot">Grok Bot</a>? Bot Widget shows their bots too. That is a bonus, not a requirement.</p>
   </details>
 
   <details id="install">
@@ -170,7 +176,7 @@ botwidget</pre>
   <details>
     <summary>FAQ</summary>
     <p><strong>Is it free?</strong> Free under the MIT license, and the source is on GitHub.</p>
-    <p><strong>What does it need?</strong> OpenBot or Grok Bot on your computer. Without either, the face tells you so and points you to both.</p>
+    <p><strong>What does it need?</strong> A bot of your own, such as the agent that comes with it and a model from llama.cpp or a hosted service. OpenBot and Grok Bot also work, but they are optional.</p>
     <p><strong>Which systems?</strong> macOS, Windows and Linux.</p>
   </details>
 
