@@ -7,7 +7,7 @@ from botwidget import config
 
 
 class UnlinkedHint(unittest.TestCase):
-    """The placeholder bot says it needs OpenBot or Grok Bot once; a bot with a backend of its own never does."""
+    """The placeholder bot says it has no bot yet once; a bot with a backend of its own never does."""
 
     @classmethod
     def setUpClass(cls):

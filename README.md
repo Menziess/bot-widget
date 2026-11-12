@@ -1,6 +1,6 @@
 # Bot widget
 
-An animated bot face that floats on the desktop, shows the latest answer in a speech bubble, and opens a chat window on click. It talks to the local OpenBot.
+An animated bot face that floats on the desktop, shows the latest answer in a speech bubble, and opens a chat window on click. It talks to a bot of your own over ACP, such as the agent that comes with it, and to OpenBot or Grok Bot when you use them (see A bot of your own).
 
 ## Install
 
@@ -85,7 +85,7 @@ botwidget
 - The face goes back to where you put it when its screen comes back
 - On macOS the face and its bubble are on every desktop. With Settings, Show on all desktops off the face stays on one, and Control+Option+Space on another desktop brings it there, and a window cannot be dragged into a full-screen app's desktop
 
-The placeholder bot needs OpenBot or Grok Bot. Without either, its face says so once and links to both. A bot with a backend of its own, like the harness, never says it.
+The placeholder bot is the face you get before you have added a bot. Without OpenBot or Grok Bot, it says so once: type /bots and choose New bot to add one of your own, or install either app. It links to both apps. A bot with a backend of its own, like the harness, never says it.
 
 ## Grok Bot
 

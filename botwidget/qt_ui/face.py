@@ -1429,8 +1429,8 @@ class FaceWindow(QWidget):
         self.bubble.show_blocks(conversation_blocks([{"role": "bot", "text": text}], self.bot_name), "say")
 
     def _hint_blocks(self) -> list:
-        text = ("Hey! I live inside **OpenBot** or **Grok Bot**, and I can't find either on this computer. "
-                "Install one and I'll come alive.")
+        text = ("Hey! I'm a face without a bot yet. Type **/bots** and choose **New bot** to add one of your own, "
+                "or install **OpenBot** or **Grok Bot** and I'll come alive.")
         return conversation_blocks([{"role": "bot", "text": text}], self.bot_name)
 
     def _sync_bubble(self, chat: dict, force: bool = False, replace_menu: bool = False, show_field: bool = False):
@@ -1481,7 +1481,7 @@ class FaceWindow(QWidget):
             self._menu_page = None
         if self.bubble._list_only and self.bubble.isVisible() and not replace_menu:
             return  # the right-click menu is open: a busy bot's thinking cloud must not replace it
-        # Only the placeholder bot needs OpenBot or Grok Bot, and only the first time is it told so: a bot that has
+        # Only the placeholder bot has no bot behind it, and only the first time is it told so: a bot that has
         # a backend of its own (the harness, say) works without either.
         if not self.link and not (openbot_installed() or gbot_installed()) and not (
                 widget_config().get("unlinked_hint_shown") is True and not self._hint_shown):
