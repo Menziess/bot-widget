@@ -2,27 +2,23 @@
 
 import json
 import os
-import signal
 import subprocess
 import threading
 import time
-from subprocess import CompletedProcess
-from typing import NamedTuple
 
 from botwidget import openbot
+from botwidget.cli_json import (
+    KILL_GRACE_S,
+    NOTE_CHARS,
+    Result,
+    first_line_note as _note,
+    json_object as _data,
+    stop_group as _stop_group,
+)
 from botwidget.config import widget_config
 
 PREFIX = "grok:"
 DEFAULT_TARGET = "General"
-# A long note helps nobody; the first words are enough.
-NOTE_CHARS = 200
-
-
-class Result(NamedTuple):
-    """What gbot said: its exit code, the JSON it printed and a note in plain words."""
-    rc: int | None
-    data: dict | None
-    note: str
 
 
 def face_id(target: str) -> str:
@@ -89,53 +85,6 @@ def target() -> str:
     if isinstance(configured, str) and configured.strip():
         return configured.strip()
     return DEFAULT_TARGET
-
-
-def _data(stdout: str) -> dict | None:
-    """The first line of stdout that is a JSON object."""
-    for line in (stdout or "").splitlines():
-        line = line.strip()
-        if not line.startswith("{"):
-            continue
-        try:
-            value = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(value, dict):
-            return value
-    return None
-
-
-def _note(done: CompletedProcess) -> str:
-    """The first line gbot complained about, in plain words."""
-    if done.returncode == 0:
-        return ""
-    for text in (done.stderr, done.stdout):
-        for line in (text or "").splitlines():
-            if line.strip():
-                return line.strip()[:NOTE_CHARS]
-    return ""
-
-
-KILL_GRACE_S = 2
-
-
-def _stop_group(proc):
-    """Stop gbot and everything it started (node, gbot.mjs): TERM first, KILL when that is not enough."""
-    if not hasattr(os, "killpg"):
-        # Windows has no process groups to signal; stop at least gbot itself.
-        proc.kill()
-        return
-    for sig in (signal.SIGTERM, signal.SIGKILL):
-        try:
-            os.killpg(proc.pid, sig)
-        except (ProcessLookupError, PermissionError, OSError):
-            return
-        try:
-            proc.wait(timeout=KILL_GRACE_S)
-            return
-        except subprocess.TimeoutExpired:
-            continue
 
 
 def run(args: list, timeout: float, wake: bool = False) -> Result:

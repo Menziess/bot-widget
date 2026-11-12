@@ -258,17 +258,16 @@ class TestBuildNoModel(unittest.TestCase):
 class TestBackgroundExtract(unittest.TestCase):
     """Direct tests for _build_background helper."""
 
-    def test_extract_preserves_token(self):
-        """CAPS-LIKE tokens are kept."""
-        older = [{"role": "user", "text": "The project code is ALPHA-99."}]
-        result = _build_background(older)
-        self.assertIn("ALPHA-99", result)
-
-    def test_extract_preserves_remember_lines(self):
-        """Lines mentioning remember/keep are kept."""
-        older = [{"role": "user", "text": "Please remember this: the port is 8080."}]
-        result = _build_background(older)
-        self.assertIn("8080", result)
+    def test_extract_keeps_tokens_and_remember_lines(self):
+        """Should keep CAPS-LIKE tokens and lines that say remember."""
+        cases = (
+            ("The project code is ALPHA-99.", "ALPHA-99"),
+            ("Please remember this: the port is 8080.", "8080"),
+        )
+        for text, needle in cases:
+            with self.subTest(needle=needle):
+                result = _build_background([{"role": "user", "text": text}])
+                self.assertIn(needle, result)
 
     def test_empty_older_returns_empty(self):
         """Empty older list → empty string."""

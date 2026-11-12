@@ -7504,17 +7504,17 @@ class BubbleTextDocument(unittest.TestCase):
                 hrefs.append(fmt.anchorHref())
         return label, hrefs
 
-    def test_an_http_link_becomes_a_clickable_anchor(self):
-        doc, _panels = self.document([{"role": "bot", "text": "see [docs](https://example.com/x)"}])
-        label, hrefs = self._links(doc)
-        self.assertEqual(set(hrefs), {"https://example.com/x"})
-        self.assertEqual(label, "docs", "only the label is the link, the host stays text")
-
-    def test_a_bare_https_url_becomes_an_anchor(self):
-        doc, _panels = self.document([{"role": "bot", "text": "read https://example.com/x now"}])
-        label, hrefs = self._links(doc)
-        self.assertEqual(set(hrefs), {"https://example.com/x"})
-        self.assertEqual(label, "https://example.com/x", "the url is its own label")
+    def test_an_http_link_and_a_bare_url_become_anchors(self):
+        cases = (
+            ("see [docs](https://example.com/x)", "docs", "only the label is the link, the host stays text"),
+            ("read https://example.com/x now", "https://example.com/x", "the url is its own label"),
+        )
+        for text, label, why in cases:
+            with self.subTest(text=text):
+                doc, _panels = self.document([{"role": "bot", "text": text}])
+                got, hrefs = self._links(doc)
+                self.assertEqual(set(hrefs), {"https://example.com/x"})
+                self.assertEqual(got, label, why)
 
     def test_a_markdown_link_with_parentheses_is_one_anchor(self):
         url = "https://en.wikipedia.org/wiki/Foo_(bar)"
@@ -7611,24 +7611,9 @@ class Sending(unittest.TestCase):
             self.assertIsNone(box.current())
             self.assertEqual(server.seen[0]["clientMessageId"], server.seen[1]["clientMessageId"])
 
-    def test_a_200_with_an_empty_body_is_a_refusal(self):
-        for body in (b"", b"   \n"):
-            with self.subTest(body=body):
-                with _FlakyApi([200], bodies=[body]):
-                    result = openbot.api_post("/v1/agents/me/messages",
-                                              {"text": "hi", "clientMessageId": "abc"})
-                    self.assertFalse(result.ok)
-                    self.assertEqual(result.status, 200)
-                    self.assertEqual(result.error, "empty answer")
-                    self.assertFalse(result.retryable, "an empty body will not become JSON")
-                    box = delivery.Outbox()
-                    box.add("hi", "abc")
-                    self.assertIsNone(box.failed("abc", result.retryable), "the message is dropped")
-                    self.assertIsNone(box.current())
-
-    def test_a_200_body_of_only_byte_order_marks_is_a_refusal(self):
+    def test_a_200_with_no_words_is_a_refusal(self):
         one, two = b"\xef\xbb\xbf", b"\xef\xbb\xbf\xef\xbb\xbf"
-        for body in (one, one + b" \n", b" " + one + b"\t", two, two + b" \n",
+        for body in (b"", b"   \n", one, one + b" \n", b" " + one + b"\t", two, two + b" \n",
                      one + b" " + one, two + one + b"\n"):
             with self.subTest(body=body):
                 with _FlakyApi([200], bodies=[body]):
@@ -7637,7 +7622,7 @@ class Sending(unittest.TestCase):
                     self.assertFalse(result.ok)
                     self.assertEqual(result.status, 200)
                     self.assertEqual(result.error, "empty answer")
-                    self.assertFalse(result.retryable, "a byte-order mark is not content")
+                    self.assertFalse(result.retryable, "a body with no words will not become an answer")
                     box = delivery.Outbox()
                     box.add("hi", "abc")
                     self.assertIsNone(box.failed("abc", result.retryable), "the message is dropped")
