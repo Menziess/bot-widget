@@ -330,23 +330,26 @@ def memory_page(state: dict) -> list:
             ts = m.get("ts", 0)
             time_str = time.strftime("%b %d %H:%M", time.localtime(ts)) if ts else ""
             label = f"[{scope}{topic}] {m.get('text', '')} · {time_str}"
-            blocks.append({**_row((label, "dim")), "actions": [
-                ("Forget", f"cmd:memory-forget/{mem_id}"),
-            ]})
+            blocks.append(_row((label, "dim"), _command("Edit", f"page/memory/edit/{mem_id}"),
+                               _command("Forget", f"memory-forget/{mem_id}")))
     blocks += [plain_block("gap"),
                _button("New memory", "page/memory/new")]
     return blocks
 
 
 def memory_add(state: dict) -> list:
-    """Add a new memory."""
-    blocks = _back("page/memory/list") + [_heading("New memory")]
+    """Add a new memory, or change the one in _memory_id."""
+    editing = bool(state.get("_memory_id"))
+    blocks = _back("page/memory/list") + [_heading("Edit memory" if editing else "New memory")]
     error = state.get("memory_error", "")
     if error:
         blocks.append(_row((error, "b")))
     blocks += [
         _field("Text", "field/memory_text", state.get("_memory_text", "")),
-        _field("Scope (user/project/topic)", "field/memory_scope", state.get("_memory_scope", "user")),
+    ]
+    if not editing:
+        blocks.append(_field("Scope (user/project/topic)", "field/memory_scope", state.get("_memory_scope", "user")))
+    blocks += [
         _field("Topic (optional)", "field/memory_topic", state.get("_memory_topic", "")),
         plain_block("gap"),
         _button("Save memory", "action/memory-save"),
@@ -368,7 +371,7 @@ def page_blocks(page: str, state: dict) -> list:
         return connection_form(state)
     if page == "memory":
         return memory_page(state)
-    if page == "memory/new":
+    if page == "memory/new" or (isinstance(page, str) and page.startswith("memory/edit/")):
         return memory_add(state)
     if page == "memory/list":
         return memory_list(state)

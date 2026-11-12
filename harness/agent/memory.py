@@ -361,6 +361,23 @@ def _find_entry_path(entry_id: str, workspace: str | None = None) -> str | None:
     return None
 
 
+def update_memory(entry_id: str, text: str, topic: str | None = None, workspace: str | None = None) -> str:
+    """Change the text (and, when given, the topic) of one memory; its id, scope and time stay."""
+    path = _find_entry_path(entry_id, workspace)
+    if path is None:
+        return f"Not found: {entry_id}"
+    lines = _read_lines(path)
+    for entry in lines:
+        if entry.get("id") == entry_id:
+            entry["text"] = text
+            if topic is not None:
+                entry["topic"] = topic
+    with open(path, "w") as fh:
+        for entry in lines:
+            fh.write(json.dumps(entry) + "\n")
+    return "Updated."
+
+
 def list_memories(workspace: str | None = None) -> list[dict]:
     """Return all memories across all scopes, newest first."""
     all_entries: list[dict] = []

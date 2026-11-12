@@ -24,6 +24,7 @@ from harness.agent.memory import (
     suggest_topic,
     topic_for_message,
     forget_memory,
+    update_memory,
     list_memories,
     memory_tools_for,
     memory_write_tool,
@@ -251,6 +252,19 @@ class Forget(unittest.TestCase):
         self.assertIn("Removed", result)
         self.assertEqual(len(list_memories()), 1)
         self.assertEqual(list_memories()[0]["text"], "Keep this one")
+
+    def test_update_changes_text_and_topic_and_keeps_the_rest(self):
+        eid = write_memory("Old text", "user", topic="a")
+        other = write_memory("Other", "user")
+        before = next(m for m in list_memories() if m["id"] == eid)
+        self.assertEqual(update_memory(eid, "New text", "b"), "Updated.")
+        after = next(m for m in list_memories() if m["id"] == eid)
+        self.assertEqual((after["text"], after["topic"]), ("New text", "b"))
+        self.assertEqual((after["id"], after["scope"], after["ts"]), (eid, "user", before["ts"]))
+        self.assertEqual(next(m for m in list_memories() if m["id"] == other)["text"], "Other")
+        self.assertEqual(update_memory(eid, "Newer")[:0], "")
+        self.assertEqual(next(m for m in list_memories() if m["id"] == eid)["topic"], "b", "no topic given keeps it")
+        self.assertIn("Not found", update_memory("abcdef123456", "x"))
 
     def test_forget_not_found(self):
         result = forget_memory("nonexistent-id-abcdef")

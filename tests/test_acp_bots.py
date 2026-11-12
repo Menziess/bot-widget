@@ -391,6 +391,49 @@ class WidgetSave(unittest.TestCase):
         self.assertTrue(os.path.isdir(room), "removing the bot from the widget leaves its session folder")
 
 
+class MemoryPage(WidgetSave):
+    """The /memory page: every row can be edited or forgotten, and a save changes that memory in place."""
+
+    def setUp(self):
+        super().setUp()
+        from harness.agent import memory
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        patched = mock.patch.dict(os.environ, {"HARNESS_MEMORY_DIR": folder})
+        patched.start()
+        self.addCleanup(patched.stop)
+        self.memory = memory
+
+    def test_each_row_has_edit_and_forget_and_they_work(self):
+        first = self.memory.write_memory("Eerste", "user")
+        second = self.memory.write_memory("Tweede", "user")
+        from botwidget import menu_pages
+        text = json.dumps(menu_pages.memory_page({}), default=str)
+        for ident in (first, second):
+            self.assertIn(f"cmd:page/memory/edit/{ident}", text)
+            self.assertIn(f"cmd:memory-forget/{ident}", text)
+        self.assertEqual(self.box.menu_command(f"page/memory/edit/{first}", "memory"), f"memory/edit/{first}")
+        self.assertEqual(self.box._memory_text, "Eerste")
+        fields = {"field/memory_text": "Eerste, aangepast", "field/memory_topic": "t"}
+        self.assertEqual(self.box.menu_command("action/memory-save", "memory/edit/" + first, fields), "memory")
+        texts = {m["id"]: (m["text"], m["topic"]) for m in self.memory.list_memories()}
+        self.assertEqual(texts, {first: ("Eerste, aangepast", "t"), second: ("Tweede", "")})
+        self.assertEqual(self.box.menu_command(f"memory-forget/{second}", "memory"), "memory")
+        self.assertEqual([m["id"] for m in self.memory.list_memories()], [first])
+
+    def test_a_new_memory_takes_the_typed_fields(self):
+        fields = {"field/memory_text": "Nieuw", "field/memory_scope": "user", "field/memory_topic": ""}
+        self.box.menu_command("page/memory/new", "memory")
+        self.assertEqual(self.box.menu_command("action/memory-save", "memory/new", fields), "memory")
+        self.assertEqual([m["text"] for m in self.memory.list_memories()], ["Nieuw"])
+
+    def test_new_memory_starts_empty_after_an_edit(self):
+        ident = self.memory.write_memory("Eerste", "user")
+        self.box.menu_command(f"page/memory/edit/{ident}", "memory")
+        self.box.menu_command("page/memory/new", "memory")
+        self.assertEqual((self.box._memory_id, self.box._memory_text), ("", ""))
+
+
 class EditPage(unittest.TestCase):
     """Should open the edit page when the Edit button is clicked, not only when the command is sent by hand."""
 

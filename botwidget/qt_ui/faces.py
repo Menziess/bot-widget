@@ -552,6 +552,7 @@ class Faces(QObject):
             "_memory_text": getattr(self, "_memory_text", ""),
             "_memory_scope": getattr(self, "_memory_scope", "user"),
             "_memory_topic": getattr(self, "_memory_topic", ""),
+            "_memory_id": getattr(self, "_memory_id", ""),
         }
 
     TOGGLES = {
@@ -715,7 +716,7 @@ class Faces(QObject):
         kind, _, name = command.partition("/")
         if kind not in ("bot-remove", "connection-remove"):
             self._confirm_remove = ""
-        if command in ("action/save-bot", "action/save-json", "action/save-connection") or kind == "cycle":
+        if command in ("action/save-bot", "action/save-json", "action/save-connection", "action/memory-save") or kind == "cycle":
             self._take(fields, page)
         if kind == "page" and (name == "bot" or name.startswith("bot/")):
             self._open_bot_form(name.split("/", 1)[1] if name.startswith("bot/") else "")
@@ -726,6 +727,12 @@ class Faces(QObject):
         if kind == "page" and name == "widget-json":
             self._json_text = acp_bots.public_text(widget_config())
             self._json_error = ""
+            return name
+        if kind == "page" and name == "memory/new":
+            self._memory_id, self._memory_text, self._memory_scope, self._memory_topic = "", "", "user", ""
+            return name
+        if kind == "page" and name.startswith("memory/edit/"):
+            self._open_memory(name.rsplit("/", 1)[1])
             return name
         if kind == "page":
             return name
@@ -828,17 +835,27 @@ class Faces(QObject):
             return
         save_widget_config(debug=bool(on))
 
+    def _open_memory(self, memory_id: str) -> None:
+        from harness.agent.memory import list_memories
+        found = next((m for m in list_memories() if m.get("id") == memory_id), {})
+        self._memory_id, self._memory_text = memory_id, found.get("text", "")
+        self._memory_scope, self._memory_topic = found.get("scope", "user"), found.get("topic", "")
+
     def _save_memory(self) -> None:
-        """Persist a new memory from the form fields."""
+        """Persist the memory from the form fields: a new one, or the one that was opened to edit."""
         try:
-            from harness.agent.memory import write_memory
+            from harness.agent.memory import update_memory, write_memory
             text = str(getattr(self, "_memory_text", "") or "").strip()
             if not text:
                 self._memory_error = "Memory text is required."
                 return
             scope = str(getattr(self, "_memory_scope", "user") or "user")
             topic = str(getattr(self, "_memory_topic", "") or "")
-            write_memory(text, scope, topic)
+            if getattr(self, "_memory_id", ""):
+                update_memory(self._memory_id, text, topic)
+            else:
+                write_memory(text, scope, topic)
+            self._memory_id, self._memory_text, self._memory_topic = "", "", ""
             self._memory_error = ""
         except Exception as error:
             self._memory_error = str(error)[:200]
