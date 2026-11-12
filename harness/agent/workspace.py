@@ -3,13 +3,18 @@
 Every tool call is scoped to the workspace folder. When the workspace is empty
 (unclosed string), no filesystem tools are offered at all.
 
+Workspace
+---------
+HARNESS_WORKSPACE if set ("off" for none), else the folder the ACP client opened the session in,
+else the home folder.
+
 Permission modes
 ----------------
-allow     – auto-allow read, search and git-read inside the workspace; still
-            ask for edit (write_file) and shell.
-ask       – every action asks the user.
-allow_session – like allow, but the permission is remembered only until the
-                process exits (a single session).
+Reads, search and git-read inside the workspace are free in every mode. Writes (write_file, edit,
+delete_file) and shell commands ask, except read-only shell commands and saved prefixes.
+allow     – the default everywhere (form, config and agent).
+ask       – the same today; kept so older configs keep working.
+allow_session – like allow, but an approved action is remembered until the process exits.
 
 Secret filtering
 ----------------
@@ -630,21 +635,72 @@ class ShellAllow:
 _RULE_FILES = ("AGENTS.md", "CLAUDE.md", ".clinerules")
 
 
-def load_workspace_rules(workspace: str) -> str:
-    """Load the first existing rules file from the workspace root, size-capped."""
-    for name in _RULE_FILES:
-        path = os.path.join(workspace, name)
-        if os.path.isfile(path):
-            # Don't load if it is itself a secret.
-            if _is_secret_path(path):
-                continue
-            try:
-                with open(path) as fh:
-                    text = fh.read(MAX_RULE_CHARS)
-                return f"\n# Project guidance ({name}):\n{text}"
-            except OSError:
-                continue
+def default_workspace(configured: str = "", cwd: str = "") -> str:
+    """Which folder a session works in. HARNESS_WORKSPACE wins ("off" turns the workspace off),
+    then the folder the ACP client started the session in, then the home folder."""
+    configured = (configured or "").strip()
+    if configured.lower() in ("off", "none", "(none)") and configured:
+        return ""
+    for candidate in (configured, cwd, "~"):
+        resolved = resolve_workspace(candidate) if candidate and candidate != "/" else None
+        if resolved and resolved != os.path.sep:
+            return resolved
     return ""
+
+
+def project_root(cwd: str) -> str:
+    """The nearest folder at or above *cwd* with a .git; *cwd* itself when there is none."""
+    here = cwd
+    while True:
+        if os.path.exists(os.path.join(here, ".git")):
+            return here
+        parent = os.path.dirname(here)
+        if parent == here:
+            return cwd
+        here = parent
+
+
+def _rules_in(folder: str) -> tuple[str, str] | None:
+    for name in _RULE_FILES:
+        path = os.path.join(folder, name)
+        if os.path.isfile(path) and not _is_secret_path(path):
+            return name, path
+    return None
+
+
+def load_workspace_rules(workspace: str) -> str:
+    """Rules files from the project root down to *workspace*, root first, so the nearest folder
+    reads last and wins. One file per folder (AGENTS.md, else CLAUDE.md, else .clinerules). The total is
+    capped at HARNESS_RULES_MAX_CHARS (default MAX_RULE_CHARS); when it does not fit, the files nearest
+    the workspace are kept."""
+    try:
+        limit = int(os.environ.get("HARNESS_RULES_MAX_CHARS") or MAX_RULE_CHARS)
+    except ValueError:
+        limit = MAX_RULE_CHARS
+    folders = []
+    here = workspace
+    root = project_root(workspace)
+    while True:
+        folders.append(here)
+        if here == root or os.path.dirname(here) == here:
+            break
+        here = os.path.dirname(here)
+    parts: list[str] = []
+    left = limit
+    for folder in folders:  # nearest first, so the cap cuts the far end
+        found = _rules_in(folder)
+        if not found or left <= 0:
+            continue
+        name, path = found
+        try:
+            with open(path, errors="replace") as fh:
+                text = fh.read(left)
+        except OSError:
+            continue
+        left -= len(text)
+        where = "" if folder == workspace else f" in {os.path.relpath(folder, workspace)}"
+        parts.append(f"\n# Project guidance ({name}{where}):\n{text}")
+    return "".join(reversed(parts))
 
 
 # ── Tool builders ─────────────────────────────────────────────────────

@@ -45,7 +45,7 @@ def fields_of(bot: dict) -> dict:
     face_id = bot.get("id") or ""
     stored = face_id[len(PREFIX):] if str(face_id).startswith(PREFIX) else str(face_id)
     ws = env.get("HARNESS_WORKSPACE") or ""
-    ws_perm = env.get("HARNESS_WORKSPACE_PERMISSIONS") or "ask"
+    ws_perm = env.get("HARNESS_WORKSPACE_PERMISSIONS") or "allow"
     return {"id": face_id, "stored_id": stored, "name": bot.get("name") or "",
             "face": bot.get("face") or "", "color": bot.get("color") or "",
             "connection": bot.get("connection") or "",

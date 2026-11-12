@@ -48,6 +48,8 @@ class LeanAgent:
         self.folder = folder or os.environ.get("HARNESS_AGENT_DIR") or os.path.expanduser(
             f"~/.local/share/botwidget/harness/agent/{bot}")
         self.stores: dict[str, SessionStore] = {}
+        self._cwds: dict[str, str] = {}  # the folder the ACP client opened each session in
+        self._own_tools = tools is None  # only tools built here follow the session's folder
         from harness.agent.workspace import ShellAllow
         self.shell_allow = ShellAllow(
             os.environ.get("HARNESS_SHELL_ALLOW_FILE") or os.path.join(self.folder, "shell-allow.json"),
@@ -65,6 +67,7 @@ class LeanAgent:
         self.jobs = None  # background shell jobs; created once a workspace exists
         self._job_tools_ready = False
         self._tool_session = ""
+        self._workspace = ""
         self._inbox: dict[str, list[str]] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._aio = None
@@ -82,6 +85,7 @@ class LeanAgent:
 
     async def new_session(self, cwd: str, additional_directories=None, mcp_servers=None, **kwargs):
         session_id = f"{self.bot}-{int(time.time())}"
+        self._cwds[session_id] = cwd or ""
         self.stores[session_id] = SessionStore(self.folder)
         return NewSessionResponse(session_id=session_id)
 
@@ -89,6 +93,7 @@ class LeanAgent:
                            additional_directories=None, **kwargs):
         """A restart finds the conversation where it was: the same file, replayed to the widget."""
         store = self.stores.setdefault(session_id, SessionStore(self.folder))
+        self._cwds[session_id] = cwd or ""
         for message in store.messages(limit=context.KEEP_TURNS * 2):
             if message["role"] == "tool":
                 # An ordinary tool line stays out of the bubble. A decline must still be said,
@@ -141,6 +146,7 @@ class LeanAgent:
     async def _answer(self, session_id: str, store: SessionStore) -> PromptResponse:
         self._tool_session = session_id
         self._aio = asyncio.get_running_loop()
+        self._workspace = self._workspace_for(session_id)
         await self.tools.start()
         self._ensure_job_tools()
         self.tools.add(self._pin(store))
@@ -159,7 +165,7 @@ class LeanAgent:
             if not self._checked and hasattr(self.model, "ready"):
                 await asyncio.to_thread(self.model.ready)
                 self._checked = True
-            messages = context.build(store, self.bot, model=self.model)
+            messages = context.build(store, self.bot, model=self.model, workspace=self._workspace)
             await self._usage(session_id, store)
             for _step in range(MAX_STEPS):
                 steps += 1
@@ -242,7 +248,17 @@ class LeanAgent:
     def _memory_tools(self) -> list:
         """Three memory tools for durable, topic-scoped storage."""
         from harness.agent.memory import memory_tools_for
-        return memory_tools_for(workspace=os.environ.get("HARNESS_WORKSPACE") or "")
+        return memory_tools_for(workspace=self._workspace or "")
+
+    def _workspace_for(self, session_id: str) -> str:
+        """The folder this session works in: configured, else the ACP cwd, else home. Tools that were
+        handed in keep their own workspace."""
+        if not self._own_tools:
+            return getattr(self.tools, "workspace", "") or ""
+        from harness.agent.workspace import default_workspace
+        workspace = default_workspace(os.environ.get("HARNESS_WORKSPACE") or "", self._cwds.get(session_id, ""))
+        self.tools.workspace = workspace
+        return workspace
 
     def shutdown(self) -> None:
         """Kill background jobs. The bubble closing does not call this; the agent process does."""
@@ -382,7 +398,8 @@ class LeanAgent:
         """The context meter, and a one-line notice when a summary has just landed."""
         if self.conn is None:
             return
-        used, size = context.meter(store, self.bot, getattr(self.model, "context_size", 0), model=self.model)
+        used, size = context.meter(store, self.bot, getattr(self.model, "context_size", 0), model=self.model,
+                                   workspace=self._workspace_for(session_id))
         update = UsageUpdate(session_update="usage_update", used=used, size=size,
                              field_meta={"compacted": True} if compacted else None)
         await self.conn.session_update(session_id=session_id, update=update)

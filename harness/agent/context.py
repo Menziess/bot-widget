@@ -108,19 +108,19 @@ def _budget_chars(model_window: int = 0) -> int:
     return max(1024, (window - _COMPLETION_MARGIN) * 4)
 
 
-def meter(store, bot: str, size: int = 0, model=None) -> tuple[int, int]:
+def meter(store, bot: str, size: int = 0, model=None, workspace: str | None = None) -> tuple[int, int]:
     """How full the next request is: estimated tokens used, and the window the model server reports.
 
     `size` comes from the server (/props n_ctx); without it the built-in guess is used,
     or ``HARNESS_CONTEXT_TOKENS`` from the environment when set.
     """
     import os
-    used = sum(estimate(message["content"]) for message in build(store, bot, model_window=size, model=model))
+    used = sum(estimate(message["content"]) for message in build(store, bot, model_window=size, model=model, workspace=workspace))
     fallback = int(os.environ.get("HARNESS_CONTEXT_TOKENS") or CONTEXT_TOKENS)
     return used, size or fallback
 
 
-def build(store, bot: str, model_window: int = 0, model=None) -> list[dict]:
+def build(store, bot: str, model_window: int = 0, model=None, workspace: str | None = None) -> list[dict]:
     """The messages to send: system, summary, facts, then the newest turns that fit.
 
     A stored tool line is folded into the next user turn. A system line in the middle of the
@@ -139,7 +139,7 @@ def build(store, bot: str, model_window: int = 0, model=None) -> list[dict]:
     from harness.agent.workspace import resolve_workspace, load_workspace_rules
 
     global _WORKSPACE_RULES, _WORKSPACE_CACHE_KEY
-    ws_path = os.environ.get("HARNESS_WORKSPACE") or ""
+    ws_path = workspace if workspace is not None else (os.environ.get("HARNESS_WORKSPACE") or "")
     if _WORKSPACE_CACHE_KEY != ws_path:
         _WORKSPACE_RULES = ""
         _WORKSPACE_CACHE_KEY = ws_path
