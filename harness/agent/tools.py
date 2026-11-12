@@ -44,7 +44,7 @@ def _path(raw) -> str:
     return path
 
 
-def read_file(path: str, limit: int = 20000) -> str:
+def read_file(path: str, limit: int = 200000) -> str:
     """A text file, cut so one huge file cannot fill the context."""
     at = _path(path)
     try:

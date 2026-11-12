@@ -708,9 +708,14 @@ class LeanAgent:
     @staticmethod
     def _note_tool(store: SessionStore, name: str, outcome: str, answer: str) -> str:
         """One short line per call in the session, so a restart still knows what a tool did — or that
-        the user said no."""
+        the user said no. The complete answer is kept too; the model is shown the answer itself, or its
+        head and tail with the path of a file that holds the rest when it is large."""
+        from harness.agent.spill import spill
+        shown, path = spill(answer, name) if isinstance(answer, str) else (answer, "")
         store.add("tool", f"{name}: {' '.join(outcome.split())[:200]}")
-        return answer
+        if outcome == "ok" and isinstance(answer, str) and answer:
+            store.add_tool_result(name, shown, answer, path)
+        return shown
 
     def _shell_free(self, command: str) -> bool:
         """A shell command that needs no question: read-only, or covered by a saved prefix."""

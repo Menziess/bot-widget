@@ -17,8 +17,19 @@ create table if not exists messages (
     text text not null,
     ts real not null
 );
+create table if not exists tool_results (
+    id integer primary key autoincrement,
+    name text not null,
+    shown text not null,
+    full text not null,
+    path text not null,
+    ts real not null
+);
 create table if not exists meta (key text primary key, value text not null);
 """
+
+
+MAX_STORED_RESULT = 2_000_000  # characters of one tool answer kept in the session
 
 
 class SessionStore:
@@ -35,6 +46,18 @@ class SessionStore:
     def add(self, role: str, text: str) -> None:
         self.db.execute("insert into messages (role, text, ts) values (?, ?, ?)", (role, text, time.time()))
         self.db.commit()
+
+    def add_tool_result(self, name: str, shown: str, full: str, path: str = "") -> None:
+        """One tool's complete answer, next to what the model was shown of it (head and tail when it spilled)."""
+        self.db.execute("insert into tool_results (name, shown, full, path, ts) values (?, ?, ?, ?, ?)",
+                        (name, shown, full[:MAX_STORED_RESULT], path, time.time()))
+        self.db.commit()
+
+    def tool_results(self, limit: int = 8) -> list[dict]:
+        """The newest tool results, oldest first. `full` is the complete answer."""
+        rows = self.db.execute("select name, shown, full, path from tool_results order by id desc limit ?",
+                               (limit,)).fetchall()[::-1]
+        return [{"name": n, "shown": sh, "full": fl, "path": pa} for n, sh, fl, pa in rows]
 
     def messages(self, limit: int | None = None) -> list[dict]:
         """The newest `limit` messages in order, straight from sqlite; every turn asks twice."""

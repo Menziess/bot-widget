@@ -203,15 +203,31 @@ def search_files(workspace: str, pattern: str, limit: int = 100) -> str:
 
 # ── File tools ────────────────────────────────────────────────────────
 
-def _ws_read(workspace: str, path: str) -> str:
-    real = _check_inside(workspace, path)
+MAX_READ_CHARS = 5_000_000  # one read never loads more than this; large answers spill to a file
+
+
+def _ws_read(workspace: str, path: str, offset: int = 0, limit: int = 0) -> str:
+    """The file's text. offset and limit are line numbers (offset counts from 1) for reading part of it.
+    The folder where large tool output spills is readable too."""
+    from harness.agent import spill
+    target = path if os.path.isabs(path) else os.path.join(workspace, path)
+    real = _resolve(target)
+    if not spill.in_spill_dir(real):
+        real = _check_inside(workspace, path)
     if _is_secret_path(real):
         raise ToolError("that path is private and is not read")
     try:
         with open(real, errors="replace") as fh:
-            text = fh.read()
+            text = fh.read(MAX_READ_CHARS)
     except OSError as err:
         raise ToolError(f"cannot read {real}: {err.strerror}") from err
+    if offset or limit:
+        lines = text.splitlines(keepends=True)
+        start = max(int(offset or 1) - 1, 0)
+        end = start + int(limit) if limit else len(lines)
+        if start >= len(lines) and lines:
+            raise ToolError(f"offset {offset} is past the end ({len(lines)} lines)")
+        text = "".join(lines[start:end])
     return text
 
 
@@ -456,7 +472,7 @@ def shell_run(workspace: str, command: str, timeout: int = 30) -> str:
     if proc.returncode != 0:
         msg = proc.stderr.strip() or proc.stdout.strip()
         raise ToolError(f"shell failed ({proc.returncode}): {msg[:300]}")
-    return (proc.stdout or "").strip()[:4000]
+    return (proc.stdout or "").strip()[:MAX_READ_CHARS]  # a long answer is spilled to a file by the agent
 
 
 # ── Read-only shell commands and saved prefixes ───────────────────────
@@ -509,6 +525,7 @@ def shell_segments(command: str) -> list[list[str]] | None:
 
 
 def _args_stay_inside(workspace: str, args: list[str]) -> bool:
+    from harness.agent import spill
     for arg in args:
         if "$" in arg:
             return False
@@ -522,7 +539,7 @@ def _args_stay_inside(workspace: str, args: list[str]) -> bool:
         if any(_is_secret_dir(part) for part in arg.replace("\\", "/").split("/")):
             return False
         if arg.startswith(("/", "~")) or ".." in arg.split("/"):
-            if not _contains(workspace, _resolve(arg)):
+            if not _contains(workspace, _resolve(arg)) and not spill.in_spill_dir(_resolve(arg)):
                 return False
             if _is_secret_path(_resolve(arg)):
                 return False
@@ -722,11 +739,14 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
               "required": ["path"]},
              lambda a: _ws_list(workspace, a.get("path", "."))),
         Tool("read_file",
-             "Read a text file inside the workspace. Read-only.",
+             "Read a text file inside the workspace. Read-only. offset and limit are line numbers, for "
+             "reading part of a large file or of a saved tool output.",
              {"type": "object",
-              "properties": {"path": {"type": "string"}},
+              "properties": {"path": {"type": "string"},
+                             "offset": {"type": "integer", "description": "First line to read, from 1."},
+                             "limit": {"type": "integer", "description": "How many lines."}},
               "required": ["path"]},
-             lambda a: _ws_read(workspace, a["path"])),
+             lambda a: _ws_read(workspace, a["path"], int(a.get("offset") or 0), int(a.get("limit") or 0))),
         # ── search ──
         Tool("search",
              "Search file contents inside the workspace. Skips secret files/dirs.",
