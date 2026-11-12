@@ -314,6 +314,12 @@ class AcpTurns(unittest.TestCase):
         link._updated(Update("usage", extra={"jobs_only": True, "jobs": 1, "followup": True}))
         self.assertEqual(link.note(), "Context 80% full. · 1 background job")
         self.assertTrue(link._followup)
+        woken = []
+        link.on_change = lambda: woken.append(1)
+        link._updated(Update("text", "job done"))
+        self.assertEqual(woken, [1], "a follow-up answer wakes the face")
+        self.assertIn("job done", link.messages[-1]["text"])
+        link.on_change = None
         link._updated(Update("user", "Background job j1 finished."))
         self.assertEqual(link.messages[-1]["role"], "user")
         self.assertIn("j1", link.messages[-1]["text"])

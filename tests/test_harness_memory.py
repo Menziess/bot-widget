@@ -57,6 +57,8 @@ class TokenHelpers(unittest.TestCase):
 
     def test_overlap_score_no_common(self):
         self.assertEqual(_overlap_score("hello world", "xyz abc"), 0.0)
+        self.assertEqual(_overlap_score("", "hello"), 0.0)
+        self.assertEqual(_overlap_score("hello", ""), 0.0)
 
     def test_overlap_score_partial(self):
         score = _overlap_score("hello world foo", "world bar")
