@@ -1,21 +1,20 @@
 """Grok Bot through the gbot command: one bot's thread and what it answers."""
 
-import json
 import os
 import subprocess
-import threading
 import time
 
 from botwidget import openbot
 from botwidget.cli_json import (
-    KILL_GRACE_S,
     NOTE_CHARS,
     Result,
+    finish_cli,
     first_line_note as _note,
     json_object as _data,
     stop_group as _stop_group,
 )
-from botwidget.config import widget_config
+from botwidget.config import named_text, widget_config
+from botwidget.link_poll import PolledLink
 
 PREFIX = "grok:"
 DEFAULT_TARGET = "General"
@@ -81,10 +80,7 @@ def is_grok(agent_id: str) -> bool:
 
 def target() -> str:
     """The Grok Bot the widget talks to."""
-    configured = widget_config().get("grokbot_target")
-    if isinstance(configured, str) and configured.strip():
-        return configured.strip()
-    return DEFAULT_TARGET
+    return named_text(widget_config(), "grokbot_target", DEFAULT_TARGET)
 
 
 def run(args: list, timeout: float, wake: bool = False) -> Result:
@@ -105,17 +101,7 @@ def run(args: list, timeout: float, wake: bool = False) -> Result:
                                 stdin=subprocess.DEVNULL, text=True, env=env, start_new_session=True)
     except OSError as err:
         return Result(127, None, str(err))
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _stop_group(proc)
-        try:
-            proc.communicate(timeout=KILL_GRACE_S)
-        except (subprocess.TimeoutExpired, OSError, ValueError):
-            pass
-        return Result(None, None, "gbot gave no answer")
-    done = subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
-    return Result(done.returncode, _data(done.stdout), _note(done))
+    return finish_cli(proc, timeout, "gbot gave no answer", _stop_group)
 
 
 # 75 means there is no live route, 127 that gbot or Node is not there: both stop the link.
@@ -243,7 +229,7 @@ def _error(data, note: str, rc) -> str:
     return f"exit {rc}"
 
 
-class GrokLink:
+class GrokLink(PolledLink):
     """One Grok Bot bot: its thread, what it answered and what is still missing.
 
     It only asks when there is a reason: every FAST_S seconds for WAIT_MAX_S after a message
@@ -260,42 +246,8 @@ class GrokLink:
     UNSURE_MARK = " (?)"
 
     def __init__(self, target: str, now=time.monotonic):
-        self.target = target
-        self.now = now
-        self.messages = []
+        super().__init__(target, now)
         self.cursor = ""
-        self.status = ""
-        self.stopped = False
-        self.waiting_since = None
-        self.last_poll = None
-        self.polling = False
-        self.want_fetch = False
-        # Stays in sight until an answer comes or the waiting ends: a look in between does not clear it.
-        self.unsure = ""
-        self.seen = set()
-        self._lock = threading.Lock()
-
-    @property
-    def is_polling(self) -> bool:
-        """Is a poll running right now?"""
-        with self._lock:
-            return self.polling
-
-    @property
-    def waiting(self) -> bool:
-        """Is the bot still working on an answer?"""
-        with self._lock:
-            self._wait_over(self.now())
-            return self.waiting_since is not None
-
-    def _wait_over(self, now: float) -> bool:
-        """The waiting ends by itself after WAIT_MAX_S; then the widget stops asking."""
-        if self.waiting_since is not None and now - self.waiting_since >= self.WAIT_MAX_S:
-            self.waiting_since = None
-            self.unsure = ""
-            self.status = f"No answer from {self.target} yet; open the chat later to look again."
-            return True
-        return False
 
     def request_fetch(self):
         """The bubble opened: look once for what came in."""
@@ -303,14 +255,6 @@ class GrokLink:
             recent = self.last_poll is not None and self.now() - self.last_poll < self.FAST_S
             if not self.stopped and not recent:
                 self.want_fetch = True
-
-    def active(self) -> bool:
-        """Is there a reason to keep a timer: a look is asked for, running, or an answer is awaited."""
-        with self._lock:
-            self._wait_over(self.now())
-            if self.stopped:
-                return self.polling
-            return self.want_fetch or self.polling or self.waiting_since is not None
 
     def due(self) -> bool:
         """Is it time to look for an answer?"""
@@ -393,12 +337,6 @@ class GrokLink:
             self.cursor = _cursor(data, entries, self.cursor)
             return added
 
-    def _sent(self, line: str):
-        self.messages.append({"role": "user", "text": line})
-        del self.messages[:-self.KEEP]
-        self.waiting_since = self.now()
-        self.stopped = False
-
     def send(self, text: str) -> tuple[bool, str]:
         """Send a message to the bot, never twice: a retry could send it twice.
 
@@ -424,23 +362,3 @@ class GrokLink:
                 self.status = ""
             return True, ""
         return False, _error(result.data, result.note, result.rc)
-
-    def resume(self):
-        """The user sends again: one fresh attempt, no loop."""
-        with self._lock:
-            self.stopped = False
-            self.status = ""
-
-    def note(self) -> str:
-        """What the bubble says under the conversation: why the link stopped, or that a send is unsure."""
-        with self._lock:
-            self._wait_over(self.now())
-            return self.status or self.unsure
-
-    def chat(self) -> dict:
-        """The conversation so far, and what is still coming."""
-        with self._lock:
-            self._wait_over(self.now())
-            messages = [{"role": m["role"], "text": m["text"]} for m in self.messages[-self.KEEP:]]
-            activity = f"Waiting for {self.target}…" if self.waiting_since is not None else ""
-        return {"messages": messages, "activity": activity}

@@ -51,6 +51,24 @@ def first_line_note(done: CompletedProcess, limit: int = NOTE_CHARS) -> str:
     return ""
 
 
+def finish_cli(proc, timeout: float, timeout_note: str, stop=None) -> Result:
+    """Wait for a CLI that was already started, and stop its group if it does not finish.
+
+    `stop` is the link's own stop_group, so a test can replace that name.
+    """
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        (stop or stop_group)(proc)
+        try:
+            proc.communicate(timeout=KILL_GRACE_S)
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass
+        return Result(None, None, timeout_note)
+    done = CompletedProcess(proc.args, proc.returncode, stdout, stderr)
+    return Result(done.returncode, json_object(done.stdout), first_line_note(done))
+
+
 def stop_group(proc, grace_s: float = KILL_GRACE_S) -> None:
     """Stop a CLI and everything it started: TERM first, KILL when that is not enough."""
     if not hasattr(os, "killpg"):

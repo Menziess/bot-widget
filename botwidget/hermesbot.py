@@ -6,17 +6,17 @@ single-query mode, with the same polling/thread model as Grok Bot.
 
 import json
 import subprocess
-import threading
 import time
 
 from botwidget.cli_json import (
-    KILL_GRACE_S,
     Result,
+    finish_cli,
     first_line_note as _note,
     json_object as _data,
     stop_group as _stop_group,
 )
-from botwidget.config import widget_config
+from botwidget.config import named_text, widget_config
+from botwidget.link_poll import PolledLink
 
 PREFIX = "hermes:"
 DEFAULT_TARGET = "Hermes"
@@ -55,10 +55,7 @@ def is_hermes(agent_id: str) -> bool:
 
 def target() -> str:
     """The Hermes Bot the widget talks to."""
-    configured = widget_config().get("hermesbot_target")
-    if isinstance(configured, str) and configured.strip():
-        return configured.strip()
-    return DEFAULT_TARGET
+    return named_text(widget_config(), "hermesbot_target", DEFAULT_TARGET)
 
 
 def run(query: str, timeout: float) -> Result:
@@ -75,17 +72,7 @@ def run(query: str, timeout: float) -> Result:
         )
     except OSError as err:
         return Result(127, None, str(err))
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _stop_group(proc)
-        try:
-            proc.communicate(timeout=KILL_GRACE_S)
-        except (subprocess.TimeoutExpired, OSError, ValueError):
-            pass
-        return Result(None, None, "hermes gave no answer")
-    done = subprocess.CompletedProcess(proc.args, proc.returncode, stdout, stderr)
-    return Result(done.returncode, _data(done.stdout), _note(done))
+    return finish_cli(proc, timeout, "hermes gave no answer", _stop_group)
 
 
 # 127 means hermes is not found.
@@ -116,7 +103,22 @@ def parse_message(stdout: str) -> str:
     return ""
 
 
-class HermesLink:
+def _answer_text(data: dict) -> str:
+    """The first answer hermes put in a JSON object."""
+    text = parse_message(data.get("stdout", "") or "")
+    if text:
+        return text
+    message = data.get("message", "")
+    if message:
+        return message
+    for key in ("response", "content", "answer", "output"):
+        value = data.get(key, "")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+class HermesLink(PolledLink):
     """One Hermes Bot bot: its thread, what it answered and what is still missing.
 
     It only asks when there is a reason: after a message went out, and once when
@@ -126,62 +128,19 @@ class HermesLink:
     FAST_S = 5
     WAIT_MAX_S = 300
     KEEP = 100
-    FIRST_SHOW = 5
     TIMEOUT_S = 120
     UNSURE_MARK = " (?)"
     # How many recent messages to include in a query context.
     QUERY_HISTORY = 10
 
-    def __init__(self, target: str, now=time.monotonic):
-        self.target = target
-        self.now = now
-        self.messages = []
-        self.status = ""
-        self.stopped = False
-        self.waiting_since = None
-        self.last_poll = None
-        self.polling = False
-        self.want_fetch = False
-        # Stays in sight until an answer comes or the waiting ends.
-        self.unsure = ""
-        self.seen = set()
-        self._lock = threading.Lock()
-
-    @property
-    def is_polling(self) -> bool:
-        """Is a poll running right now?"""
-        with self._lock:
-            return self.polling
-
-    @property
-    def waiting(self) -> bool:
-        """Is the bot still working on an answer?"""
-        with self._lock:
-            self._wait_over(self.now())
-            return self.waiting_since is not None
-
-    def _wait_over(self, now: float) -> bool:
-        """The waiting ends by itself after WAIT_MAX_S."""
-        if self.waiting_since is not None and now - self.waiting_since >= self.WAIT_MAX_S:
-            self.waiting_since = None
-            self.unsure = ""
-            self.status = f"No answer from {self.target} yet; try again later."
-            return True
-        return False
+    def _gave_up(self) -> str:
+        return f"No answer from {self.target} yet; try again later."
 
     def request_fetch(self):
         """The bubble opened: look once for what came in."""
         with self._lock:
             if not self.stopped and not self.polling:
                 self.want_fetch = True
-
-    def active(self) -> bool:
-        """Is there a reason to keep a timer?"""
-        with self._lock:
-            self._wait_over(self.now())
-            if self.stopped:
-                return self.polling
-            return self.want_fetch or self.polling or self.waiting_since is not None
 
     def due(self) -> bool:
         """Is it time to look for an answer?"""
@@ -245,19 +204,10 @@ class HermesLink:
             if not isinstance(result.data, dict):
                 self.status = "Hermes Bot: unexpected response"
                 return False
-            text = parse_message(result.data.get("stdout", "") or "")
-            if not text:
-                text = result.data.get("message", "")
-            if not text and isinstance(result.data, dict):
-                for key in ("response", "content", "answer", "output"):
-                    val = result.data.get(key, "")
-                    if isinstance(val, str) and val.strip():
-                        text = val.strip()
-                        break
+            text = _answer_text(result.data)
             if not text:
                 text = parse_message(result.data.get("stdout", ""))
             if not text:
-                # Fallback: try the raw stdout from the result
                 text = parse_message(result.data.get("raw", ""))
             if not text:
                 self.status = "Hermes Bot: no answer content"
@@ -276,12 +226,6 @@ class HermesLink:
                 self.unsure = ""
             self.status = ""
             return added
-
-    def _sent(self, line: str):
-        self.messages.append({"role": "user", "text": line})
-        del self.messages[:-self.KEEP]
-        self.waiting_since = self.now()
-        self.stopped = False
 
     def send(self, text: str) -> tuple[bool, str]:
         """Send a message to the bot.
@@ -307,38 +251,10 @@ class HermesLink:
                 self.unsure = ""
                 self.status = ""
             # The answer comes back immediately — store it.
-            text = parse_message(result.data.get("stdout", "") or "")
-            if not text:
-                text = result.data.get("message", "")
-            if not text and isinstance(result.data, dict):
-                for key in ("response", "content", "answer", "output"):
-                    val = result.data.get(key, "")
-                    if isinstance(val, str) and val.strip():
-                        text = val.strip()
-                        break
+            text = _answer_text(result.data)
             if text:
                 with self._lock:
                     self.messages.append({"role": "bot", "text": text})
                     del self.messages[:-self.KEEP]
             return True, ""
         return False, f"Hermes Bot: {result.note or f'exit {result.rc}'}"
-
-    def resume(self):
-        """The user sends again: one fresh attempt, no loop."""
-        with self._lock:
-            self.stopped = False
-            self.status = ""
-
-    def note(self) -> str:
-        """What the bubble says under the conversation."""
-        with self._lock:
-            self._wait_over(self.now())
-            return self.status or self.unsure
-
-    def chat(self) -> dict:
-        """The conversation so far, and what is still coming."""
-        with self._lock:
-            self._wait_over(self.now())
-            messages = [{"role": m["role"], "text": m["text"]} for m in self.messages[-self.KEEP:]]
-            activity = f"Waiting for {self.target}…" if self.waiting_since is not None else ""
-        return {"messages": messages, "activity": activity}
