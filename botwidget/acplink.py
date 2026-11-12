@@ -7,7 +7,6 @@ runs asyncio in a background thread, so no Qt thread ever waits on the agent.
 """
 
 import asyncio
-import concurrent.futures
 import getpass
 import json
 import os
