@@ -221,6 +221,16 @@ class AcpTurns(unittest.TestCase):
         self.assertTrue(wait_for(lambda: not link.active()))
         self.assertEqual(link.chat()["messages"][-1]["text"], "chose no")
 
+    def test_the_login_shell_path_is_used_and_a_failure_is_only_reported(self):
+        done = mock.Mock(stdout="motd\n__PATH__/opt/homebrew/bin:/usr/bin", returncode=0)
+        with mock.patch.object(acplink.subprocess, "run", return_value=done):
+            acplink.login_path.cache_clear()
+            self.assertEqual(acplink.login_path(), ("/opt/homebrew/bin:/usr/bin", ""))
+        with mock.patch.object(acplink.subprocess, "run", side_effect=acplink.subprocess.TimeoutExpired("zsh", 5)):
+            acplink.login_path.cache_clear()
+            self.assertEqual(acplink.login_path(), ("", "timed out"))
+        acplink.login_path.cache_clear()
+
     def test_a_running_turn_can_be_cancelled(self):
         link = self.link()
         link.send("slow down")

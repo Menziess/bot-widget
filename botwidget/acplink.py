@@ -11,7 +11,9 @@ import concurrent.futures
 import getpass
 import json
 import os
+import functools
 import re
+import subprocess
 import threading
 import time
 
@@ -37,6 +39,23 @@ def is_acp(agent_id: str) -> bool:
 
 def _slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+
+
+@functools.cache
+def login_path() -> tuple[str, str]:
+    """(PATH of the user's login shell, why it is missing). An app started from Finder only has the system PATH,
+    so programs from Homebrew, nvm or ~/.local/bin would look uninstalled."""
+    if os.name == "nt":
+        return "", ""
+    try:
+        done = subprocess.run([os.environ.get("SHELL") or "/bin/sh", "-ilc", 'printf "__PATH__%s" "$PATH"'],
+                              capture_output=True, text=True, timeout=5, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        return "", "timed out"
+    except OSError as error:
+        return "", error.strerror or str(error)
+    found = done.stdout.rpartition("__PATH__")[2]
+    return (found, "") if found else ("", f"no PATH printed (exit {done.returncode})")
 
 
 def _connections(config: dict) -> dict:
@@ -387,6 +406,13 @@ class AcpLink:
         except BaseException:
             await client.__aexit__(None, None, None)  # a half-started agent still owns a process
             raise
+        path, problem = await asyncio.to_thread(login_path)
+        if path:
+            env.setdefault("PATH", path)
+        elif problem:
+            with self._lock:
+                self._note = (f"Could not read your shell's PATH ({problem}), so programs outside the system "
+                              "folders may not be found.")
         finally:
             with self._lock:
                 self._loading = False
