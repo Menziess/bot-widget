@@ -212,43 +212,26 @@ class ScreenshotMode(unittest.TestCase):
             self.assertIsNotNone(overlay._rect)
             mock_update.assert_called()
 
-    def test_overlay_right_click_cancels(self):
+    def test_overlay_right_click_and_escape_cancel(self):
         from botwidget.qt_ui.screenshot import ScreenshotOverlay
-        cancel_called = []
-        overlay = ScreenshotOverlay.__new__(ScreenshotOverlay)
-        overlay._rect = None
-        overlay._start = None
-        overlay._mouse_down = False
-        overlay._done_callback = None
-        overlay.close = mock.Mock()
-
-        def on_cancel():
-            cancel_called.append(True)
-        overlay._cancel_callback = on_cancel
-
-        right_click = mock.Mock()
-        right_click.button.return_value = Qt.RightButton
-        overlay.mousePressEvent(right_click)
-        self.assertEqual(cancel_called, [True])
-
-    def test_overlay_escape_cancels(self):
-        from botwidget.qt_ui.screenshot import ScreenshotOverlay
-        cancel_called = []
-        overlay = ScreenshotOverlay.__new__(ScreenshotOverlay)
-        overlay._rect = None
-        overlay._start = None
-        overlay._mouse_down = False
-        overlay._done_callback = None
-        overlay.close = mock.Mock()
-
-        def on_cancel():
-            cancel_called.append(True)
-        overlay._cancel_callback = on_cancel
-
-        escape = mock.Mock()
-        escape.key.return_value = Qt.Key_Escape
-        overlay.keyPressEvent(escape)
-        self.assertEqual(cancel_called, [True])
+        for how in ("right", "escape"):
+            with self.subTest(how=how):
+                cancel_called = []
+                overlay = ScreenshotOverlay.__new__(ScreenshotOverlay)
+                overlay._rect = None
+                overlay._start = None
+                overlay._mouse_down = False
+                overlay._done_callback = None
+                overlay.close = mock.Mock()
+                overlay._cancel_callback = lambda: cancel_called.append(True)
+                event = mock.Mock()
+                if how == "right":
+                    event.button.return_value = Qt.RightButton
+                    overlay.mousePressEvent(event)
+                else:
+                    event.key.return_value = Qt.Key_Escape
+                    overlay.keyPressEvent(event)
+                self.assertEqual(cancel_called, [True])
 
 
 class ScreenshotOverlay(unittest.TestCase):

@@ -21,26 +21,20 @@ class FakeKernel:
 
 
 class IsMsixTest(unittest.TestCase):
-    def test_not_packaged(self):
-        self.assertFalse(windows.is_msix(FakeKernel(15700)))
-
-    def test_packaged(self):
-        self.assertTrue(windows.is_msix(FakeKernel(122)))
-
-    def test_no_kernel(self):
+    def test_packaged_only_when_the_kernel_says_so(self):
+        for code, expected in ((15700, False), (122, True)):
+            with self.subTest(code=code):
+                self.assertEqual(windows.is_msix(FakeKernel(code)), expected)
         self.assertFalse(windows.is_msix(None))
 
 
 class UpdaterOffTest(unittest.TestCase):
-    def test_no_install_under_msix(self):
-        with unittest.mock.patch.object(windows, "is_msix", return_value=True), \
-                unittest.mock.patch.object(sys, "frozen", True, create=True):
-            self.assertFalse(windows.can_install_update())
-
-    def test_install_outside_msix(self):
-        with unittest.mock.patch.object(windows, "is_msix", return_value=False), \
-                unittest.mock.patch.object(sys, "frozen", True, create=True):
-            self.assertTrue(windows.can_install_update())
+    def test_install_only_outside_msix(self):
+        for packaged, expected in ((True, False), (False, True)):
+            with self.subTest(packaged=packaged):
+                with unittest.mock.patch.object(windows, "is_msix", return_value=packaged), \
+                        unittest.mock.patch.object(sys, "frozen", True, create=True):
+                    self.assertEqual(windows.can_install_update(), expected)
 
     def test_staged_update_not_installed_under_msix(self):
         with unittest.mock.patch.object(updates, "staged_update", return_value=("9.9.9", "x")), \

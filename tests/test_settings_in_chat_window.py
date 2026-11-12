@@ -328,29 +328,24 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self._assert_chat_field()
         self.assertNotEqual(self.bubble.kind, "think")
 
-    def test_should_return_to_the_chat_when_escape_is_pressed_on_the_page(self):
-        """Should bring the chat back, with its typing field, when Escape is pressed on a page."""
+    def test_should_return_to_the_chat_when_escape_is_pressed_on_the_page_or_the_face(self):
+        """Should bring the chat back when Escape is pressed on a page, or on the face that holds it."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
-        self._open_chat()
-        self.window.open_menu("settings")
-        self._finish()
-        self.assertEqual(self.window._menu_page, "settings")
-        QTest.keyClick(self.bubble, Qt.Key_Escape)
-        self._finish()
-        self._assert_chat_field()
-
-    def test_should_return_to_the_chat_when_escape_is_pressed_on_the_face(self):
-        """Should bring the chat back when Escape is pressed with the keyboard on the face of an open page."""
-        from PySide6.QtCore import Qt
-        from PySide6.QtTest import QTest
-        self.window.open_menu("connections")
-        self._finish()
-        self.assertEqual(self.window._menu_page, "connections")
-        self.window.setFocus()
-        QTest.keyClick(self.window, Qt.Key_Escape)
-        self._finish()
-        self._assert_chat_field()
+        for page, on_face in (("settings", False), ("connections", True)):
+            with self.subTest(page=page, on_face=on_face):
+                if not on_face:
+                    self._open_chat()
+                self.window.open_menu(page)
+                self._finish()
+                self.assertEqual(self.window._menu_page, page)
+                if on_face:
+                    self.window.setFocus()
+                    QTest.keyClick(self.window, Qt.Key_Escape)
+                else:
+                    QTest.keyClick(self.bubble, Qt.Key_Escape)
+                self._finish()
+                self._assert_chat_field()
 
     def test_should_leave_the_command_list_for_the_chat_when_scrolled_up_past_the_top(self):
         """Should go back to the chat when a right-click list is pulled far enough, as a page goes back."""

@@ -39,13 +39,15 @@ class FirstText(unittest.IsolatedAsyncioTestCase):
 
 
 class Defaults(unittest.TestCase):
-    def test_the_model_server_reports_its_own_context_size(self):
+    def test_context_size_comes_from_props_or_stays_a_guess(self):
         from harness.agent.models import ChatCompletions
-        server = FakeModel(context_size=4096)
-        self.addCleanup(server.close)
-        model = ChatCompletions(server.base_url, "fake-model")
-        model.ready(timeout=2.0)
-        self.assertEqual(model.context_size, 4096)
+        for size in (4096, 0):
+            with self.subTest(size=size):
+                server = FakeModel(context_size=size)
+                self.addCleanup(server.close)
+                model = ChatCompletions(server.base_url, "fake-model")
+                model.ready(timeout=2.0)
+                self.assertEqual(model.context_size, size)
 
     def test_props_sends_the_bearer_key(self):
         from harness.agent.models import ChatCompletions
@@ -58,14 +60,6 @@ class Defaults(unittest.TestCase):
         bare = ChatCompletions(server.base_url, "fake-model")
         bare.ready(timeout=2.0)
         self.assertEqual(bare.context_size, 0, "without the key the server answers 401 and the guess stays")
-
-    def test_a_server_without_props_keeps_the_guess(self):
-        from harness.agent.models import ChatCompletions
-        server = FakeModel()
-        self.addCleanup(server.close)
-        model = ChatCompletions(server.base_url, "fake-model")
-        model.ready(timeout=2.0)
-        self.assertEqual(model.context_size, 0)
 
     def test_a_missing_model_server_is_a_sentence_after_seconds_not_a_hang(self):
         import time as clock
