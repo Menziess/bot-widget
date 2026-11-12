@@ -454,6 +454,177 @@ def shell_run(workspace: str, command: str, timeout: int = 30) -> str:
     return (proc.stdout or "").strip()[:4000]
 
 
+# ── Read-only shell commands and saved prefixes ───────────────────────
+
+# Commands that only read. Anything else asks, unless a saved prefix covers it.
+READONLY_COMMANDS = frozenset({
+    "ls", "cat", "head", "tail", "wc", "pwd", "echo", "rg", "grep", "find", "tree", "stat", "file",
+    "which", "diff", "du", "df", "date", "whoami", "uname", "basename", "dirname", "realpath",
+    "readlink", "nl", "true",
+})
+READONLY_GIT = frozenset({
+    "status", "log", "diff", "show", "ls-files", "rev-parse", "blame", "shortlog", "describe",
+    "grep", "ls-tree", "cat-file",
+})
+_FIND_WRITES = frozenset({"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0",
+                          "-fprintf", "-fls"})
+_NEVER_SAVED = frozenset({"sudo", "su", "sh", "bash", "zsh", "env", "xargs", "eval", "exec", "ssh",
+                          "curl", "wget", "rm", "dd", "chmod", "chown", "mv", "cp", "python", "python3",
+                          "node", "perl", "ruby", "nohup", "time", "watch"})
+_OPERATORS = frozenset({"&&", "||", ";", "|"})
+
+
+def shell_segments(command: str) -> list[list[str]] | None:
+    """Split *command* into simple commands at && || ; |. None when it holds anything that could do more
+    than it says: a redirect, a background &, a substitution, a newline or an unbalanced quote."""
+    import shlex
+
+    text = command or ""
+    if not text.strip() or "\n" in text or "\r" in text or "`" in text or "$(" in text:
+        return None
+    try:
+        lexer = shlex.shlex(text, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if token in _OPERATORS:
+            if not segments[-1]:
+                return None
+            segments.append([])
+        elif token and set(token) <= set("&|;<>()"):
+            return None  # redirects, background, subshell
+        else:
+            segments[-1].append(token)
+    if not segments[-1]:
+        return None
+    return segments
+
+
+def _args_stay_inside(workspace: str, args: list[str]) -> bool:
+    for arg in args:
+        if "$" in arg:
+            return False
+        if arg.startswith("-") and "/" not in arg and "~" not in arg:
+            continue
+        base = os.path.basename(arg.rstrip("/"))
+        if any(ch in base for ch in "*?[") and base.startswith("."):
+            return False
+        if _is_secret_name(base) and base not in ("", ".", ".."):
+            return False
+        if any(_is_secret_dir(part) for part in arg.replace("\\", "/").split("/")):
+            return False
+        if arg.startswith(("/", "~")) or ".." in arg.split("/"):
+            if not _contains(workspace, _resolve(arg)):
+                return False
+            if _is_secret_path(_resolve(arg)):
+                return False
+    return True
+
+
+def _segment_read_only(workspace: str, tokens: list[str]) -> bool:
+    name, args = tokens[0], tokens[1:]
+    if name == "git":
+        if not args or args[0] not in READONLY_GIT:
+            return False
+        if any(a == "-c" or a.startswith(("--output", "--ext-diff", "--exec-path", "--open-files")) for a in args):
+            return False
+        return _args_stay_inside(workspace, args[1:])
+    if name not in READONLY_COMMANDS:
+        return False
+    if name == "find" and any(a in _FIND_WRITES for a in args):
+        return False
+    if name in ("rg", "grep") and any(a.startswith(("--pre", "--hostname-bin")) for a in args):
+        return False
+    return _args_stay_inside(workspace, args)
+
+
+def is_read_only_command(workspace: str, command: str) -> bool:
+    """True when every part of *command* is a known read-only command that stays inside the workspace."""
+    segments = shell_segments(command)
+    if not segments or shell_refused(command):
+        return False
+    return all(_segment_read_only(workspace, seg) for seg in segments)
+
+
+def suggest_prefix(command: str) -> str:
+    """The prefix an 'always allow' would save for *command*, or '' when it should not be offered."""
+    segments = shell_segments(command)
+    if not segments or len(segments) != 1 or shell_refused(command):
+        return ""
+    tokens = segments[0]
+    if tokens[0] in _NEVER_SAVED or "/" in tokens[0]:
+        return ""
+    if len(tokens) >= 2 and not tokens[1].startswith("-") and not any(c in tokens[1] for c in "$*?/~"):
+        return f"{tokens[0]} {tokens[1]}"
+    return tokens[0]
+
+
+def prefix_matches(prefix: str, tokens: list[str]) -> bool:
+    parts = prefix.split()
+    return bool(parts) and tokens[:len(parts)] == parts
+
+
+class ShellAllow:
+    """Saved 'always allow this prefix' choices, one JSON file per bot, keyed by workspace.
+
+    The key ``*`` holds prefixes that count in every workspace of the bot. HARNESS_SHELL_ALLOW
+    (comma list) adds fixed prefixes without touching the file.
+    """
+
+    def __init__(self, path: str, fixed: tuple[str, ...] = ()):
+        self.path = path
+        self.fixed = tuple(p.strip() for p in fixed if p.strip())
+
+    def _load(self) -> dict:
+        try:
+            with open(self.path) as fh:
+                data = json.load(fh)
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def prefixes(self, workspace: str) -> list[str]:
+        data = self._load()
+        found = list(self.fixed)
+        for key in ("*", workspace):
+            found += [p for p in data.get(key) or [] if isinstance(p, str)]
+        return found
+
+    def add(self, workspace: str, prefix: str, everywhere: bool = False) -> bool:
+        prefix = " ".join((prefix or "").split())
+        if not prefix or prefix.split()[0] in _NEVER_SAVED:
+            return False
+        data = self._load()
+        key = "*" if everywhere else workspace
+        known = [p for p in data.get(key) or [] if isinstance(p, str)]
+        if prefix not in known:
+            known.append(prefix)
+        data[key] = known
+        try:
+            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
+            with open(self.path, "w") as fh:
+                json.dump(data, fh, indent=2)
+        except OSError:
+            return False
+        return True
+
+    def allows(self, workspace: str, command: str, read_only: bool = True) -> bool:
+        """Every part of *command* is read-only (when *read_only*) or starts with a saved prefix."""
+        segments = shell_segments(command)
+        if not segments or shell_refused(command):
+            return False
+        saved = self.prefixes(workspace)
+        for seg in segments:
+            if read_only and _segment_read_only(workspace, seg):
+                continue
+            if not any(prefix_matches(p, seg) for p in saved):
+                return False
+        return True
+
+
 # ── Context rules ─────────────────────────────────────────────────────
 
 _RULE_FILES = ("AGENTS.md", "CLAUDE.md", ".clinerules")

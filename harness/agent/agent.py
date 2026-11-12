@@ -48,6 +48,12 @@ class LeanAgent:
         self.folder = folder or os.environ.get("HARNESS_AGENT_DIR") or os.path.expanduser(
             f"~/.local/share/botwidget/harness/agent/{bot}")
         self.stores: dict[str, SessionStore] = {}
+        from harness.agent.workspace import ShellAllow
+        self.shell_allow = ShellAllow(
+            os.environ.get("HARNESS_SHELL_ALLOW_FILE") or os.path.join(self.folder, "shell-allow.json"),
+            tuple((os.environ.get("HARNESS_SHELL_ALLOW") or "").split(",")))
+        # HARNESS_SHELL_READONLY=0 makes every shell command ask again.
+        self.shell_readonly_free = os.environ.get("HARNESS_SHELL_READONLY", "1") != "0"
         self.conn = None
         self._cancelled: set[str] = set()
         self._turns: set[str] = set()  # a session with a turn running: only then does a cancel mean anything
@@ -398,15 +404,22 @@ class LeanAgent:
         if tool.writes:
             remembered = (getattr(self.tools, "permission", "ask") == "allow_session"
                           and title in getattr(self.tools, "_session_allows", ()))
+            command = str(arguments.get("command") or "")
+            if name in ("shell", "shell_background") and not remembered and self._shell_free(command):
+                remembered = True  # read-only, or a prefix the user saved: no question
             # H7: show diff in bubble for write_file, respect diff_edit_mode
             if name in ("write_file", "edit") and not remembered:
                 result = await self._handle_write_file(session_id, call, arguments, store, title)
                 return result
             if not remembered:
-                if not await self._ask(session_id, call["id"], title):
+                prefix = self._shell_prefix(command) if name in ("shell", "shell_background") else ""
+                choice = await self._ask_choice(session_id, call["id"], title, prefix)
+                if not choice:
                     await self._tool_call(session_id, call["id"], title, "completed", "failed")
                     return self._note_tool(store, name, "declined by the user; nothing was done",
                                            "The user declined this action. Do not try it another way.")
+                if choice == "allow_always" and prefix:
+                    self.shell_allow.add(getattr(self.tools, "workspace", "") or "", prefix)
                 if getattr(self.tools, "permission", "ask") == "allow_session":
                     self.tools._session_allows.add(title)
         try:
@@ -682,17 +695,40 @@ class LeanAgent:
         store.add("tool", f"{name}: {' '.join(outcome.split())[:200]}")
         return answer
 
+    def _shell_free(self, command: str) -> bool:
+        """A shell command that needs no question: read-only, or covered by a saved prefix."""
+        workspace = getattr(self.tools, "workspace", "") or ""
+        if not workspace or not command:
+            return False
+        return self.shell_allow.allows(workspace, command, read_only=self.shell_readonly_free)
+
+    @staticmethod
+    def _shell_prefix(command: str) -> str:
+        from harness.agent.workspace import suggest_prefix
+        return suggest_prefix(command)
+
     async def _ask(self, session_id: str, call_id: str, title: str) -> bool:
         """Accept and Decline in the bubble; anything but an explicit allow counts as no."""
+        return bool(await self._ask_choice(session_id, call_id, title))
+
+    async def _ask_choice(self, session_id: str, call_id: str, title: str, always_prefix: str = "") -> str:
+        """'allow', 'allow_always' (only offered with a prefix to save) or '' for anything else."""
         if self.conn is None:
-            return False
+            return ""
+        options = [PermissionOption(option_id="allow", name="Allow", kind="allow_once")]
+        if always_prefix:
+            options.append(PermissionOption(option_id="allow_always", name=f"Always allow `{always_prefix}`",
+                                            kind="allow_always"))
+        options.append(PermissionOption(option_id="decline", name="Decline", kind="reject_once"))
         response = await self.conn.request_permission(
             session_id=session_id,
             tool_call=ToolCallUpdate(tool_call_id=call_id, title=title, kind="edit", status="pending"),
-            options=[PermissionOption(option_id="allow", name="Allow", kind="allow_once"),
-                     PermissionOption(option_id="decline", name="Decline", kind="reject_once")])
+            options=options)
         outcome = response.outcome
-        return getattr(outcome, "outcome", "") == "selected" and getattr(outcome, "option_id", "") == "allow"
+        if getattr(outcome, "outcome", "") != "selected":
+            return ""
+        chosen = getattr(outcome, "option_id", "")
+        return chosen if chosen in ("allow", "allow_always") else ""
 
     async def _tool_call(self, session_id: str, call_id: str, title: str, status: str, progress: str) -> None:
         """Tell the bubble what the bot is doing, so the cloud shows the tool instead of a frozen thought."""
