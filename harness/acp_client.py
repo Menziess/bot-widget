@@ -48,7 +48,8 @@ class Turn:
 
 def split_command(command: str) -> list[str]:
     """Split a command line. POSIX shlex treats \\ as an escape, which deletes a Windows path."""
-    return shlex.split(command, posix=(os.name != "nt"))
+    parts = shlex.split(command, posix=(os.name != "nt"))
+    return [p[1:-1] if os.name == "nt" and len(p) > 1 and p[0] == p[-1] == '"' else p for p in parts]
 
 
 def _text_of(content) -> str:

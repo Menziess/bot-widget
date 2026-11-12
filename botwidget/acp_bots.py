@@ -5,6 +5,7 @@ The key itself never enters this file. A bot only names the file the key is read
 
 import json
 import os
+import shlex
 import sys
 
 from botwidget.acplink import PREFIX, _slug
@@ -28,8 +29,9 @@ def default_command() -> str:
     """The lean agent from this checkout, or the installed one when the checkout is not beside the package."""
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if os.path.isdir(os.path.join(root, "harness")):
-        return f"env PYTHONPATH={root} {sys.executable} -m harness.agent"
-    return f"{sys.executable} -m harness.agent"
+    quote = (lambda path: f'"{path}"') if os.name == "nt" else shlex.quote  # "Bot Widget.app" has a space
+        return f"env PYTHONPATH={quote(root)} {quote(sys.executable)} -m harness.agent"
+    return f"{quote(sys.executable)} -m harness.agent"
 
 
 def blank() -> dict:

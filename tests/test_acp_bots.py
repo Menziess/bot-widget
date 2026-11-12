@@ -45,6 +45,14 @@ class ConfigFile(unittest.TestCase):
         with mock.patch.object(acp_bots.os.path, "isdir", return_value=False):
             self.assertEqual(acp_bots.default_command(), f"{sys.executable} -m harness.agent")
 
+    def test_a_path_with_a_space_survives_the_command_line(self):
+        """Should not cut /Applications/Bot Widget.app/... at the space."""
+        from harness.acp_client import split_command
+        path = "/Applications/Bot Widget.app/Contents/MacOS/Bot Widget"
+        with mock.patch.object(acp_bots.os.path, "isdir", return_value=False), \
+                mock.patch.object(acp_bots.sys, "executable", path):
+            self.assertEqual(split_command(acp_bots.default_command()), [path, "-m", "harness.agent"])
+
     def test_a_file_that_cannot_be_read_is_not_replaced(self):
         with open(config.CONFIG_PATH, "w") as fh:
             fh.write("{not json")
