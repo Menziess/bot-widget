@@ -71,7 +71,7 @@ botwidget
 - Spaces at the end of a line wrap with the text in the field, so it never scrolls sideways
 - A bubble that opens by itself (another bot answers) never covers the one you are busy with: it takes another side, or waits out of sight and comes back once yours is gone
 - Shift+Enter starts a new line in the field, and the field grows with its lines
-- Paste a file or a picture in the field to send it along, it shows as a chip that you can remove, and the message gets a list of the files under the shared folder of OpenBot
+- Paste a file or a picture in the field to send it along, it shows as a chip that you can remove, and the message gets a list of the files in a `botwidget-transfers` folder in the system temp folder, which the system cleans up by itself
 - Drag the face to move it, it bounces off screen edges
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
 - Right-click the face, or start the field with a slash, and a list of commands opens above the field. /feedback opens a new GitHub issue in the browser, already filled with the version, the system and how it was installed

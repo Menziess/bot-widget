@@ -1,20 +1,22 @@
 """Files and pictures sent along with a message.
 
-OpenBot hands an agent a file as a path under the shared folder, in a list at the end of the message,
-so that is what a pasted file becomes: a copy there, and its path in the text.
+A pasted file becomes a copy in the system temp folder, and its path goes in a list at the end of the message,
+the way OpenBot hands an agent a file.
 """
 
 import shutil
+import tempfile
 import uuid
 from pathlib import Path
 
-TRANSFERS = Path.home() / "OpenBot" / "Shared" / "Transfers"
+TRANSFERS = Path(tempfile.gettempdir()) / "botwidget-transfers"
 LIST_HEADING = "Attached local files:"
 
 
 def _fresh_folder() -> Path:
+    TRANSFERS.mkdir(parents=True, exist_ok=True, mode=0o700)  # /tmp is shared on Linux; a screenshot is private
     folder = TRANSFERS / str(uuid.uuid4())
-    folder.mkdir(parents=True)
+    folder.mkdir()
     return folder
 
 
