@@ -11,7 +11,6 @@ import sys
 import time
 
 from PySide6.QtCore import (
-    QAbstractAnimation,
     QObject,
     QPointF,
     QBuffer,

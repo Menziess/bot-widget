@@ -173,18 +173,12 @@ class TestCLI(unittest.TestCase):
 class TestNoNetworkAndNoKeys(unittest.TestCase):
     """No test in this file connects to the local agent port or reads any key file."""
 
-    def test_no_hardcoded_localhost_port(self):
-        # Check the benchmark module (not this test file) for forbidden patterns.
-        source = open(os.path.join(os.path.dirname(__file__),
-                                   "..", "harness", "benchmark.py")).read()
-        self.assertNotIn("8080", source,
-                         "benchmark must not connect to 127.0.0.1:8080")
-
-    def test_no_key_file_access(self):
-        source = open(os.path.join(os.path.dirname(__file__),
-                                   "..", "harness", "benchmark.py")).read()
-        self.assertNotIn("/key", source,
-                         "benchmark must not reference LLM key files")
+    def test_benchmark_source_names_no_live_endpoint_or_key_path(self):
+        with open(os.path.join(os.path.dirname(__file__),
+                               "..", "harness", "benchmark.py")) as fh:
+            source = fh.read()
+        self.assertNotIn("8080", source, "benchmark must not connect to 127.0.0.1:8080")
+        self.assertNotIn("/key", source, "benchmark must not reference LLM key files")
 
 
 if __name__ == "__main__":

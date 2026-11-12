@@ -200,35 +200,25 @@ class StopWhenGoodEnough(unittest.IsolatedAsyncioTestCase):
 class Dedup(unittest.TestCase):
     """A repeated read_file with the same args is not executed twice."""
 
-    def test_call_cache_key_same_args(self):
+    def test_cache_key_follows_the_tool_and_its_arguments(self):
         from harness.agent.agent import LeanAgent
-        call1 = {"id": "c1", "function": {"name": "read_file",
-                     "arguments": json.dumps({"path": "/tmp/foo.txt"})}}
-        call2 = {"id": "c2", "function": {"name": "read_file",
-                     "arguments": json.dumps({"path": "/tmp/foo.txt"})}}
-        key1 = LeanAgent._call_cache_key(call1)
-        key2 = LeanAgent._call_cache_key(call2)
-        self.assertEqual(key1, key2, "same args should produce the same cache key")
 
-    def test_call_cache_key_different_args(self):
-        from harness.agent.agent import LeanAgent
-        call1 = {"id": "c1", "function": {"name": "read_file",
-                     "arguments": json.dumps({"path": "/tmp/foo.txt"})}}
-        call2 = {"id": "c2", "function": {"name": "read_file",
-                     "arguments": json.dumps({"path": "/tmp/bar.txt"})}}
-        key1 = LeanAgent._call_cache_key(call1)
-        key2 = LeanAgent._call_cache_key(call2)
-        self.assertNotEqual(key1, key2, "different paths should produce different cache keys")
+        def key(name, path):
+            call = {"id": "c", "function": {"name": name, "arguments": json.dumps({"path": path})}}
+            return LeanAgent._call_cache_key(call)
 
-    def test_call_cache_key_different_tools(self):
-        from harness.agent.agent import LeanAgent
-        call1 = {"id": "c1", "function": {"name": "read_file",
-                     "arguments": json.dumps({"path": "/tmp/foo.txt"})}}
-        call2 = {"id": "c2", "function": {"name": "list_dir",
-                     "arguments": json.dumps({"path": "/tmp/foo.txt"})}}
-        key1 = LeanAgent._call_cache_key(call1)
-        key2 = LeanAgent._call_cache_key(call2)
-        self.assertNotEqual(key1, key2, "different tool names should produce different cache keys")
+        base = key("read_file", "/tmp/foo.txt")
+        cases = (
+            ("same args", "read_file", "/tmp/foo.txt", True),
+            ("different path", "read_file", "/tmp/bar.txt", False),
+            ("different tool", "list_dir", "/tmp/foo.txt", False),
+        )
+        for name, tool, path, same in cases:
+            with self.subTest(name=name):
+                if same:
+                    self.assertEqual(base, key(tool, path))
+                else:
+                    self.assertNotEqual(base, key(tool, path))
 
 
 class DedupIntegration(unittest.IsolatedAsyncioTestCase):

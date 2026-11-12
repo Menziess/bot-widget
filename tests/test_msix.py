@@ -92,53 +92,41 @@ class TestLoadConfig(unittest.TestCase):
         })
         self.assertEqual(config["identity_name"], "Orig.Name")
 
-    def test_invalid_identity_name(self):
-        self._write({"identity_name": "a",  # too short
-                      "publisher": "CN=12345678-1234-1234-1234-123456789012",
-                      "publisher_display_name": "Orig",
-                      "display_name": "Bot Widget",
-                      "description": "Desc",
-                      "min_version": "10.0.17763.0",
-                      "max_version_tested": "10.0.22621.0",
-                      })
-        with self.assertRaises(ValueError):
-            msix.load_config(self._config_path)
-
-    def test_invalid_publisher(self):
-        self._write({"identity_name": "Valid.Name",
-                      "publisher": "InvalidPublisher",
-                      "publisher_display_name": "Orig",
-                      "display_name": "Bot Widget",
-                      "description": "Desc",
-                      "min_version": "10.0.17763.0",
-                      "max_version_tested": "10.0.22621.0",
-                      })
-        with self.assertRaises(ValueError):
-            msix.load_config(self._config_path)
+    def test_invalid_identity_is_refused(self):
+        base = {"identity_name": "Valid.Name",
+                "publisher": "CN=12345678-1234-1234-1234-123456789012",
+                "publisher_display_name": "Orig",
+                "display_name": "Bot Widget",
+                "description": "Desc",
+                "min_version": "10.0.17763.0",
+                "max_version_tested": "10.0.22621.0"}
+        for key, bad in (("identity_name", "a"), ("publisher", "InvalidPublisher")):
+            with self.subTest(key=key):
+                data = dict(base)
+                data[key] = bad
+                self._write(data)
+                with self.assertRaises(ValueError):
+                    msix.load_config(self._config_path)
 
 
 class TestIsPlaceholder(unittest.TestCase):
-    def test_identity_name_placeholder(self):
-        config = {"identity_name": "PLACEHOLDER.BotWidget",
-                   "publisher": "CN=1234", "publisher_display_name": "Real"}
-        self.assertTrue(msix.is_placeholder(config))
-
-    def test_publisher_display_placeholder(self):
-        config = {"identity_name": "Real.Name",
-                   "publisher": "CN=1234", "publisher_display_name": "PLACEHOLDER Corp"}
-        self.assertTrue(msix.is_placeholder(config))
-
-    def test_all_zero_guid(self):
-        config = {"identity_name": "Real.Name",
-                   "publisher": "CN=00000000-0000-0000-0000-000000000000",
-                   "publisher_display_name": "Real"}
-        self.assertTrue(msix.is_placeholder(config))
-
-    def test_not_placeholder(self):
-        config = {"identity_name": "MyCorp.BotWidget",
-                   "publisher": "CN=12345678-1234-1234-1234-123456789012",
-                   "publisher_display_name": "MyCorp"}
-        self.assertFalse(msix.is_placeholder(config))
+    def test_a_placeholder_field_marks_the_identity(self):
+        real = {"identity_name": "MyCorp.BotWidget",
+                "publisher": "CN=12345678-1234-1234-1234-123456789012",
+                "publisher_display_name": "MyCorp"}
+        cases = (
+            ("identity name", {"identity_name": "PLACEHOLDER.BotWidget",
+                               "publisher": "CN=1234", "publisher_display_name": "Real"}, True),
+            ("publisher display", {"identity_name": "Real.Name", "publisher": "CN=1234",
+                                   "publisher_display_name": "PLACEHOLDER Corp"}, True),
+            ("all-zero guid", {"identity_name": "Real.Name",
+                               "publisher": "CN=00000000-0000-0000-0000-000000000000",
+                               "publisher_display_name": "Real"}, True),
+            ("real identity", real, False),
+        )
+        for name, config, want in cases:
+            with self.subTest(name=name):
+                self.assertEqual(msix.is_placeholder(config), want)
 
 
 _REAL_IDENTITY = {
@@ -149,25 +137,21 @@ _REAL_IDENTITY = {
 
 
 class TestIdentityConfigured(unittest.TestCase):
-    def test_missing_all(self):
-        """Should be false when none of the identity variables are set."""
-        self.assertFalse(msix.identity_configured({}))
-
-    def test_missing_one(self):
-        """Should be false when any one identity variable is missing."""
-        env = dict(_REAL_IDENTITY)
-        del env["MSIX_PUBLISHER"]
-        self.assertFalse(msix.identity_configured(env))
-
-    def test_empty_string(self):
-        """Should be false when an identity variable is empty."""
-        env = dict(_REAL_IDENTITY)
-        env["MSIX_PUBLISHER_DISPLAY_NAME"] = ""
-        self.assertFalse(msix.identity_configured(env))
-
-    def test_all_set(self):
-        """Should be true when all three identity variables are set."""
-        self.assertTrue(msix.identity_configured(_REAL_IDENTITY))
+    def test_all_three_variables_are_required(self):
+        """Should be true only when every identity variable is a non-empty string."""
+        missing_one = dict(_REAL_IDENTITY)
+        del missing_one["MSIX_PUBLISHER"]
+        empty = dict(_REAL_IDENTITY)
+        empty["MSIX_PUBLISHER_DISPLAY_NAME"] = ""
+        cases = (
+            ("none", {}, False),
+            ("one missing", missing_one, False),
+            ("empty", empty, False),
+            ("all set", dict(_REAL_IDENTITY), True),
+        )
+        for name, env, want in cases:
+            with self.subTest(name=name):
+                self.assertEqual(msix.identity_configured(env), want)
 
 
 class TestMainIdentityGate(unittest.TestCase):
@@ -223,36 +207,24 @@ class TestMainIdentityGate(unittest.TestCase):
 
 
 class TestMsixVersion(unittest.TestCase):
-    def test_three_parts(self):
-        self.assertEqual(msix.msix_version("0.1.1"), "0.1.1.0")
+    def test_known_versions_become_four_parts(self):
+        cases = (
+            ("0.1.1", "0.1.1.0"),
+            ("1.2", "1.2.0.0"),
+            ("1", "1.0.0.0"),
+            ("0.1.1.dev3+gabc", "0.1.1.0"),
+            ("1.2.3.4", "1.2.3.4"),
+            ("1.0.0.alpha", "1.0.0.0"),  # a non-numeric suffix after a dot is dropped
+        )
+        for raw, want in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(msix.msix_version(raw), want)
 
-    def test_two_parts(self):
-        self.assertEqual(msix.msix_version("1.2"), "1.2.0.0")
-
-    def test_one_part(self):
-        self.assertEqual(msix.msix_version("1"), "1.0.0.0")
-
-    def test_dev_version(self):
-        self.assertEqual(msix.msix_version("0.1.1.dev3+gabc"), "0.1.1.0")
-
-    def test_four_parts(self):
-        self.assertEqual(msix.msix_version("1.2.3.4"), "1.2.3.4")
-
-    def test_out_of_range(self):
-        with self.assertRaises(ValueError):
-            msix.msix_version("0.1.65536.0")
-
-    def test_negative(self):
-        with self.assertRaises(ValueError):
-            msix.msix_version("-1.0.0.0")
-
-    def test_non_numeric_suffix_stripped(self):
-        # Leading digits are fine; non-numeric suffix after a dot is stripped
-        self.assertEqual(msix.msix_version("1.0.0.alpha"), "1.0.0.0")
-
-    def test_non_numeric_bare_raises(self):
-        with self.assertRaises(ValueError):
-            msix.msix_version("alpha")
+    def test_unusable_versions_are_refused(self):
+        for raw in ("0.1.65536.0", "-1.0.0.0", "alpha"):
+            with self.subTest(raw=raw):
+                with self.assertRaises(ValueError):
+                    msix.msix_version(raw)
 
 
 class TestAssets(unittest.TestCase):
@@ -395,21 +367,19 @@ class TestManifestXml(unittest.TestCase):
         for key in msix.ASSETS:
             self.assertIn(key, msix.ASSETS)
 
-    def test_xml_escaping_ampersand(self):
-        config = self._config()
-        config["display_name"] = "Bot & Widget"
-        xml = msix.manifest_xml(config, "0.1.1")
-        self.assertIn("Bot &amp; Widget", xml)
-        # Must not have double-escaped &
-        self.assertNotIn("&amp;amp;", xml)
-        # Must not have unescaped & in attribute values
-        self.assertNotIn('DisplayName="Bot & Widget"', xml)
-
-    def test_xml_escaping_less_than(self):
-        config = self._config()
-        config["display_name"] = "Bot <Widget>"
-        xml = msix.manifest_xml(config, "0.1.1")
-        self.assertIn("Bot &lt;Widget&gt;", xml)
+    def test_xml_escapes_the_display_name(self):
+        cases = (
+            ("Bot & Widget", "Bot &amp; Widget", ('&amp;amp;', 'DisplayName="Bot & Widget"')),
+            ("Bot <Widget>", "Bot &lt;Widget&gt;", ()),
+        )
+        for raw, escaped, forbidden in cases:
+            with self.subTest(raw=raw):
+                config = self._config()
+                config["display_name"] = raw
+                xml = msix.manifest_xml(config, "0.1.1")
+                self.assertIn(escaped, xml)
+                for bad in forbidden:
+                    self.assertNotIn(bad, xml)
 
     def test_display_name_roundtrip(self):
         """display_name with & and <> should round-trip through XML parsing."""

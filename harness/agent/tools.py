@@ -133,7 +133,7 @@ class Tools:
 
     def _add_workspace_tools(self) -> None:
         """Add workspace-scoped tools if a workspace is set; they override the builtins."""
-        from harness.agent.workspace import EditStore, _edit_before, resolve_workspace, workspace_builtins
+        from harness.agent.workspace import EditStore, resolve_workspace, workspace_builtins
 
         resolved = resolve_workspace(self.workspace)
         if resolved is None:

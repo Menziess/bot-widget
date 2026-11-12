@@ -78,32 +78,19 @@ class Containment(unittest.TestCase):
 # ── Secrets ───────────────────────────────────────────────────────────
 
 class Secrets(unittest.TestCase):
-    def test_env_files_are_secret(self):
-        self.assertTrue(_is_secret_name(".env"))
-        self.assertTrue(_is_secret_name(".env.production"))
-        self.assertTrue(_is_secret_name(".env.local"))
-
-    def test_env_example_is_allowed(self):
-        self.assertFalse(_is_secret_name(".env.example"))
-        self.assertFalse(_is_secret_name(".env.template"))
-
-    def test_key_and_pem_are_secret(self):
-        self.assertTrue(_is_secret_name("server.key"))
-        self.assertTrue(_is_secret_name("cert.pem"))
-        self.assertTrue(_is_secret_name("my-key.key"))
-
-    def test_id_files_are_secret(self):
-        self.assertTrue(_is_secret_name("id_rsa"))
-        self.assertTrue(_is_secret_name("id_ed25519"))
-        self.assertTrue(_is_secret_name("id_dsa"))
-
-    def test_netrc_is_secret(self):
-        self.assertTrue(_is_secret_name(".netrc"))
-
-    def test_regular_files_are_not_secret(self):
-        self.assertFalse(_is_secret_name("README.md"))
-        self.assertFalse(_is_secret_name("note.txt"))
-        self.assertFalse(_is_secret_name("data.csv"))
+    def test_secret_names_and_ordinary_names(self):
+        secret = (
+            ".env", ".env.production", ".env.local",
+            "server.key", "cert.pem", "my-key.key",
+            "id_rsa", "id_ed25519", "id_dsa", ".netrc",
+        )
+        ordinary = (".env.example", ".env.template", "README.md", "note.txt", "data.csv")
+        for name in secret:
+            with self.subTest(name=name):
+                self.assertTrue(_is_secret_name(name))
+        for name in ordinary:
+            with self.subTest(name=name):
+                self.assertFalse(_is_secret_name(name))
 
     def test_secret_directories_are_denied(self):
         self.assertTrue(_is_secret_dir(".ssh"))

@@ -19,8 +19,8 @@ import zipfile
 from types import SimpleNamespace
 from unittest import mock
 
-from botwidget import (attachments, bubble, channel, checkout, config, delivery, dev, hermesbot, instance,
-                       power, startup, updates)
+from botwidget import (attachments, bubble, channel, checkout, cli_json, config, delivery, dev, hermesbot,
+                       instance, power, startup, updates)
 from botwidget.markdown import block_text
 from botwidget.menu_pages import bots
 from botwidget.qt_ui import app as appmod
@@ -181,22 +181,22 @@ class Hermes(unittest.TestCase):
         proc = mock.Mock()
         proc.pid = 9
         proc.wait.side_effect = [subprocess.TimeoutExpired("h", 1), None]
-        if hasattr(hermesbot.os, "killpg"):
-            with mock.patch.object(hermesbot.os, "killpg") as kill:
+        if hasattr(cli_json.os, "killpg"):
+            with mock.patch.object(cli_json.os, "killpg") as kill:
                 hermesbot._stop_group(proc)
                 self.assertEqual(kill.call_count, 2)
             proc.wait.side_effect = None
             proc.wait.return_value = 0
-            with mock.patch.object(hermesbot.os, "killpg", side_effect=ProcessLookupError):
+            with mock.patch.object(cli_json.os, "killpg", side_effect=ProcessLookupError):
                 hermesbot._stop_group(proc)
-            killpg = hermesbot.os.killpg
+            killpg = cli_json.os.killpg
             try:
-                del hermesbot.os.killpg
+                del cli_json.os.killpg
                 proc.kill.reset_mock()
                 hermesbot._stop_group(proc)
                 proc.kill.assert_called_once()
             finally:
-                hermesbot.os.killpg = killpg
+                cli_json.os.killpg = killpg
         else:
             proc.kill.reset_mock()
             hermesbot._stop_group(proc)
@@ -1301,19 +1301,19 @@ class GrokEdges(unittest.TestCase):
         proc.pid = 4
         proc.wait.return_value = 0
         proc.kill = mock.Mock()
-        if hasattr(grokbot.os, "killpg"):
-            killpg = grokbot.os.killpg
+        if hasattr(cli_json.os, "killpg"):
+            killpg = cli_json.os.killpg
             try:
-                del grokbot.os.killpg
+                del cli_json.os.killpg
                 grokbot._stop_group(proc)
                 proc.kill.assert_called_once()
             finally:
-                grokbot.os.killpg = killpg
+                cli_json.os.killpg = killpg
             proc.wait.side_effect = [subprocess.TimeoutExpired("g", 1), None]
-            with mock.patch.object(grokbot.os, "killpg") as kill:
+            with mock.patch.object(cli_json.os, "killpg") as kill:
                 grokbot._stop_group(proc)
             self.assertEqual(kill.call_count, 2)
-            with mock.patch.object(grokbot.os, "killpg", side_effect=OSError("no")):
+            with mock.patch.object(cli_json.os, "killpg", side_effect=OSError("no")):
                 grokbot._stop_group(proc)
         else:
             grokbot._stop_group(proc)
