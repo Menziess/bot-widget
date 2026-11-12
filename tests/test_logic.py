@@ -5677,6 +5677,27 @@ class NewFlagsNewWindow(unittest.TestCase):
         self.assertIn(native_id(window), marked)
 
 
+class MacWindowSize(unittest.TestCase):
+    """macOS keeps a frameless window resizable from its edges unless the style mask says otherwise."""
+
+    def test_before_show_removes_the_resizable_bit_and_keeps_the_rest(self):
+        calls = []
+
+        def send(_objc, _restype, *_argtypes):
+            def call(_target, selector, *args):
+                calls.append((selector, args))
+                return 14 if selector == b"styleMask" else 1
+            return call
+
+        objc = unittest.mock.Mock()
+        objc.sel_registerName = lambda name: name
+        with unittest.mock.patch.object(macos, "_objc", return_value=objc), \
+                unittest.mock.patch.object(macos, "_send", send), \
+                unittest.mock.patch.dict(os.environ, {"QT_QPA_PLATFORM": "cocoa"}):
+            macos.before_show(7)
+        self.assertEqual(calls[-1], (b"setStyleMask:", (6,)))
+
+
 class NoTaskbarButton(unittest.TestCase):
     """Faces and bubbles never get a button in the Windows taskbar."""
 

@@ -251,8 +251,17 @@ def raise_window(win_id: int) -> bool:
     return True
 
 
+RESIZABLE = 1 << 3  # NSWindowStyleMaskResizable
+
+
 def before_show(win_id: int, layer: str = "") -> None:
-    """Only GNOME needs a window marked before it is mapped."""
+    """Qt leaves a frameless window resizable from its edges on macOS, and the size of ours is not the user's."""
+    if not win_id or os.environ.get("QT_QPA_PLATFORM") == "offscreen":
+        return
+    objc = _objc()
+    window = _send(objc, ctypes.c_void_p)(win_id, objc.sel_registerName(b"window"))
+    mask = _send(objc, ctypes.c_ulong)(window, objc.sel_registerName(b"styleMask"))
+    _send(objc, None, ctypes.c_ulong)(window, objc.sel_registerName(b"setStyleMask:"), mask & ~RESIZABLE)
 
 
 def pointer_window() -> int | None:
