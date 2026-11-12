@@ -257,8 +257,10 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
         usage = [json.loads(line) for line in open(os.path.join(self.folder, "usage.jsonl"))]
         self.assertTrue(usage[-1]["estimated"])
 
-    async def test_six_tool_steps_stop_the_loop(self):
-        """Should end a tool loop that never settles."""
+    async def test_a_step_limit_stops_the_loop(self):
+        """Should end a tool loop that never settles, at HARNESS_MAX_STEPS."""
+        os.environ["HARNESS_MAX_STEPS"] = "6"
+        self.addCleanup(os.environ.pop, "HARNESS_MAX_STEPS", None)
         model = ScriptModel([[("tool_calls", [call("pin_fact", {"fact": f"n{n}"})])] for n in range(6)])
         agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools("", workspace=self.folder))
         session = (await agent.new_session(".")).session_id

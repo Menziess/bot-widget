@@ -27,7 +27,15 @@ from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
 
-MAX_STEPS = 6  # a tool loop that never settles must still end the turn
+MAX_STEPS = 30  # default for HARNESS_MAX_STEPS: a tool loop that never settles must still end the turn
+LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the same arguments this many times in a row
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name) or default)
+    except ValueError:
+        return default
 
 
 class LeanAgent:
@@ -161,13 +169,17 @@ class LeanAgent:
         cancelled = False
         steps = 0
         last = {}
+        max_steps = max(_env_int("HARNESS_MAX_STEPS", MAX_STEPS), 1)
+        repeats = _env_int("HARNESS_LOOP_REPEATS", LOOP_REPEATS)  # 0 turns loop detection off
+        recent_calls: list[str] = []
+        stopped = ""
         try:
             if not self._checked and hasattr(self.model, "ready"):
                 await asyncio.to_thread(self.model.ready)
                 self._checked = True
             messages = context.build(store, self.bot, model=self.model, workspace=self._workspace)
             await self._usage(session_id, store)
-            for _step in range(MAX_STEPS):
+            for _step in range(max_steps):
                 steps += 1
                 calls = []
                 step_text, thought_chars, finish = [], 0, ""
@@ -199,12 +211,29 @@ class LeanAgent:
                         "text_tail": "".join(step_text)[-200:]}
                 if cancelled or not calls:
                     break
+                for call in calls:
+                    recent_calls.append(self._call_cache_key(call))
+                if repeats > 1 and len(recent_calls) >= repeats and len(set(recent_calls[-repeats:])) == 1:
+                    name = (calls[-1].get("function") or {}).get("name") or "a tool"
+                    stopped = (f"\n\nI stopped: I called {name} with the same arguments {repeats} times in a row "
+                               "and that is not getting anywhere. Tell me what to try instead.")
+                    last["loop"] = name
+                    break
                 messages.append({"role": "assistant", "content": "", "tool_calls": calls})
                 # H6: execute tool calls with parallel reads, cheap-first, dedup, and guard-rails.
                 results = await self._execute_calls(session_id, store, calls)
                 for call, result in zip(calls, results):
                     messages.append({"role": "tool", "tool_call_id": call["id"],
                                      "content": TOOL_OUTPUT + "\n" + result})
+            else:
+                # The loop ran out of steps with the model still asking for tools.
+                if calls and not cancelled:
+                    stopped = (f"\n\nI stopped after {max_steps} steps in one turn. Say continue and I will "
+                               "carry on from here.")
+                    last["step_limit"] = max_steps
+            if stopped:
+                answer.append(stopped)
+                await self._chunk(session_id, "agent", stopped)
         except ModelError as error:
             store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                          "ms": round((time.monotonic() - started) * 1000), "error": str(error)[:300]})
