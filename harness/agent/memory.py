@@ -37,7 +37,6 @@ import os
 import re
 import time
 import uuid
-from typing import Optional
 
 # ── Defaults ────────────────────────────────────────────────────────
 
