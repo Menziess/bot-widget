@@ -92,7 +92,10 @@ class ScreenshotMode(unittest.TestCase):
         overlay._cancel()
         self.assertFalse(any(o.isVisible() for o in group))
 
-    def test_the_command_list_closes_when_the_screenshot_starts_and_no_empty_cloud_stays_behind(self):
+    def test_choosing_screenshot_from_the_command_list_closes_it_and_starts_the_region_drag(self):
+        """A click on /screenshot is the same start as a double-click: the list goes, no empty cloud stays, the drag begins."""
+        from PySide6.QtCore import QEvent, QPointF
+        from PySide6.QtGui import QMouseEvent
         window = self._make_window()
         self.addCleanup(window.close_face)
         window.faces = mock.Mock()
@@ -100,10 +103,18 @@ class ScreenshotMode(unittest.TestCase):
         window.bubble.focus_entry = lambda: None
         window._pointer = lambda: (5000, 5000)
         window.open_command_menu()
+        slash = window.bubble._slash
         self.assertTrue(window.bubble.isVisible())
-        window.on_user_message("/screenshot")
-        self.addCleanup(lambda: window._screenshot_overlay and window._screenshot_overlay.close())
+        self.assertTrue(slash.isVisible())
+        index = [row[0] for row in slash.rows].index("/screenshot")
+        y = 4 + slash.ROW_H * index + slash.ROW_H / 2
+        with mock.patch("botwidget.qt_ui.screenshot.enter_screenshot_mode") as enter:
+            slash.mouseReleaseEvent(QMouseEvent(
+                QEvent.Type.MouseButtonRelease, QPointF(12, y), Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier))
+        enter.assert_called_once_with(window)
         self.assertFalse(window.bubble.isVisible(), "the list it was started from goes with it")
+        self.assertFalse(slash.isVisible())
         for _ in range(3):
             window._sync_bubble(window._latest())
         self.assertFalse(window.bubble.isVisible(), "no thinking cloud with nothing in it while the screen is dark")
