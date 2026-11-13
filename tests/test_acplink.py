@@ -194,6 +194,7 @@ class AcpTurns(unittest.TestCase):
         self.assertTrue(wait_for(lambda: link.attention()["approvals"]), "the bubble shows Accept and Decline")
         request = link.attention()["approvals"][0]
         self.assertIn("Write", request["reason"])
+        self.assertFalse(request["always"], "this ask has no command to remember")
         link.decide(request["requestId"], True)
         self.assertTrue(wait_for(lambda: not link.active()))
         self.assertEqual(link.chat()["messages"][-1]["text"], "chose yes")
@@ -212,6 +213,34 @@ class AcpTurns(unittest.TestCase):
         self.assertIn('"decision": "declined"', last)
         self.assertIn('"source": "cli"', last)
         self.assertIn('"by": "claude"', last)
+
+    def test_always_allow_is_offered_only_with_that_option_and_the_choice_comes_back(self):
+        """Should show the remember choice only when the agent offered it, and return that choice."""
+        import asyncio
+        link = self.link()
+
+        class Option:
+            def __init__(self, kind):
+                self.kind = kind
+
+        async def ask(options):
+            return await link._ask("shell git status", options)
+
+        waiting = asyncio.run_coroutine_threadsafe(
+            ask([Option("allow_once"), Option("allow_always"), Option("reject_once")]), link._loop)
+        self.assertTrue(wait_for(lambda: link.attention()["approvals"]))
+        request = link.attention()["approvals"][0]
+        self.assertTrue(request["always"])
+        self.assertTrue(link.chat()["approvals"][0]["always"])
+        self.assertTrue(link.decide(request["requestId"], "allow_always"))
+        self.assertEqual(waiting.result(2), "allow_always")
+
+        plain = asyncio.run_coroutine_threadsafe(ask([Option("allow_once"), Option("reject_once")]), link._loop)
+        self.assertTrue(wait_for(lambda: link.attention()["approvals"]))
+        request = link.attention()["approvals"][0]
+        self.assertFalse(request["always"])
+        link.decide(request["requestId"], True)
+        self.assertIs(plain.result(2), True)
 
     def test_declining_says_no_to_the_agent(self):
         link = self.link()

@@ -163,7 +163,7 @@ class StopWhenGoodEnough(unittest.IsolatedAsyncioTestCase):
         self.model = FakeModel("Done.")
         self.addCleanup(self.model.close)
 
-    def client(self, allow=lambda _t: False) -> AcpClient:
+    def client(self, allow=lambda _t, _options=(): False) -> AcpClient:
         return AcpClient(*AGENT.split(), cwd=ROOT, allow=allow,
                          env={"HARNESS_BOT": "StopTest",
                               "HARNESS_MODEL_BASE_URL": self.model.base_url,
@@ -183,7 +183,7 @@ class StopWhenGoodEnough(unittest.IsolatedAsyncioTestCase):
             ]},
         ]
 
-        async with self.client(allow=lambda _t: True) as client:
+        async with self.client(allow=lambda _t, _options=(): True) as client:
             await client.start()
             turn = await client.prompt("Read and write x.txt")
 

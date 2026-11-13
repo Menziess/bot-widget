@@ -1394,7 +1394,8 @@ class FaceWindow(QWidget):
     def _attention_command(self, kind: str, rest: str):
         if kind == "approve" and self.acp:
             request_id, _, decision = rest.rpartition("/")
-            self.acp.decide(request_id, decision == "accept")
+            choice = {"accept": True, "always": "allow_always"}.get(decision, False)
+            self.acp.decide(request_id, choice)
             self._attention = {"prompts": [], "approvals": [], "browserTakeovers": []}
             self._sync_bubble(self._latest(), force=True)
             return
@@ -1904,8 +1905,10 @@ class FaceWindow(QWidget):
                     blocks.append(status_block(approval[field]))
             if approval.get("command"):
                 blocks.append(code_block([approval["command"]]))
-            blocks += [control_block("button", "Accept", f"approve/{approval['requestId']}/accept"),
-                       control_block("button", "Decline", f"approve/{approval['requestId']}/decline")]
+            blocks.append(control_block("button", "Accept", f"approve/{approval['requestId']}/accept"))
+            if approval.get("always"):
+                blocks.append(control_block("button", "Always allow", f"approve/{approval['requestId']}/always"))
+            blocks.append(control_block("button", "Decline", f"approve/{approval['requestId']}/decline"))
         if self._attention.get("browserTakeovers"):
             blocks += [role_panel("bot"), status_block("The browser needs you: open OpenBot to take over.")]
         if self._attention_note:

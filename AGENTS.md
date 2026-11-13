@@ -54,6 +54,6 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 - The picture waits in the field as an attachment, the bubble stays open for it, and nothing goes out until the user sends
 
 ### The bot
-- An approval shows a dot and a cloud with Accept and Decline, waits ten minutes, and is logged with who answered
+- An approval shows a dot and a cloud with Accept and Decline, and Always allow when the agent offers to remember the command. It waits ten minutes, and is logged with who answered
 - A turn that a restart cut off is picked up again when the widget is back
 - The eyes follow the pointer wherever it is

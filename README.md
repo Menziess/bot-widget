@@ -132,7 +132,7 @@ You can add a bot from the widget instead of editing this file. `/bots`, then Ne
 - `env` holds `HARNESS_*` settings only: the model server, the model name, the bot's name, and the background-job hooks below
 - `key_file` is the path to a file with the API key, read at start and passed as `HARNESS_MODEL_API_KEY`. The key itself never goes in `widget.json`
 - The conversation is kept per bot; after a widget restart the face loads the same session and shows the history again
-- A write the bot asks about shows Accept and Decline in the bubble, and a running turn can be cancelled
+- A write the bot asks about shows Accept and Decline in the bubble, and Always allow when the agent offers to remember the command. A running turn can be cancelled
 - The context meter under the conversation shows how full the context is, and a pin_fact tool keeps a fact through compaction
 - What the bot remembers with its memory tools is on the `/memory` page, with Edit and Forget on every row and New memory below the list. Edit changes the text and the topic, and the memory keeps its scope and its time
 

@@ -576,7 +576,7 @@ class DirectClient(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(client._turn.first_update)
         self.assertEqual(len(seen), 4)
 
-        async def allow(_title):
+        async def allow(_title, _options=()):
             return True
 
         client.allow = allow
@@ -590,9 +590,25 @@ class DirectClient(unittest.IsolatedAsyncioTestCase):
                                                 [Option("no", "reject_once"), Option("yes", "allow_once")])
         chosen = getattr(reply.outcome, "option_id", None)
         self.assertEqual(chosen, "yes")
-        client.allow = lambda _title: False
+        client.allow = lambda _title, _options=(): False
         declined = await client.request_permission("s", type("T", (), {"title": ""})(), [Option("yes", "allow_once")])
         self.assertEqual(getattr(declined.outcome, "outcome", ""), "cancelled")
+
+        offered = [Option("allow", "allow_once"), Option("allow_always", "allow_always"),
+                   Option("decline", "reject_once")]
+        client.allow = lambda _title, _options=(): True
+        once = await client.request_permission("s", type("T", (), {"title": "shell git"})(), offered)
+        self.assertEqual(getattr(once.outcome, "option_id", None), "allow")
+        client.allow = lambda _title, _options=(): "allow_always"
+        always = await client.request_permission("s", type("T", (), {"title": "shell git"})(), offered)
+        self.assertEqual(getattr(always.outcome, "option_id", None), "allow_always")
+        missing = await client.request_permission("s", type("T", (), {"title": "shell git"})(),
+                                                  [Option("allow", "allow_once"), Option("decline", "reject_once")])
+        self.assertEqual(getattr(missing.outcome, "outcome", ""), "cancelled")
+        client.allow = lambda _title, _options=(): True
+        only_always = await client.request_permission(
+            "s", type("T", (), {"title": "shell git"})(), [Option("keep", "allow_always")])
+        self.assertEqual(getattr(only_always.outcome, "option_id", None), "keep")
 
 
 class Entrypoints(unittest.TestCase):

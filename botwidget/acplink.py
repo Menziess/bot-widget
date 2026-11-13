@@ -167,6 +167,7 @@ class AcpLink:
         self._history: list[dict] = []
         self._asks = 0
         self._approvals = {}
+        self._always = set()  # request ids whose prompt offered allow_always
         self._decisions = {}  # request id -> (future on the agent's loop, title)
         self._client = None
         self._interrupted = False
@@ -224,30 +225,40 @@ class AcpLink:
         with self._lock:
             messages = [dict(message) for message in self.messages]
             return {"messages": messages, "activity": self._activity, "failed": self.failed,
-                    "approvals": [{"requestId": rid, "reason": title}
-                                  for rid, title in self._approvals.items()]}
+                    "approvals": self._approval_rows()}
 
     def attention(self) -> dict:
         """What waits for you, in the shape the bubble already draws buttons from."""
         with self._lock:
-            return {"prompts": [], "browserTakeovers": [],
-                    "approvals": [{"requestId": rid, "reason": title}
-                                  for rid, title in self._approvals.items()]}
+            return {"prompts": [], "browserTakeovers": [], "approvals": self._approval_rows()}
+
+    def _approval_rows(self) -> list:
+        """Caller holds the lock. always is true only when the agent offered to remember the command."""
+        return [{"requestId": rid, "reason": title, "always": rid in self._always}
+                for rid, title in self._approvals.items()]
 
     def _changed(self) -> None:
         if self.on_change:
             self.on_change()
 
-    def decide(self, request_id: str, accept: bool, source: str = "bubble", by: str = "") -> bool:
-        """Answer a permission request: Accept or Decline, as the bubble's buttons say. False when none waits."""
+    def decide(self, request_id: str, accept: bool | str, source: str = "bubble", by: str = "") -> bool:
+        """Answer a permission request. True accepts once, 'allow_always' remembers it, anything else declines.
+
+        False when nothing with this id waits.
+        """
         with self._lock:
             pending = self._decisions.pop(request_id, None)
             if pending is None:
                 return False
             self._approvals.pop(request_id, None)
+            self._always.discard(request_id)
         future, title = pending
-        approvals.record(title, "accepted" if accept else "declined", source, by or getpass.getuser())
-        self._loop.call_soon_threadsafe(lambda: future.done() or future.set_result(accept))
+        if accept == "allow_always":
+            decision, result = "allow_always", "allow_always"
+        else:
+            decision, result = ("accepted", True) if accept else ("declined", False)
+        approvals.record(title, decision, source, by or getpass.getuser())
+        self._loop.call_soon_threadsafe(lambda: future.done() or future.set_result(result))
         return True
 
     def active(self) -> bool:
@@ -440,17 +451,20 @@ class AcpLink:
                                   else f"{info['name'] or self.target} is awake")
         return client
 
-    async def _ask(self, title: str) -> bool:
-        """A permission request: put Accept and Decline in the bubble and wait for one of them.
+    async def _ask(self, title: str, options=()) -> bool | str:
+        """A permission request: Accept and Decline in the bubble, and Always allow when it was offered.
 
         The wait is a future on the agent's loop, not a sleeping thread, so the agent's other
-        events keep flowing while the question stands.
+        events keep flowing while the question stands. The result is True, False, or 'allow_always'.
         """
         request_id = f"acp-{self._asks}-{round(time.time() * 1000)}"
         self._asks += 1
         future = self._loop.create_future()
+        offered = any(getattr(option, "kind", "") == "allow_always" for option in options or ())
         with self._lock:
             self._approvals[request_id] = title
+            if offered:
+                self._always.add(request_id)
             self._decisions[request_id] = (future, title)
         self._changed()
         try:
@@ -459,6 +473,7 @@ class AcpLink:
             with self._lock:
                 self._decisions.pop(request_id, None)
                 self._approvals.pop(request_id, None)
+                self._always.discard(request_id)
                 self._note = "No answer in time, so the action was declined."
             approvals.record(title, "declined", "timeout", "")
             return False

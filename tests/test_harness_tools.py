@@ -97,7 +97,7 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         target = os.path.join(self.folder, "written.txt")
         self.model.script = [{"tool_calls": [{"name": "write_file",
                                               "arguments": {"path": target, "content": "x"}}]}, "Oké."]
-        async with self.client(allow=lambda _title: False) as client:
+        async with self.client(allow=lambda _title, _options=(): False) as client:
             await client.start()
             await client.prompt("Schrijf het bestand")
         self.assertFalse(os.path.exists(target))
@@ -107,7 +107,7 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         target = os.path.join(self.folder, "written.txt")
         self.model.script = [{"tool_calls": [{"name": "write_file",
                                               "arguments": {"path": target, "content": "x"}}]}, "Oké."]
-        async with self.client(allow=lambda _title: False) as client:
+        async with self.client(allow=lambda _title, _options=(): False) as client:
             await client.start()
             await client.prompt("Schrijf het bestand")
         from harness.agent.store import SessionStore
@@ -159,7 +159,7 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         target = os.path.join(self.folder, "written.txt")
         self.model.script = [{"tool_calls": [{"name": "write_file",
                                               "arguments": {"path": target, "content": "x"}}]}, "Oké."]
-        async with self.client(allow=lambda _title: True) as client:
+        async with self.client(allow=lambda _title, _options=(): True) as client:
             await client.start()
             turn = await client.prompt("Schrijf het bestand")
         self.assertEqual(turn.stop_reason, "end_turn")
@@ -169,7 +169,7 @@ class Turns(unittest.IsolatedAsyncioTestCase):
     async def test_a_tool_from_a_configured_mcp_server_works_and_read_only_ones_do_not_ask(self):
         asked = []
         self.model.script = [{"tool_calls": [{"name": "echo", "arguments": {"text": "hoi"}}]}, "Het zei hoi."]
-        async with self.client(allow=lambda title: asked.append(title) or True,
+        async with self.client(allow=lambda title, _options=(): asked.append(title) or True,
                                HARNESS_MCP_SERVER=MCP_SERVER, HARNESS_MCP_READ_ONLY="echo") as client:
             await client.start()
             turn = await client.prompt("Gebruik echo")
@@ -182,7 +182,7 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         target = os.path.join(self.folder, "note.txt")
         self.model.script = [{"tool_calls": [{"name": "write_note",
                                               "arguments": {"path": target, "text": "x"}}]}, "Oké."]
-        async with self.client(allow=lambda title: asked.append(title) or False,
+        async with self.client(allow=lambda title, _options=(): asked.append(title) or False,
                                HARNESS_MCP_SERVER=MCP_SERVER) as client:
             await client.start()
             await client.prompt("Schrijf een note")

@@ -52,6 +52,19 @@ def split_command(command: str) -> list[str]:
     return [p[1:-1] if os.name == "nt" and len(p) > 1 and p[0] == p[-1] == '"' else p for p in parts]
 
 
+def _option_for(options, allowed) -> str | None:
+    """The option id a bubble answer selects. True picks allow once, or the only allow option when once was not offered."""
+    if allowed == "allow_always":
+        return next((option.option_id for option in options if option.kind == "allow_always"), None)
+    if not allowed:
+        return None
+    once = next((option.option_id for option in options
+                 if option.kind.startswith("allow") and option.kind != "allow_always"), None)
+    if once:
+        return once
+    return next((option.option_id for option in options if option.kind.startswith("allow")), None)
+
+
 def _text_of(content) -> str:
     if isinstance(content, list):
         return "".join(getattr(part, "text", "") for part in content)
@@ -61,15 +74,16 @@ def _text_of(content) -> str:
 class AcpClient:
     """One agent process and one session in it.
 
-    allow(title) decides a permission request: True allows it once, False declines, and a
-    coroutine is awaited so a caller can wait for the user. The default declines everything, so
-    a mistake cannot let an agent write something on its own.
+    allow(title, options) decides a permission request. True allows it once, "allow_always"
+    picks the option of that kind when one was offered, False declines, and a coroutine is
+    awaited so a caller can wait for the user. The default declines everything, so a mistake
+    cannot let an agent write something on its own.
     """
 
     def __init__(self, command: str, *args: str, cwd: str | None = None, env: dict | None = None,
                  allow=None, on_update=None):
         self.command, self.args, self.cwd, self.env = command, args, cwd, env
-        self.allow = allow or (lambda _title: False)
+        self.allow = allow or (lambda _title, _options=(): False)
         self.on_update = on_update or (lambda _update: None)
         self.conn = None
         self.process = None
@@ -195,10 +209,9 @@ class AcpClient:
     async def request_permission(self, session_id: str, tool_call: ToolCallUpdate,
                                  options: list[PermissionOption], **kwargs) -> RequestPermissionResponse:
         title = getattr(tool_call, "title", "") or "an action"
-        allowed = self.allow(title)
+        allowed = self.allow(title, options)
         if inspect.isawaitable(allowed):
             allowed = await allowed
-        chosen = next((option.option_id for option in options
-                       if allowed and option.kind.startswith("allow")), None)
+        chosen = _option_for(options, allowed)
         outcome = {"outcome": "selected", "optionId": chosen} if chosen else {"outcome": "cancelled"}
         return RequestPermissionResponse(outcome=outcome)

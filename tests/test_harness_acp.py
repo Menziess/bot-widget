@@ -33,7 +33,7 @@ class AcpConversation(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(turn.total_ms, turn.first_update_ms)
 
     async def test_a_permission_request_can_be_allowed(self):
-        _client, _info, turn = await self.talk("please ask", allow=lambda _title: True)
+        _client, _info, turn = await self.talk("please ask", allow=lambda _title, _options=(): True)
         self.assertEqual([update.text for update in turn.updates], ["chose yes"])
 
     async def test_a_permission_request_is_declined_by_default(self):

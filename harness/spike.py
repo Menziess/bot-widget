@@ -17,7 +17,7 @@ from harness.acp_client import AcpClient, split_command
 
 
 async def run(command: str, prompt: str, cwd: str | None, allow: bool, cancel_after: float) -> int:
-    client = AcpClient(*split_command(command), cwd=cwd, allow=lambda title: allow)
+    client = AcpClient(*split_command(command), cwd=cwd, allow=lambda title, _options=None: allow)
     client.on_update = lambda update: print(f"  {update.kind}: {update.text}", flush=True)
     try:
         async with client:

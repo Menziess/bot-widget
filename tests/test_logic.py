@@ -4056,6 +4056,38 @@ class BubbleHover(unittest.TestCase):
         self.wait_for(calls)
         self.assertEqual(calls, [("/v1/agents/t/approvals/p1/respond", {"decision": "decline"})])
 
+    def test_always_allow_shows_only_when_offered_and_selects_that_option(self):
+        """Should keep Accept and Decline, and add Always allow only when the approval says so."""
+        self.start_working()
+        # link is this acp. note() and active() have to be real, or the cloud is built from a Mock.
+        self.window.acp = unittest.mock.Mock()
+        self.window.acp.note.return_value = ""
+        self.window.acp.active.return_value = False
+        self.window.acp.stopped = False
+        self.window.acp.chat.return_value = {"messages": [], "activity": ""}
+        plain = {"requestId": "p1", "reason": "Write a file"}
+        self.window._set_attention(self.attention(approvals=[plain]))
+        self.window._sync_bubble(self.face.latest_chat("t"), force=True)
+        self.assertEqual([w.text() for w in self.window.bubble._control_widgets], ["Accept", "Decline"])
+        offered = {"requestId": "p2", "reason": "shell git status", "always": True}
+        self.window._set_attention(self.attention(approvals=[offered]))
+        self.window._sync_bubble(self.face.latest_chat("t"), force=True)
+        buttons = self.window.bubble._control_widgets
+        self.assertEqual([w.text() for w in buttons], ["Accept", "Always allow", "Decline"])
+        buttons[0].click()
+        self.window.acp.decide.assert_called_once_with("p2", True)
+        self.window._set_attention(self.attention(approvals=[offered]))
+        self.window._sync_bubble(self.face.latest_chat("t"), force=True)
+        self.window.acp.reset_mock()
+        self.window.bubble._control_widgets[1].click()
+        self.window.acp.decide.assert_called_once_with("p2", "allow_always")
+        self.window._set_attention(self.attention(approvals=[offered]))
+        self.window._sync_bubble(self.face.latest_chat("t"), force=True)
+        self.window.acp.reset_mock()
+        self.window.bubble._control_widgets[2].click()
+        self.window.acp.decide.assert_called_once_with("p2", False)
+        self.window.acp = None
+
     def test_a_question_that_needs_openbot_itself_says_so_and_has_no_buttons(self):
         prompt = {"requestId": "r3", "requiresOpenBot": True, "questions": []}
         self.start_working()
