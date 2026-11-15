@@ -1007,6 +1007,8 @@ class FaceWindow(QWidget):
         self.setToolTip(summary)
         label = {"start": "Working", "done": "Done", "stuck": "Stuck", "needs_you": "Needs you"}[state]
         self.setWindowTitle(f"{self.bot_name} · {label}")
+        self._sync_pending_dot()
+        self.update()
 
     def _aim(self, dt_ms: float):
         """Where the face wants to go: dragging, happy, looking at the mouse, or what motion plays."""
@@ -1216,7 +1218,9 @@ class FaceWindow(QWidget):
         self._think_held = False
         self._menu_page = None
         self._arc_for_page(None)
-        self.has_pending = False
+        # A click looks at a local question; the next poll puts that dot back if it still waits.
+        # stuck / needs_you stay lit: opening the bubble does not unstick the bot.
+        self.has_pending = getattr(self, "live_status", "") in ("stuck", "needs_you")
         self._refused = False
         self.update()
         self._sync_bubble(self._latest())
@@ -1319,9 +1323,7 @@ class FaceWindow(QWidget):
             # The agent pushes its updates, so there is nothing to poll: draw what came in, and keep
             # the timer alive only while a turn runs.
             changed = self._set_attention(self.acp.attention())
-            # Also update the notification dot for pending approvals (Item 6).
-            if self._has_attention() != self.has_pending:
-                self.has_pending = self._has_attention()
+            self._sync_pending_dot()
             chat = self._latest()
             self._sync_bubble(chat, force=changed)
             if self._refreshing and not self.acp.active():
@@ -1338,11 +1340,8 @@ class FaceWindow(QWidget):
             data = None
         changed = False
         if isinstance(data, dict):
-            has_pending = bool(data.get("prompts") or data.get("approvals")
-                               or data.get("browserTakeovers"))
-            if has_pending != self.has_pending:
-                self.has_pending = has_pending
             changed = self._set_attention(data)
+            self._sync_pending_dot()
         if self._refreshing:
             self._refreshed("Refreshed." if data is not None else "Could not reach OpenBot.")
         else:
@@ -1533,6 +1532,7 @@ class FaceWindow(QWidget):
             if expanded:
                 blocks = [role_panel("bot")] + thought_blocks(chat.get("activity") or "")
                 blocks += self._attention_blocks()
+                blocks += self._relay_status_blocks()
                 if self._send_status:
                     blocks.append(status_block(self._send_status))
                 elif self.link and self.link.note():
@@ -1730,7 +1730,8 @@ class FaceWindow(QWidget):
         if not blocks:
             # A Grok face says why it stopped even with nothing in the chat yet.
             note = self.link.note() if self.link else ""
-            return [status_block(note)] if note else blocks
+            blocks = [status_block(note)] if note else []
+            return blocks + self._relay_status_blocks()
         if self._working or (self._outbox.items and not self._send_status):
             blocks += [role_panel("bot"), plain_block("dots")]
         blocks += self._attention_blocks()
@@ -1744,6 +1745,7 @@ class FaceWindow(QWidget):
             status = self._refresh_note
         if status:
             blocks.append(status_block(status))
+        blocks += self._relay_status_blocks()
         return blocks
 
     # ── Sending messages ────────────────────────────────────────
@@ -1834,6 +1836,30 @@ class FaceWindow(QWidget):
     def _has_attention(self) -> bool:
         return bool(self._attention.get("prompts") or self._attention.get("approvals")
                     or self._attention.get("browserTakeovers"))
+
+    def _sync_pending_dot(self):
+        """Top-right notification dot.
+
+        On when a local prompt, approval, or browser takeover is waiting, or when
+        relay live_status is stuck or needs_you. start and done leave the dot to
+        the local signal only. The orange bottom dot is unsent(), a failed send.
+        """
+        live = getattr(self, "live_status", "")
+        self.has_pending = self._has_attention() or live in ("stuck", "needs_you")
+
+    def _relay_status_blocks(self) -> list:
+        """The relay summary in the bubble when the bot is stuck or needs you. No permission buttons."""
+        if getattr(self, "live_status", "") in ("stuck", "needs_you") and getattr(self, "live_summary", ""):
+            return [status_block(self.live_summary)]
+        return []
+
+    def command_rows(self) -> tuple:
+        """Built-in slash commands, then this bot's ACP available commands when it has any."""
+        link = self.acp
+        extra = ()
+        if link is not None and hasattr(type(link), "available_commands"):
+            extra = link.available_commands() or ()
+        return menu_pages.commands(extra) if extra else menu_pages.commands()
 
     def _set_attention(self, data: dict) -> bool:
         """Remember what waits for you; True when that is something else than before."""

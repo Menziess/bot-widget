@@ -972,7 +972,7 @@ class BubbleWindow(QWidget):
         """A message that starts with a slash gets the commands that fit it, in a list above the field."""
         self._commands_forced = False
         text = self._entry.text().strip().lower()
-        fitting = [row for row in menu_pages.commands() if row[0].startswith(text)] \
+        fitting = [row for row in self.face.command_rows() if row[0].startswith(text)] \
             if text.startswith("/") and " " not in text else []
         self._show_commands(fitting)
 
@@ -983,7 +983,7 @@ class BubbleWindow(QWidget):
             self._update_commands()
             return
         self._commands_forced = True
-        self._show_commands(list(menu_pages.commands()))
+        self._show_commands(list(self.face.command_rows()))
 
     def show_command_menu(self):
         """Right-click: the command list on its own, without the conversation."""
@@ -1110,7 +1110,7 @@ class BubbleWindow(QWidget):
         self._commands_forced = True
         # The dots of a thought before belong to text that is gone; ticking them on would draw nothing.
         self._dots_lines = []
-        self._slash.show_rows(list(menu_pages.commands()))
+        self._slash.show_rows(list(self.face.command_rows()))
         # As wide as the commands and their notes need, so nothing is cut; never wider than a chat bubble.
         self._more_open = False
         self._has_older = True
@@ -1161,14 +1161,22 @@ class BubbleWindow(QWidget):
         self.changed = time.monotonic()
         # A slash being typed is the command. A message that was already there stays, also after a right-click.
         typed = self._entry.text().strip()
-        if not self._commands_forced or (typed.startswith("/") and " " not in typed):
+        sent = command
+        builtin = command.lower() in {name.lower() for name, _note in menu_pages.COMMANDS}
+        if not builtin:
+            # A skill row keeps arguments already typed after its name. A built-in stays the command itself.
+            head, _, tail = typed.partition(" ")
+            if tail and head.lower() not in ("", "/") and (
+                    head.lower() == command.lower() or command.lower().startswith(head.lower())):
+                sent = f"{command} {tail}"
+        if not self._commands_forced or (typed.startswith("/") and " " not in typed) or sent != command:
             self._entry.clear()
         if not self._list_only:
             # The list above the field goes. The right-click list is the whole bubble: it stays until the page
             # replaces it, else the bubble shrank to a sliver first and left the pointer outside (and closed).
             self._show_commands([])
         self._commands_forced = False
-        self.face.on_user_message(command)
+        self.face.on_user_message(sent)
 
     def _attach(self, paths: list):
         self.changed = time.monotonic()

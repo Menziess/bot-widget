@@ -22,9 +22,35 @@ COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
             ("/feedback", "open a GitHub issue"))
 
 
-def commands() -> tuple:
-    """The commands the list offers. A sample thought is a switch in Settings, and only in a checkout."""
-    return COMMANDS
+def _slash_name(name: str) -> str:
+    """One command token: a leading slash, lower case, no blank name."""
+    word = str(name or "").strip().split(" ", 1)[0] if str(name or "").strip() else ""
+    word = word.lstrip("/").strip().lower()
+    return f"/{word}" if word else ""
+
+
+def commands(available=()) -> tuple:
+    """Built-in commands, then this bot's skill commands.
+
+    A sample thought is a switch in Settings, and only in a checkout. A skill whose
+    name is empty or already a built-in (such as /screenshot) is left out.
+    """
+    if not available:
+        return COMMANDS
+    rows = list(COMMANDS)
+    taken = {name.lower() for name, _note in rows}
+    for item in available:
+        if isinstance(item, (tuple, list)):
+            name = item[0] if item else ""
+            description = item[1] if len(item) > 1 else ""
+        else:
+            name, description = getattr(item, "name", ""), getattr(item, "description", "")
+        slash = _slash_name(name)
+        if not slash or slash in taken:
+            continue
+        taken.add(slash)
+        rows.append((slash, str(description or "").strip()))
+    return tuple(rows)
 
 
 DEBUG_THOUGHT = "Debug: this is what a thought looks like while the bot works…"

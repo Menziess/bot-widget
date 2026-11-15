@@ -55,5 +55,6 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 
 ### The bot
 - An approval shows a dot and a cloud with Accept and Decline, and Always allow when the agent offers to remember the command. It waits ten minutes, and is logged with who answered
+- A relay status of stuck or needs you shows that same dot. start and done do not. With no local approval the bubble shows the status line, not Accept or Decline
 - A turn that a restart cut off is picked up again when the widget is back
 - The eyes follow the pointer wherever it is

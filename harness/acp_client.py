@@ -187,6 +187,11 @@ class AcpClient:
                     return
             event = Update("tool", text=title,
                            extra={"status": getattr(update, "status", "") or ""})
+        elif kind == "available_commands_update":
+            event = Update("commands", extra={"commands": [
+                (getattr(item, "name", "") or "", getattr(item, "description", "") or "")
+                for item in (getattr(update, "available_commands", None) or ())
+            ]})
         elif kind == "usage_update":
             meta = getattr(update, "field_meta", None) or {}
             extra = {name: getattr(update, name, None) for name in ("used", "size", "cost")}

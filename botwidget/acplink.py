@@ -169,6 +169,7 @@ class AcpLink:
         self._approvals = {}
         self._always = set()  # request ids whose prompt offered allow_always
         self._decisions = {}  # request id -> (future on the agent's loop, title)
+        self._commands = ()  # (name, description) from available_commands_update
         self._client = None
         self._interrupted = False
         self.on_change = None  # the face sets it: a new message or question must wake it, even when it sleeps
@@ -226,6 +227,11 @@ class AcpLink:
             messages = [dict(message) for message in self.messages]
             return {"messages": messages, "activity": self._activity, "failed": self.failed,
                     "approvals": self._approval_rows()}
+
+    def available_commands(self) -> tuple:
+        """Skill commands the agent advertised, as (name, description). Empty until an update arrives."""
+        with self._lock:
+            return self._commands
 
     def attention(self) -> dict:
         """What waits for you, in the shape the bubble already draws buttons from."""
@@ -480,6 +486,12 @@ class AcpLink:
 
     def _updated(self, update) -> None:
         """One pushed update: a thought is the activity, answer text is the answer, a tool is its title."""
+        if update.kind == "commands":
+            with self._lock:
+                self._commands = tuple(
+                    (str(name or ""), str(description or ""))
+                    for name, description in (update.extra.get("commands") or ()))
+            return
         wake = False
         with self._lock:
             if self._loading and update.kind in ("text", "user") and update.text:
