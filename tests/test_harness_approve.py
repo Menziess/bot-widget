@@ -21,6 +21,8 @@ class Keys(unittest.TestCase):
         self.assertFalse(rule_matches("mkdir", "mkdirx"))
         self.assertTrue(rule_matches("write_file /a/b/", "write_file /a/b/sub/c.py"))
         self.assertFalse(rule_matches("write_file /a/b/", "write_file /a/bc/c.py"))
+        self.assertTrue(rule_matches("delete_file C:/proj/", "delete_file C:\\proj\\a.txt"))
+        self.assertFalse(rule_matches("delete_file /", "delete_file C:/proj/a.txt"))
 
     def test_a_key_in_slashes_is_a_regex_and_i_ignores_case(self):
         self.assertTrue(rule_matches("/^shell git (status|diff)\\b/", "shell git diff HEAD"))
@@ -131,7 +133,9 @@ class ThroughAgent(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(conn.permission_requests), 1)
 
         conn = _Conn(auto_allow=True)
-        agent, sid, store = await self._agent(conn, mode="allow_session", approve={"delete_file /": False})
+        drive = os.path.splitdrive(self.ws)[0]
+        deny = "delete_file " + (drive + "/" if drive else "/")
+        agent, sid, store = await self._agent(conn, mode="allow_session", approve={deny: False})
         await agent._use_tool(sid, store, self.delete("a.txt"))
         await agent._use_tool(sid, store, self.delete("b.txt"))
         self.assertEqual(len(conn.permission_requests), 2, "a deny rule is never skipped by what was accepted")

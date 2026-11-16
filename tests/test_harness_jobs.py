@@ -379,10 +379,18 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
             state["mid"] = " ".join(message["text"] for message in agent.stores["s1"].messages())
             yield ("text", "turn done")
 
+        gate = os.path.join(self.folder, "one.done")
+        # Completion order is the file, not two sleeps: a busy runner can finish the longer sleep first.
         model = RecordingModel([
             [("tool_calls", [
-                call("shell_background", {"command": py("import time; time.sleep(0.2); print('FINISHED-ONE')")}, "1"),
-                call("shell_background", {"command": py("import time; time.sleep(0.25); print('FINISHED-TWO')")}, "2"),
+                call("shell_background", {"command": py(
+                    "import pathlib; pathlib.Path(%r).write_text('1'); print('FINISHED-ONE')" % gate)}, "1"),
+                call("shell_background", {"command": py(
+                    "import pathlib, time\n"
+                    "p = pathlib.Path(%r)\n"
+                    "while not p.exists():\n"
+                    "    time.sleep(0.01)\n"
+                    "print('FINISHED-TWO')" % gate)}, "2"),
             ])],
             hold,
             [("text", "saw one")],
