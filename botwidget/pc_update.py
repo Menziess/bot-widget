@@ -32,5 +32,8 @@ def plan_restart(pid_text: str, busy: bool) -> str:
 
 
 def signal_restart(pid: int) -> None:
-    """Ask the existing --dev supervisor to restart its child. Does not spawn a widget."""
-    os.kill(pid, signal.SIGUSR1)
+    """Ask the existing --dev supervisor to restart its child. Does not spawn a widget.
+
+    SIGUSR1 is the poke on Unix. Windows has no such signal, so the same call uses SIGTERM.
+    """
+    os.kill(pid, getattr(signal, "SIGUSR1", signal.SIGTERM))

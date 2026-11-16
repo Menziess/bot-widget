@@ -223,6 +223,8 @@ class BusyDev(unittest.TestCase):
         subprocess.check_call(["git", "push", "-u", "origin", "HEAD:main"], cwd=checkout, stdout=subprocess.DEVNULL)
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(root, "scripts", "botwidget-pc-update")
+        # A shebang script is not a Win32 program. Git's bash runs the same file.
+        launch = ["bash", script] if os.name == "nt" else [script]
         idle = subprocess.Popen(["sleep", "30"])
         self.addCleanup(lambda: idle.poll() is None and idle.kill())
         pidfile = os.path.join(folder, "pid")
@@ -235,11 +237,11 @@ class BusyDev(unittest.TestCase):
             "BOTWIDGET_DEV_PID": pidfile,
             "BOTWIDGET_DEV_BUSY": busy,
         })
-        done = subprocess.run([script], env=run_env, capture_output=True, text=True)
+        done = subprocess.run(launch, env=run_env, capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.assertIn("busy", done.stdout)
         self.assertIsNone(idle.poll(), "a busy dev pid is not restarted")
         os.remove(busy)
-        done = subprocess.run([script], env=run_env, capture_output=True, text=True)
+        done = subprocess.run(launch, env=run_env, capture_output=True, text=True)
         self.assertIn("restart", done.stdout)
         self.assertIsNotNone(idle.poll(), "an idle dev pid gets the restart signal")
