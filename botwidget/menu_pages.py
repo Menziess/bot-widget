@@ -11,13 +11,13 @@ from botwidget.config import QUIET_FROM, QUIET_TO
 from botwidget.markdown import control_block, plain_block, role_panel, text_block
 from botwidget.theme import BUBBLE_FONT
 
-PAGES = ("settings", "bots", "connections", "bot", "connection", "widget-json", "memory")
+PAGES = ("settings", "bots", "connections", "bot", "connection", "widget-json", "memory", "approvals")
 # What typing it in the field opens.
-SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections", "/memory": "memory"}
+SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections", "/memory": "memory", "/approvals": "approvals"}
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
 # No /home: a right-click shows this list on its own. A page steps back to the screen before it.
 COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
-            ("/connections", "what was found"), ("/memory", "view/edit memories"),
+            ("/connections", "what was found"), ("/memory", "view/edit memories"), ("/approvals", "what is allowed for good"),
             ("/refresh", "reload every bot"), ("/screenshot", "drag a region, or double-click a face"),
             ("/feedback", "open a GitHub issue"))
 
@@ -113,9 +113,10 @@ def _button(label: str, command: str) -> dict:
     return control_block("button", label, command)
 
 
-def _item(label: str, command: str, on: bool, actions: list) -> dict:
-    """One element: the switch is the command, and each action belongs to this row alone."""
-    return {**control_block("item", label, command, bool(on)),
+def _item(label: str, command: str, on: bool | None, actions: list) -> dict:
+    """One element: the switch is the command, and each action belongs to this row alone. Without a state (None)
+    there is no switch."""
+    return {**control_block("item", label, command, None if on is None else bool(on)),
             "actions": [{"label": text, "command": action} for text, action in actions]}
 
 
@@ -184,7 +185,8 @@ def bots(state: dict) -> list:
         blocks.append(_item(label, f"bot/{bot['id']}", bot["on"], actions))
     if not state["bots"]:
         blocks.append(_row(("No bots found yet", "dim")))
-    blocks += [plain_block("gap"), _button("New bot", "page/bot"), _button("Edit widget.json", "page/widget-json")]
+    blocks += [plain_block("gap"), _button("New bot", "page/bot"), _button("Edit widget.json", "page/widget-json"),
+               _button("Edit approvals", "page/approvals")]
     return blocks
 
 
@@ -356,10 +358,23 @@ def memory_page(state: dict) -> list:
             ts = m.get("ts", 0)
             time_str = time.strftime("%b %d %H:%M", time.localtime(ts)) if ts else ""
             label = f"[{scope}{topic}] {m.get('text', '')} · {time_str}"
-            blocks.append(_row((label, "dim"), _command("Edit", f"page/memory/edit/{mem_id}"),
-                               _command("Forget", f"memory-forget/{mem_id}")))
+            blocks.append(_row((label, "dim")))
+            blocks.append(_item("", "", None, [("Edit", f"page/memory/edit/{mem_id}"),
+                                               ("Forget", f"memory-forget/{mem_id}")]))
     blocks += [plain_block("gap"),
                _button("New memory", "page/memory/new")]
+    return blocks
+
+
+def approvals_page(state: dict) -> list:
+    """What was accepted for good, from every bot's approved.json. A removed one is asked about again."""
+    from harness.agent.workspace import approved_files, saved_approvals
+    prefixes = sorted({p for path in approved_files() for p in saved_approvals(path)})
+    blocks = _back("page/bots") + [_heading("Approvals")]
+    if not prefixes:
+        blocks.append(_row(("Nothing is allowed for good yet", "dim")))
+    for prefix in prefixes:
+        blocks += [_row((prefix, "dim")), _item("", "", None, [("Remove", f"approval-forget/{prefix}")])]
     return blocks
 
 
@@ -395,6 +410,8 @@ def page_blocks(page: str, state: dict) -> list:
         return bot_form(state)
     if page == "connection" or (isinstance(page, str) and page.startswith("connection/")):
         return connection_form(state)
+    if page == "approvals":
+        return approvals_page(state)
     if page == "memory":
         return memory_page(state)
     if page == "memory/new" or (isinstance(page, str) and page.startswith("memory/edit/")):

@@ -135,6 +135,7 @@ You can add a bot from the widget instead of editing this file. `/bots`, then Ne
 - A write the bot asks about shows Accept and Decline in the bubble, and Always allow when the agent offers to remember the command. A running turn can be cancelled
 - The context meter under the conversation shows how full the context is, and a pin_fact tool keeps a fact through compaction
 - What the bot remembers with its memory tools is on the `/memory` page, with Edit and Forget on every row and New memory below the list. Edit changes the text and the topic, and the memory keeps its scope and its time
+- What you accepted for good (Permission `allow`) is on the `/approvals` page, or under Edit approvals on `/bots`. Remove on a row asks about it again, also for a bot that is running
 
 The bot can leave a shell command running and keep talking. `shell_background` starts it (the same permission question as `shell`), `jobs` lists what is still running, and `job_cancel` stops one. When the command exits, the same session gets the exit code and a short tail of the output, and the bot answers that. The job keeps running when the bubble closes. It stops when the agent stops. While one is running, the line under the conversation says so.
 

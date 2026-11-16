@@ -48,6 +48,7 @@ restore them within the session.
 from __future__ import annotations
 
 import fnmatch
+import glob
 import hashlib
 import json
 import os
@@ -676,6 +677,28 @@ def check_rules(rules) -> str:
 class ApproveRules:
     """What a tool call may do without asking, in the style of Copilot's autoApprove.
 
+def approved_files() -> list[str]:
+    """The approved.json of every bot, or the one in HARNESS_AGENT_DIR."""
+    folder = os.environ.get("HARNESS_AGENT_DIR") or "~/.local/share/botwidget/harness/agent/*"
+    return sorted(glob.glob(os.path.join(os.path.expanduser(folder), "approved.json")))
+
+
+def saved_approvals(path: str) -> list[str]:
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    return [p for p in data if isinstance(p, str)] if isinstance(data, list) else []
+
+
+def forget_approval(prefix: str) -> None:
+    for path in approved_files():
+        kept = [p for p in saved_approvals(path) if p != prefix]
+        with open(path, "w") as fh:
+            json.dump(kept, fh, indent=2)
+
+
     A call is described as text: ``shell git status``, ``write_file /home/me/proj/a.py`` or just the tool's
     name. *config* maps keys (see rule_matches) to true (no question) or false (always ask, which wins).
     What a user accepted is remembered as a prefix rule on top of that, for the session or for good.
@@ -685,18 +708,14 @@ class ApproveRules:
         self.path = path
         self.config = config or {}
         self.session: list[str] = []
-        try:
-            with open(path) as fh:
-                data = json.load(fh)
-            self.saved = [p for p in data if isinstance(p, str)] if isinstance(data, list) else []
-        except (OSError, ValueError):
-            self.saved = []
+        self.saved = saved_approvals(path)
 
     def decide(self, texts: list[str], session: bool, saved: bool) -> bool | None:
         """False when a rule says ask, True when every part is covered, else None (the user decides)."""
         if not texts:
             return None
         if any(allowed is False and rule_matches(pattern, text)
+        self.saved = saved_approvals(self.path)  # an edit made in the widget counts at once
                for pattern, allowed in self.config.items() for text in texts):
             return False
         covering = [p for p, allowed in self.config.items() if allowed is True]

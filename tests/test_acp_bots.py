@@ -393,6 +393,29 @@ class WidgetSave(unittest.TestCase):
         self.assertTrue(os.path.isdir(room), "removing the bot from the widget leaves its session folder")
 
 
+class ApprovalsPage(WidgetSave):
+    """The /approvals page lists what was accepted for good, and Remove takes it out of every bot's file."""
+
+    def test_remove_forgets_the_rule_and_a_running_agent_notices(self):
+        from botwidget import menu_pages
+        from harness.agent.workspace import ApproveRules
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        path = os.path.join(folder, "approved.json")
+        with open(path, "w") as fh:
+            json.dump(["shell git status", "shell ls"], fh)
+        patched = mock.patch.dict(os.environ, {"HARNESS_AGENT_DIR": folder})
+        patched.start()
+        self.addCleanup(patched.stop)
+        rules = ApproveRules(path)
+        text = json.dumps(menu_pages.approvals_page({}))
+        self.assertIn('"command": "approval-forget/shell git status"', text)
+        self.assertEqual(self.box.menu_command("approval-forget/shell git status", "approvals"), "approvals")
+        self.assertNotIn("shell git status", json.dumps(menu_pages.approvals_page({})))
+        self.assertIsNone(rules.decide(["shell git status"], session=False, saved=True))
+        self.assertTrue(rules.decide(["shell ls"], session=False, saved=True))
+
+
 class MemoryPage(WidgetSave):
     """The /memory page: every row can be edited or forgotten, and a save changes that memory in place."""
 
@@ -412,8 +435,9 @@ class MemoryPage(WidgetSave):
         from botwidget import menu_pages
         text = json.dumps(menu_pages.memory_page({}), default=str)
         for ident in (first, second):
-            self.assertIn(f"cmd:page/memory/edit/{ident}", text)
-            self.assertIn(f"cmd:memory-forget/{ident}", text)
+            self.assertIn(f'"command": "page/memory/edit/{ident}"', text)
+            self.assertIn(f'"command": "memory-forget/{ident}"', text)
+        self.assertNotIn("cmd:", text)
         self.assertEqual(self.box.menu_command(f"page/memory/edit/{first}", "memory"), f"memory/edit/{first}")
         self.assertEqual(self.box._memory_text, "Eerste")
         fields = {"field/memory_text": "Eerste, aangepast", "field/memory_topic": "t"}

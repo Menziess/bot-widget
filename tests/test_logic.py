@@ -6070,7 +6070,7 @@ class MenuPages(unittest.TestCase):
     def test_the_bots_page_has_a_switch_per_bot(self):
         blocks = menu_pages.bots(self.STATE)
         self.assertEqual(self.commands(blocks),
-                         ["page/commands", "bot/a", "mute/a", "bot/b", "mute/b", "page/bot", "page/widget-json"])
+                         ["page/commands", "bot/a", "mute/a", "bot/b", "mute/b", "page/bot", "page/widget-json", "page/approvals"])
         self.assertNotIn("‹ Chat", self.text(blocks))
         self.assertIn("☑ Fritsie", self.text(blocks))
         self.assertIn("☐ Robo", self.text(blocks))
@@ -6154,7 +6154,7 @@ class MenuPages(unittest.TestCase):
         """Should step up one screen: chat, the command list, a page of it, then a form."""
         back = {"settings": "page/commands", "bots": "page/commands", "connections": "page/commands",
                 "bot": "page/bots", "connection": "page/connections", "widget-json": "page/bots",
-                "memory": "page/bots"}
+                "memory": "page/bots", "approvals": "page/bots"}
         for page in menu_pages.PAGES:
             self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], back[page])
         self.assertEqual(self.commands(menu_pages.page_blocks("nonsense", self.STATE)),
