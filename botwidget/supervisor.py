@@ -72,8 +72,31 @@ def variant_pidfile() -> str:
     return os.environ.get("BOTWIDGET_PID") or PIDFILE
 
 
-def stop_selected() -> None:
-    """Stop the widget the remembered variant started. A missing pid is left alone."""
+def pid_has_exited(pid: int) -> bool:
+    """True once the process is gone or only a zombie. A live pid is still the old widget."""
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return True
+    stat = f"/proc/{pid}/stat"
+    try:
+        with open(stat) as fh:
+            text = fh.read()
+    except OSError:
+        return True
+    try:
+        state = text.rsplit(")", 1)[1].split()[0]
+    except (IndexError, ValueError):
+        return False
+    return state == "Z"
+
+
+def stop_selected(wait_s: float = 3.0) -> None:
+    """Stop the widget the remembered variant started, and wait until it has exited.
+
+    A missing pid is left alone. The wait is bounded so takeover can start the custom build
+    only after this process is gone, without hanging if it refuses to die.
+    """
     try:
         with open(variant_pidfile()) as fh:
             pid = int(fh.read().strip())
@@ -81,10 +104,16 @@ def stop_selected() -> None:
         return
     if pid <= 0 or pid == os.getpid():
         return
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except OSError:
-        return
+    for sig in (signal.SIGTERM, getattr(signal, "SIGKILL", signal.SIGTERM)):
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            return
+        deadline = time.monotonic() + wait_s
+        while time.monotonic() < deadline:
+            if pid_has_exited(pid):
+                return
+            time.sleep(0.05)
 
 
 def takeover(cmd: list, timeout: float, *, stop, spawn, wait, restore) -> str:
