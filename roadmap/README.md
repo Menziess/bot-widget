@@ -1,6 +1,6 @@
 # Own backend for bot-widget
 
-Research notes on giving bot-widget a backend of its own, next to OpenBot, Grok Bot and Hermes. Nothing is built yet. This folder is ignored by git on purpose (the global ignore has `___*`), so these notes stay local.
+Research notes on giving bot-widget a backend of its own, next to OpenBot, Grok Bot and Hermes. Phases 0 to 5 are built and live on `main` (see Status below). This folder is ignored by git on purpose (the global ignore has `___*`), so these notes stay local.
 
 The question behind it is whether a lean backend can cost less context and money per turn than OpenBot, and whether one standard exists that all providers share so that everything can be supported.
 
@@ -44,6 +44,12 @@ Build an ACP client adapter first, then run a lean agent behind it, and let that
 - [03-architecture.md](03-architecture.md) Three ways to build it and the design of the lean one
 - [04-efficiency.md](04-efficiency.md) Where context and money go, and how a lean backend saves them
 - [05-roadmap.md](05-roadmap.md) Phases, acceptance tests, risks and open decisions
+
+## Status, 2026-11-16
+
+Built on `main`: an ACP client and link (`botwidget/acplink.py`, `harness/acp_client.py`), a lean agent behind it (`harness/agent/`, sqlite session, usage log, tools, one MCP server, permissions, memory, compaction, an Anthropic adapter with cache marks), and a benchmark (`harness/benchmark.py`). The decision of phase 5 is recorded: keep OpenBot for broad work, use the lean agent as one more backend. Details per phase are in [05-roadmap.md](05-roadmap.md).
+
+Still open: a hosted provider has not been measured on either side, so cost per finished task is unknown. Only one real ACP agent besides the lean one (hermes-acp) has been tried.
 
 ## Status of the facts
 
