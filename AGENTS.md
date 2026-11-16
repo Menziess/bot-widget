@@ -2,7 +2,8 @@
 
 - Stay on the default branch. Do not create a branch unless asked. A branch that is asked for starts with `feature/`. Ask before committing or pushing.
 - `botwidget/` is toolkit-free logic; `botwidget/qt_ui/` is the PySide6 UI.
-- Test: `.venv/bin/python -m unittest discover -s tests -t .` (unittest, not pytest; logic plus a few offscreen Qt tests).
+- Test: `QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -t .` (unittest, not pytest; logic plus a few offscreen Qt tests).
+- `git config core.hooksPath .githooks` so `.githooks/pre-push` runs that command when main is pushed and rejects the push when it fails.
 - Run live: `botwidget --dev` (restarts on .py changes). Check UI changes by eye.
 - To talk to a running widget's bot from a shell (the widget needs `"remote_control": true` in widget.json, off by default), use `botwidget bots | ask BOT TEXT | read BOT` (`botwidget/remote.py`; README, Talking to a bot from a shell). From a checkout run `.venv/bin/python -m botwidget ...`: the `botwidget` on PATH may be the uv install, which is another copy.
 - `site/` is the static website (no build, deployed by Pages on push to main). `site/face.js` ports `avatar.py` and `animation.py` to canvas; keep them in step.

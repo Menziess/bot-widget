@@ -1,0 +1,15 @@
+#!/bin/sh
+# A push of main runs the unit tests and stops when they fail.
+root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd) || exit 1
+cd "$root" || exit 1
+while read -r _local_ref local_sha remote_ref _remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main)
+      if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        continue
+      fi
+      QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -t . || exit 1
+      ;;
+  esac
+done
+exit 0

@@ -273,7 +273,8 @@ Keep the installed app next to your checkout and hop between them from the /sett
 
 On Linux the installer names its command `bot-widget` so it does not clash with the `botwidget` command from `uv tool install`.
 
-- Unit tests need no display and no Qt, run them with `python3 -m unittest discover -s tests -t .`
+- Unit tests need no display and no Qt, run them with `QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -t .`
+- `git config core.hooksPath .githooks` runs that command before a push of main and rejects the push when the tests fail
 - Everything that differs per operating system lives in `botwidget/system/`, one module per OS with the same function names
 - Everything that touches Qt lives in `botwidget/qt_ui/`
 - `BOT_WIDGET_OPENBOT_DIR` points the widget at another OpenBot data folder, handy for testing
