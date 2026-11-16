@@ -106,6 +106,14 @@ class LockAndTakeover(unittest.TestCase):
             self.assertEqual(events[1], ("spawn", ["/bin/custom"]))
             self.assertEqual(events[-1], "restore")
 
+    def test_a_live_pid_without_procfs_is_still_running(self):
+        self.assertFalse(supervisor.exited_from_probe(True, None))
+        self.assertTrue(supervisor.exited_from_probe(False, None))
+        self.assertTrue(supervisor.exited_from_probe(True, "Z"))
+        self.assertFalse(supervisor.exited_from_probe(True, "S"))
+        with mock.patch("builtins.open", side_effect=OSError):
+            self.assertFalse(supervisor.pid_has_exited(os.getpid()))
+
     def test_main_takeover_stops_the_recorded_variant_before_the_command(self):
         folder = tempfile.mkdtemp()
         self.addCleanup(__import__("shutil").rmtree, folder, True)
@@ -116,11 +124,28 @@ class LockAndTakeover(unittest.TestCase):
         marker = os.path.join(folder, "ran")
         config.save_widget_config(variant="dev", local_command=[sys.executable, "-c", "pass"])
         env = {"BOTWIDGET_DEV_PID": pidfile, "TMPDIR": folder}
-        # The custom command itself checks the old pid. A check after main() returns is too late.
+        # The command checks the pid itself. It must not call pid_has_exited, or a helper that
+        # treats a missing /proc as dead would agree with itself on macOS.
         check = (
-            "import pathlib, sys\n"
-            "from botwidget.supervisor import pid_has_exited\n"
-            "pathlib.Path(sys.argv[2]).write_text('dead' if pid_has_exited(int(sys.argv[1])) else 'alive')\n"
+            "import os, pathlib, sys\n"
+            "pid = int(sys.argv[1])\n"
+            "dead = False\n"
+            "if os.name == 'nt':\n"
+            "    import ctypes\n"
+            "    handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)\n"
+            "    if not handle:\n"
+            "        dead = True\n"
+            "    else:\n"
+            "        code = ctypes.c_ulong()\n"
+            "        ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))\n"
+            "        ctypes.windll.kernel32.CloseHandle(handle)\n"
+            "        dead = bool(ok) and code.value != 259\n"
+            "else:\n"
+            "    try:\n"
+            "        os.kill(pid, 0)\n"
+            "    except OSError:\n"
+            "        dead = True\n"
+            "pathlib.Path(sys.argv[2]).write_text('dead' if dead else 'alive')\n"
         )
         with mock.patch.dict(os.environ, env):
             code = supervisor.main([

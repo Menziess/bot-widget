@@ -72,35 +72,55 @@ def variant_pidfile() -> str:
     return os.environ.get("BOTWIDGET_PID") or PIDFILE
 
 
+def exited_from_probe(exists: bool, proc_state: str | None) -> bool:
+    """Gone, or a zombie. A live pid with no procfs (macOS) is still the old widget."""
+    if not exists:
+        return True
+    return proc_state == "Z"
+
+
+def _reap_child(pid: int) -> bool:
+    """Collect this pid if it is our zombie. A non-child raises and stays unreaped."""
+    if os.name == "nt":
+        return False
+    try:
+        waited, _status = os.waitpid(pid, os.WNOHANG)
+    except OSError:
+        return False
+    return waited == pid
+
+
 def pid_has_exited(pid: int) -> bool:
     """True once the process is gone or only a zombie. A live pid is still the old widget.
 
     os.kill(pid, 0) is a probe on Unix. On Windows that value is Ctrl+C and would interrupt the caller.
+    A missing /proc file is not an exit: macOS has no procfs.
     """
     if os.name == "nt":
         import ctypes
         handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
         if not handle:
-            return True
+            return exited_from_probe(False, None)
         code = ctypes.c_ulong()
         ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
         ctypes.windll.kernel32.CloseHandle(handle)
-        return bool(ok) and code.value != 259
+        if not ok:
+            return False
+        return code.value != 259
     try:
         os.kill(pid, 0)
     except OSError:
-        return True
-    stat = f"/proc/{pid}/stat"
+        return exited_from_probe(False, None)
+    state = None
     try:
-        with open(stat) as fh:
+        with open(f"/proc/{pid}/stat") as fh:
             text = fh.read()
-    except OSError:
-        return True
-    try:
         state = text.rsplit(")", 1)[1].split()[0]
-    except (IndexError, ValueError):
-        return False
-    return state == "Z"
+    except (OSError, IndexError, ValueError):
+        state = None
+    # Reap our own zombie so a later existence probe sees the pid as gone.
+    reaped = _reap_child(pid)
+    return exited_from_probe(True, state) or reaped
 
 
 def stop_selected(wait_s: float = 3.0) -> None:
