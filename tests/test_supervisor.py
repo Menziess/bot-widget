@@ -2,8 +2,10 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 from botwidget import config, dev, pc_update, startup, supervisor
@@ -104,6 +106,27 @@ class LockAndTakeover(unittest.TestCase):
             self.assertEqual(events[1], ("spawn", ["/bin/custom"]))
             self.assertEqual(events[-1], "restore")
 
+    def test_main_takeover_stops_the_recorded_variant_before_the_command(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, folder, True)
+        sleeper = subprocess.Popen(["sleep", "30"])
+        self.addCleanup(lambda: sleeper.poll() is None and sleeper.kill())
+        pidfile = os.path.join(folder, "dev.pid")
+        open(pidfile, "w").write(str(sleeper.pid))
+        marker = os.path.join(folder, "ran")
+        config.save_widget_config(variant="dev", local_command=[sys.executable, "-c", "pass"])
+        env = {"BOTWIDGET_DEV_PID": pidfile, "TMPDIR": folder}
+        with mock.patch.dict(os.environ, env):
+            code = supervisor.main([
+                "takeover", "--timeout", "5", "--cmd",
+                sys.executable, "-c",
+                "import pathlib,sys; pathlib.Path(sys.argv[1]).write_text('ok')",
+                marker,
+            ])
+        self.assertEqual(code, 0)
+        self.assertIsNotNone(sleeper.poll(), "the recorded dev pid was stopped")
+        self.assertEqual(open(marker).read(), "ok")
+
 
 class CrashRetry(unittest.TestCase):
     """Should retry a crash instead of waiting forever, and fast-forward before the retry."""
@@ -148,3 +171,75 @@ class LaunchScript(unittest.TestCase):
         timer = open(os.path.join(root, "packaging", "systemd", "botwidget-update.timer")).read()
         self.assertIn("botwidget-pc-update", unit)
         self.assertIn("OnUnitActiveSec", timer)
+
+
+class BusyDev(unittest.TestCase):
+    """Should let the dev loop publish the busy file the updater already reads."""
+
+    def test_a_tool_marks_busy_and_the_updater_leaves_that_pid_alone(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, folder, True)
+        want = os.path.join(folder, "want")
+        busy = os.path.join(folder, "busy")
+        env = {"BOTWIDGET_DEV_WANT": want, "BOTWIDGET_DEV_BUSY": busy}
+        from botwidget.acplink import AcpLink
+        link = AcpLink("local")
+        with mock.patch.dict(os.environ, env):
+            link._updated(SimpleNamespace(kind="tool", text="looping on a tool", extra={}))
+            child = mock.Mock()
+            child.poll.return_value = None
+
+            def nap(_seconds):
+                raise SystemExit
+
+            with mock.patch.object(dev, "snapshot", return_value={"a.py": 1}), \
+                    mock.patch.object(dev, "start", return_value=child), \
+                    mock.patch.object(dev, "ensure_single_instance"), \
+                    mock.patch.object(dev.signal, "signal"), \
+                    mock.patch.object(dev.time, "sleep", nap), \
+                    mock.patch("builtins.print"), \
+                    self.assertRaises(SystemExit):
+                dev.run(poll=0)
+            self.assertTrue(os.path.exists(busy), "the dev loop wrote the busy file")
+            link._updated(SimpleNamespace(kind="thought", text="", extra={}))
+            # A finished turn clears activity only on the turn path; drop the flag the same way.
+            dev.note_tool(False)
+            dev.publish_busy()
+            self.assertFalse(os.path.exists(busy))
+
+        # The shipped updater script: a busy pid is not signalled; an idle one is.
+        checkout = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, checkout, True)
+        subprocess.check_call(["git", "init"], cwd=checkout, stdout=subprocess.DEVNULL)
+        subprocess.check_call(["git", "config", "user.email", "t@example.com"], cwd=checkout)
+        subprocess.check_call(["git", "config", "user.name", "t"], cwd=checkout)
+        open(os.path.join(checkout, "a.txt"), "w").close()
+        subprocess.check_call(["git", "add", "a.txt"], cwd=checkout)
+        subprocess.check_call(["git", "commit", "-m", "a"], cwd=checkout, stdout=subprocess.DEVNULL)
+        bare = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, bare, True)
+        subprocess.check_call(["git", "init", "--bare", bare], stdout=subprocess.DEVNULL)
+        subprocess.check_call(["git", "remote", "add", "origin", bare], cwd=checkout)
+        subprocess.check_call(["git", "push", "-u", "origin", "HEAD:main"], cwd=checkout, stdout=subprocess.DEVNULL)
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        script = os.path.join(root, "scripts", "botwidget-pc-update")
+        idle = subprocess.Popen(["sleep", "30"])
+        self.addCleanup(lambda: idle.poll() is None and idle.kill())
+        pidfile = os.path.join(folder, "pid")
+        open(pidfile, "w").write(str(idle.pid))
+        open(busy, "w").close()
+        run_env = os.environ.copy()
+        run_env.update({
+            "PYTHONPATH": root,
+            "BOTWIDGET_CHECKOUT": checkout,
+            "BOTWIDGET_DEV_PID": pidfile,
+            "BOTWIDGET_DEV_BUSY": busy,
+        })
+        done = subprocess.run([script], env=run_env, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("busy", done.stdout)
+        self.assertIsNone(idle.poll(), "a busy dev pid is not restarted")
+        os.remove(busy)
+        done = subprocess.run([script], env=run_env, capture_output=True, text=True)
+        self.assertIn("restart", done.stdout)
+        self.assertIsNotNone(idle.poll(), "an idle dev pid gets the restart signal")

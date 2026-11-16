@@ -5,6 +5,7 @@ and starts the variant again when the command exits, crashes, or the lease times
 """
 
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -60,6 +61,30 @@ def try_lock(path: str):
 
 def retry_delay(attempt: int) -> float:
     return min(60.0, float(2 ** min(max(attempt, 0), 6)))
+
+
+def variant_pidfile() -> str:
+    """Where the selected variant records its pid. Dev is the --dev supervisor; otherwise the widget."""
+    if remembered_variant() == "dev":
+        from botwidget.dev import DEV_PIDFILE
+        return os.environ.get("BOTWIDGET_DEV_PID") or DEV_PIDFILE
+    from botwidget.instance import PIDFILE
+    return os.environ.get("BOTWIDGET_PID") or PIDFILE
+
+
+def stop_selected() -> None:
+    """Stop the widget the remembered variant started. A missing pid is left alone."""
+    try:
+        with open(variant_pidfile()) as fh:
+            pid = int(fh.read().strip())
+    except (OSError, ValueError):
+        return
+    if pid <= 0 or pid == os.getpid():
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
 
 
 def takeover(cmd: list, timeout: float, *, stop, spawn, wait, restore) -> str:
@@ -126,7 +151,7 @@ def main(argv: list[str]) -> int:
             return 1
 
         def stop():
-            return None
+            stop_selected()
 
         def spawn(command):
             return subprocess.Popen(command)

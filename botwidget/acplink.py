@@ -359,6 +359,8 @@ class AcpLink:
                 self._note = self.failed
                 self._activity = ""
                 self._sending = False
+            from botwidget.dev import note_tool
+            note_tool(False)
             return
         with self._lock:
             self._activity = ""
@@ -375,6 +377,8 @@ class AcpLink:
             elif not self._said:
                 # Nothing was said: better a line than a bubble that waits forever.
                 self._note = f"The turn ended ({turn.stop_reason or 'no reason given'}) with no answer."
+        from botwidget.dev import note_tool
+        note_tool(False)
 
     def room(self) -> str:
         """This face's own folder: one session file and a usage log per bot, also after a restart."""
@@ -493,6 +497,7 @@ class AcpLink:
                     for name, description in (update.extra.get("commands") or ()))
             return
         wake = False
+        tool = False
         with self._lock:
             if self._loading and update.kind in ("text", "user") and update.text:
                 role = "user" if update.kind == "user" else "bot"
@@ -505,6 +510,7 @@ class AcpLink:
                 self._activity = _bubble_line(update.text)
             elif update.kind == "tool":
                 self._activity = _bubble_line(update.text) or self._activity
+                tool = True
             elif update.kind == "usage":
                 if update.extra.get("jobs_only"):
                     # A job count must not wipe the context meter.
@@ -539,5 +545,8 @@ class AcpLink:
                     self.messages.append({"role": "bot", "text": update.text})
                 if self._followup:
                     wake = True
+        if tool:
+            from botwidget.dev import note_tool
+            note_tool(True)
         if wake:
             self._changed()

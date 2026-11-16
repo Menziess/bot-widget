@@ -14,7 +14,31 @@ from botwidget.supervisor import retry_delay
 
 PACKAGE = os.path.dirname(os.path.abspath(__file__))
 DEV_PIDFILE = os.path.join(tempfile.gettempdir(), "bot_widget_dev.pid")
+DEV_WANT_BUSY = os.path.join(tempfile.gettempdir(), "bot_widget_dev.want_busy")
+DEV_BUSY = os.path.join(tempfile.gettempdir(), "bot_widget_dev.busy")
 POLL_S = 0.5
+
+
+def note_tool(active: bool) -> None:
+    """The widget asks the dev loop to treat a tool as in progress."""
+    path = os.environ.get("BOTWIDGET_DEV_WANT") or DEV_WANT_BUSY
+    if active:
+        open(path, "a").close()
+        return
+    if os.path.exists(path):
+        os.remove(path)
+
+
+def publish_busy() -> bool:
+    """Copy the widget's tool flag into the busy file the updater reads. The loop owns that file."""
+    want = os.environ.get("BOTWIDGET_DEV_WANT") or DEV_WANT_BUSY
+    busy = os.environ.get("BOTWIDGET_DEV_BUSY") or DEV_BUSY
+    on = os.path.exists(want)
+    if on:
+        open(busy, "a").close()
+    elif os.path.exists(busy):
+        os.remove(busy)
+    return on
 
 
 def snapshot(folder: str = PACKAGE) -> dict:
@@ -95,6 +119,7 @@ def run(folder: str = PACKAGE, poll: float = POLL_S, checkout: str | None = None
     print(f"botwidget --dev: watching {folder}", flush=True)
     try:
         while True:
+            publish_busy()
             time.sleep(poll)
             current = snapshot(folder)
             code = child.poll()
