@@ -73,7 +73,19 @@ def variant_pidfile() -> str:
 
 
 def pid_has_exited(pid: int) -> bool:
-    """True once the process is gone or only a zombie. A live pid is still the old widget."""
+    """True once the process is gone or only a zombie. A live pid is still the old widget.
+
+    os.kill(pid, 0) is a probe on Unix. On Windows that value is Ctrl+C and would interrupt the caller.
+    """
+    if os.name == "nt":
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return True
+        code = ctypes.c_ulong()
+        ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return bool(ok) and code.value != 259
     try:
         os.kill(pid, 0)
     except OSError:

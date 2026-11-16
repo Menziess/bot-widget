@@ -118,20 +118,9 @@ class LockAndTakeover(unittest.TestCase):
         env = {"BOTWIDGET_DEV_PID": pidfile, "TMPDIR": folder}
         # The custom command itself checks the old pid. A check after main() returns is too late.
         check = (
-            "import os, pathlib, sys\n"
-            "pid = int(sys.argv[1])\n"
-            "dead = False\n"
-            "try:\n"
-            "    os.kill(pid, 0)\n"
-            "except OSError:\n"
-            "    dead = True\n"
-            "else:\n"
-            "    try:\n"
-            "        state = open(f'/proc/{pid}/stat').read().rsplit(')', 1)[1].split()[0]\n"
-            "        dead = state == 'Z'\n"
-            "    except OSError:\n"
-            "        dead = True\n"
-            "pathlib.Path(sys.argv[2]).write_text('dead' if dead else 'alive')\n"
+            "import pathlib, sys\n"
+            "from botwidget.supervisor import pid_has_exited\n"
+            "pathlib.Path(sys.argv[2]).write_text('dead' if pid_has_exited(int(sys.argv[1])) else 'alive')\n"
         )
         with mock.patch.dict(os.environ, env):
             code = supervisor.main([
