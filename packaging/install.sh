@@ -13,8 +13,10 @@ mkdir -p "$icon_dir"
 cp "$here/icon.png" "$icon_dir/botwidget.png"
 # Not "botwidget": that is also the command name of a uv or pip install.
 ln -sf "$target/app/Bot Widget" "$HOME/.local/bin/bot-widget"
-# Quoted Exec so the app menu finds the installed app (not the unpacked folder).
-app_path="$target/app/Bot Widget"
+# The menu entry calls the launcher, which reads the remembered variant.
+cp "$here/botwidget-launch" "$target/launch"
+chmod 755 "$target/launch"
+app_path="$target/launch"
 # StartupWMClass makes the running window find this entry: without it the dock shows a generic icon.
 cat > "$HOME/.local/share/applications/botwidget.desktop" <<DESKTOP
 [Desktop Entry]

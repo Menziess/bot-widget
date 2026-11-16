@@ -1,0 +1,6 @@
+[Unit]
+Description=Fast-forward the bot-widget checkout and restart an idle dev widget
+
+[Service]
+Type=oneshot
+ExecStart=%h/Projects/bot-widget/scripts/botwidget-pc-update

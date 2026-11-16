@@ -1,0 +1,11 @@
+#!/bin/sh
+# The desktop shortcut. The launcher reads variant and starts that command.
+checkout="${BOTWIDGET_CHECKOUT:-$HOME/Projects/bot-widget}"
+py="$checkout/.venv/bin/python"
+if [ ! -x "$py" ]; then
+  py=python3
+fi
+if [ -d "$checkout" ]; then
+  cd "$checkout"
+fi
+exec "$py" -m botwidget.supervisor launch

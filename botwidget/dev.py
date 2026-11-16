@@ -9,6 +9,8 @@ import time
 
 from botwidget.channel import HANDOVER_EXIT
 from botwidget.instance import ensure_single_instance
+from botwidget.pc_update import fast_forward
+from botwidget.supervisor import retry_delay
 
 PACKAGE = os.path.dirname(os.path.abspath(__file__))
 DEV_PIDFILE = os.path.join(tempfile.gettempdir(), "bot_widget_dev.pid")
@@ -56,36 +58,63 @@ def stop(child: subprocess.Popen | None, wait: float = 3.0):
         child.kill()
 
 
-def run(folder: str = PACKAGE, poll: float = POLL_S):
-    """Keeps the widget running with the newest code. A crash waits for the next change."""
+def on_child_exit(returncode: int | None) -> str:
+    """A handover stops. Any other exit, including a SyntaxError, is retried."""
+    if returncode == HANDOVER_EXIT:
+        return "stop"
+    return "retry"
+
+
+def prepare_retry(checkout: str, attempt: int) -> tuple[str, float]:
+    """Fast-forward when the checkout is clean, then say how long to wait."""
+    return fast_forward(checkout), retry_delay(attempt)
+
+
+def run(folder: str = PACKAGE, poll: float = POLL_S, checkout: str | None = None):
+    """Keeps the widget running with the newest code. A crash retries with backoff after a fast-forward."""
     ensure_single_instance(DEV_PIDFILE, (b"--dev",))
     extra = ["--keep-login"] if "--keep-login" in sys.argv else []
     seen = snapshot(folder)
     started = launched(seen)
     child = start(extra)
-    waiting = False
+    attempt = 0
+    restart_now = False
 
     def goodbye(*_):
         stop(child)
         sys.exit(0)
 
+    def poke(*_):
+        nonlocal restart_now
+        restart_now = True
+
+    if hasattr(signal, "SIGUSR1"):
+        signal.signal(signal.SIGUSR1, poke)
     signal.signal(signal.SIGTERM, goodbye)
+    root = checkout or os.path.dirname(folder)
     print(f"botwidget --dev: watching {folder}", flush=True)
     try:
         while True:
             time.sleep(poll)
             current = snapshot(folder)
-            if needs_restart(current, seen, started):
-                seen, waiting = current, False
+            code = child.poll()
+            if restart_now or needs_restart(current, seen, started):
+                restart_now = False
+                seen, attempt = current, 0
                 print("code changed, restarting", flush=True)
                 stop(child)
                 started = launched(seen)
                 child = start(extra)
-            elif child.poll() == HANDOVER_EXIT:
+            elif code == HANDOVER_EXIT:
                 print("handed over to the stable version", flush=True)
                 return
-            elif child.poll() is not None and not waiting:
-                waiting = True
-                print(f"widget exited with {child.returncode}; waiting for a change", flush=True)
+            elif code is not None and on_child_exit(code) == "retry":
+                pulled, delay = prepare_retry(root, attempt)
+                attempt += 1
+                print(f"widget exited with {code}; {pulled}; retry in {delay:.0f}s", flush=True)
+                time.sleep(delay)
+                seen = snapshot(folder)
+                started = launched(seen)
+                child = start(extra)
     finally:
         stop(child)

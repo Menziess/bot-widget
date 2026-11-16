@@ -1,0 +1,19 @@
+#!/bin/sh
+# Fast-forward ~/Projects/bot-widget when it is clean, and poke the existing --dev supervisor.
+# A missing or busy supervisor is left alone. This never starts a widget.
+set -e
+root="${BOTWIDGET_CHECKOUT:-$HOME/Projects/bot-widget}"
+pidfile="${BOTWIDGET_DEV_PID:-/tmp/bot_widget_dev.pid}"
+busy="${BOTWIDGET_DEV_BUSY:-/tmp/bot_widget_dev.busy}"
+cd "$root"
+python3 -c '
+import os, sys
+from botwidget.pc_update import fast_forward, plan_restart, signal_restart
+root, pidfile, busy = sys.argv[1:]
+print(fast_forward(root))
+pid = open(pidfile).read() if os.path.exists(pidfile) else ""
+plan = plan_restart(pid, os.path.exists(busy))
+print(plan)
+if plan == "restart":
+    signal_restart(int(pid.strip()))
+' "$root" "$pidfile" "$busy"

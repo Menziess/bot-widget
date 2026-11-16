@@ -497,7 +497,7 @@ class SmallModules(unittest.TestCase):
                 mock.patch("builtins.print"):
             dev.run(poll=0)
         self.assertEqual(len(kids), 2)
-        # A crash waits for the next edit, then starts again. The next look hands over.
+        # A crash retries (the next snapshot is a fresh child). The next look hands over.
         snaps2 = [{"a.py": 1}, {"a.py": 1}, {"a.py": 3}, {"a.py": 3}]
         kids.clear()
 

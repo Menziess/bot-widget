@@ -257,7 +257,7 @@ botwidget --dev
 
 - The editable install makes the botwidget command run the code in this folder
 - With --dev the widget restarts a moment after any .py file changes
-- A crash waits for the next change instead of looping
+- A crash retries with backoff and fast-forwards origin/main first when the checkout is clean
 - Starting at login from a checkout starts it in this mode too, so each login shows the latest iteration
 
 Without a virtual environment, `uv venv && uv pip install -e .` and `.venv/bin/botwidget --dev` do the same.

@@ -188,10 +188,12 @@ def linux():
     folder = os.path.join(DIST, NAME)
     out = os.path.join(DIST, "BotWidget-Linux.tar.gz")
     shutil.copy(os.path.join(ROOT, "packaging", "install.sh"), os.path.join(DIST, "install.sh"))
+    shutil.copy(os.path.join(ROOT, "packaging", "botwidget-launch"), os.path.join(DIST, "botwidget-launch"))
     shutil.copy(os.path.join(BUILD, "icons", "icon.png"), os.path.join(DIST, "icon.png"))
     with tarfile.open(out, "w:gz") as tar:
         tar.add(folder, arcname="botwidget/app")
         tar.add(os.path.join(DIST, "install.sh"), arcname="botwidget/install.sh")
+        tar.add(os.path.join(DIST, "botwidget-launch"), arcname="botwidget/botwidget-launch")
         tar.add(os.path.join(DIST, "icon.png"), arcname="botwidget/icon.png")
     return out
 

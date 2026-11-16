@@ -37,7 +37,8 @@ def is_enabled() -> bool:
 
 
 def set_enabled(on: bool) -> None:
-    set_launch_at_login(launch_command(), on)
+    from botwidget.supervisor import login_command
+    set_launch_at_login(login_command(), on)
 
 
 def apply_default() -> bool:
