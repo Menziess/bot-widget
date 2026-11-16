@@ -2699,6 +2699,8 @@ class BubbleHover(unittest.TestCase):
         self.finish_growth()
         self.assertEqual(bubble._geom[0][0]["role"], "more", "the pointer at the top brings it in")
         bubble.place("")
+        # The pointer was on the top edge. Left there, the next page opens the line again.
+        self.where["at"] = (5000, 5000)
         bubble = self.open_settings()
         self.assertNotEqual(bubble._geom[0][0]["role"], "more")
         self.send_mouse("press", 40, 3, Qt.LeftButton, Qt.LeftButton)
