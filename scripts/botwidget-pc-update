@@ -6,7 +6,8 @@ root="${BOTWIDGET_CHECKOUT:-$HOME/Projects/bot-widget}"
 pidfile="${BOTWIDGET_DEV_PID:-/tmp/bot_widget_dev.pid}"
 busy="${BOTWIDGET_DEV_BUSY:-/tmp/bot_widget_dev.busy}"
 cd "$root"
-python3 -c '
+py="${BOTWIDGET_PYTHON:-python3}"
+"$py" -c '
 import os, sys
 from botwidget.pc_update import fast_forward, plan_restart, signal_restart
 root, pidfile, busy = sys.argv[1:]

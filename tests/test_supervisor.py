@@ -233,6 +233,7 @@ class BusyDev(unittest.TestCase):
         run_env = os.environ.copy()
         run_env.update({
             "PYTHONPATH": root,
+            "BOTWIDGET_PYTHON": sys.executable,
             "BOTWIDGET_CHECKOUT": checkout,
             "BOTWIDGET_DEV_PID": pidfile,
             "BOTWIDGET_DEV_BUSY": busy,
