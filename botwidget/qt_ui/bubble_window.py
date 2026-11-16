@@ -1851,7 +1851,7 @@ class BubbleWindow(QWidget):
             widget.changed.connect(lambda value, command=line["command"]: self.command.emit(f"{command}/{value}"))
             return widget
         if line["control"] == "item":
-            widget = ItemRow(line["label"], bool(line["on"]), line["command"], line.get("actions") or [],
+            widget = ItemRow(line["label"], line["on"], line["command"], line.get("actions") or [],
                              self._text)
             widget.chosen.connect(self.command.emit)
             return widget

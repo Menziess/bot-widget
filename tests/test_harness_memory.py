@@ -82,6 +82,14 @@ class Store(unittest.TestCase):
         elif "HARNESS_MEMORY_DIR" in os.environ:
             del os.environ["HARNESS_MEMORY_DIR"]
 
+    def test_list_without_workspace_includes_every_project_and_can_change_it(self):
+        pid = write_memory("Use opencode", "project", workspace="/some/project")
+        self.assertEqual([m["id"] for m in list_memories()], [pid])
+        update_memory(pid, "Use opencode always")
+        self.assertEqual(list_memories()[0]["text"], "Use opencode always")
+        forget_memory(pid)
+        self.assertEqual(list_memories(), [])
+
     def test_write_and_list(self):
         eid = write_memory("Hello world", "user")
         self.assertTrue(len(eid), "ID is returned")
@@ -325,12 +333,14 @@ class MemoryTools(unittest.TestCase):
         result = tool.run({"query": "Python"})
         self.assertIn("Python", result)
 
-    def test_memory_read_tool_no_match(self):
+    def test_memory_read_tool_lists_all_without_a_match(self):
         write_memory("Unrelated data", "user")
         tool = memory_read_tool()
-        # Use a query that has no overlap with any memory.
-        result = tool.run({"query": "xyzzyz xyzzyz xyzzyz"})
-        self.assertEqual(result, "(no matching memories)")
+        self.assertIn("Unrelated data", tool.run({"query": "xyzzyz xyzzyz xyzzyz"}))
+        self.assertIn("Unrelated data", tool.run({}))
+
+    def test_memory_read_tool_empty(self):
+        self.assertEqual(memory_read_tool().run({}), "(no memories)")
 
     def test_memory_forget_tool_by_id(self):
         eid = write_memory("To forget", "user")

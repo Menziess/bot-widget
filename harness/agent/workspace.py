@@ -565,13 +565,16 @@ def is_read_only_command(workspace: str, command: str) -> bool:
     return all(_segment_read_only(workspace, seg) for seg in segments)
 
 
-def suggest_prefix(command: str) -> str:
-    """The prefix an 'always allow' would save for *command*, or '' when it should not be offered."""
+def suggest_prefix(command: str, workspace: str = "") -> str:
+    """The prefix an 'always allow' would save for *command*, or '' when it should not be offered.
+    A program by absolute path counts, unless it sits in the workspace, where the bot could rewrite it."""
     segments = shell_segments(command)
     if not segments or len(segments) != 1 or shell_refused(command):
         return ""
     tokens = segments[0]
-    if tokens[0] in _NEVER_SAVED or "/" in tokens[0]:
+    head = tokens[0]
+    if os.path.basename(head) in _NEVER_SAVED or ("/" in head and (
+            not head.startswith("/") or not workspace or not outside_workspace(workspace, head))):
         return ""
     if len(tokens) >= 2 and not tokens[1].startswith("-") and not any(c in tokens[1] for c in "$*?/~"):
         return f"{tokens[0]} {tokens[1]}"
@@ -611,7 +614,7 @@ class ShellAllow:
 
     def add(self, workspace: str, prefix: str, everywhere: bool = False) -> bool:
         prefix = " ".join((prefix or "").split())
-        if not prefix or prefix.split()[0] in _NEVER_SAVED:
+        if not prefix or os.path.basename(prefix.split()[0]) in _NEVER_SAVED:
             return False
         data = self._load()
         key = "*" if everywhere else workspace
@@ -674,9 +677,6 @@ def check_rules(rules) -> str:
     return ""
 
 
-class ApproveRules:
-    """What a tool call may do without asking, in the style of Copilot's autoApprove.
-
 def approved_files() -> list[str]:
     """The approved.json of every bot, or the one in HARNESS_AGENT_DIR."""
     folder = os.environ.get("HARNESS_AGENT_DIR") or "~/.local/share/botwidget/harness/agent/*"
@@ -699,6 +699,9 @@ def forget_approval(prefix: str) -> None:
             json.dump(kept, fh, indent=2)
 
 
+class ApproveRules:
+    """What a tool call may do without asking, in the style of Copilot's autoApprove.
+
     A call is described as text: ``shell git status``, ``write_file /home/me/proj/a.py`` or just the tool's
     name. *config* maps keys (see rule_matches) to true (no question) or false (always ask, which wins).
     What a user accepted is remembered as a prefix rule on top of that, for the session or for good.
@@ -712,10 +715,10 @@ def forget_approval(prefix: str) -> None:
 
     def decide(self, texts: list[str], session: bool, saved: bool) -> bool | None:
         """False when a rule says ask, True when every part is covered, else None (the user decides)."""
+        self.saved = saved_approvals(self.path)  # an edit made in the widget counts at once
         if not texts:
             return None
         if any(allowed is False and rule_matches(pattern, text)
-        self.saved = saved_approvals(self.path)  # an edit made in the widget counts at once
                for pattern, allowed in self.config.items() for text in texts):
             return False
         covering = [p for p, allowed in self.config.items() if allowed is True]

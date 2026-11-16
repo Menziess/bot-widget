@@ -70,10 +70,11 @@ class ItemRow(PointerWatch, QWidget):
 
     chosen = Signal(str)
 
-    def __init__(self, title: str, on: bool, toggle: str, actions: list, parent=None):
+    def __init__(self, title: str, on: bool | None, toggle: str, actions: list, parent=None):
         super().__init__(parent)
         self._title = title
-        self._on = bool(on)
+        self._on = on
+        self._lead = 0 if on is None else CONTROL_SWITCH_W  # no state, no switch: a row of actions only
         self._toggle = toggle
         self._actions = [(str(action["label"]), str(action["command"])) for action in actions]
         self._hits: list[tuple[str, str, QRectF]] = []
@@ -101,7 +102,7 @@ class ItemRow(PointerWatch, QWidget):
             x -= 4
         hits.reverse()
         self._hits = hits
-        self._title_w = max(0, x - CONTROL_SWITCH_W - 8)
+        self._title_w = max(0, x - self._lead - 8)
 
     def mousePressEvent(self, event):
         # Painted above the text. A press this row ignores never comes back as a release.
@@ -141,7 +142,9 @@ class ItemRow(PointerWatch, QWidget):
     def press_at(self, x: float):
         """x is in this row: its own click, or one the text still forwards."""
         command = self._command_at(x)
-        self.chosen.emit(self._toggle if command is None else command)
+        command = self._toggle if command is None else command
+        if command:
+            self.chosen.emit(command)
 
     def paintEvent(self, _event):
         if self._actions and not self._hits:
@@ -151,18 +154,19 @@ class ItemRow(PointerWatch, QWidget):
         top = (self.height() - TRACK_H) / 2
         track = QRectF(0, top, TRACK_W, TRACK_H)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(color(SAND_ACCENT) if self._on else QColor(28, 28, 28, 64))
-        painter.drawRoundedRect(track, TRACK_H / 2, TRACK_H / 2)
-        knob = TRACK_H - 2 * KNOB_PAD
-        knob_x = TRACK_W - KNOB_PAD - knob if self._on else KNOB_PAD
-        painter.setBrush(QColor("#ffffff"))
-        painter.drawEllipse(QRectF(knob_x, top + KNOB_PAD, knob, knob))
+        if self._on is not None:
+            painter.setBrush(color(SAND_ACCENT) if self._on else QColor(28, 28, 28, 64))
+            painter.drawRoundedRect(track, TRACK_H / 2, TRACK_H / 2)
+            knob = TRACK_H - 2 * KNOB_PAD
+            knob_x = TRACK_W - KNOB_PAD - knob if self._on else KNOB_PAD
+            painter.setBrush(QColor("#ffffff"))
+            painter.drawEllipse(QRectF(knob_x, top + KNOB_PAD, knob, knob))
         font = QFont(SAND_SANS)
         font.setPixelSize(BUBBLE_FONT)
         painter.setFont(font)
         painter.setPen(color(SAND_INK))
         title = QFontMetrics(font).elidedText(self._title, Qt.ElideRight, max(1, int(self._title_w)))
-        painter.drawText(QRectF(CONTROL_SWITCH_W, 0, max(1, self._title_w), self.height()),
+        painter.drawText(QRectF(self._lead, 0, max(1, self._title_w), self.height()),
                          Qt.AlignVCenter | Qt.AlignLeft, title)
         for label, command, rect in self._hits:
             # "Again" is the second click that really removes; "Unmute" means the bot is muted.

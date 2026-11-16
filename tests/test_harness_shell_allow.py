@@ -75,7 +75,14 @@ class SuggestAndSave(unittest.TestCase):
         self.assertEqual(suggest_prefix("git commit -m x"), "git commit")
         self.assertEqual(suggest_prefix("npm test && npm run build"), "")
         for risky in ("sudo apt install x", "bash -c 'x'", "python x.py", "./run.sh"):
-            self.assertEqual(suggest_prefix(risky), "", risky)
+            self.assertEqual(suggest_prefix(risky, self.ws), "", risky)
+
+    def test_program_by_absolute_path_is_offered_unless_inside_the_workspace_or_a_shell(self):
+        self.assertEqual(suggest_prefix("/opt/tool/bin/tool run --help", self.ws), "/opt/tool/bin/tool run")
+        self.assertEqual(suggest_prefix(f"{self.ws}/run.sh", self.ws), "")
+        self.assertEqual(suggest_prefix("/bin/bash -c x", self.ws), "")
+        self.assertEqual(suggest_prefix("/opt/tool/bin/tool run", ""), "")
+        self.assertFalse(self.allow.add(self.ws, "/bin/bash -c"))
 
     def test_saved_prefix_allows_only_matching_commands_in_that_workspace(self):
         self.assertTrue(self.allow.add(self.ws, "npm test"))

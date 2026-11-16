@@ -32,6 +32,7 @@ the memory's topic.  A character cap (default 2048) keeps the injection small.
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import re
@@ -89,6 +90,14 @@ def _memory_path(scope: str, workspace: str | None = None) -> str | None:
         return os.path.join(data_dir, f"memory_project_{ws_hash}.jsonl")
     # user and topic both live in the bot's data directory.
     return os.path.join(_data_dir(), f"memory_{scope}.jsonl")
+
+
+def _scope_paths(scope: str, workspace: str | None) -> list[str]:
+    """The files of a scope. Without a workspace the project scope is every workspace's file, for the memory page."""
+    if scope == "project" and not workspace:
+        return sorted(glob.glob(os.path.join(_data_dir(), "memory_project_*.jsonl")))
+    path = _memory_path(scope, workspace)
+    return [] if path is None else [path]
 
 
 def _data_dir() -> str:
@@ -351,11 +360,8 @@ def _forget_by_id(entry_id: str, workspace: str | None = None,
 def _find_entry_path(entry_id: str, workspace: str | None = None) -> str | None:
     """Find which file contains the entry with *entry_id*."""
     for scope in ("user", "project", "topic"):
-        path = _memory_path(scope, workspace)
-        if path is None:
-            continue
-        for entry in _read_lines(path):
-            if entry.get("id") == entry_id:
+        for path in _scope_paths(scope, workspace):
+            if any(entry.get("id") == entry_id for entry in _read_lines(path)):
                 return path
     return None
 
@@ -381,10 +387,8 @@ def list_memories(workspace: str | None = None) -> list[dict]:
     """Return all memories across all scopes, newest first."""
     all_entries: list[dict] = []
     for scope in ("user", "project", "topic"):
-        path = _memory_path(scope, workspace)
-        if path is None:
-            continue
-        all_entries.extend(_read_lines(path))
+        for path in _scope_paths(scope, workspace):
+            all_entries.extend(_read_lines(path))
     all_entries.sort(key=lambda e: e.get("ts", 0), reverse=True)
     return all_entries
 
@@ -429,11 +433,10 @@ def memory_read_tool(workspace: str | None = None):
 
     def run(arguments: dict) -> str:
         query = str(arguments.get("query") or "").strip()
-        if not query:
-            return "(no memories)"
-        results = retrieve_memories(query, workspace=workspace)
+        # A question like "which memories do you have?" shares no word with any memory: list them instead.
+        results = (query and retrieve_memories(query, workspace=workspace)) or list_memories(workspace)[:RETRIEVE_TOP_K]
         if not results:
-            return "(no matching memories)"
+            return "(no memories)"
         lines = []
         for r in results:
             scope = r.get("scope", "?")
@@ -443,13 +446,12 @@ def memory_read_tool(workspace: str | None = None):
 
     return Tool(
         "memory_read",
-        "Read memories relevant to a query. Use before writing to avoid duplicates.",
+        "Read memories relevant to a query; with no query, or when nothing matches, the most recent ones. Use before writing to avoid duplicates.",
         {
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
             },
-            "required": ["query"],
         },
         run,
     )

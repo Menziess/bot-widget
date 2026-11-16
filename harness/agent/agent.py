@@ -791,10 +791,9 @@ class LeanAgent:
             return False
         return self.shell_allow.allows(workspace, command, read_only=self.shell_readonly_free)
 
-    @staticmethod
-    def _shell_prefix(command: str) -> str:
+    def _shell_prefix(self, command: str) -> str:
         from harness.agent.workspace import suggest_prefix
-        return suggest_prefix(command)
+        return suggest_prefix(command, getattr(self.tools, "workspace", "") or "")
 
     async def _ask(self, session_id: str, call_id: str, title: str) -> bool:
         """Accept and Decline in the bubble; anything but an explicit allow counts as no."""
