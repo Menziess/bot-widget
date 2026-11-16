@@ -6,6 +6,8 @@ A plan in small steps. Each step ends in something that can be tried and a test 
 
 ### 0. Spike, one or two days
 
+**Status: Done 2026-10-30. `harness/spike.py`; `hermes-acp` tried for real, a fake agent for the rest.**
+
 A script, not the widget, speaks ACP to an existing agent, following the flow below.
 
 ```text
@@ -23,6 +25,8 @@ Try at least two different agents, to see how much they differ in practice.
 
 ### 1. The widget adapter, two to four days
 
+**Status: Done 2026-10-30. `botwidget/acplink.py`, driven in tests by `tests/fake_acp_agent.py`. Since then: an agent that leaves the desktop stays alive five minutes, closing never waits on the agent, and a message sent during an approval declines it.**
+
 A link class with the same calls as the existing Grok and Hermes links, filled from ACP events.
 
 Done when these hold.
@@ -37,6 +41,8 @@ Rather than touching the face code, the adapter should hide behind the calls lis
 
 ### 2. Lean agent v0, two to three days
 
+**Status: Done 2026-10-30. Sqlite store per bot, `usage.jsonl`. The default model is now a local llama.cpp on :8081.**
+
 An ACP agent with the chat completions adapter, no tools, a sqlite session store and a usage log.
 
 Done when these hold.
@@ -48,6 +54,8 @@ Done when these hold.
 
 ### 3. Tools and permissions, three to five days
 
+**Status: Done 2026-11-02, and grown since. Built-in file and shell tools, one MCP server, three permission modes (ask, allow_session, allow), Copilot-style `approve` rules in `widget.json`, Always allow in the bubble, an approval log the bot can read, and an Edit approvals page (2026-11-16) that removes what was allowed for good.**
+
 An MCP client, a few read-only built-ins, and permission requests for everything that writes.
 
 Done when these hold.
@@ -57,6 +65,8 @@ Done when these hold.
 - Tool output is labelled as data in the prompt
 
 ### 4. Context builder, three to five days
+
+**Status: Done 2026-11-02 to 2026-11-10. Stable prefix, pinned facts, context meter, Anthropic adapter measured against a fake API (95% cached by turn 20), a background extract so compaction keeps facts, large tool output spilled to a file, and topic-scoped durable memory with a `/memory` page.**
 
 Stable prefix, trimming of old tool results, rolling summary, pinned facts, the Anthropic adapter with cache marks.
 
@@ -68,15 +78,11 @@ Done when these hold.
 
 ### 5. Compare and decide, one or two days
 
+**Status: Done 2026-11-10 with a scripted benchmark and a live llama.cpp mode. Decision: keep OpenBot for broad work, use the lean agent for short, read-mostly bots. Provisional until a hosted model is run behind both backends.**
+
 Run the measurement plan from 04-efficiency.md and write down the result.
 
 Done when a decision is recorded, keep OpenBot for everything, use the lean agent for some bots, or drop the idea.
-
-*Reached on 2 November 2026: the lean agent's prompt is about eighty times smaller and the measured
-turn is short, but with a local model behind both backends no cost per finished task was measured.
-Decision recorded in DECISIONS.md: keep OpenBot for broad work, use the lean agent as one more
-backend where a small prompt and a local model suffice, and settle the cost question with one
-hosted run on both sides.*
 
 ## Order and cut points
 
@@ -96,7 +102,7 @@ Stopping after phase 1 still has value, because the widget then supports many ex
 
 ## Open decisions
 
-Questions only the owner can answer.
+Questions only the owner can answer. Settled so far: the lean agent is one process per bot, memory has user, project and topic scopes, and a local model is the default.
 
 - Which backends matter first, among Pi, OpenCode, Hermes, Claude Code and Codex
 - Which models, and whether a local model is the default
@@ -106,6 +112,12 @@ Questions only the owner can answer.
 - Where the code lives, as a separate package or repository so that the widget stays thin
 - How much of OpenBot's feature set is wanted at all, teammates, routines, browser
 
-## Where to start
+## What is next
+
+- Run one hosted model behind both OpenBot and the lean agent on twenty tasks each, to settle cost per finished task
+- Try a second real ACP agent (OpenCode, Claude Code or Codex), to see how much adapters differ
+- Decide whether approvals should be removable per bot, not only for all bots at once
+
+## Where to start (historical)
 
 The spike in phase 0 costs the least and answers the largest unknown, which is how well existing agents behave through ACP. Everything after it depends on that answer.
