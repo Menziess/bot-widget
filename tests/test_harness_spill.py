@@ -37,7 +37,8 @@ class Spill(_SpillEnv):
         self.assertLess(len(shown), 1300)
         with open(path) as fh:
             self.assertEqual(fh.read(), text)
-        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
+        if os.name != "nt":
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)
 
     def test_limit_can_be_turned_off_or_changed(self):
         os.environ["HARNESS_TOOL_OUTPUT_LIMIT"] = "0"

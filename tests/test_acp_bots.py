@@ -42,8 +42,9 @@ class ConfigFile(unittest.TestCase):
 
     def test_without_a_checkout_the_command_is_just_the_agent(self):
         """Should not point PYTHONPATH at a folder that has no harness."""
+        from harness.acp_client import split_command
         with mock.patch.object(acp_bots.os.path, "isdir", return_value=False):
-            self.assertEqual(acp_bots.default_command(), f"{sys.executable} -m harness.agent")
+            self.assertEqual(split_command(acp_bots.default_command()), [sys.executable, "-m", "harness.agent"])
 
     def test_a_path_with_a_space_survives_the_command_line(self):
         """Should not cut /Applications/Bot Widget.app/... at the space."""

@@ -658,6 +658,8 @@ def rule_matches(pattern: str, text: str) -> bool:
             return bool(re.search(regex.group(1), text, re.IGNORECASE if regex.group(2) else 0))
         except re.error:
             return False
+    # A remembered folder is stored with a trailing slash. Windows paths use backslash.
+    pattern, text = pattern.replace("\\", "/"), text.replace("\\", "/")
     return text == pattern or (text.startswith(pattern) and (pattern.endswith("/") or text[len(pattern)] in " /"))
 
 

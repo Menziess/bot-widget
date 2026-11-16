@@ -22,7 +22,8 @@ def _temp_config():
     config.CONFIG_PATH = os.path.join(folder.name, "widget.json")
     os.makedirs(folder.name, exist_ok=True)
     with open(config.CONFIG_PATH, "w") as fh:
-        json.dump({}, fh)
+        # Already shown, so the first-run hint does not depend on OpenBot or Grok being installed.
+        json.dump({"unlinked_hint_shown": True}, fh)
     config._config_read[:] = [None, {}]
     return folder, old
 
@@ -45,7 +46,7 @@ class PendingDot(unittest.TestCase):
         self.window = FaceWindow("t", "Ada", spot=(300, 400))
         self.window._poll_timer.stop()
         self.window._anim_timer.stop()
-        self.window._hint_shown = True
+        self.window._hint_shown = False
         self.window._latest = lambda: {"messages": [], "activity": ""}
         self.addCleanup(self._close)
 

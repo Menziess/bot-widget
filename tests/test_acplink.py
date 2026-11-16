@@ -162,8 +162,9 @@ class AcpTurns(unittest.TestCase):
                     link._booting = False
 
         link._ensure = fake_ensure
-        link.send("hoi")
-        self.assertTrue(wait_for(lambda: not link.active()))
+        with mock.patch.object(acplink, "login_path", return_value=("/usr/bin", "")):
+            link.send("hoi")
+            self.assertTrue(wait_for(lambda: not link.active()))
         self.assertEqual(link.note(), "HTTP 401: invalid api key")
 
     def test_a_cancel_with_nothing_running_never_reaches_the_agent(self):
@@ -260,6 +261,11 @@ class AcpTurns(unittest.TestCase):
         self.assertTrue(link.send("next")[0], "the turn is over, so the next message goes out")
 
     def test_the_login_shell_path_is_used_and_a_failure_is_only_reported(self):
+        acplink.login_path.cache_clear()
+        if os.name == "nt":
+            self.assertEqual(acplink.login_path(), ("", ""))
+            acplink.login_path.cache_clear()
+            return
         done = mock.Mock(stdout="motd\n__PATH__/opt/homebrew/bin:/usr/bin", returncode=0)
         with mock.patch.object(acplink.subprocess, "run", return_value=done):
             acplink.login_path.cache_clear()
