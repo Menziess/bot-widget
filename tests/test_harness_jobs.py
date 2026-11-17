@@ -384,12 +384,13 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
         model = RecordingModel([
             [("tool_calls", [
                 call("shell_background", {"command": py(
-                    "import pathlib; pathlib.Path(%r).write_text('1'); print('FINISHED-ONE')" % gate)}, "1"),
+                    "import pathlib; print('FINISHED-ONE', flush=True); pathlib.Path(%r).write_text('1')" % gate)}, "1"),
                 call("shell_background", {"command": py(
                     "import pathlib, time\n"
                     "p = pathlib.Path(%r)\n"
                     "while not p.exists():\n"
                     "    time.sleep(0.01)\n"
+                    "time.sleep(0.5)  # job one exits after writing the gate\n"
                     "print('FINISHED-TWO')" % gate)}, "2"),
             ])],
             hold,
