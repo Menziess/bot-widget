@@ -33,6 +33,7 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
         os.close(fd)
         with open(path, "w") as fh:
             json.dump({"enabled": ["home"], "pos": {"home": [400, 400]}}, fh)
+        self.state_path = path
         self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
         bots = [
             {"id": "home", "name": "Home", "threadId": "t-home", "hue": None, "seed": "home", "status": "ready"},
@@ -65,6 +66,16 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
             face.close_face()
         self.faces._catcher.close()
         app.processEvents()
+
+    def test_every_bot_in_the_arc_stays_there_after_a_restart(self):
+        with open(self.state_path, "w") as fh:
+            json.dump({"enabled": [], "pos": {}}, fh)
+        again = self.Faces()
+        self.addCleanup(again._catcher.close)
+        self.addCleanup(again._semicircle_timer.stop)
+        self.addCleanup(again._semicircle_hide_timer.stop)
+        self.addCleanup(lambda: self.app.removeEventFilter(again))
+        self.assertEqual(again.faces, {})
 
     def _leave(self, widget):
         from PySide6.QtCore import QEvent

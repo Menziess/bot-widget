@@ -293,7 +293,9 @@ class Faces(QObject):
             self._update_timer.timeout.connect(self._update_tick)
             self._update_timer.start()
         bots = {bot["id"]: bot for bot in _all_bots()}
-        ids = [agent_id for agent_id in enabled if agent_id in bots] or list(bots)[:1] or [UNLINKED_ID]
+        ids = [agent_id for agent_id in enabled or [] if agent_id in bots]
+        if not ids and enabled != []:  # an empty list is a choice: every bot sits in the arc
+            ids = list(bots)[:1] or [UNLINKED_ID]
         for slot, agent_id in enumerate(ids):
             bot = bots.get(agent_id) or {
                 "id": agent_id,
@@ -306,15 +308,15 @@ class Faces(QObject):
         self.relay = grok_relay.Relay(self.relay_message.emit)
         self.relay.start()
 
-    def _load(self) -> list:
+    def _load(self) -> list | None:
         try:
             with open(STATE_PATH) as fh:
                 data = json.load(fh)
         except (OSError, ValueError):
             data = {}
         enabled = data.get("enabled")
-        if not isinstance(enabled, list) or not all(isinstance(i, str) for i in enabled) or not enabled:
-            enabled = []
+        if not isinstance(enabled, list) or not all(isinstance(i, str) for i in enabled):
+            enabled = None
         pos = data.get("pos")
         self.pos = pos if isinstance(pos, dict) else {}
         cached = data.get("grok_avatars")
