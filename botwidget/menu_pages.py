@@ -4,6 +4,7 @@ Pure blocks, no toolkit. A clickable row is a piece with the style "cmd:<command
 produces that style, so no message from a bot can make a row of its own.
 """
 
+import os
 import time
 import urllib.parse
 
@@ -367,14 +368,16 @@ def memory_page(state: dict) -> list:
 
 
 def approvals_page(state: dict) -> list:
-    """What was accepted for good, from every bot's approved.json. A removed one is asked about again."""
+    """What was accepted for good, one row per bot and prefix. Removing a row asks that bot again."""
     from harness.agent.workspace import approved_files, saved_approvals
-    prefixes = sorted({p for path in approved_files() for p in saved_approvals(path)})
+    rows = sorted((os.path.basename(os.path.dirname(path)), prefix)
+                  for path in approved_files() for prefix in saved_approvals(path))
     blocks = _back("page/bots") + [_heading("Approvals")]
-    if not prefixes:
+    if not rows:
         blocks.append(_row(("Nothing is allowed for good yet", "dim")))
-    for prefix in prefixes:
-        blocks += [_row((prefix, "dim")), _item("", "", None, [("Remove", f"approval-forget/{prefix}")])]
+    for bot, prefix in rows:
+        blocks += [_row((f"{bot} · {prefix}", "dim")),
+                   _item("", "", None, [("Remove", f"approval-forget/{bot}/{prefix}")])]
     return blocks
 
 

@@ -835,7 +835,8 @@ class Faces(QObject):
             return "memory"
         elif kind == "approval-forget":
             from harness.agent.workspace import forget_approval
-            forget_approval(name)
+            bot, _, prefix = name.partition("/")
+            forget_approval(bot, prefix)
             return "approvals"
         elif kind == "memory-forget":
             self._forget_memory(name)

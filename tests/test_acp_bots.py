@@ -395,26 +395,39 @@ class WidgetSave(unittest.TestCase):
 
 
 class ApprovalsPage(WidgetSave):
-    """The /approvals page lists what was accepted for good, and Remove takes it out of every bot's file."""
+    """The /approvals page lists each saved prefix with its bot. Remove edits only that bot's file."""
 
-    def test_remove_forgets_the_rule_and_a_running_agent_notices(self):
+    def test_remove_forgets_one_bots_rule_and_a_running_agent_notices(self):
         from botwidget import menu_pages
         from harness.agent.workspace import ApproveRules
-        folder = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, folder, True)
-        path = os.path.join(folder, "approved.json")
-        with open(path, "w") as fh:
-            json.dump(["shell git status", "shell ls"], fh)
-        patched = mock.patch.dict(os.environ, {"HARNESS_AGENT_DIR": folder})
+        parent = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, parent, True)
+        paths = {}
+        for bot, extra in (("alpha", ["shell ls"]), ("beta", [])):
+            folder = os.path.join(parent, bot)
+            os.makedirs(folder)
+            paths[bot] = os.path.join(folder, "approved.json")
+            with open(paths[bot], "w") as fh:
+                json.dump(["shell git status", *extra], fh)
+        patched = mock.patch.dict(os.environ, {"HARNESS_AGENT_DIR": os.path.join(parent, "*")})
         patched.start()
         self.addCleanup(patched.stop)
-        rules = ApproveRules(path)
+        rules = {bot: ApproveRules(path) for bot, path in paths.items()}
         text = json.dumps(menu_pages.approvals_page({}))
-        self.assertIn('"command": "approval-forget/shell git status"', text)
-        self.assertEqual(self.box.menu_command("approval-forget/shell git status", "approvals"), "approvals")
-        self.assertNotIn("shell git status", json.dumps(menu_pages.approvals_page({})))
-        self.assertIsNone(rules.decide(["shell git status"], session=False, saved=True))
-        self.assertTrue(rules.decide(["shell ls"], session=False, saved=True))
+        self.assertIn("alpha", text)
+        self.assertIn("beta", text)
+        self.assertIn('"command": "approval-forget/alpha/shell git status"', text)
+        self.assertIn('"command": "approval-forget/beta/shell git status"', text)
+        self.assertIn("shell ls", text)
+        self.assertEqual(self.box.menu_command("approval-forget/alpha/shell git status", "approvals"), "approvals")
+        self.assertEqual(json.load(open(paths["alpha"])), ["shell ls"])
+        self.assertEqual(json.load(open(paths["beta"])), ["shell git status"])
+        again = json.dumps(menu_pages.approvals_page({}))
+        self.assertNotIn("approval-forget/alpha/shell git status", again)
+        self.assertIn('"command": "approval-forget/beta/shell git status"', again)
+        self.assertIsNone(rules["alpha"].decide(["shell git status"], session=False, saved=True))
+        self.assertTrue(rules["alpha"].decide(["shell ls"], session=False, saved=True))
+        self.assertTrue(rules["beta"].decide(["shell git status"], session=False, saved=True))
 
 
 class MemoryPage(WidgetSave):

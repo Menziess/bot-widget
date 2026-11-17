@@ -694,8 +694,11 @@ def saved_approvals(path: str) -> list[str]:
     return [p for p in data if isinstance(p, str)] if isinstance(data, list) else []
 
 
-def forget_approval(prefix: str) -> None:
+def forget_approval(bot: str, prefix: str) -> None:
+    """Drop one saved prefix from that bot's approved.json. The same prefix on another bot stays."""
     for path in approved_files():
+        if os.path.basename(os.path.dirname(path)) != bot:
+            continue
         kept = [p for p in saved_approvals(path) if p != prefix]
         with open(path, "w") as fh:
             json.dump(kept, fh, indent=2)
