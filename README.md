@@ -170,9 +170,9 @@ The bot asks before it writes, edits or deletes a file and before a shell comman
 }
 ```
 
-- Permission `ask` asks every time. It is the default
+- Permission `ask` asks every time
 - Permission `allow_session` remembers an Accept until the agent stops
-- Permission `allow` remembers it for good, in `approved.json` in the bot's folder
+- Permission `allow` remembers it for good, in `approved.json` in the bot's folder. It is the default for a new bot
 - Remembering covers the same tool in the same folder and the folders below it. For a shell command it covers the same command prefix, such as `git status`
 - A write or delete outside the workspace folder is allowed too, and its question says so
 - The `approve` object is written by hand. Each key is a start of the text `tool target`, such as `shell git status` or `write_file /home/you/notes/a.md`
@@ -188,6 +188,42 @@ llama-server -m ~/models/qwen2.5-7b-instruct-q4_k_m.gguf --port 8080 --alias loc
 ```
 
 The server then answers on `http://127.0.0.1:8080/v1`, and the model name to ask for is `local`. Without `--api-key` the same URL works with an empty key file. With no `HARNESS_MODEL_BASE_URL` the widget assumes exactly this server and model; when nothing answers there, the turn stops with a line that says the server could not be reached instead of waiting.
+
+## The browser
+
+A bot that runs the lean agent can read the tabs of the Chrome that is already open, with your logins. Chrome has to allow it once.
+
+```text
+chrome://inspect/#remote-debugging
+```
+
+- Tick the box on that page
+- Chrome shows Allow remote debugging when the bot first connects. Answer Allow
+- The bot keeps that one connection, so Chrome asks once and not for every message
+- Instead of a permanent Allow, Chrome has no such setting, so it asks again after the widget restarts
+- Chrome and Chromium work. Edge, Brave and Firefox do not yet
+
+Then ask the bot, for example, which tabs are open. The tool behind that is `browser_tabs`, and `browser_read` gives the text of one tab, picked by a part of its title. Both only read. Neither opens a window or a page.
+
+On macOS the widget finds Chrome through the system, so it needs no Full Disk Access. Linux and Windows read Chrome's `DevToolsActivePort` file instead, and are not tried yet.
+
+Clicking, filling in forms and scrolling are not built in. Rather than waiting for that, add browser-use as the MCP server of the bot, in the `env` of its entry in `widget.json`.
+
+```json
+"env": {
+  "HARNESS_MCP_SERVER": "uvx --python 3.12 browser-use@latest --cli-mcp"
+}
+```
+
+- The command starts on your machine and drives the same Chrome. A cloud browser only starts after `browser_login`
+- The server adds `browser_exec`, `browser_screenshot`, `browser_login` and `browser_feedback`
+- Python that the model writes runs in `browser_exec`, so each call asks first. Leave `HARNESS_MCP_READ_ONLY` out
+- Decline `browser_login` and `browser_feedback`. The first is for the cloud, and the second sends text to the vendor
+- Each bot takes one MCP server. Instead of a second one for the same bot, add another bot with its own server
+- The `uvx` command comes with uv, and `@latest` fetches the newest version at every start
+- Instead of `uvx` alone, write its full path when the widget starts at login, because it may not have your shell's PATH
+- Edit widget.json on the `/bots` page saves this and restarts only that bot
+- A small local model may not pick these tools by itself. Name the tool in the question, such as "use browser_exec to scroll down"
 
 ## Talking to a bot from a shell
 

@@ -117,8 +117,10 @@ Questions only the owner can answer. Settled so far: the lean agent is one proce
 - Run one hosted model behind both OpenBot and the lean agent on twenty tasks each, to settle cost per finished task
 - Try a second real ACP agent (OpenCode, Claude Code or Codex), to see how much adapters differ
 - Decide whether approvals should be removable per bot, not only for all bots at once
+- Attach to the running everyday Chrome over CDP, browser-use-style. Chrome's "Allow remote debugging?" consent once, then the existing session: his own tabs and logins. No extension, no separate profile, and no `--remote-debugging-port` relaunch. The base stays the direct-CDP reader in `harness/browser_local.py`, not the browser-use package, Playwright, or an extension.
+- Requirements: `list_tabs`/`switch_tab` to reuse existing tabs; never open a new window (a new tab in the existing window only when needed); `goto_url` + `wait_for_load`; read via `document.body.innerText` plus background-tab screenshots; click via JS `element.click()` on an element found by its text; `fetch()` inside the page using the logged-in session, and never display or store tokens.
+- OpenCode Browse (`anomalyco/browse`) is the fallback only, and it needs an extension.
 - Chrome, read only: done 2026-11-17. The lean agent has `browser_tabs` and `browser_read` (`harness/agent/tools.py`) over the direct-CDP reader in `harness/browser_local.py`. Chrome's "Allow remote debugging?" consent once per connection, then the existing session: his own tabs and logins. No extension, no separate profile, no `--remote-debugging-port` relaunch. One socket is kept for the life of the agent, so Chrome asks once and not per question. The port comes from `lsof`, because macOS keeps other apps out of Chrome's own folder (`DevToolsActivePort` gave "Operation not permitted" without Full Disk Access); Chrome takes `/devtools/browser` without the id from that file. The port file stays as the fallback, with the macOS, Linux and Windows paths. Tried on macOS only: Linux and Windows are not tried.
-- OpenCode Browse (`anomalyco/browse`) stays the fallback only, and it needs an extension.
 
 ### Feature requests, 2026-11-17
 

@@ -1,5 +1,5 @@
 """Harness action 3: the ACP cwd (else home) is the workspace; AGENTS.md from the project root down to it;
-one default permission everywhere."""
+a new bot starts on allow."""
 
 import os
 import shutil
@@ -107,8 +107,8 @@ class AgentFollowsCwd(unittest.IsolatedAsyncioTestCase):
 
 
 class OneDefaultPermission(unittest.TestCase):
-    def test_new_and_existing_bots_agree(self):
-        self.assertEqual(acp_bots.blank()["workspace_permissions"], "ask")
+    def test_a_new_bot_allows_and_a_bot_without_the_setting_still_asks(self):
+        self.assertEqual(acp_bots.blank()["workspace_permissions"], "allow")
         self.assertEqual(acp_bots.fields_of({"env": {}})["workspace_permissions"], "ask")
         self.assertEqual(acp_bots.fields_of({"env": {"HARNESS_WORKSPACE_PERMISSIONS": "allow"}})
                          ["workspace_permissions"], "allow")

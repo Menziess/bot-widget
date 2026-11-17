@@ -39,7 +39,7 @@ def blank() -> dict:
     """What New bot shows before anything is typed. With no connection picked, the address is the local server."""
     return {"id": "", "stored_id": "", "name": "", "face": "nuage", "color": "blue", "connection": "",
             "base_url": DEFAULT_BASE, "model": DEFAULT_MODEL, "key_file": DEFAULT_KEY,
-            "command": "", "workspace": "", "workspace_permissions": "ask"}
+            "command": "", "workspace": "", "workspace_permissions": "allow"}
 
 
 def fields_of(bot: dict) -> dict:
