@@ -120,6 +120,7 @@ Questions only the owner can answer. Settled so far: the lean agent is one proce
 - Attach to the running everyday Chrome over CDP, browser-use-style. Chrome's "Allow remote debugging?" consent once, then the existing session: his own tabs and logins. No extension, no separate profile, and no `--remote-debugging-port` relaunch. The base stays the direct-CDP reader in `harness/browser_local.py`, not the browser-use package, Playwright, or an extension.
 - Requirements: `list_tabs`/`switch_tab` to reuse existing tabs; never open a new window (a new tab in the existing window only when needed); `goto_url` + `wait_for_load`; read via `document.body.innerText` plus background-tab screenshots; click via JS `element.click()` on an element found by its text; `fetch()` inside the page using the logged-in session, and never display or store tokens.
 - OpenCode Browse (`anomalyco/browse`) is the fallback only, and it needs an extension.
+- Tried 2026-11-17: OpenCode 2.1.3 over `opencode acp`, protocol 1, stop reason end_turn. It sends available_commands_update with an empty command list before the answer. The lean agent never sends that update. The client already leaves it off the first-answer clock. A one-word prompt on the local model took about 209 seconds to the first text.
 
 ## Where to start (historical)
 
