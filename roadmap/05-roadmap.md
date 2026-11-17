@@ -117,9 +117,20 @@ Questions only the owner can answer. Settled so far: the lean agent is one proce
 - Run one hosted model behind both OpenBot and the lean agent on twenty tasks each, to settle cost per finished task
 - Try a second real ACP agent (OpenCode, Claude Code or Codex), to see how much adapters differ
 - Decide whether approvals should be removable per bot, not only for all bots at once
-- Attach to the running everyday Chrome over CDP, browser-use-style. Chrome's "Allow remote debugging?" consent once, then the existing session: his own tabs and logins. No extension, no separate profile, and no `--remote-debugging-port` relaunch. The base stays the direct-CDP reader in `harness/browser_local.py`, not the browser-use package, Playwright, or an extension.
-- Requirements: `list_tabs`/`switch_tab` to reuse existing tabs; never open a new window (a new tab in the existing window only when needed); `goto_url` + `wait_for_load`; read via `document.body.innerText` plus background-tab screenshots; click via JS `element.click()` on an element found by its text; `fetch()` inside the page using the logged-in session, and never display or store tokens.
-- OpenCode Browse (`anomalyco/browse`) is the fallback only, and it needs an extension.
+- Chrome, read only: done 2026-11-17. The lean agent has `browser_tabs` and `browser_read` (`harness/agent/tools.py`) over the direct-CDP reader in `harness/browser_local.py`. Chrome's "Allow remote debugging?" consent once per connection, then the existing session: his own tabs and logins. No extension, no separate profile, no `--remote-debugging-port` relaunch. One socket is kept for the life of the agent, so Chrome asks once and not per question. The port comes from `lsof`, because macOS keeps other apps out of Chrome's own folder (`DevToolsActivePort` gave "Operation not permitted" without Full Disk Access); Chrome takes `/devtools/browser` without the id from that file. The port file stays as the fallback, with the macOS, Linux and Windows paths. Tried on macOS only: Linux and Windows are not tried.
+- OpenCode Browse (`anomalyco/browse`) stays the fallback only, and it needs an extension.
+
+### Feature requests, 2026-11-17
+
+Not built. In the order the owner asked.
+
+- **Browser actions as tools.** Click by text, go to an address, open a tab, scroll and fill in forms. `Cdp` already has `click_text`, `goto_url`, `open_tab`, `screenshot` and `page_fetch`; scrolling and filling forms do not exist yet. Every action that changes a page asks first, like a write.
+- **Other browsers.** Edge and Brave speak the same protocol and only need their folders and process names. Arc is probably the same. Firefox needs WebDriver BiDi. Safari has no equivalent.
+- **Skills in the lean agent.** Skills exist only for ACP bots such as OpenCode. The lean agent has no skill system, so it cannot find the browser-use skill, and it has no instruction for when to fall back to it.
+- **browser-use over MCP.** Tried 2026-11-17 through `HARNESS_MCP_SERVER="uvx --python 3.12 browser-use@latest --cli-mcp"`: the server starts, adds `browser_exec`, `browser_screenshot`, `browser_login` and `browser_feedback`, and `browser_exec` read the tabs of the local Chrome. It runs on this machine and drives the local Chrome; cloud browsers only start with `browser_login`. Open points: `browser_exec` runs any Python, so it must keep asking; `browser_login` and `browser_feedback` (sends text to the vendor) should not be offered; no model has decided between the built-ins and this server yet.
+- **A permanent Allow.** Chrome has no setting for it. The ways round it are a native-messaging extension or a tool that clicks the dialog; both are against the choice in `browser-choice.md`.
+- **A bot that repeats its last failure.** After a failed tool call the local model sometimes answers from history and never calls the tool again, so a fixed problem looks unfixed. Drop or mark failed tool results once they are stale.
+- **Linux and Windows.** Try the port lookup (`lsof -c chrome`, the `%LOCALAPPDATA%` file) on those systems.
 - Tried 2026-11-17: OpenCode 2.1.3 over `opencode acp`, protocol 1, stop reason end_turn. It sends available_commands_update with an empty command list before the answer. The lean agent never sends that update. The client already leaves it off the first-answer clock. A one-word prompt on the local model took about 209 seconds to the first text.
 
 ## Where to start (historical)

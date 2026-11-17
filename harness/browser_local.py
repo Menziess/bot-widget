@@ -146,7 +146,8 @@ def _port_file_url() -> str | None:
     for path in (os.path.join(home, ".config/google-chrome/DevToolsActivePort"),
                  os.path.join(home, ".config/chromium/DevToolsActivePort"),
                  os.path.join(home, "Library/Application Support/Google/Chrome/DevToolsActivePort"),
-                 os.path.join(home, "Library/Application Support/Chromium/DevToolsActivePort")):
+                 os.path.join(home, "Library/Application Support/Chromium/DevToolsActivePort"),
+                 os.path.join(os.environ.get("LOCALAPPDATA", home), "Google/Chrome/User Data/DevToolsActivePort")):
         try:
             return websocket_from_port_file(open(path, encoding="utf-8").read())
         except (OSError, ValueError):
@@ -158,7 +159,7 @@ def _listening_urls() -> list:
     """Where Chrome listens on this machine, from the system and not from a file in Chrome's own folder: macOS
     keeps other apps out of that folder. Chrome takes the socket without the id that the port file holds."""
     try:
-        out = subprocess.run(["lsof", "-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-c", "Google", "-c", "Chromium", "-Fn"],
+        out = subprocess.run(["lsof", "-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-c", "Google", "-c", "Chromium", "-c", "chrome", "-Fn"],
                              capture_output=True, text=True, timeout=3).stdout
     except (OSError, subprocess.SubprocessError):
         return []

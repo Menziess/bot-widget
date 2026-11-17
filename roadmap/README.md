@@ -45,9 +45,11 @@ Build an ACP client adapter first, then run a lean agent behind it, and let that
 - [04-efficiency.md](04-efficiency.md) Where context and money go, and how a lean backend saves them
 - [05-roadmap.md](05-roadmap.md) Phases, acceptance tests, risks and open decisions
 
-## Status, 2026-11-16
+## Status, 2026-11-17
 
 Built on `main`: an ACP client and link (`botwidget/acplink.py`, `harness/acp_client.py`), a lean agent behind it (`harness/agent/`, sqlite session, usage log, tools, one MCP server, permissions, memory, compaction, an Anthropic adapter with cache marks), and a benchmark (`harness/benchmark.py`). The decision of phase 5 is recorded: keep OpenBot for broad work, use the lean agent as one more backend. Details per phase are in [05-roadmap.md](05-roadmap.md).
+
+Since 2026-11-16 the lean agent can read the tabs of the everyday Chrome (`browser_tabs`, `browser_read`). Clicking, forms, scrolling, other browsers and skills are listed as feature requests in [05-roadmap.md](05-roadmap.md).
 
 Still open: a hosted provider has not been measured on either side, so cost per finished task is unknown. Only one real ACP agent besides the lean one (hermes-acp) has been tried.
 
