@@ -108,3 +108,52 @@ class DirectCdp(unittest.TestCase):
     def test_the_port_file_is_the_browser_socket_when_json_version_is_closed(self):
         url = websocket_from_port_file("9222\n/devtools/browser/abc\n")
         self.assertEqual(url, "ws://127.0.0.1:9222/devtools/browser/abc")
+
+    def test_one_connection_serves_every_call_and_a_dead_one_is_replaced(self):
+        from unittest import mock
+        from harness import browser_local
+
+        class Socket:
+            made = []
+
+            def __init__(self, url):
+                self.dead = False
+                Socket.made.append(self)
+
+            def call(self, method, params=None, session_id=None):
+                if self.dead:
+                    raise ConnectionError("socket closed")
+                return {"ok": method}
+
+        browser_local._shared.clear()
+        with mock.patch.object(browser_local, "WebSocketCdp", Socket):
+            call = browser_local._shared_call("ws://x")
+            call("a"), browser_local._shared_call("ws://x")("b")
+            self.assertEqual(len(Socket.made), 1, "Chrome asks the user for every new connection")
+            Socket.made[0].dead = True
+            self.assertEqual(call("c"), {"ok": "c"})
+        self.assertEqual(len(Socket.made), 2)
+        browser_local._shared.clear()
+
+    def test_chrome_is_found_from_the_system_when_its_own_folder_is_off_limits(self):
+        from unittest import mock
+        from harness import browser_local
+
+        class Socket:
+            def __init__(self, url):
+                if "1111" in url:
+                    raise ConnectionError("HTTP/1.1 403 Forbidden")
+                self.url = url
+
+            def call(self, method, params=None, session_id=None):
+                return {"targetInfos": [{"targetId": "t", "type": "page", "title": self.url, "url": "u"}]}
+
+        listing = mock.Mock(stdout="p1\nn127.0.0.1:1111\nn*:5000\nn127.0.0.1:2222\n")
+        browser_local._shared.clear()
+        with mock.patch.object(browser_local.subprocess, "run", return_value=listing), \
+                mock.patch.object(browser_local, "devtools_version", return_value=None), \
+                mock.patch.object(browser_local, "WebSocketCdp", Socket), \
+                mock.patch("builtins.open", side_effect=PermissionError("Operation not permitted")):
+            tabs = browser_local.attach().list_tabs()
+        browser_local._shared.clear()
+        self.assertEqual(tabs[0]["title"], "ws://127.0.0.1:2222/devtools/browser")

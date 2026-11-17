@@ -12,6 +12,8 @@ import os
 import re
 import socket
 import struct
+import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -142,7 +144,9 @@ def websocket_from_port_file(text: str) -> str:
 def _port_file_url() -> str | None:
     home = os.path.expanduser("~")
     for path in (os.path.join(home, ".config/google-chrome/DevToolsActivePort"),
-                 os.path.join(home, ".config/chromium/DevToolsActivePort")):
+                 os.path.join(home, ".config/chromium/DevToolsActivePort"),
+                 os.path.join(home, "Library/Application Support/Google/Chrome/DevToolsActivePort"),
+                 os.path.join(home, "Library/Application Support/Chromium/DevToolsActivePort")):
         try:
             return websocket_from_port_file(open(path, encoding="utf-8").read())
         except (OSError, ValueError):
@@ -150,15 +154,58 @@ def _port_file_url() -> str | None:
     return None
 
 
+def _listening_urls() -> list:
+    """Where Chrome listens on this machine, from the system and not from a file in Chrome's own folder: macOS
+    keeps other apps out of that folder. Chrome takes the socket without the id that the port file holds."""
+    try:
+        out = subprocess.run(["lsof", "-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-c", "Google", "-c", "Chromium", "-Fn"],
+                             capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [f"ws://127.0.0.1:{line.rsplit(':', 1)[1]}/devtools/browser"
+            for line in out.splitlines() if line.startswith("n127.0.0.1:")]
+
+
 def attach(port: int = 9222) -> Cdp:
     """The browser socket for the Chrome that is already showing the consent dialog's result."""
     version = devtools_version(port)
-    url = (version or {}).get("webSocketDebuggerUrl") or _port_file_url()
-    if not url:
-        raise ConnectionError(
-            "Chrome is not listening on 127.0.0.1:%s. Turn on remote debugging in "
-            "chrome://inspect and choose Allow. This does not relaunch Chrome." % port)
-    return Cdp(WebSocketCdp(url).call)
+    urls = [*_shared, *([version["webSocketDebuggerUrl"]] if version else []), *_listening_urls(), _port_file_url()]
+    for url in filter(None, urls):
+        with _shared_lock:
+            try:
+                _shared.get(url) or _shared.setdefault(url, WebSocketCdp(url))
+            except OSError:
+                continue  # not the debugging port of a browser
+        return Cdp(_shared_call(url))
+    raise ConnectionError(
+        "Chrome is not listening on 127.0.0.1:%s. Turn on remote debugging in "
+        "chrome://inspect and choose Allow. This does not relaunch Chrome." % port)
+
+
+_shared: dict = {}
+_shared_lock = threading.Lock()
+
+
+def _shared_call(url: str):
+    """One socket for the life of the process: Chrome asks the user to Allow for every new connection."""
+    def call(method, params=None, session_id=None):
+        with _shared_lock:
+            known = _shared.get(url)
+            fresh = known is None
+            try:
+                if fresh:
+                    known = _shared[url] = WebSocketCdp(url)
+                return known.call(method, params, session_id)
+            except OSError:
+                _shared.pop(url, None)
+                if fresh:
+                    raise
+                known = _shared[url] = WebSocketCdp(url)  # the old socket had died
+                return known.call(method, params, session_id)
+    return call
+
+
+CONSENT_WAIT_S = 60
 
 
 class WebSocketCdp:
@@ -166,7 +213,8 @@ class WebSocketCdp:
 
     def __init__(self, url: str, timeout: float = 5):
         parsed = urlparse(url)
-        self.sock = socket.create_connection((parsed.hostname, parsed.port or 80), timeout)
+        # Chrome holds the handshake until the user has answered its Allow popup.
+        self.sock = socket.create_connection((parsed.hostname, parsed.port or 80), max(timeout, CONSENT_WAIT_S))
         key = base64.b64encode(os.urandom(16)).decode()
         path = parsed.path or "/"
         if parsed.query:
@@ -186,6 +234,7 @@ class WebSocketCdp:
         head, self._pending = raw.split(b"\r\n\r\n", 1)
         if b" 101 " not in head.split(b"\r\n", 1)[0]:
             raise ConnectionError(head.split(b"\r\n", 1)[0].decode(errors="replace"))
+        self.sock.settimeout(timeout)
         self._id = 0
 
     def call(self, method: str, params: dict | None = None, session_id: str | None = None):
