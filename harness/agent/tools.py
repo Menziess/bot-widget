@@ -75,6 +75,39 @@ def write_file(path: str, content: str) -> str:
     return f"Wrote {len(content)} characters to {at}."
 
 
+def browser_tabs() -> str:
+    """Titles and addresses of the pages in the Chrome the user already has open."""
+    from harness.browser_local import attach, redact
+    try:
+        tabs = attach().list_tabs()
+    except (OSError, ConnectionError, TimeoutError, RuntimeError, ValueError) as error:
+        raise ToolError(f"Chrome is not listening ({error}).") from error
+    if not tabs:
+        return "No open tabs."
+    return redact("\n".join(f"{tab['title']}\n{tab['url']}" for tab in tabs))
+
+
+def browser_read(title: str = "") -> str:
+    """Visible text of one open tab. Does not open a window or a new tab."""
+    from harness.browser_local import attach, redact
+    try:
+        browser = attach()
+        tabs = browser.list_tabs()
+    except (OSError, ConnectionError, TimeoutError, RuntimeError, ValueError) as error:
+        raise ToolError(f"Chrome is not listening ({error}).") from error
+    wanted = title.strip().lower()
+    chosen = next((tab for tab in tabs if wanted and wanted in tab["title"].lower()), None)
+    if chosen is None and not wanted:
+        chosen = tabs[0] if tabs else None
+    if chosen is None:
+        raise ToolError("No matching tab.")
+    try:
+        text = browser.use_tab(chosen["id"]).read_text() or ""
+    except (OSError, ConnectionError, TimeoutError, RuntimeError, ValueError) as error:
+        raise ToolError(f"Chrome is not listening ({error}).") from error
+    return redact(text[:12000])
+
+
 def trash_file(at: str) -> str:
     """One file, moved to the trash folder: nothing is destroyed, and the answer says where it went."""
     if not os.path.isfile(at) or os.path.islink(at):
@@ -104,6 +137,15 @@ def builtins() -> list[Tool]:
              "permission.", {
             "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
             lambda arguments: trash_file(_path(arguments["path"])), writes=True),
+        Tool("browser_tabs",
+             "List the tabs in the user's already open Chrome. Read-only. Use this to see the browser.",
+             {"type": "object", "properties": {}},
+             lambda _arguments: browser_tabs()),
+        Tool("browser_read",
+             "Read the visible text of one open Chrome tab. Read-only. Pass part of the tab title, or omit it for "
+             "the first tab.",
+             {"type": "object", "properties": {"title": {"type": "string"}}},
+             lambda arguments: browser_read(str(arguments.get("title") or ""))),
     ]
 
 

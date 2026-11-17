@@ -131,14 +131,34 @@ def devtools_version(port: int = 9222, timeout: float = 0.4) -> dict | None:
         return None
 
 
+def websocket_from_port_file(text: str) -> str:
+    """The browser socket written in DevToolsActivePort. Chrome's HTTP /json/version is often closed."""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if len(lines) < 2 or not lines[0].isdigit() or not lines[1].startswith("/"):
+        raise ValueError("not a DevToolsActivePort file")
+    return f"ws://127.0.0.1:{lines[0]}{lines[1]}"
+
+
+def _port_file_url() -> str | None:
+    home = os.path.expanduser("~")
+    for path in (os.path.join(home, ".config/google-chrome/DevToolsActivePort"),
+                 os.path.join(home, ".config/chromium/DevToolsActivePort")):
+        try:
+            return websocket_from_port_file(open(path, encoding="utf-8").read())
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def attach(port: int = 9222) -> Cdp:
     """The browser socket for the Chrome that is already showing the consent dialog's result."""
     version = devtools_version(port)
-    if not version or not version.get("webSocketDebuggerUrl"):
+    url = (version or {}).get("webSocketDebuggerUrl") or _port_file_url()
+    if not url:
         raise ConnectionError(
             "Chrome is not listening on 127.0.0.1:%s. Turn on remote debugging in "
             "chrome://inspect and choose Allow. This does not relaunch Chrome." % port)
-    return Cdp(WebSocketCdp(version["webSocketDebuggerUrl"]).call)
+    return Cdp(WebSocketCdp(url).call)
 
 
 class WebSocketCdp:

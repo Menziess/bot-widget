@@ -9,7 +9,7 @@ import os
 import tempfile
 import unittest
 
-from harness.browser_local import Cdp, read_page, redact
+from harness.browser_local import Cdp, read_page, redact, websocket_from_port_file
 
 
 class FixturePage(unittest.TestCase):
@@ -104,3 +104,7 @@ class DirectCdp(unittest.TestCase):
         self.assertNotIn("super-secret-token", fetched["body"])
         self.assertIn("[redacted]", fetched["body"])
         self.assertNotIn("super-secret-token", redact(body))
+
+    def test_the_port_file_is_the_browser_socket_when_json_version_is_closed(self):
+        url = websocket_from_port_file("9222\n/devtools/browser/abc\n")
+        self.assertEqual(url, "ws://127.0.0.1:9222/devtools/browser/abc")
