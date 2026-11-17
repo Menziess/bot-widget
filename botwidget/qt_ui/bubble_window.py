@@ -1306,7 +1306,8 @@ class BubbleWindow(QWidget):
         growing) gets it as soon as it shows: Qt drops focus given to a hidden widget."""
         if self._input:
             self._focus_from_hover = False
-            self.activateWindow()
+            if desktops.shown_here(self):  # activating a window on another desktop takes you there
+                self.activateWindow()
             self._entry.setFocus()
             self._wants_keys = self.focusWidget() is not self._entry
 

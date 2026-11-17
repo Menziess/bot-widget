@@ -1225,6 +1225,7 @@ class FaceWindow(QWidget):
         self.update()
         self._sync_bubble(self._latest())
         self._claim_bubble()
+        self._activate_here()
         self.bubble.focus_entry()
 
     def unpin(self):
@@ -1688,7 +1689,7 @@ class FaceWindow(QWidget):
             bar = self.bubble._scroll.verticalScrollBar()
             bar.setValue(bar.maximum())
         self._claim_bubble()
-        self.bubble.activateWindow()
+        self._activate_here()
         self.bubble.setFocus()
         self._arc_for_page(page)
 

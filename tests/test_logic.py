@@ -5211,6 +5211,19 @@ class BubbleHover(unittest.TestCase):
             self.window._activate_here()
         activate.assert_called_once()
 
+    def test_a_click_on_the_face_never_activates_a_bubble_on_another_desktop(self):
+        from unittest import mock
+        from botwidget.qt_ui import desktops, face
+        self.hover()
+        bubble = self.window.bubble
+        with mock.patch.object(desktops, "shown_here", return_value=False), \
+                mock.patch.object(desktops, "bring_here"), mock.patch.object(face, "activate_app") as activate, \
+                mock.patch.object(type(bubble), "activateWindow") as window:
+            self.window.pin()
+            bubble.focus_entry()
+        activate.assert_not_called()
+        window.assert_not_called()
+
     def test_a_bubble_that_is_where_you_are_is_left_alone(self):
         from unittest import mock
         from botwidget.qt_ui import desktops
@@ -6001,11 +6014,17 @@ class Desktops(unittest.TestCase):
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
 
-    def test_nothing_moves_when_the_face_is_here_or_everywhere_or_the_system_has_no_desktops(self):
+    def test_nothing_moves_when_the_window_is_here_or_the_system_has_no_desktops(self):
         try:
             self.assertEqual(self.bring(everywhere=False, here=True)[0], False)
-            self.assertEqual(self.bring(everywhere=True, here=False)[0], False)
+            self.assertEqual(self.bring(everywhere=True, here=True)[0], False)
             self.assertEqual(self.bring(everywhere=False, here=False, platform="offscreen")[0], False)
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+
+    def test_a_window_on_no_desktop_you_are_on_comes_here_also_with_all_desktops(self):
+        try:
+            self.assertEqual(self.bring(everywhere=True, here=False)[0], True)
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
 

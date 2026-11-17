@@ -24,11 +24,13 @@ def shown_here(window) -> bool:
 
 
 def bring_here(window) -> bool:
-    """A face that lives on one desktop comes to the one you are on; True when it had to move."""
-    if not _real() or all_desktops() or on_active_space(native_id(window)):
+    """A window that Qt shows but macOS has on no desktop you are on comes to the one you are on; True when it had
+    to move. A new desktop closing (a full-screen app) can leave windows opened afterwards on none, also with
+    all_desktops on."""
+    if not _real() or on_active_space(native_id(window)):
         return False
     move_to_active_space(native_id(window))
-    QTimer.singleShot(500, lambda: apply(window))  # it stays on this desktop from now on
+    QTimer.singleShot(500, lambda: apply(window))  # back to its own setting once it is here
     return True
 
 
