@@ -1413,16 +1413,16 @@ class MenuAndCatcher(unittest.TestCase):
         home.acp = None
 
         with mock.patch("botwidget.qt_ui.faces.STATE_PATH", os.path.join(folder, "gone.json")):
-            self.assertEqual(faces._load(), [])
+            self.assertIsNone(faces._load())
         bad = os.path.join(folder, "bad.json")
         with open(bad, "w") as fh:
             fh.write("{")
         with mock.patch("botwidget.qt_ui.faces.STATE_PATH", bad):
-            self.assertEqual(faces._load(), [])
+            self.assertIsNone(faces._load())
         with open(bad, "w") as fh:
             json.dump({"enabled": "nope"}, fh)
         with mock.patch("botwidget.qt_ui.faces.STATE_PATH", bad):
-            self.assertEqual(faces._load(), [])
+            self.assertIsNone(faces._load())
 
         self.assertEqual(faces.menu_command("page/connection", "connections"), "connection")
         self.assertEqual(faces.menu_command("page/connection/nope", "connections"), "connection/nope")
