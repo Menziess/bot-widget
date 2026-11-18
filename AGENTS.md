@@ -39,6 +39,7 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 - The bubble closes when another window is clicked into with nothing typed, and where the pointer position is unknown (Wayland) it closes the moment the pointer is not on it
 - An unread answer closes after its reading time unless the pointer was on it
 - Clicking inside the bubble never opens or closes it
+- Clicking the face while its bubble is open pins the bubble; clicking the face again lets it go, and it then closes the usual way
 
 ### Arc
 - The arc opens when the pointer is near the top middle of the screen, on the /bots page, or when a face is dragged into it

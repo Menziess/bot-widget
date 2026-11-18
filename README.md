@@ -44,6 +44,7 @@ botwidget
 - A hand shows over a message: click copies it as plain text, shift+click copies the markdown it was written in
 - Drag over the words to select them, the selection is copied when you let go, and "Copied" shows over the message and its words fade behind it for a moment
 - Clicking in the bubble never opens or closes it
+- Clicking the face while its bubble is open pins the bubble. Clicking the face again lets it go, and it then closes the usual way
 - The answer sound is off by default, and when on it only plays while the face is out of view (covered or on another desktop)
 - The eyes follow the pointer wherever it is, with a squint when it is near, and look at you when it is over the face
 - Every face is drawn as a 3D body, built the way Grok Bot builds its avatars (extruded, turned on a lathe, lofted or rounded), so when it turns, its outline and shading turn with it, and its eyes lie on its surface, so they curve and get narrower towards the edge.

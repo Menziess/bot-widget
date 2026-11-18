@@ -733,7 +733,12 @@ class FaceWindow(QWidget):
             pass
         elif click:
             self.react("click")
-            if not self._toggle_answer_view():
+            if self.pinned:
+                self.unpin(close=False)  # the pointer is on the face: it goes when the pointer or the keyboard leaves
+            elif self.bubble.isVisible() and self.bubble.kind == "say" and self._menu_page is None \
+                    and not self.bubble._list_only:
+                self.pin()
+            elif not self._toggle_answer_view():
                 self.open_input()
             # The happy eyes stay a moment; then the cycle picks up again.
             QTimer.singleShot(600, self._happy_off)
@@ -1228,9 +1233,11 @@ class FaceWindow(QWidget):
         self._activate_here()
         self.bubble.focus_entry()
 
-    def unpin(self):
+    def unpin(self, close: bool = True):
         self.pinned = False
         self._answer_view = False
+        if not close:
+            return
         if self._hovered:
             self._hover_blocked_until = time.monotonic() + REOPEN_AFTER_S
         if self._working:

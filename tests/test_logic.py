@@ -3889,6 +3889,18 @@ class BubbleHover(unittest.TestCase):
         QApplication.sendEvent(self.window, QMouseEvent(QEvent.MouseButtonRelease, point, point, Qt.LeftButton,
                                                         Qt.NoButton, Qt.ShiftModifier if shift else Qt.NoModifier))
 
+    def test_a_click_on_the_face_with_the_bubble_open_pins_it_and_the_next_click_lets_it_go_again(self):
+        self.window.bubble.focus_entry = lambda: None
+        self.hover()
+        self.assertTrue(self.window.bubble.isVisible())
+        self.assertFalse(self.window.pinned)
+        self.click_face()
+        self.assertTrue(self.window.pinned)
+        self.assertTrue(self.window.bubble.isVisible())
+        self.click_face()
+        self.assertFalse(self.window.pinned)
+        self.assertTrue(self.window.bubble.isVisible(), "it goes when the pointer or the keyboard leaves")
+
     def test_shift_clicking_a_thinking_face_mutes_its_thinking_and_shift_clicking_again_brings_it_back(self):
         self.start_working()
         self.assertEqual(self.window.bubble.kind, "think")
