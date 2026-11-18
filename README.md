@@ -355,7 +355,7 @@ On Linux the installer names its command `bot-widget` so it does not clash with 
 
 ### Testing on Linux from a Mac
 
-Some tests are skipped on macOS and only run on Linux and Windows, so a green run on your Mac can still fail on GitHub. Run the Linux job in Docker before you push.
+Some tests are skipped on macOS and only run on Linux and Windows, so a green run on your Mac can still fail on GitHub. When the GitHub run shows a failing Linux test, run the Linux job in Docker to reproduce it and to check the fix before you push again.
 
 ```sh
 scripts/test-linux
