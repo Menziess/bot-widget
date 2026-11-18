@@ -18,6 +18,27 @@ class _Stub:
 
 class RuntimeFacts(unittest.TestCase):
 
+    def test_a_model_that_cannot_see_images_is_told_so_and_not_to_open_a_picture_with_other_tools(self):
+        stub = _Stub(base_url="http://127.0.0.1:8090/v1", model="local")
+        stub.vision = False
+        text = context.runtime_facts(stub)
+        self.assertIn("cannot see images", text)
+        self.assertIn("never open or view it with the browser", text)
+        stub.vision = True
+        self.assertNotIn("cannot see images", context.runtime_facts(stub))
+        stub.vision = None
+        self.assertNotIn("cannot see images", context.runtime_facts(stub), "unknown is not the same as no")
+
+    def test_the_server_says_whether_its_model_has_vision(self):
+        model = ChatCompletions("http://127.0.0.1:9/v1", "local")
+        reply = mock.MagicMock()
+        reply.__enter__.return_value.read.return_value = json.dumps(
+            {"default_generation_settings": {"n_ctx": 4096}, "modalities": {"vision": False}}).encode()
+        with mock.patch("urllib.request.urlopen", return_value=reply):
+            model._read_props(1.0)
+        self.assertIs(model.vision, False)
+        self.assertEqual(model.context_size, 4096)
+
     def test_local_loopback_is_local_and_does_not_name_openrouter(self):
         text = context.runtime_facts(_Stub(
             base_url="http://127.0.0.1:8081/v1", model="local",

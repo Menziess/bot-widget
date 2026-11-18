@@ -81,13 +81,17 @@ def runtime_facts(model=None) -> str:
     else:
         where = "location not reported"
     model_line = name or "not reported"
-    return (
+    facts = (
         "Runtime facts about this session. Use only these facts; never guess a provider or "
         "where you run.\n"
         f"- Model: {model_line}\n"
         f"- Provider: {provider}\n"
         f"- Location: {where}"
     )
+    if getattr(model, "vision", None) is False:
+        facts += ("\n- Images: you cannot see images. When the user attaches a picture, say so and ask for a "
+                  "description; never open or view it with the browser or any other tool.")
+    return facts
 
 # Workspace rules appended to the system prompt when HARNESS_WORKSPACE is set.
 _WORKSPACE_RULES = ""

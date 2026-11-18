@@ -23,6 +23,7 @@ class ChatCompletions:
         self.api_key = api_key
         self.timeout = timeout
         self.context_size = 0
+        self.vision = None  # whether the model reads pictures, when the server says; None when it does not
         self.reported_model = ""
         self.model_owned_by = ""
 
@@ -133,6 +134,9 @@ class ChatCompletions:
             return  # not a llama.cpp server, or an old one: the guess stays
         settings = props.get("default_generation_settings") or {}
         self.context_size = int(settings.get("n_ctx") or props.get("n_ctx") or 0)
+        vision = (props.get("modalities") or {}).get("vision")
+        if isinstance(vision, bool):
+            self.vision = vision
 
     def stream(self, messages: list[dict], tools: list[dict] | None = None, stop=None, opened=None):
         """Yield events: ("text", str), ("thought", str), ("usage", dict), ("finish", str) and ("tool_calls", list).
