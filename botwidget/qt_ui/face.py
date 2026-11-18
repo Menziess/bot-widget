@@ -1791,7 +1791,7 @@ class FaceWindow(QWidget):
         if self._working and not self._debug_on():
             self._queue.insert(0 if asking else len(self._queue),
                                {"text": text, "files": files, "id": uuid.uuid4().hex[:8]})
-            self._sync_bubble(self._latest(), force=True)
+            self._sync_bubble(self._latest(), force=True, replace_menu=self.bubble._list_only)
             self._poll_timer.start(300)
             return
         if self.link:
@@ -1805,7 +1805,8 @@ class FaceWindow(QWidget):
         cid = hashlib.sha256(f"{self.agent_id}\n{text}\n{day}".encode()).hexdigest()[:32]
         self._outbox.add(text, cid)
         self._pump_outbox()
-        self._sync_bubble(self._latest())
+        # The right-click list is all that is open when a skill row was picked: the cloud takes its place.
+        self._sync_bubble(self._latest(), replace_menu=self.bubble._list_only)
         self._poll_timer.start(300)
 
     def _next_queued(self):

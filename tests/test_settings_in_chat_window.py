@@ -266,6 +266,18 @@ class SettingsInTheChatWindow(unittest.TestCase):
         before = self._pick_settings_row()
         self._assert_settings_in_same_bubble(before, id(self.bubble))
 
+    def test_should_replace_the_command_list_when_a_skill_row_is_picked(self):
+        """Should not leave the right-click list open while the bot works on the skill that was picked."""
+        self._open_chat()
+        self.right_click()
+        self._reveal_arc()
+        self._finish()
+        self.assertTrue(self.bubble._list_only)
+        with mock.patch.object(self.window, "_pump_outbox"):
+            self.bubble._run_command("/parking")
+        self._finish()
+        self.assertFalse(self.bubble._list_only, "the cloud takes the place of the list")
+
     def test_should_not_put_a_chat_link_on_any_page(self):
         """Should leave every page heading as a title. The way back is the line on top, and it targets the command list."""
         for page in ("settings", "bots", "connections"):
