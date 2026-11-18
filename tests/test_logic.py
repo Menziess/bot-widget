@@ -4216,7 +4216,7 @@ class BubbleHover(unittest.TestCase):
                                                "hold_arc": lambda _self: None,
                                                "raise_bubbles": lambda _self: None})()
 
-    def test_a_slash_at_the_start_opens_a_list_of_commands_above_the_field(self):
+    def test_a_slash_at_the_start_opens_a_list_of_commands_below_the_field(self):
         self.hover()
         bubble = self.window.bubble
         height = bubble.height()
@@ -4225,7 +4225,7 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
         from botwidget import menu_pages
         self.assertEqual([c for c, _n in bubble._slash.rows], [c for c, _n in menu_pages.commands()])
-        self.assertLess(bubble._slash.geometry().bottom(), bubble._entry.geometry().top(), "above the field")
+        self.assertGreater(bubble._slash.geometry().top(), bubble._entry.geometry().bottom(), "below the field")
         self.assertGreater(bubble.height(), height, "the bubble makes room for the list")
         bubble._entry.setText("/b")
         self.assertEqual([c for c, _n in bubble._slash.rows], ["/bots"])
@@ -4236,6 +4236,32 @@ class BubbleHover(unittest.TestCase):
         bubble._entry.clear()
         self.app.processEvents()
         self.assertEqual(bubble.height(), height, "and the room is given back")
+
+    def test_what_is_typed_behind_a_skill_shows_in_its_row_and_goes_with_it(self):
+        """Should keep the skill's row while the first word is the skill, with the arguments in it, and send them."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from botwidget import menu_pages
+        self.hover()
+        bubble = self.window.bubble
+        self.window.command_rows = lambda: menu_pages.commands((("parking", "Book a parking ticket"),))
+        sent = []
+        self.window.on_user_message = lambda text, files=(): sent.append(text)
+        bubble._entry.setText("/parking")
+        self.assertEqual(bubble._slash.rows, [("/parking", "Book a parking ticket")])
+        bubble._entry.setText("/parking vrijdag 20 november")
+        self.app.processEvents()
+        self.assertTrue(bubble._slash.isVisibleTo(bubble))
+        self.assertEqual(bubble._slash.rows, [("/parking", "vrijdag 20 november")], "the arguments take the note's place")
+        self.assertGreater(bubble._slash.geometry().top(), bubble._entry.geometry().bottom())
+        QTest.keyClick(bubble._entry, Qt.Key_Tab)
+        self.assertEqual(bubble._entry.text(), "/parking vrijdag 20 november", "Tab does not wipe the arguments")
+        QTest.keyClick(bubble._entry, Qt.Key_Return)
+        self.assertEqual(sent, ["/parking vrijdag 20 november"])
+        bubble._entry.setText("/settings iets")
+        self.assertFalse(bubble._slash.isVisibleTo(bubble), "only a skill takes arguments")
+        bubble._entry.setText("/zzz iets")
+        self.assertFalse(bubble._slash.isVisibleTo(bubble))
 
     def test_arrows_and_return_pick_a_command_and_it_opens_its_page(self):
         from PySide6.QtCore import Qt

@@ -914,7 +914,7 @@ class BubbleWindow(QWidget):
         self._entry.textChanged.connect(self._update_commands)
         self._entry.textChanged.connect(self._edited)
         self._entry.moved.connect(self._slash.move_selection)
-        self._entry.completed.connect(lambda: self._entry.setText(self._slash.current()))
+        self._entry.completed.connect(self._complete_command)
         self._entry.chosen.connect(lambda: self._run_command(self._slash.current()))
         self._entry.closed.connect(self._close_commands)
         self._commands_forced = False
@@ -975,12 +975,25 @@ class BubbleWindow(QWidget):
             self.face.on_user_message(text, files=files)
 
     def _update_commands(self):
-        """A message that starts with a slash gets the commands that fit it, in a list above the field."""
+        """A message that starts with a slash gets the commands that fit it, in a list below the field. Once a skill's
+        name is typed and something behind it, only that skill stays, with what was typed behind it as its note."""
         self._commands_forced = False
-        text = self._entry.text().strip().lower()
-        fitting = [row for row in self.face.command_rows() if row[0].startswith(text)] \
-            if text.startswith("/") and " " not in text else []
+        typed = self._entry.text().strip()
+        text = typed.lower()
+        rows = self.face.command_rows()
+        if text.startswith("/") and " " not in text:
+            fitting = [row for row in rows if row[0].startswith(text)]
+        else:
+            head, _, tail = typed.partition(" ")
+            builtin = {name.lower() for name, _note in menu_pages.COMMANDS}
+            fitting = [(command, " ".join(tail.split())) for command, _note in rows
+                       if text.startswith("/") and head.lower() == command.lower() and head.lower() not in builtin]
         self._show_commands(fitting)
+
+    def _complete_command(self):
+        """Tab: the command that is picked, unless arguments are already typed behind it."""
+        if " " not in self._entry.text().strip():
+            self._entry.setText(self._slash.current())
 
     def open_command_list(self):
         """The list of commands, without touching what was typed. A slash already in the field filters the list."""
@@ -1136,7 +1149,7 @@ class BubbleWindow(QWidget):
         self._geom = (panels, width, content_height(panels) if panels else 0)
 
     def _show_commands(self, rows: list):
-        """The list sits in the bubble right above the field, which makes room for it."""
+        """The list sits in the bubble right below the field, which makes room for it."""
         before = len(self._slash.rows)
         self._entry.commands_open = bool(rows) and self._input
         self._slash.show_rows(rows if self._input else [])
@@ -1704,10 +1717,10 @@ class BubbleWindow(QWidget):
             if self._attachments:
                 self._attachment_row.setGeometry(x, below + ENTRY_GAP, box_w, ATTACH_H)
                 below += ATTACH_H
-            if self._slash.rows:
-                self._slash.setGeometry(x, below + ENTRY_GAP, box_w, self._commands_h() - COMMANDS_GAP)
-                below += self._commands_h()
             self._entry.setGeometry(x, below + ENTRY_GAP, box_w, self._entry_h())
+            if self._slash.rows:
+                self._slash.setGeometry(x, below + ENTRY_GAP + self._entry_h() + COMMANDS_GAP, box_w,
+                                        self._commands_h() - COMMANDS_GAP)
         self._scroll.show()
         self._link_row.setVisible(bool(self._links))
         # Not while the bubble is still tiny: a field alone looks odd.

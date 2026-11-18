@@ -208,7 +208,7 @@ class ActionButton(PointerWatch, QPushButton):
 
 
 class SlashList(QWidget):
-    """The commands that fit what is typed after a slash, as a list that opens upward from the field."""
+    """The commands that fit what is typed after a slash, as a list below the field."""
 
     ROW_H = 36
     chosen = Signal(str)
