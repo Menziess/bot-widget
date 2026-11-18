@@ -119,6 +119,21 @@ class ScreenshotMode(unittest.TestCase):
             window._sync_bubble(window._latest())
         self.assertFalse(window.bubble.isVisible(), "no thinking cloud with nothing in it while the screen is dark")
 
+    def test_the_eyes_follow_the_pointer_in_screenshot_mode_also_when_it_was_started_from_the_command_list(self):
+        """A double-click gets its happy eyes switched off by the click; /screenshot has no click, so it must do that itself."""
+        from PySide6.QtTest import QTest
+        window = self._make_window()
+        self.addCleanup(window.close_face)
+        window.faces = mock.Mock()
+        window.faces.faces = {"t1": window}
+        window._pointer = lambda: (5000, 5000)
+        with mock.patch("botwidget.qt_ui.screenshot.enter_screenshot_mode"):
+            window.start_screenshot()
+        self.assertTrue(window._happy_on, "a moment of happy eyes first, as on a click")
+        QTest.qWait(800)
+        self.assertFalse(window._happy_on, "then the eyes are free to follow the pointer")
+        self.assertIsNotNone(window.screenshot_face, "and the mode goes on")
+
     def test_a_picture_in_the_field_keeps_the_bubble_open_and_shows_in_it(self):
         window = self._make_window()
         self.addCleanup(window.close_face)

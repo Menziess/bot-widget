@@ -705,6 +705,9 @@ class FaceWindow(QWidget):
         self._screenshot_active = True
         self.screenshot_face = self
         self._happy_on = True
+        # A double-click gets its happy eyes switched off by the click that comes with it; /screenshot has no click,
+        # and the eyes would stay happy instead of following the pointer.
+        QTimer.singleShot(600, self._happy_off)
         self.anim.kick("sy", -0.8)
         from botwidget.qt_ui.screenshot import enter_screenshot_mode
         enter_screenshot_mode(self)
