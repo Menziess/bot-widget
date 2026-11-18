@@ -6,10 +6,12 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from unittest import mock
 
 from harness.agent import context
+from acp.schema import PromptResponse
 from harness.agent.agent import LeanAgent
 from harness.agent.store import SessionStore
 from harness.agent.tools import Tool
@@ -41,8 +43,7 @@ class Skills(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0)
         names = [(c.name, c.description) for _, u in conn.updates
                  if getattr(u, "session_update", "") == "available_commands_update" for c in u.available_commands]
-        self.assertEqual(names, [("parking", "Book a parking ticket"),
-                                 ("stop", "Leave the skill that is running and go back to the chat")])
+        self.assertEqual(names, [("parking", "Book a parking ticket")])
 
     async def test_running_the_skill_puts_its_text_in_front_of_the_model_until_another_is_run(self):
         agent, _ = self.agent()
@@ -151,6 +152,7 @@ class SkillSession(unittest.IsolatedAsyncioTestCase):
     def end(name):
         return ("tool_calls", [{"id": name, "function": {"name": name, "arguments": "{}"}}])
 
+    @mock.patch("harness.agent.agent.BRIEF_SHORT", 0)
     async def test_the_skill_gets_its_own_context_with_a_brief_and_the_chat_does_not_get_the_skill(self):
         agent, model, session = await self.agent([
             [("text", "Prima."), ("finish", "stop")],
@@ -183,12 +185,57 @@ class SkillSession(unittest.IsolatedAsyncioTestCase):
         self.assertIn("20 november", model.sent[1])
         self.assertEqual(agent.stores[session].get("skill_active"), "", "done gives the chat back")
 
-    async def test_stop_gives_the_chat_back_without_a_model_call(self):
-        agent, model, session = await self.agent([[("text", "Welke datum?"), self.end("wait_for_user")]])
+    async def test_a_message_that_is_not_about_the_skill_goes_to_the_chat_without_the_user_doing_anything(self):
+        agent, model, session = await self.agent([
+            [("text", "Welke datum?"), self.end("wait_for_user")],
+            [self.end("not_for_me")],
+            [("text", "Vier."), ("finish", "stop")]])
         await self.say(agent, session, "/parking")
-        await self.say(agent, session, "/stop")
-        self.assertEqual(len(model.sent), 1, "no model call for /stop")
-        self.assertEqual(agent.stores[session].get("skill_active"), "")
+        await self.say(agent, session, "Wat is 2 + 2?")
+        main = agent.stores[session]
+        self.assertEqual(main.get("skill_active"), "")
+        self.assertEqual(main.messages()[-1], {"role": "bot", "text": "Vier."})
+        self.assertNotIn("STEP ONE", model.sent[2], "the chat answered, without the skill")
+
+    async def test_a_skill_that_waited_too_long_is_over_and_the_chat_answers(self):
+        agent, model, session = await self.agent([
+            [("text", "Welke datum?"), self.end("wait_for_user")],
+            [("text", "Hoi."), ("finish", "stop")]])
+        await self.say(agent, session, "/parking")
+        agent.stores[session].set("skill_active", str(time.time() - 3600))
+        await self.say(agent, session, "Hallo")
+        self.assertNotIn("STEP ONE", model.sent[1])
+
+    async def test_cancelling_the_turn_ends_the_skill(self):
+        agent, _model, session = await self.agent([[("text", "Welke datum?"), self.end("wait_for_user")]])
+        await self.say(agent, session, "/parking")
+        main = agent.stores[session]
+        self.assertTrue(main.get("skill_active"))
+        agent._after_skill(main, PromptResponse(stop_reason="cancelled"))
+        self.assertEqual(main.get("skill_active"), "")
+
+    async def test_a_job_that_finishes_while_the_skill_runs_is_told_to_the_skill(self):
+        agent, model, session = await self.agent([
+            [("text", "Ik wacht op de boeking."), self.end("wait_for_user")],
+            [("text", "Geboekt."), self.end("done")]])
+        await self.say(agent, session, "/parking")
+        agent._inbox.setdefault(session, []).append("JOB-FINISHED exit_code: 0")
+        await agent._drain_jobs(session)
+        self.assertIn("STEP ONE", model.sent[1])
+        self.assertIn("JOB-FINISHED", model.sent[1])
+        main = agent.stores[session]
+        self.assertEqual(main.messages()[-1], {"role": "bot", "text": "Geboekt."})
+        self.assertEqual(main.get("skill_active"), "")
+
+    async def test_a_short_conversation_goes_to_the_skill_as_it_is_without_a_model_call(self):
+        agent, model, session = await self.agent([[("text", "Prima."), self.end("done")]])
+        calls = []
+        model.complete = lambda messages: calls.append(messages) or "notes"
+        main = agent.stores[session]
+        main.add("user", "Het is voor vrijdag.")
+        await self.say(agent, session, "/parking")
+        self.assertEqual(calls, [])
+        self.assertIn("Het is voor vrijdag.", model.sent[0])
 
 
 if __name__ == "__main__":

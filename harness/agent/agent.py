@@ -34,13 +34,17 @@ LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the sam
 # A skill is over when the model calls one of these. A message that ends without a call (a bare "let me look") gets
 # SKILL_NUDGES nudges to go on first.
 SKILL_ENDINGS = {"done": "Call this when the skill is finished and you have said the result.",
-                 "wait_for_user": "Call this when you have asked the user something and wait for the answer."}
+                 "wait_for_user": "Call this when you have asked the user something and wait for the answer.",
+                 "not_for_me": "Call this, and say nothing else, when the user's message has nothing to do with this "
+                               "skill's task."}
 SKILL_NUDGES = 2
-STOPPED = "The skill is stopped."
 BRIEF_PROMPT = ("Write down what a helper needs from this conversation to carry out the user's last request: facts, "
                 "names, dates and decisions that matter. Leave out the rest. At most 120 words, plain text.")
 SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
-               "call. If you are finished call done, and if you wait for the user's answer call wait_for_user.")
+               "call. If you are finished call done, if you wait for the user's answer call wait_for_user, and if the "
+               "user's message has nothing to do with this skill call not_for_me.")
+SKILL_IDLE_S = 600  # a skill that waited this long for the user is over; the chat answers
+BRIEF_SHORT = 1500  # characters of conversation a skill gets as they are, without a model to pick from them
 
 
 def _env_int(name: str, default: int) -> int:
@@ -147,8 +151,7 @@ class LeanAgent:
         if not self.skills or self.conn is None:
             return
         update = AvailableCommandsUpdate(session_update="available_commands_update", available_commands=[
-            *(AvailableCommand(name=skill["name"], description=skill["description"]) for skill in self.skills.values()),
-            AvailableCommand(name="stop", description="Leave the skill that is running and go back to the chat")])
+            AvailableCommand(name=skill["name"], description=skill["description"]) for skill in self.skills.values()])
         task = asyncio.get_running_loop().create_task(self.conn.session_update(session_id=session_id, update=update))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
@@ -168,13 +171,42 @@ class LeanAgent:
             skill.reset()
             self._run_skill(skill, text)
             skill.add("user", text + await self._brief(main))
-            main.set("skill_active", "1")
+            main.set("skill_active", str(time.time()))
             return skill
-        if main.get("skill_active"):
+        if self._skill_waiting(main):
             skill = self._skill_store()
             skill.add("user", text)
             return skill
         return main
+
+    @staticmethod
+    def _skill_waiting(main: SessionStore) -> bool:
+        """A skill is running or waits for the user, and has not waited so long that the chat should answer."""
+        try:
+            return time.time() - float(main.get("skill_active") or 0) < SKILL_IDLE_S
+        except ValueError:
+            return False
+
+    async def _answer_in(self, session_id: str, main: SessionStore, store: SessionStore) -> PromptResponse:
+        """Answer in the conversation, or in the skill's session and then tell the conversation what it said."""
+        seen = store.count()
+        response = await self._answer(session_id, store)
+        if store is main:
+            return response
+        if self._skill_ended == "not_for_me":
+            main.set("skill_active", "")
+            return await self._answer(session_id, main)  # the same message, now for the chat
+        # What the skill said is part of the conversation the user and the bot share.
+        for message in store.messages()[seen:]:
+            if message["role"] == "bot":
+                main.add("bot", message["text"])
+        self._after_skill(main, response)
+        return response
+
+    def _after_skill(self, main: SessionStore, response: PromptResponse) -> None:
+        """The skill is over when it said so or the user cancelled; otherwise the clock for waiting starts again."""
+        over = response.stop_reason == "cancelled" or self._skill_ended == "done"
+        main.set("skill_active", "" if over else str(time.time()))
 
     async def _brief(self, main: SessionStore) -> str:
         """What a skill needs from the conversation so far, picked out by the model; the last lines as they are when
@@ -183,6 +215,8 @@ class LeanAgent:
         if not recent and not main.summary:
             return ""
         lines = "\n".join(f"{m['role']}: {m['text'][:600]}" for m in recent)
+        if len(lines) + len(main.summary) <= BRIEF_SHORT:
+            return "\n\nThe conversation so far:\n" + ((main.summary + "\n") if main.summary else "") + lines
         try:
             brief = await asyncio.to_thread(
                 self.model.complete, [{"role": "system", "content": BRIEF_PROMPT},
@@ -200,8 +234,9 @@ class LeanAgent:
             from harness.agent.workspace import skill_body
             store.set("skill", f"The user ran the skill /{skill['name']} (file: {skill['path']}). Follow it:\n"
                                + skill_body(skill)
-                               + "\n\nCall the tool done when the skill is finished and wait_for_user when you wait for "
-                               "the user's answer. Never end a message on only a promise to do something.")
+                               + "\n\nCall the tool done when the skill is finished, wait_for_user when you wait for the "
+                               "user's answer, and not_for_me when the user's message has nothing to do with the skill. "
+                               "Never end a message on only a promise to do something.")
 
     async def cancel(self, session_id: str, **kwargs) -> None:
         """Stop the turn now. A cancel with no turn running is dropped: it used to arrive before the
@@ -225,13 +260,8 @@ class LeanAgent:
         store = main
         if text != RESUME_PROMPT:
             main.add("user", text)
-            if main.get("skill_active") and text.strip().lower() == "/stop":
-                main.set("skill_active", "")
-                main.add("bot", STOPPED)
-                await self._chunk(session_id, "agent", STOPPED)
-                return PromptResponse(stop_reason="end_turn")
             store = await self._skill_target(main, text)
-        elif main.get("skill_active"):
+        elif self._skill_waiting(main):
             store = self._skill_store()
         main.set("open_turn", "1")
         self._cancelled.discard(session_id)
@@ -240,15 +270,7 @@ class LeanAgent:
         async with self._session_lock(session_id):
             self._turns.add(session_id)
             try:
-                seen = store.count()
-                response = await self._answer(session_id, store)
-                if store is not main:
-                    # What the skill said is part of the conversation the user and the bot share.
-                    for message in store.messages()[seen:]:
-                        if message["role"] == "bot":
-                            main.add("bot", message["text"])
-                    if self._skill_ended == "done":
-                        main.set("skill_active", "")
+                response = await self._answer_in(session_id, main, store)
                 # Only a turn that ended says so. One cut off by a vanished client (an error, a cancelled task) leaves
                 # the flag, and the next start picks the turn up again.
                 main.set("open_turn", "")
@@ -533,16 +555,20 @@ class LeanAgent:
         async with self._session_lock(session_id):
             while self._inbox.get(session_id) and not self._shutting:
                 text = self._inbox[session_id].pop(0)
-                store = self.stores.setdefault(session_id, SessionStore(self.folder))
+                main = self.stores.setdefault(session_id, SessionStore(self.folder))
+                # A job that finished while a skill runs is the skill's news, not the chat's.
+                store = self._skill_store() if self._skill_waiting(main) else main
                 self._turns.add(session_id)
                 self._cancelled.discard(session_id)
                 try:
-                    store.set("open_turn", "1")
-                    store.add("user", text)
+                    main.set("open_turn", "1")
+                    main.add("user", text)
+                    if store is not main:
+                        store.add("user", text)
                     await self._jobs_ping(session_id, followup=True)
                     await self._chunk(session_id, "user", text)
-                    await self._answer(session_id, store)
-                    store.set("open_turn", "")
+                    await self._answer_in(session_id, main, store)
+                    main.set("open_turn", "")
                 finally:
                     self._turns.discard(session_id)
                     self._cancelled.discard(session_id)
