@@ -90,7 +90,7 @@ def runtime_facts(model=None) -> str:
 
 # Workspace rules appended to the system prompt when HARNESS_WORKSPACE is set.
 _WORKSPACE_RULES = ""
-_WORKSPACE_CACHE_KEY = ""
+_WORKSPACE_CACHE_KEY = ("", "")
 KEEP_TURNS = 12
 CONTEXT_TOKENS = 32000  # default fallback when the model's window is unknown
 SUMMARY_AFTER = 40  # messages on disk before the background summary takes the older half
@@ -149,16 +149,18 @@ def build(store, bot: str, model_window: int = 0, model=None, workspace: str | N
     so nothing vanishes between turns.
     """
     import os
-    from harness.agent.workspace import resolve_workspace, load_workspace_rules
+    from harness.agent.workspace import load_context_paths, load_workspace_rules, resolve_workspace
 
     global _WORKSPACE_RULES, _WORKSPACE_CACHE_KEY
     ws_path = workspace if workspace is not None else (os.environ.get("HARNESS_WORKSPACE") or "")
-    if _WORKSPACE_CACHE_KEY != ws_path:
+    extra = os.environ.get("HARNESS_CONTEXT_PATHS") or ""
+    if _WORKSPACE_CACHE_KEY != (ws_path, extra):
         _WORKSPACE_RULES = ""
-        _WORKSPACE_CACHE_KEY = ws_path
+        _WORKSPACE_CACHE_KEY = (ws_path, extra)
         ws = resolve_workspace(ws_path)
         if ws:
             _WORKSPACE_RULES = load_workspace_rules(ws)
+        _WORKSPACE_RULES += load_context_paths(extra)
 
     budget = _budget_chars(model_window)
     used = 0

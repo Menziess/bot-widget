@@ -195,6 +195,24 @@ The bot asks before it writes, edits or deletes a file and before a shell comman
 - Instead of `approved.json` per bot, which older versions wrote, one file holds it all. The old files are moved in at the next start and renamed to `approved.json.migrated`
 - Rules from `approve` in the bot's `widget.json` entry still count. `shell-allow.json` is separate and not on the page
 
+Extra instructions and skills come from folders and files of your choice, set in the `env` of the bot.
+
+```json
+"env": {
+  "HARNESS_CONTEXT_PATHS": "~/.agents/skills:~/notes/bot-rules.md"
+}
+```
+
+- Paths are separated like `PATH`: a colon on macOS and Linux, a semicolon on Windows
+- A bot added from the widget starts with `~/.agents/skills` and `~/.agents/AGENTS.md`. A bot that already exists keeps what it has. A path that is not there is skipped
+- A file is read as instructions and goes into every request
+- A folder gives its `AGENTS.md`, `CLAUDE.md` or `.clinerules` as instructions
+- A folder that holds a `SKILL.md`, or folders that each hold one, gives skills
+- A skill is listed by name, description and path. The bot reads its `SKILL.md` when the task matches
+- The text of the instructions is cut at `HARNESS_RULES_MAX_CHARS`, and the skill list at 4000 characters
+- The bot reads the skill file itself, which it may do in any folder. Nothing in a skill runs by itself
+- Edit widget.json on the `/bots` page saves this and restarts only that bot
+
 A model server for the example above is llama.cpp:
 
 ```sh

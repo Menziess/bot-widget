@@ -135,6 +135,15 @@ class BotForm(unittest.TestCase):
         self.assertEqual(removes, [("Again", "bot-remove/acp:a"), ("Remove", "bot-remove/acp:b")])
         self.assertIn("page/widget-json", commands)
 
+    def test_a_new_bot_gets_the_default_context_paths_and_a_saved_bot_without_them_keeps_none(self):
+        added, error = acp_bots.commit({**acp_bots.blank(), "name": "Local"}, [])
+        self.assertEqual(added[0]["env"]["HARNESS_CONTEXT_PATHS"], acp_bots.DEFAULT_CONTEXT_PATHS)
+        self.assertEqual(acp_bots.DEFAULT_CONTEXT_PATHS.split(os.pathsep), ["~/.agents/skills", "~/.agents/AGENTS.md"])
+        old = [{**added[0], "env": {k: v for k, v in added[0]["env"].items() if k != "HARNESS_CONTEXT_PATHS"}}]
+        again, error = acp_bots.commit({**acp_bots.fields_of({**old[0], "id": "acp:local"}), "color": "green"}, old)
+        self.assertEqual(error, "")
+        self.assertNotIn("HARNESS_CONTEXT_PATHS", again[0]["env"])
+
     def test_two_bots_share_a_model_and_a_rename_keeps_the_id(self):
         first, error = acp_bots.commit({**acp_bots.blank(), "name": "Local"}, [])
         second, error = acp_bots.commit({**acp_bots.blank(), "name": "Other", "color": "green"}, first)

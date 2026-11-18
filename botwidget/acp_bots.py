@@ -17,6 +17,7 @@ COLORS = ("blue", "green", "violet", "orange", "red", "cyan", "magenta", "yellow
 DEFAULT_BASE = "http://127.0.0.1:8081/v1"
 DEFAULT_MODEL = "local"
 DEFAULT_KEY = "~/.config/llm/key"
+DEFAULT_CONTEXT_PATHS = os.pathsep.join(["~/.agents/skills", "~/.agents/AGENTS.md"])  # a new bot only
 # A pasted key hides under one of these names. The path in key_file is not a secret.
 SECRET_KEYS = {"api_key", "apikey", "token", "secret", "password", "authorization", "harness_model_api_key"}
 
@@ -120,6 +121,8 @@ def _entry(fields: dict, previous: dict | None, taken: set) -> tuple:
     env = {key: str(value) for key, value in ((previous or {}).get("env") or {}).items()
            if str(key).startswith("HARNESS_") and not _secret(key)}
     env.update(HARNESS_BOT=name, HARNESS_MODEL_BASE_URL=base, HARNESS_MODEL=model)
+    if previous is None:
+        env["HARNESS_CONTEXT_PATHS"] = DEFAULT_CONTEXT_PATHS
     ws = str(fields.get("workspace") or "").strip()
     if ws and ws != "(none)":
         env["HARNESS_WORKSPACE"] = ws

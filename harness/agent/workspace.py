@@ -892,6 +892,59 @@ def load_workspace_rules(workspace: str) -> str:
     return "".join(reversed(parts))
 
 
+def _skill_line(skill_md: str) -> str:
+    """'- name: description (path)' from the front matter of a SKILL.md, or '' when it has no name."""
+    try:
+        with open(skill_md, errors="replace") as fh:
+            head = fh.read(2000)
+    except OSError:
+        return ""
+    block = head.split("---", 2)[1] if head.startswith("---") and head.count("---") >= 2 else ""
+    name = re.search(r"^name:\s*(.+)$", block, re.M)
+    description = re.search(r"^description:\s*(.*?)(?=^\S|\Z)", block, re.M | re.S)
+    if not name:
+        return ""
+    text = " ".join(re.sub(r"^[>|][-+]?", "", (description.group(1) if description else "").strip()).split())
+    return f"- {name.group(1).strip()}: {text.strip(chr(34) + chr(39))[:300]} ({skill_md})"
+
+
+def load_context_paths(paths: str) -> str:
+    """Extra instructions and skills from HARNESS_CONTEXT_PATHS, a list of paths separated like PATH.
+
+    A file is read as instructions. A folder gives its AGENTS.md (or CLAUDE.md, .clinerules) as instructions, and
+    its own SKILL.md and that of each folder inside it as skills. A skill is only listed by name, description and
+    path; the bot reads the SKILL.md when the task matches, with read_file, which reads in any folder.
+    """
+    try:
+        limit = int(os.environ.get("HARNESS_RULES_MAX_CHARS") or MAX_RULE_CHARS)
+    except ValueError:
+        limit = MAX_RULE_CHARS
+    texts: list[str] = []
+    skills: list[str] = []
+    for entry in (paths or "").split(os.pathsep):
+        path = os.path.realpath(os.path.expanduser(entry.strip())) if entry.strip() else ""
+        if os.path.isfile(path):
+            found = (os.path.basename(path), path)
+        elif os.path.isdir(path):
+            found = _rules_in(path)
+            for skill_md in [os.path.join(path, "SKILL.md"), *sorted(glob.glob(os.path.join(path, "*", "SKILL.md")))]:
+                line = _skill_line(skill_md) if os.path.isfile(skill_md) else ""
+                if line and line not in skills:
+                    skills.append(line)
+        else:
+            continue
+        if found and not _is_secret_path(found[1]):
+            try:
+                with open(found[1], errors="replace") as fh:
+                    texts.append(f"\n# Instructions ({found[1]}):\n{fh.read(limit)}")
+            except OSError:
+                pass
+    out = "".join(texts)[:limit]
+    if skills:
+        out += "\n# Skills. When the task matches one, read its SKILL.md first:\n" + "\n".join(skills)[:4000]
+    return out
+
+
 # ── Tool builders ─────────────────────────────────────────────────────
 
 def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:

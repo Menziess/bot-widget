@@ -8,7 +8,7 @@ import unittest
 
 from botwidget import acp_bots
 from harness.agent.agent import LeanAgent
-from harness.agent.workspace import default_workspace, load_workspace_rules, project_root
+from harness.agent.workspace import default_workspace, load_context_paths, load_workspace_rules, project_root
 from tests.test_h7_diffs import ScriptModel
 
 
@@ -118,6 +118,31 @@ class OneDefaultPermission(unittest.TestCase):
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)
         self.assertEqual(LeanAgent("p", ScriptModel(), folder=folder).tools.permission, "ask")
+
+
+class ContextPaths(unittest.TestCase):
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_a_file_a_folder_with_agents_md_and_skills_are_loaded_and_skills_only_listed(self):
+        _write(os.path.join(self.tmp, "notes.md"), "NOTES RULE")
+        _write(os.path.join(self.tmp, "kit", "AGENTS.md"), "KIT RULE")
+        _write(os.path.join(self.tmp, "kit", "ho", "SKILL.md"),
+               "---\nname: ho\ndescription: >\n  Write a brief\n  for <x> agents.\n---\nSECRET BODY")
+        _write(os.path.join(self.tmp, "kit", "bare", "SKILL.md"), "no front matter")
+        text = load_context_paths(os.pathsep.join([os.path.join(self.tmp, "notes.md"), os.path.join(self.tmp, "kit"),
+                                                   os.path.join(self.tmp, "missing")]))
+        self.assertIn("NOTES RULE", text)
+        self.assertIn("KIT RULE", text)
+        self.assertIn(f"- ho: Write a brief for <x> agents. ({os.path.join(self.tmp, 'kit', 'ho', 'SKILL.md')})", text)
+        self.assertNotIn("SECRET BODY", text)
+        self.assertNotIn("bare", text)
+
+    def test_nothing_set_adds_nothing_and_a_secret_file_is_skipped(self):
+        _write(os.path.join(self.tmp, ".env"), "TOKEN=x")
+        self.assertEqual(load_context_paths(""), "")
+        self.assertNotIn("TOKEN", load_context_paths(os.path.join(self.tmp, ".env")))
 
 
 if __name__ == "__main__":
