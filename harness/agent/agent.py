@@ -36,6 +36,9 @@ LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the sam
 SKILL_ENDINGS = {"done": "Call this when the skill is finished and you have said the result.",
                  "wait_for_user": "Call this when you have asked the user something and wait for the answer."}
 SKILL_NUDGES = 2
+STOPPED = "The skill is stopped."
+BRIEF_PROMPT = ("Write down what a helper needs from this conversation to carry out the user's last request: facts, "
+                "names, dates and decisions that matter. Leave out the rest. At most 120 words, plain text.")
 SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
                "call. If you are finished call done, and if you wait for the user's answer call wait_for_user.")
 
@@ -93,6 +96,8 @@ class LeanAgent:
         self._replies: dict[str, object] = {}
         self._queues: dict[str, asyncio.Queue] = {}
         self._summarising = False
+        self._skill = None  # the store of the skill that is running, made when the first one starts
+        self._skill_ended = ""  # done or wait_for_user, once the model has said so in the turn that just ran
         self.jobs = None  # background shell jobs; created once a workspace exists
         self._job_tools_ready = False
         self._tool_session = ""
@@ -142,10 +147,49 @@ class LeanAgent:
         if not self.skills or self.conn is None:
             return
         update = AvailableCommandsUpdate(session_update="available_commands_update", available_commands=[
-            AvailableCommand(name=skill["name"], description=skill["description"]) for skill in self.skills.values()])
+            *(AvailableCommand(name=skill["name"], description=skill["description"]) for skill in self.skills.values()),
+            AvailableCommand(name="stop", description="Leave the skill that is running and go back to the chat")])
         task = asyncio.get_running_loop().create_task(self.conn.session_update(session_id=session_id, update=update))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+
+    def _skill_store(self) -> SessionStore:
+        """The session a skill runs in, apart from the conversation of the bot."""
+        if self._skill is None:
+            self._skill = SessionStore(os.path.join(self.folder, "skill"))
+        return self._skill
+
+    async def _skill_target(self, main: SessionStore, text: str) -> SessionStore:
+        """Where this message is answered: a skill that is started, or still waits for the user, has a session of its
+        own with the skill and a brief of the conversation. The rest goes to the conversation."""
+        name = text.split(None, 1)[0][1:].lower() if text.startswith("/") and text.split() else ""
+        if name in self.skills:
+            skill = self._skill_store()
+            skill.reset()
+            self._run_skill(skill, text)
+            skill.add("user", text + await self._brief(main))
+            main.set("skill_active", "1")
+            return skill
+        if main.get("skill_active"):
+            skill = self._skill_store()
+            skill.add("user", text)
+            return skill
+        return main
+
+    async def _brief(self, main: SessionStore) -> str:
+        """What a skill needs from the conversation so far, picked out by the model; the last lines as they are when
+        it cannot."""
+        recent = main.messages(limit=9)[:-1]
+        if not recent and not main.summary:
+            return ""
+        lines = "\n".join(f"{m['role']}: {m['text'][:600]}" for m in recent)
+        try:
+            brief = await asyncio.to_thread(
+                self.model.complete, [{"role": "system", "content": BRIEF_PROMPT},
+                                      {"role": "user", "content": (main.summary + "\n" if main.summary else "") + lines}])
+        except Exception:
+            return "\n\nThe conversation so far:\n" + lines
+        return "\n\nWhat matters from the conversation so far:\n" + brief.strip()
 
     def _run_skill(self, store: SessionStore, text: str) -> None:
         """A message that starts with /name of a skill puts that skill's text in front of the model, for this turn and
@@ -176,22 +220,38 @@ class LeanAgent:
             queue.put_nowait(("cancelled", ""))
 
     async def prompt(self, session_id: str, prompt, **kwargs) -> PromptResponse:
-        store = self.stores.setdefault(session_id, SessionStore(self.folder))
+        main = self.stores.setdefault(session_id, SessionStore(self.folder))
         text = "".join(block.text for block in prompt if getattr(block, "text", ""))
+        store = main
         if text != RESUME_PROMPT:
-            store.add("user", text)
-            self._run_skill(store, text)
-        store.set("open_turn", "1")
+            main.add("user", text)
+            if main.get("skill_active") and text.strip().lower() == "/stop":
+                main.set("skill_active", "")
+                main.add("bot", STOPPED)
+                await self._chunk(session_id, "agent", STOPPED)
+                return PromptResponse(stop_reason="end_turn")
+            store = await self._skill_target(main, text)
+        elif main.get("skill_active"):
+            store = self._skill_store()
+        main.set("open_turn", "1")
         self._cancelled.discard(session_id)
         self._aio = asyncio.get_running_loop()
         # The lock keeps a job result out of this turn. It is delivered after the lock drops.
         async with self._session_lock(session_id):
             self._turns.add(session_id)
             try:
+                seen = store.count()
                 response = await self._answer(session_id, store)
+                if store is not main:
+                    # What the skill said is part of the conversation the user and the bot share.
+                    for message in store.messages()[seen:]:
+                        if message["role"] == "bot":
+                            main.add("bot", message["text"])
+                    if self._skill_ended == "done":
+                        main.set("skill_active", "")
                 # Only a turn that ended says so. One cut off by a vanished client (an error, a cancelled task) leaves
                 # the flag, and the next start picks the turn up again.
-                store.set("open_turn", "")
+                main.set("open_turn", "")
                 return response
             finally:
                 self._turns.discard(session_id)
@@ -209,6 +269,7 @@ class LeanAgent:
         self.tools.add(Tool("approval_log", "Who accepted or declined which action recently, and how (bubble, cli, timeout).",
                             {"type": "object", "properties": {}}, lambda _args: approvals.recent()))
         skill_on = bool(store.get("skill"))
+        self._skill_ended = ""
         for name, what in SKILL_ENDINGS.items():
             if skill_on:
                 self.tools.add(Tool(name, what, {"type": "object", "properties": {}}, lambda _args: "Ok."))
@@ -284,7 +345,10 @@ class LeanAgent:
                 for call, result in zip(calls, results):
                     messages.append({"role": "tool", "tool_call_id": call["id"],
                                      "content": TOOL_OUTPUT + "\n" + result})
-                if skill_on and any((call.get("function") or {}).get("name") in SKILL_ENDINGS for call in calls):
+                ending = [(call.get("function") or {}).get("name") for call in calls
+                          if (call.get("function") or {}).get("name") in SKILL_ENDINGS]
+                if skill_on and ending:
+                    self._skill_ended = ending[0]
                     break
             else:
                 # The loop ran out of steps with the model still asking for tools.

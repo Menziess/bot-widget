@@ -68,6 +68,12 @@ class SessionStore:
             rows = self.db.execute("select role, text from messages order by id").fetchall()
         return [{"role": role, "text": text} for role, text in rows]
 
+    def reset(self) -> None:
+        """Start over: a skill's session is made new for every run."""
+        for table in ("messages", "tool_results", "meta"):
+            self.db.execute(f"delete from {table}")
+        self.db.commit()
+
     def count(self) -> int:
         return self.db.execute("select count(*) from messages").fetchone()[0]
 

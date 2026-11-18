@@ -210,7 +210,9 @@ Extra instructions and skills come from folders and files of your choice, set in
 - A folder gives its `AGENTS.md`, `CLAUDE.md` or `.clinerules` as instructions
 - A folder that holds a `SKILL.md`, or folders that each hold one, gives skills
 - A skill is listed by name, description and path. The bot reads its `SKILL.md` when the task matches
-- Each skill is also a slash command, such as `/parking`. Typing it makes the bot follow that skill's whole text, in this turn and the ones after it, until you run another. What you type after the name stays in the message
+- Each skill is also a slash command, such as `/parking`. Typing it starts the skill in a session of its own: the skill's whole text and a short brief of the conversation, picked out by the model, not the conversation itself. What you type after the name stays in the message
+- What the skill says shows in the same chat and is kept in the conversation of the bot. A question of the skill is answered by typing in the chat; your answers go to the skill until it is done
+- `/stop` leaves a skill that waits for you and gives the chat back, without a model call
 - While a skill runs the bot has two extra tools, `done` and `wait_for_user`. A message that ends without a tool call, such as only "let me look", is not the end of the skill: the bot is told twice to go on, or to call one of them
 - The text of the instructions is cut at `HARNESS_RULES_MAX_CHARS`, and the skill list at 4000 characters
 - The bot reads the skill file itself, which it may do in any folder. Nothing in a skill runs by itself
