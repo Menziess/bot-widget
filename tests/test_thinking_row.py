@@ -93,17 +93,19 @@ class ThinkingRowUnderWorkingFace(unittest.TestCase):
         self._work(self.window, False)
         self.assertEqual(self._rows(self.window), [])
 
-    def test_should_say_watching_while_the_bot_takes_a_screenshot_and_a_moment_after_it(self):
-        """The call is over in a blink: the row keeps saying Watching until the next look has had its time."""
-        self.window._sync_bubble({"messages": [], "activity": "browser_screenshot {}"})
-        self.assertEqual(self._rows(self.window)[0].text(), "Watching")
-        self.window._sync_bubble({"messages": [], "activity": "shell {'command': 'ls'}"})
-        self.assertEqual(self._rows(self.window)[0].text(), "Watching", "the screenshot was a moment ago")
-        self.window._watching_until = 0
-        self.window._sync_bubble({"messages": [], "activity": "shell {'command': 'ls'}"})
-        self.assertEqual(self._rows(self.window)[0].text(), "Thinking")
-        self.window._sync_bubble({"messages": [], "activity": "browser_exec {'code': 'capture_screenshot()'}"})
-        self.assertEqual(self._rows(self.window)[0].text(), "Watching", "a screenshot taken inside a script counts")
+    def test_should_say_watching_from_the_start_of_screenshot_mode_until_the_shot_is_taken(self):
+        """Also when the bot is not working: the row is for the screenshot the user is making."""
+        from botwidget.qt_ui import screenshot
+        face = self.window
+        self._work(face, False)
+        self.assertEqual(self._rows(face), [])
+        face._screenshot_active = True
+        face._place_thinking()
+        self.assertEqual([row.text() for row in self._rows(face)], ["Watching"])
+        screenshot._cleanup_screenshot_mode(face)
+        self.assertEqual(self._rows(face), [], "gone as soon as the shot is taken, or the mode is left")
+        self._work(face, True)
+        self.assertEqual([row.text() for row in self._rows(face)], ["Thinking"], "and a working bot says Thinking again")
 
     def test_should_show_thinking_under_a_working_face(self):
         from PySide6.QtCore import QPoint, Qt

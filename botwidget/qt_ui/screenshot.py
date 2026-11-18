@@ -145,6 +145,8 @@ class ScreenshotOverlay(QWidget):
         for f in all_faces:
             f.hide()
         self.target_face.hide()
+        # Hidden for good, not only with its face: the shot is taken, and Watching must not come back with the face.
+        self.target_face._thinking.hide()
         QApplication.processEvents()
 
         pixmap = self.grab_region()
@@ -252,6 +254,7 @@ def _cleanup_screenshot_mode(face):
     """Clear all screenshot-mode state from the face."""
     face.screenshot_face = None
     face._screenshot_active = False
+    face._place_thinking()  # the Watching row goes with the mode
     overlay = getattr(face, "_screenshot_overlay", None)
     if overlay is not None:
         face._screenshot_overlay = None
