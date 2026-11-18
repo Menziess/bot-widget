@@ -187,7 +187,7 @@ def bots(state: dict) -> list:
     if not state["bots"]:
         blocks.append(_row(("No bots found yet", "dim")))
     blocks += [plain_block("gap"), _button("New bot", "page/bot"), _button("Edit widget.json", "page/widget-json"),
-               _button("Edit approvals", "page/approvals")]
+               _button("Edit approvals.json", "page/approvals")]
     return blocks
 
 
@@ -368,16 +368,14 @@ def memory_page(state: dict) -> list:
 
 
 def approvals_page(state: dict) -> list:
-    """What was accepted for good, one row per bot and prefix. Removing a row asks that bot again."""
-    from harness.agent.workspace import approved_files, saved_approvals
-    rows = sorted((os.path.basename(os.path.dirname(path)), prefix)
-                  for path in approved_files() for prefix in saved_approvals(path))
-    blocks = _back("page/bots") + [_heading("Approvals")]
-    if not rows:
-        blocks.append(_row(("Nothing is allowed for good yet", "dim")))
-    for bot, prefix in rows:
-        blocks += [_row((f"{bot} · {prefix}", "dim")),
-                   _item("", "", None, [("Remove", f"approval-forget/{bot}/{prefix}")])]
+    """What may run without a question: "*" for every bot, then one entry per bot."""
+    blocks = _back("page/bots") + [_heading("approvals.json"),
+                                   _row(("true runs without asking, false always asks and wins. \"*\" counts for every bot. "
+                                         "Checked before saving. The previous file is kept as approvals.json.bak.", "dim"))]
+    if state.get("approvals_error"):
+        blocks.append(_row((state["approvals_error"], "dim")))
+    blocks.append({**control_block("editor", "approvals.json", "editor"), "value": state.get("approvals_text") or ""})
+    blocks += [plain_block("gap"), _button("Save approvals.json", "action/save-approvals")]
     return blocks
 
 

@@ -68,8 +68,11 @@ class LeanAgent:
             config = json.loads(os.environ.get("HARNESS_APPROVE") or "{}")
         except ValueError:
             config = {}
-        from harness.agent.workspace import ApproveRules, check_rules
-        self.rules = ApproveRules(os.path.join(self.folder, "approved.json"), config if not check_rules(config) else {})
+        from harness.agent.workspace import ApproveRules, approvals_path, check_rules, migrate_approved
+        approvals = approvals_path(self.folder)
+        migrate_approved(approvals)
+        self.rules = ApproveRules(approvals, config if not check_rules(config) else {},
+                                  os.path.basename(os.path.abspath(self.folder)))
         # HARNESS_SHELL_READONLY=0 makes every shell command ask again.
         self.shell_readonly_free = os.environ.get("HARNESS_SHELL_READONLY", "1") != "0"
         self.conn = None
@@ -767,8 +770,7 @@ class LeanAgent:
 
     def _verdict(self, name: str, arguments: dict) -> bool | None:
         mode = getattr(self.tools, "permission", "ask")
-        return self.rules.decide(self._approve_texts(name, arguments), session=mode in ("allow", "allow_session"),
-                                 saved=mode == "allow")
+        return self.rules.decide(self._approve_texts(name, arguments), session=mode in ("allow", "allow_session"))
 
     def _remember(self, name: str, arguments: dict) -> None:
         """An accepted call covers the same tool in the same folder (a shell command: the same command prefix)."""

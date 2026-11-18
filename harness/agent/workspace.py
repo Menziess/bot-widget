@@ -53,6 +53,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 from difflib import unified_diff
@@ -679,71 +680,117 @@ def check_rules(rules) -> str:
     return ""
 
 
-def approved_files() -> list[str]:
-    """The approved.json of every bot, or the one in HARNESS_AGENT_DIR."""
-    folder = os.environ.get("HARNESS_AGENT_DIR") or "~/.local/share/botwidget/harness/agent/*"
-    return sorted(glob.glob(os.path.join(os.path.expanduser(folder), "approved.json")))
+GLOBAL_RULES = "*"  # a bot folder is never called this, so it cannot clash with a bot's name
 
 
-def saved_approvals(path: str) -> list[str]:
+def approvals_path(folder: str) -> str:
+    """approvals.json sits next to the bots' folder (harness/agent/<bot>); a folder elsewhere keeps its own.
+    HARNESS_APPROVALS_FILE names another file."""
+    if os.environ.get("HARNESS_APPROVALS_FILE"):
+        return os.path.expanduser(os.environ["HARNESS_APPROVALS_FILE"])
+    folder = os.path.abspath(os.path.expanduser(folder))
+    parent = os.path.dirname(folder)
+    return os.path.join(os.path.dirname(parent) if os.path.basename(parent) == "agent" else folder, "approvals.json")
+
+
+def shared_approvals_path() -> str:
+    """The approvals.json that the bots in the default folder use."""
+    return approvals_path(os.path.join("~/.local/share/botwidget/harness/agent", "_"))
+
+
+def load_approvals(path: str) -> dict:
+    """{"*": rules for every bot, "<bot>": rules for that bot}, each a {pattern: true|false} map."""
     try:
         with open(path) as fh:
             data = json.load(fh)
     except (OSError, ValueError):
-        return []
-    return [p for p in data if isinstance(p, str)] if isinstance(data, list) else []
+        return {}
+    return {bot: rules for bot, rules in data.items() if isinstance(rules, dict)} if isinstance(data, dict) else {}
 
 
-def forget_approval(bot: str, prefix: str) -> None:
-    """Drop one saved prefix from that bot's approved.json. The same prefix on another bot stays."""
-    for path in approved_files():
-        if os.path.basename(os.path.dirname(path)) != bot:
-            continue
-        kept = [p for p in saved_approvals(path) if p != prefix]
+def check_approvals(data) -> str:
+    """Why *data* is not a usable approvals.json, or ''."""
+    if not isinstance(data, dict):
+        return "approvals.json has to be a JSON object."
+    for bot, rules in data.items():
+        error = check_rules(rules)
+        if error:
+            return f"{bot}: {error}"
+    return ""
+
+
+def save_approvals(path: str, data: dict) -> str:
+    """Write the file, keeping the one before as .bak. The reason it failed, or ''."""
+    try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        if os.path.exists(path):
+            shutil.copy2(path, path + ".bak")
         with open(path, "w") as fh:
-            json.dump(kept, fh, indent=2)
+            json.dump(data, fh, indent=2)
+            fh.write("\n")
+    except OSError as error:
+        return f"Could not save approvals.json ({error.strerror})."
+    return ""
+
+
+def migrate_approved(path: str) -> None:
+    """The approved.json of each bot (a list of prefixes) becomes that bot's true rules in approvals.json."""
+    legacy = sorted(glob.glob(os.path.join(os.path.dirname(path), "agent", "*", "approved.json")))
+    if not legacy:
+        return
+    data = load_approvals(path)
+    for old in legacy:
+        try:
+            with open(old) as fh:
+                prefixes = [p for p in json.load(fh) if isinstance(p, str)]
+        except (OSError, ValueError, TypeError):
+            prefixes = []
+        rules = data.setdefault(os.path.basename(os.path.dirname(old)), {})
+        for prefix in prefixes:
+            rules.setdefault(prefix, True)
+        os.replace(old, old + ".migrated")
+    save_approvals(path, data)
 
 
 class ApproveRules:
     """What a tool call may do without asking, in the style of Copilot's autoApprove.
 
     A call is described as text: ``shell git status``, ``write_file /home/me/proj/a.py`` or just the tool's
-    name. *config* maps keys (see rule_matches) to true (no question) or false (always ask, which wins).
+    name. *config* (the bot's ``approve`` in widget.json), the ``*`` rules and this bot's rules in approvals.json
+    map keys (see rule_matches) to true (no question) or false (always ask, which wins).
     What a user accepted is remembered as a prefix rule on top of that, for the session or for good.
     """
 
-    def __init__(self, path: str, config: dict | None = None):
+    def __init__(self, path: str, config: dict | None = None, bot: str = ""):
         self.path = path
+        self.bot = bot
         self.config = config or {}
         self.session: list[str] = []
-        self.saved = saved_approvals(path)
 
-    def decide(self, texts: list[str], session: bool, saved: bool) -> bool | None:
+    def _rules(self) -> dict:
+        data = load_approvals(self.path)  # an edit made in the widget counts at once
+        return {**self.config, **data.get(GLOBAL_RULES, {}), **data.get(self.bot, {})}
+
+    def decide(self, texts: list[str], session: bool) -> bool | None:
         """False when a rule says ask, True when every part is covered, else None (the user decides)."""
-        self.saved = saved_approvals(self.path)  # an edit made in the widget counts at once
         if not texts:
             return None
+        rules = self._rules()
         if any(allowed is False and rule_matches(pattern, text)
-               for pattern, allowed in self.config.items() for text in texts):
+               for pattern, allowed in rules.items() for text in texts):
             return False
-        covering = [p for p, allowed in self.config.items() if allowed is True]
-        covering += (self.session if session else []) + (self.saved if saved else [])
+        covering = [p for p, allowed in rules.items() if allowed is True] + (self.session if session else [])
         return True if all(any(rule_matches(p, text) for p in covering) for text in texts) else None
 
     def remember(self, prefix: str, persist: bool) -> None:
         if not prefix:
             return
-        if not persist:
-            self.session.append(prefix)
-            return
-        if prefix not in self.saved:
-            self.saved.append(prefix)
-        try:
-            os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-            with open(self.path, "w") as fh:
-                json.dump(self.saved, fh, indent=2)
-        except OSError:
-            self.session.append(prefix)  # still remembered until the agent stops
+        if persist:
+            data = load_approvals(self.path)
+            data.setdefault(self.bot, {})[prefix] = True
+            if not save_approvals(self.path, data):
+                return
+        self.session.append(prefix)  # until the agent stops
 
 
 # ── Context rules ─────────────────────────────────────────────────────

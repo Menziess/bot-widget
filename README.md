@@ -135,7 +135,7 @@ You can add a bot from the widget instead of editing this file. `/bots`, then Ne
 - A write the bot asks about shows Accept and Decline in the bubble, and Always allow when the agent offers to remember the command. A running turn can be cancelled
 - The context meter under the conversation shows how full the context is, and a pin_fact tool keeps a fact through compaction
 - What the bot remembers with its memory tools is on the `/memory` page, with Edit and Forget on every row and New memory below the list. Edit changes the text and the topic, and the memory keeps its scope and its time
-- What you accepted for good (Permission `allow`) is on the `/approvals` page, or under Edit approvals on `/bots`. Each row is one saved prefix for one bot. Remove on that row asks that bot about it again, also while the bot is running, and leaves the same prefix on any other bot
+- What you accepted for good (Permission `allow`) is in `approvals.json`, on the `/approvals` page or under Edit approvals.json on `/bots`. It is one file for every bot, edited like widget.json. See below
 
 The bot can leave a shell command running and keep talking. `shell_background` starts it (the same permission question as `shell`), `jobs` lists what is still running, and `job_cancel` stops one. When the command exits, the same session gets the exit code and a short tail of the output, and the bot answers that. The job keeps running when the bubble closes. It stops when the agent stops. While one is running, the line under the conversation says so.
 
@@ -172,13 +172,27 @@ The bot asks before it writes, edits or deletes a file and before a shell comman
 
 - Permission `ask` asks every time
 - Permission `allow_session` remembers an Accept until the agent stops
-- Permission `allow` remembers it for good, in `approved.json` in the bot's folder. It is the default for a new bot
+- Permission `allow` remembers it for good, in `approvals.json`. It is the default for a new bot
 - Remembering covers the same tool in the same folder and the folders below it. For a shell command it covers the same command prefix, such as `git status`
 - A write or delete outside the workspace folder is allowed too, and its question says so
 - The `approve` object is written by hand. Each key is a start of the text `tool target`, such as `shell git status` or `write_file /home/you/notes/a.md`
 - Wrapped in slashes a key is a regular expression searched in that text, and `/i` ignores case
 - Value `true` runs without asking. Value `false` always asks, and it wins over `true` and over anything that was remembered
 - A shell command with several parts, such as `a && b`, is approved only when each part is
+
+```json
+{
+  "*": {"shell git status": true, "shell rm": false},
+  "Local Bot": {"browser_exec": true}
+}
+```
+
+- The file is `approvals.json` in `~/.local/share/botwidget/harness`
+- The key `*` holds the rules of every bot. Any other key is the name of one bot, as in `HARNESS_BOT`
+- Value `true` runs without asking. Value `false` always asks, and it wins over `true`
+- Always allow and Permission `allow` add `true` rules under the bot's name
+- Instead of `approved.json` per bot, which older versions wrote, one file holds it all. The old files are moved in at the next start and renamed to `approved.json.migrated`
+- Rules from `approve` in the bot's `widget.json` entry still count. `shell-allow.json` is separate and not on the page
 
 A model server for the example above is llama.cpp:
 

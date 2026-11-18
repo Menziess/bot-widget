@@ -395,39 +395,41 @@ class WidgetSave(unittest.TestCase):
 
 
 class ApprovalsPage(WidgetSave):
-    """The /approvals page lists each saved prefix with its bot. Remove edits only that bot's file."""
+    """The /approvals page edits one approvals.json: "*" for every bot, then one entry per bot."""
 
-    def test_remove_forgets_one_bots_rule_and_a_running_agent_notices(self):
-        from botwidget import menu_pages
-        from harness.agent.workspace import ApproveRules
-        parent = tempfile.mkdtemp()
-        self.addCleanup(shutil.rmtree, parent, True)
-        paths = {}
-        for bot, extra in (("alpha", ["shell ls"]), ("beta", [])):
-            folder = os.path.join(parent, bot)
-            os.makedirs(folder)
-            paths[bot] = os.path.join(folder, "approved.json")
-            with open(paths[bot], "w") as fh:
-                json.dump(["shell git status", *extra], fh)
-        patched = mock.patch.dict(os.environ, {"HARNESS_AGENT_DIR": os.path.join(parent, "*")})
+    def setUp(self):
+        super().setUp()
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        self.path = os.path.join(folder, "approvals.json")
+        patched = mock.patch.dict(os.environ, {"HARNESS_APPROVALS_FILE": self.path})
         patched.start()
         self.addCleanup(patched.stop)
-        rules = {bot: ApproveRules(path) for bot, path in paths.items()}
-        text = json.dumps(menu_pages.approvals_page({}))
-        self.assertIn("alpha", text)
-        self.assertIn("beta", text)
-        self.assertIn('"command": "approval-forget/alpha/shell git status"', text)
-        self.assertIn('"command": "approval-forget/beta/shell git status"', text)
-        self.assertIn("shell ls", text)
-        self.assertEqual(self.box.menu_command("approval-forget/alpha/shell git status", "approvals"), "approvals")
-        self.assertEqual(json.load(open(paths["alpha"])), ["shell ls"])
-        self.assertEqual(json.load(open(paths["beta"])), ["shell git status"])
-        again = json.dumps(menu_pages.approvals_page({}))
-        self.assertNotIn("approval-forget/alpha/shell git status", again)
-        self.assertIn('"command": "approval-forget/beta/shell git status"', again)
-        self.assertIsNone(rules["alpha"].decide(["shell git status"], session=False, saved=True))
-        self.assertTrue(rules["alpha"].decide(["shell ls"], session=False, saved=True))
-        self.assertTrue(rules["beta"].decide(["shell git status"], session=False, saved=True))
+
+    def page(self):
+        from botwidget import menu_pages
+        state = {"approvals_text": self.box._approvals_view(), "approvals_error": getattr(self.box, "_approvals_error", "")}
+        return json.dumps(menu_pages.page_blocks("approvals", state))
+
+    def test_the_editor_shows_the_file_and_saves_a_checked_edit_with_a_backup(self):
+        with open(self.path, "w") as fh:
+            json.dump({"*": {"shell git status": True}}, fh)
+        self.assertEqual(self.box.menu_command("page/approvals", "bots"), "approvals")
+        self.assertIn("shell git status", self.page())
+        text = json.dumps({"*": {"shell git status": True}, "alpha": {"shell rm": False}})
+        self.assertIsNone(self.box.menu_command("action/save-approvals", "approvals", {"editor": text}))
+        self.assertEqual(json.load(open(self.path)), json.loads(text))
+        self.assertEqual(json.load(open(self.path + ".bak")), {"*": {"shell git status": True}})
+
+    def test_a_bad_edit_is_refused_and_stays_in_the_editor(self):
+        with open(self.path, "w") as fh:
+            json.dump({"*": {}}, fh)
+        self.box.menu_command("page/approvals", "bots")
+        for text, reason in (("{", "not valid JSON"), ('{"alpha": {"shell ls": "yes"}}', "alpha")):
+            self.assertEqual(self.box.menu_command("action/save-approvals", "approvals", {"editor": text}), "approvals")
+            self.assertIn(reason, self.page())
+            self.assertIn(text.replace('"', '\\"'), self.page())
+        self.assertEqual(json.load(open(self.path)), {"*": {}})
 
 
 class MemoryPage(WidgetSave):

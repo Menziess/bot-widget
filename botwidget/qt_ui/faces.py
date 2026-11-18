@@ -11,6 +11,7 @@ from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter, QRegion
 from PySide6.QtWidgets import QApplication, QWidget
 
+from harness.agent.workspace import check_approvals, load_approvals, migrate_approved, save_approvals, shared_approvals_path
 from botwidget import __version__, acp_bots, acplink, channel, checkout, grok_relay, grokbot, hermesbot, startup, updates
 from botwidget.config import (
     APP_DIR,
@@ -543,6 +544,7 @@ class Faces(QObject):
             "debug": startup.from_checkout() and config.get("debug") is True,
             "confirm_remove": getattr(self, "_confirm_remove", ""),
             "json_text": getattr(self, "_json_text", ""), "json_error": getattr(self, "_json_error", ""),
+            "approvals_text": self._approvals_view(), "approvals_error": getattr(self, "_approvals_error", ""),
             "openbot": openbot_installed(), "automation_ready": automation_ready(),
             "sources_off": sorted(sources_off()),
             "gbot": gbot_installed(), "grok": self.grok_line(),
@@ -628,6 +630,8 @@ class Faces(QObject):
             self._bot_draft = draft
         elif page == "widget-json" and "editor" in fields:
             self._json_text = fields["editor"]
+        elif page == "approvals" and "editor" in fields:
+            self._approvals_text = fields["editor"]
         elif page == "connection" or (isinstance(page, str) and page.startswith("connection/")):
             draft = getattr(self, "_connection_draft", None) or acp_bots.blank_connection()
             for command, value in fields.items():
@@ -683,6 +687,27 @@ class Faces(QObject):
         self._apply_bots(previous)
         return ""
 
+    def _approvals_view(self) -> str:
+        """The text in the editor: what is being typed, else the file."""
+        if getattr(self, "_approvals_text", None) is not None:
+            return self._approvals_text
+        path = shared_approvals_path()
+        migrate_approved(path)
+        return json.dumps(load_approvals(path), indent=2) + "\n"
+
+    def _commit_approvals(self) -> str:
+        try:
+            data = json.loads(self._approvals_view())
+        except json.JSONDecodeError as error:
+            return f"approvals.json is not valid JSON ({error.msg})."
+        error = check_approvals(data)
+        if error:
+            return error
+        error = save_approvals(shared_approvals_path(), data)
+        if not error:
+            self._approvals_text = None
+        return error
+
     def _commit_connection(self) -> str:
         previous = acplink.configured_bots()
         rows, error = acp_bots.commit_connection(self._connection_draft or acp_bots.blank_connection(),
@@ -727,7 +752,8 @@ class Faces(QObject):
         kind, _, name = command.partition("/")
         if kind not in ("bot-remove", "connection-remove"):
             self._confirm_remove = ""
-        if command in ("action/save-bot", "action/save-json", "action/save-connection", "action/memory-save") or kind == "cycle":
+        if command in ("action/save-bot", "action/save-json", "action/save-approvals", "action/save-connection",
+                       "action/memory-save") or kind == "cycle":
             self._take(fields, page)
         if kind == "page" and (name == "bot" or name.startswith("bot/")):
             self._open_bot_form(name.split("/", 1)[1] if name.startswith("bot/") else "")
@@ -738,6 +764,9 @@ class Faces(QObject):
         if kind == "page" and name == "widget-json":
             self._json_text = acp_bots.public_text(widget_config())
             self._json_error = ""
+            return name
+        if kind == "page" and name == "approvals":
+            self._approvals_text, self._approvals_error = None, ""
             return name
         if kind == "page" and name == "memory/new":
             self._memory_id, self._memory_text, self._memory_scope, self._memory_topic = "", "", "user", ""
@@ -770,6 +799,9 @@ class Faces(QObject):
         if kind == "action" and name == "save-json":
             self._json_error = self._commit_json()
             return page if self._json_error else None
+        if kind == "action" and name == "save-approvals":
+            self._approvals_error = self._commit_approvals()
+            return page if self._approvals_error else None
         if kind == "action" and name == "save-connection":
             self._connection_error = self._commit_connection()
             return page if self._connection_error else None
@@ -835,11 +867,6 @@ class Faces(QObject):
         elif kind == "action" and name == "memory-save":
             self._save_memory()
             return "memory"
-        elif kind == "approval-forget":
-            from harness.agent.workspace import forget_approval
-            bot, _, prefix = name.partition("/")
-            forget_approval(bot, prefix)
-            return "approvals"
         elif kind == "memory-forget":
             self._forget_memory(name)
             return "memory"

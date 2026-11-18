@@ -10,7 +10,8 @@ from unittest import mock
 from harness.agent import tools as agent_tools
 from harness.agent.agent import LeanAgent
 from harness.agent.tools import Tools
-from harness.agent.workspace import ApproveRules, EditStore, check_rules, rule_matches, workspace_builtins
+from harness.agent.workspace import (ApproveRules, EditStore, check_approvals, check_rules, load_approvals, migrate_approved,
+                                     rule_matches, save_approvals, workspace_builtins)
 from tests.test_h7_diffs import ScriptModel, _Conn
 
 
@@ -41,11 +42,11 @@ class Decide(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.dir, True)
-        self.path = os.path.join(self.dir, "approved.json")
+        self.path = os.path.join(self.dir, "approvals.json")
 
     def test_false_wins_and_every_part_must_be_covered(self):
         rules = ApproveRules(self.path, {"shell git": True, "shell git push": False, "/rm/": False})
-        decide = lambda *texts: rules.decide(list(texts), session=True, saved=True)
+        decide = lambda *texts: rules.decide(list(texts), session=True)
         self.assertIs(decide("shell git status"), True)
         self.assertIs(decide("shell git push origin"), False)
         self.assertIs(decide("shell git status", "shell rm -rf x"), False)
@@ -53,15 +54,44 @@ class Decide(unittest.TestCase):
         self.assertIsNone(decide())
 
     def test_a_remembered_prefix_lives_for_the_session_or_in_the_file(self):
-        rules = ApproveRules(self.path)
+        rules = ApproveRules(self.path, bot="a")
         rules.remember("shell npm test", persist=False)
-        self.assertIs(rules.decide(["shell npm test"], session=True, saved=True), True)
-        self.assertIsNone(rules.decide(["shell npm test"], session=False, saved=True))
-        self.assertIsNone(ApproveRules(self.path).decide(["shell npm test"], session=True, saved=True))
+        self.assertIs(rules.decide(["shell npm test"], session=True), True)
+        self.assertIsNone(rules.decide(["shell npm test"], session=False))
+        self.assertIsNone(ApproveRules(self.path, bot="a").decide(["shell npm test"], session=True))
         rules.remember("shell make", persist=True)
-        again = ApproveRules(self.path)
-        self.assertIs(again.decide(["shell make all"], session=False, saved=True), True)
-        self.assertIsNone(again.decide(["shell make all"], session=True, saved=False))
+        self.assertIs(ApproveRules(self.path, bot="a").decide(["shell make all"], session=False), True)
+        self.assertIsNone(ApproveRules(self.path, bot="b").decide(["shell make all"], session=False))
+
+    def test_star_counts_for_every_bot_and_a_false_anywhere_wins(self):
+        with open(self.path, "w") as fh:
+            json.dump({"*": {"shell git": True, "shell git push": False}, "a": {"shell ls": True, "shell git log": False}}, fh)
+        a, b = ApproveRules(self.path, bot="a"), ApproveRules(self.path, bot="b")
+        self.assertIs(b.decide(["shell git status"], session=False), True)
+        self.assertIs(a.decide(["shell git push"], session=False), False)
+        self.assertIs(a.decide(["shell git log"], session=False), False)
+        self.assertIs(b.decide(["shell git log"], session=False), True)
+        self.assertIs(a.decide(["shell ls"], session=False), True)
+        self.assertIsNone(b.decide(["shell ls"], session=False))
+
+    def test_the_old_approved_json_of_each_bot_moves_into_the_file(self):
+        os.makedirs(os.path.join(self.dir, "agent", "a"))
+        old = os.path.join(self.dir, "agent", "a", "approved.json")
+        with open(old, "w") as fh:
+            json.dump(["shell make"], fh)
+        migrate_approved(self.path)
+        self.assertEqual(load_approvals(self.path), {"a": {"shell make": True}})
+        self.assertFalse(os.path.exists(old))
+        migrate_approved(self.path)
+        self.assertEqual(load_approvals(self.path), {"a": {"shell make": True}})
+
+    def test_bad_approvals_are_named_and_a_save_keeps_a_backup(self):
+        self.assertEqual(check_approvals({"*": {"x": True}, "a": {}}), "")
+        self.assertIn("object", check_approvals([]))
+        self.assertIn("a:", check_approvals({"a": {"x": "yes"}}))
+        self.assertEqual(save_approvals(self.path, {"a": {"x": True}}), "")
+        self.assertEqual(save_approvals(self.path, {"a": {"y": True}}), "")
+        self.assertEqual(json.load(open(self.path + ".bak")), {"a": {"x": True}})
 
 
 class ThroughAgent(unittest.IsolatedAsyncioTestCase):
