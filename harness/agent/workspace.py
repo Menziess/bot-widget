@@ -905,7 +905,9 @@ def _skill(skill_md: str) -> dict | None:
     if not name:
         return None
     text = " ".join(re.sub(r"^[>|][-+]?", "", (description.group(1) if description else "").strip()).split())
-    return {"name": name.group(1).strip().strip("\"'"), "description": text.strip("\"'")[:300], "path": skill_md}
+    deny = re.search(r"^deny-tools:\s*(.+)$", block, re.M)  # tools this skill must not get, as names or globs
+    return {"name": name.group(1).strip().strip("\"'"), "description": text.strip("\"'")[:300], "path": skill_md,
+            "deny": [part.strip() for part in deny.group(1).split(",") if part.strip()] if deny else []}
 
 
 def load_skills(paths: str) -> list[dict]:

@@ -232,6 +232,7 @@ class LeanAgent:
         skill = self.skills.get(name)
         if skill:
             from harness.agent.workspace import skill_body
+            store.set("skill_deny", ",".join(skill.get("deny") or []))
             store.set("skill", f"The user ran the skill /{skill['name']} (file: {skill['path']}). Follow it:\n"
                                + skill_body(skill)
                                + "\n\nCall the tool done when the skill is finished, wait_for_user when you wait for the "
@@ -291,6 +292,7 @@ class LeanAgent:
         self.tools.add(Tool("approval_log", "Who accepted or declined which action recently, and how (bubble, cli, timeout).",
                             {"type": "object", "properties": {}}, lambda _args: approvals.recent()))
         skill_on = bool(store.get("skill"))
+        self.tools.hide([pattern for pattern in store.get("skill_deny").split(",") if pattern])
         self._skill_ended = ""
         for name, what in SKILL_ENDINGS.items():
             if skill_on:

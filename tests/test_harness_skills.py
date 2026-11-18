@@ -117,9 +117,11 @@ class RecordingModel(ScriptModel):
     def __init__(self, scripts=()):
         super().__init__(scripts)
         self.sent = []
+        self.offered = []
 
     def stream(self, messages, tools=None, stop=None, opened=None):
         self.sent.append(" || ".join(str(m.get("content")) for m in messages))
+        self.offered.append({spec["function"]["name"] for spec in tools or []})
         yield from super().stream(messages, tools=tools, stop=stop, opened=opened)
 
 
@@ -236,6 +238,45 @@ class SkillSession(unittest.IsolatedAsyncioTestCase):
         await self.say(agent, session, "/parking")
         self.assertEqual(calls, [])
         self.assertIn("Het is voor vrijdag.", model.sent[0])
+
+
+class SkillDeniesTools(unittest.IsolatedAsyncioTestCase):
+    """A skill can say which tools it must not get: the parking skill has its own browser, and the bot opened two more."""
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        skill = os.path.join(self.tmp, "skills", "parking")
+        os.makedirs(skill)
+        with open(os.path.join(skill, "SKILL.md"), "w") as fh:
+            fh.write("---\nname: parking\ndescription: Book a parking ticket\ndeny-tools: browser_*, shell_background\n---\n"
+                     "STEP ONE: book it")
+        patched = mock.patch.dict(os.environ, {"HARNESS_CONTEXT_PATHS": os.path.join(self.tmp, "skills")})
+        patched.start()
+        self.addCleanup(patched.stop)
+
+    def test_the_front_matter_names_the_tools_the_skill_must_not_get(self):
+        from harness.agent.workspace import load_skills
+        skill = load_skills(os.path.join(self.tmp, "skills"))[0]
+        self.assertEqual(skill["deny"], ["browser_*", "shell_background"])
+
+    async def test_the_skill_is_not_offered_those_tools_and_the_chat_is(self):
+        model = RecordingModel([[("text", "Welke datum?"), SkillSession.end("wait_for_user")],
+                                [("text", "Hoi."), ("finish", "stop")]])
+        agent = LeanAgent("sk", model, folder=os.path.join(self.tmp, "bot"))
+        agent.on_connect(_Conn())
+        for name in ("browser_exec", "browser_tabs", "list_dir"):
+            agent.tools.add(Tool(name, "x", {"type": "object", "properties": {}}, lambda _a: "ok"))
+        session = (await agent.new_session(cwd=self.tmp)).session_id
+        block = lambda text: [type("Block", (), {"text": text})()]
+        await agent.prompt(session, block("/parking"))
+        self.assertIn("list_dir", model.offered[0])
+        self.assertTrue({"browser_exec", "browser_tabs"}.isdisjoint(model.offered[0]), "no browser in the skill")
+        self.assertIsNone(agent.tools.find("browser_exec"), "and a call for one finds nothing")
+        agent.stores[session].set("skill_active", "")
+        await agent.prompt(session, block("hallo"))
+        self.assertIn("browser_exec", model.offered[1], "the chat gets its browser back")
+        self.assertIsNotNone(agent.tools.find("browser_exec"))
 
 
 if __name__ == "__main__":

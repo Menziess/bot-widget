@@ -5,6 +5,7 @@ answer text of a tool is data: the agent wraps it before it enters the prompt, s
 "ignore your instructions" is quoted, not obeyed.
 """
 
+import fnmatch
 import os
 import shutil
 import time
@@ -164,6 +165,7 @@ class Tools:
         self.tools: dict[str, Tool] = {}
         self.workspace = workspace  # realpath or None
         self.permission = permission
+        self.hidden: set[str] = set()  # tools the model is not offered right now, for the skill that runs
         self._edit = None  # EditStore for undo
         self._stack = AsyncExitStack()
         self._session = None
@@ -230,10 +232,14 @@ class Tools:
         self.tools[tool.name] = tool
 
     def find(self, name: str) -> Tool | None:
-        return self.tools.get(name)
+        return None if name in self.hidden else self.tools.get(name)
 
     def specs(self) -> list[dict]:
-        return [tool.spec() for tool in self.tools.values()]
+        return [tool.spec() for tool in self.tools.values() if tool.name not in self.hidden]
+
+    def hide(self, patterns: list[str]) -> None:
+        """Hide the tools that match these names or globs; an empty list shows everything again."""
+        self.hidden = {name for name in self.tools if any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)}
 
     async def close(self) -> None:
         await self._stack.aclose()
