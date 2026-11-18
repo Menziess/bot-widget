@@ -14,6 +14,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from botwidget import config
 from botwidget.config import DOT_COLOR
 from botwidget.openbot import ApiResult
+from tests import action_labels, press
 
 
 def _temp_config():
@@ -108,24 +109,24 @@ class PendingDot(unittest.TestCase):
         self.assertTrue(self._dot_lit())
         self.window._sync_bubble({"messages": [], "activity": "reading"}, force=True)
         self.app.processEvents()
-        self.assertEqual([w.text() for w in self.window.bubble._control_widgets], ["Accept", "Decline"])
+        self.assertEqual(action_labels(self.window.bubble._control_widgets), ["Accept", "Decline"])
         offered = {"requestId": "p2", "reason": "shell git status", "always": True}
         self.window._set_attention({"prompts": [], "approvals": [offered], "browserTakeovers": []})
         self.window._sync_bubble({"messages": [], "activity": "reading"}, force=True)
         self.app.processEvents()
         buttons = self.window.bubble._control_widgets
-        self.assertEqual([w.text() for w in buttons], ["Accept", "Always allow", "Decline"])
-        buttons[0].click()
+        self.assertEqual(action_labels(buttons), ["Accept", "Always allow", "Decline"])
+        press(buttons, "Accept")
         self.window.acp.decide.assert_called_once_with("p2", True)
         self.window.acp.reset_mock()
         self.window._set_attention({"prompts": [], "approvals": [offered], "browserTakeovers": []})
         self.window._sync_bubble({"messages": [], "activity": "reading"}, force=True)
-        self.window.bubble._control_widgets[1].click()
+        press(self.window.bubble._control_widgets, "Always allow")
         self.window.acp.decide.assert_called_once_with("p2", "allow_always")
         self.window.acp.reset_mock()
         self.window._set_attention({"prompts": [], "approvals": [offered], "browserTakeovers": []})
         self.window._sync_bubble({"messages": [], "activity": "reading"}, force=True)
-        self.window.bubble._control_widgets[2].click()
+        press(self.window.bubble._control_widgets, "Decline")
         self.window.acp.decide.assert_called_once_with("p2", False)
 
     def test_should_open_the_cloud_with_the_question_when_an_approval_comes_and_the_pointer_is_elsewhere(self):
@@ -142,10 +143,10 @@ class PendingDot(unittest.TestCase):
         self.window._sync_bubble(chat, force=changed)
         self.app.processEvents()
         self.assertTrue(self.window.bubble.isVisible())
-        self.assertEqual([w.text() for w in self.window.bubble._control_widgets], ["Accept", "Decline"])
+        self.assertEqual(action_labels(self.window.bubble._control_widgets), ["Accept", "Decline"])
         self.window._sync_bubble(chat)
         self.app.processEvents()
-        self.assertEqual([w.text() for w in self.window.bubble._control_widgets], ["Accept", "Decline"],
+        self.assertEqual(action_labels(self.window.bubble._control_widgets), ["Accept", "Decline"],
                          "the next look does not fold the question back into dots")
         self.window.bubble.changed -= 1000
         self.window.bubble._tick()
@@ -153,6 +154,24 @@ class PendingDot(unittest.TestCase):
         self.window._sync_bubble(chat)
         self.assertEqual(self.window.bubble.kind, "", "and the next look does not open it again")
         self.assertTrue(self.window.has_pending, "the dot stays until it is answered")
+
+    def test_should_not_pulse_dots_under_a_question_the_bot_waits_for(self):
+        """The bot is not thinking while it waits for you: dots under the buttons only flicker as the thought changes."""
+        self.window.acp = mock.Mock()
+        self.window.acp.note.return_value = ""
+        self.window.acp.active.return_value = True
+        self.window.acp.stopped = False
+        self.window._pointer_on_head = lambda: True
+        self.window._set_attention({"prompts": [], "approvals": [{"requestId": "p1", "reason": "Write a file"}],
+                                   "browserTakeovers": []})
+        self.window._sync_bubble({"messages": [], "activity": "reading"}, force=True)
+        self.app.processEvents()
+        self.assertEqual(action_labels(self.window.bubble._control_widgets), ["Accept", "Decline"])
+        self.assertEqual(self.window.bubble._dots_lines, [], "no dots while the question waits")
+        self.window._set_attention({"prompts": [], "approvals": [], "browserTakeovers": []})
+        self.window._sync_bubble({"messages": [], "activity": "reading"}, force=True)
+        self.app.processEvents()
+        self.assertNotEqual(self.window.bubble._dots_lines, [], "the dots are back once nothing waits")
 
     def test_should_post_an_openbot_decline_on_the_existing_respond_path(self):
         calls = []
@@ -167,7 +186,7 @@ class PendingDot(unittest.TestCase):
         self.window._sync_pending_dot()
         self.window._sync_bubble({"messages": [], "activity": "reading"}, force=True)
         self.app.processEvents()
-        self.assertEqual([w.text() for w in self.window.bubble._control_widgets], ["Accept", "Decline"])
+        self.assertEqual(action_labels(self.window.bubble._control_widgets), ["Accept", "Decline"])
         import threading
         real = threading.Thread
 
@@ -178,7 +197,7 @@ class PendingDot(unittest.TestCase):
 
         with mock.patch("botwidget.qt_ui.face.api_post", side_effect=post), \
                 mock.patch("botwidget.qt_ui.face.threading.Thread", immediate):
-            self.window.bubble._control_widgets[1].click()
+            press(self.window.bubble._control_widgets, "Decline")
         self.assertEqual(calls, [("/v1/agents/t/approvals/p9/respond", {"decision": "decline"})])
 
     def test_should_keep_a_stuck_dot_when_a_poll_finds_no_local_approval(self):

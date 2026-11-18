@@ -20,6 +20,7 @@ import unittest
 import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from tests import action_labels, press
 
 from botwidget import (
     animation,
@@ -2658,7 +2659,7 @@ class BubbleHover(unittest.TestCase):
         switches = [w for w in bubble._control_widgets if isinstance(w, Switch)]
         buttons = [w for w in bubble._control_widgets if isinstance(w, ActionButton)]
         self.assertEqual(len(switches), 7)
-        self.assertEqual([w.text() for w in buttons], ["Quit Bot Widget"])
+        self.assertEqual(action_labels(buttons), ["Quit Bot Widget"])
         self.assertEqual([w.isChecked() for w in switches], [True, False, True, True, False, False, True])
         rows = [w.geometry().top() for w in switches]
         self.assertEqual(rows, sorted(rows), "in the order of the page")
@@ -4021,7 +4022,7 @@ class BubbleHover(unittest.TestCase):
         bubble = self.window.bubble
         self.assertEqual(bubble.kind, "think")
         self.assertIn("Welke kleur wil je?", bubble.full_text)
-        self.assertEqual([w.text() for w in bubble._control_widgets], ["Rood", "Blauw"])
+        self.assertEqual(action_labels(bubble._control_widgets), ["Rood", "Blauw"])
         self.assertEqual(bubble._entry.placeholderText(), "Type your answer…")
 
     def test_a_question_alone_makes_the_bot_count_as_working_and_shows_the_cloud(self):
@@ -4094,8 +4095,8 @@ class BubbleHover(unittest.TestCase):
         bubble = self.window.bubble
         self.assertIn("Run a command?", bubble.full_text)
         self.assertIn("rm -rf build", bubble.full_text)
-        self.assertEqual([w.text() for w in bubble._control_widgets], ["Accept", "Decline"])
-        bubble._control_widgets[1].click()
+        self.assertEqual(action_labels(bubble._control_widgets), ["Accept", "Decline"])
+        press(bubble._control_widgets, "Decline")
         self.wait_for(calls)
         self.assertEqual(calls, [("/v1/agents/t/approvals/p1/respond", {"decision": "decline"})])
 
@@ -4111,23 +4112,23 @@ class BubbleHover(unittest.TestCase):
         plain = {"requestId": "p1", "reason": "Write a file"}
         self.window._set_attention(self.attention(approvals=[plain]))
         self.window._sync_bubble(self.face.latest_chat("t"), force=True)
-        self.assertEqual([w.text() for w in self.window.bubble._control_widgets], ["Accept", "Decline"])
+        self.assertEqual(action_labels(self.window.bubble._control_widgets), ["Accept", "Decline"])
         offered = {"requestId": "p2", "reason": "shell git status", "always": True}
         self.window._set_attention(self.attention(approvals=[offered]))
         self.window._sync_bubble(self.face.latest_chat("t"), force=True)
         buttons = self.window.bubble._control_widgets
-        self.assertEqual([w.text() for w in buttons], ["Accept", "Always allow", "Decline"])
-        buttons[0].click()
+        self.assertEqual(action_labels(buttons), ["Accept", "Always allow", "Decline"])
+        press(buttons, "Accept")
         self.window.acp.decide.assert_called_once_with("p2", True)
         self.window._set_attention(self.attention(approvals=[offered]))
         self.window._sync_bubble(self.face.latest_chat("t"), force=True)
         self.window.acp.reset_mock()
-        self.window.bubble._control_widgets[1].click()
+        press(self.window.bubble._control_widgets, "Always allow")
         self.window.acp.decide.assert_called_once_with("p2", "allow_always")
         self.window._set_attention(self.attention(approvals=[offered]))
         self.window._sync_bubble(self.face.latest_chat("t"), force=True)
         self.window.acp.reset_mock()
-        self.window.bubble._control_widgets[2].click()
+        press(self.window.bubble._control_widgets, "Decline")
         self.window.acp.decide.assert_called_once_with("p2", False)
         self.window.acp = None
 

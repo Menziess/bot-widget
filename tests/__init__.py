@@ -74,3 +74,26 @@ _power._probe = lambda: False
 from botwidget.qt_ui import bubble_window as _bubble_window  # noqa: E402
 
 _bubble_window.LEAVE_MAX_S = 0.0
+
+
+def action_labels(widgets) -> list:
+    """The buttons the bubble shows, in order: a row of actions counts each one."""
+    labels = []
+    for widget in widgets:
+        labels += [label for label, _command in widget._actions] if hasattr(widget, "_actions") else [widget.text()]
+    return labels
+
+
+def press(widgets, label: str) -> None:
+    """Click the button with this label, the way a click on it would."""
+    for widget in widgets:
+        if hasattr(widget, "_actions"):
+            for name, command in widget._actions:
+                if name == label:
+                    widget.chosen.emit(command)
+                    return
+        elif widget.text() == label:
+            widget.click()
+            return
+    raise AssertionError(f"no button {label!r} in {action_labels(widgets)}")
+

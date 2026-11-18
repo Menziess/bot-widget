@@ -207,6 +207,12 @@ def control_block(control: str, label: str, command: str, on: bool | None = None
             "size": 15, "indent": 0, "prefix": "", "grey": False, "chunks": []}
 
 
+def actions_block(actions: list) -> dict:
+    """A row of buttons side by side: each action is a (label, command) pair, and none of them is a switch."""
+    return {**control_block("item", "", "", None),
+            "actions": [{"label": label, "command": command} for label, command in actions]}
+
+
 def plain_block(kind: str) -> dict:
     return {"kind": kind, "size": 0, "indent": 0, "prefix": "", "grey": False, "chunks": []}
 

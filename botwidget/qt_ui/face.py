@@ -43,6 +43,7 @@ from botwidget.config import (
 from botwidget.delivery import Outbox
 from botwidget.motion import STILL, Motion, offsets
 from botwidget.markdown import (
+    actions_block,
     block_text,
     code_block,
     control_block,
@@ -108,8 +109,8 @@ DRAG_RESTACK_S = 0.25
 # How long the line on how a /refresh went stays under the chat.
 REFRESH_NOTE_S = 8.0
 THINKING_TEXT = "Thinking"
-THINKING_FONT = 11  # quieter than the bubble's 15
 WATCHING_TEXT = "Watching"  # while the bot takes a screenshot
+THINKING_FONT = 11  # quieter than the bubble's 15
 THINKING_PAD_X = 8
 THINKING_PAD_Y = 3
 # On the wallpaper, not in the bubble, so this stays put when the bubble's glass slider is turned clear.
@@ -300,8 +301,8 @@ class FaceWindow(QWidget):
         self._asked = False  # a message went out: the next answer is its reply
         self._asked_at = 0.0  # when, as a time since the epoch
         self._think_quiet = False  # the cloud closed itself: a new thought does not open it again
-        # You just sent something: the cloud stays at its dots, also with the pointer on it, until the pointer has
         self._activity_line = ""  # what the bot is doing now: a tool and its arguments, or a thought
+        # You just sent something: the cloud stays at its dots, also with the pointer on it, until the pointer has
         # left and comes back, or you click the face. Only then do the thought and the field open.
         self._think_held = False
         self._last_bot = None
@@ -523,9 +524,9 @@ class FaceWindow(QWidget):
             return
         show = self._working and self.isVisible() and not self._has_attention() and not self._thinking_cloud_open()
         if show:
-            row.place()
             tool = (self._activity_line.split(None, 1) or [""])[0].lower()
             row.set_text(WATCHING_TEXT if "screenshot" in tool else THINKING_TEXT)
+            row.place()
             if not row.isVisible():
                 row.show()
                 desktops.apply(row)
@@ -1459,8 +1460,8 @@ class FaceWindow(QWidget):
         """Cloud during a running turn, the conversation as long as the bubble is pinned or fresh."""
         self._working = bool(chat.get("activity")) or self._has_attention()
         self._waiting = bool(chat.get("waiting"))
-        self._place_thinking()
         self._activity_line = chat.get("activity") or ""
+        self._place_thinking()
         if getattr(self, "_screenshot_active", False):
             # The screen is dark and the pointer is on the overlay: a bubble would only stay behind, empty.
             self.bubble.close_bubble("screenshot")
@@ -1567,7 +1568,8 @@ class FaceWindow(QWidget):
                     waiting = [{"role": "user", "text": attachments.label_with(item["text"], item["files"]),
                                 "queued": item["id"]} for item in self._queue]
                     blocks += conversation_blocks(waiting, self.bot_name, limit=len(waiting), max_chars=10 ** 9)
-                blocks += [role_panel("bot"), plain_block("dots")]
+                if not self._has_attention():  # the bot does not think while it waits for you
+                    blocks += [role_panel("bot"), plain_block("dots")]
             else:
                 blocks = [role_panel("bot"), plain_block("dots")]
             text = block_text(blocks) + ("|field" if expanded else "")
@@ -1960,10 +1962,10 @@ class FaceWindow(QWidget):
                     blocks.append(status_block(approval[field]))
             if approval.get("command"):
                 blocks.append(code_block([approval["command"]]))
-            blocks.append(control_block("button", "Accept", f"approve/{approval['requestId']}/accept"))
-            if approval.get("always"):
-                blocks.append(control_block("button", "Always allow", f"approve/{approval['requestId']}/always"))
-            blocks.append(control_block("button", "Decline", f"approve/{approval['requestId']}/decline"))
+            answers = [("Accept", "accept")] + ([("Always allow", "always")] if approval.get("always") else []) \
+                + [("Decline", "decline")]
+            blocks.append(actions_block([(label, f"approve/{approval['requestId']}/{answer}")
+                                         for label, answer in answers]))
         if self._attention.get("browserTakeovers"):
             blocks += [role_panel("bot"), status_block("The browser needs you: open OpenBot to take over.")]
         if self._attention_note:
