@@ -27,6 +27,9 @@ class SettingsInTheChatWindow(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self):
+        from PySide6.QtWidgets import QApplication
+        # Windows that earlier tests left behind can still show up while this one runs; they are not this test's.
+        self.left_behind = list(QApplication.topLevelWidgets())
         fd, path = tempfile.mkstemp(suffix=".json")
         os.close(fd)
         with open(path, "w") as fh:
@@ -102,7 +105,8 @@ class SettingsInTheChatWindow(unittest.TestCase):
 
     def _visible_ids(self):
         from PySide6.QtWidgets import QApplication
-        return {id(widget) for widget in QApplication.topLevelWidgets() if widget.isVisible()}
+        old = {id(widget) for widget in self.left_behind}
+        return {id(widget) for widget in QApplication.topLevelWidgets() if widget.isVisible() and id(widget) not in old}
 
     def _open_chat(self):
         self.window.pin()
