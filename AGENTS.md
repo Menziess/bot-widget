@@ -37,7 +37,7 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 - A new answer opens the bubble by itself and keeps it for the time it takes to read, unless the pointer is on it
 - Sending a message shows the cloud with dots until the bot has answered
 - The bubble stays while the pointer is on the face or the bubble, with a margin around it
-- The bubble also stays while words are typed or selected, a draft is in the field, a file waits to be sent, a form was typed in, a question or approval waits, or the bot works
+- The bubble also stays while words are typed or selected, a draft is in the field, a file waits to be sent, a form was typed in, or the bot works
 - Keyboard focus that came from resting the pointer on the face never keeps the bubble open, only typing, a click in the field or one of the reasons above does
 - The bubble closes shortly after the pointer left: 0.4 seconds, longer while the pointer moves faster than 300 pixels a second, never beyond 1.5 seconds
 - The bubble closes at once on Escape, when another face opens one, when a face is dragged, and when /screenshot starts
@@ -61,7 +61,7 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 - The picture waits in the field as an attachment, the bubble stays open for it, and nothing goes out until the user sends
 
 ### The bot
-- An approval shows a dot and a cloud with Accept and Decline, and Always allow when the agent offers to remember the command. It waits ten minutes, and is logged with who answered
+- An approval shows a dot and a cloud with Accept and Decline, and Always allow when the agent offers to remember the command. The cloud opens by itself when the approval comes, also when the pointer is elsewhere, and goes by itself after the time it takes to read unless the pointer is on it; the dot stays. It waits ten minutes, and is logged with who answered
 - A relay status of stuck or needs you shows that same dot. start and done do not. With no local approval the bubble shows the status line, not Accept or Decline
 - A turn that a restart cut off is picked up again when the widget is back
 - The eyes follow the pointer wherever it is

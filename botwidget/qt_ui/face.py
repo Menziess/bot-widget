@@ -1537,7 +1537,9 @@ class FaceWindow(QWidget):
                 return
             # Dots from the moment you ask, before the bot is marked as thinking.
             # Hover shows the thought and the field. Leaving shrinks it back to the dots.
-            expanded = self._think_expanded()
+            # A question or approval is the cloud's business, with or without the pointer: it closes by itself after
+            # the reading time, like an answer does.
+            expanded = self._think_expanded() or self._has_attention()
             self._think_on_bot = expanded
             if expanded:
                 blocks = [role_panel("bot")] + thought_blocks(chat.get("activity") or "")
@@ -1878,6 +1880,9 @@ class FaceWindow(QWidget):
                  for item in data.get(kind) or []}
         changed = known != {item.get("requestId") for kind in ("prompts", "approvals", "browserTakeovers")
                             for item in self._attention.get(kind) or []}
+        if known - {item.get("requestId") for kind in ("prompts", "approvals", "browserTakeovers")
+                    for item in self._attention.get(kind) or []}:
+            self._think_quiet = False  # something new waits for you: the cloud that closed itself opens again
         self._attention = data
         self._answers = {rid: answers for rid, answers in self._answers.items() if rid in known}
         self._answering &= known

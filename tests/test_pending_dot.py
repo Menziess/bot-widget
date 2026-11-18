@@ -128,6 +128,32 @@ class PendingDot(unittest.TestCase):
         self.window.bubble._control_widgets[2].click()
         self.window.acp.decide.assert_called_once_with("p2", False)
 
+    def test_should_open_the_cloud_with_the_question_when_an_approval_comes_and_the_pointer_is_elsewhere(self):
+        self.window.acp = mock.Mock()
+        self.window.acp.note.return_value = ""
+        self.window.acp.active.return_value = True
+        self.window.acp.stopped = False
+        self.window._pointer = lambda: (5000, 5000)
+        self.window._think_quiet = True  # the dots closed themselves earlier
+        chat = {"messages": [], "activity": "reading"}
+        plain = {"requestId": "p1", "reason": "Write a file"}
+        changed = self.window._set_attention({"prompts": [], "approvals": [plain], "browserTakeovers": []})
+        self.window._sync_pending_dot()
+        self.window._sync_bubble(chat, force=changed)
+        self.app.processEvents()
+        self.assertTrue(self.window.bubble.isVisible())
+        self.assertEqual([w.text() for w in self.window.bubble._control_widgets], ["Accept", "Decline"])
+        self.window._sync_bubble(chat)
+        self.app.processEvents()
+        self.assertEqual([w.text() for w in self.window.bubble._control_widgets], ["Accept", "Decline"],
+                         "the next look does not fold the question back into dots")
+        self.window.bubble.changed -= 1000
+        self.window.bubble._tick()
+        self.assertEqual(self.window.bubble.kind, "", "it goes by itself after the reading time")
+        self.window._sync_bubble(chat)
+        self.assertEqual(self.window.bubble.kind, "", "and the next look does not open it again")
+        self.assertTrue(self.window.has_pending, "the dot stays until it is answered")
+
     def test_should_post_an_openbot_decline_on_the_existing_respond_path(self):
         calls = []
 
