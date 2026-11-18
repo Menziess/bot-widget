@@ -366,6 +366,7 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
         self.assertIn("job_cancel", model.tool_names)
         self.assertIn("Same permission", model.specs)
         self.assertIn("Background shell", model.seen[0])
+        self.assertIn("longer than a minute", model.seen[0], "the bot is told when to use it")
 
     async def test_a_job_that_finishes_during_a_turn_waits_until_the_turn_ends(self):
         """Should queue every completion and deliver it afterwards, in order."""

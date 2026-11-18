@@ -28,7 +28,8 @@ SYSTEM = (
 JOB_RULES = (
     "Background shell: shell_background starts a command and returns at once, with the same "
     "permission as shell. jobs lists those commands and job_cancel stops one. When a command "
-    "exits, its exit code and output arrive here as a new message."
+    "exits, its exit code and output arrive here as a new message. Use shell_background for a command that can run "
+    "longer than a minute or that waits, retries or watches; use shell for a quick one."
 )
 
 # Hosts that mean the model server is on this machine, not a remote API.
