@@ -1,6 +1,6 @@
 # bot-widget
 
-- Stay on the default branch. Do not create a branch unless asked. A branch that is asked for starts with `feature/`. Ask before committing or pushing.
+- Stay on the default branch. Do not create a branch unless asked. A branch that is asked for starts with `feature/`. Ask before committing. Never push on your own: wait until the owner says push, also after a green check or an earlier yes, because a yes covers that push only. Commits may pile up locally; the owner often pushes several of them in one go.
 - `botwidget/` is toolkit-free logic; `botwidget/qt_ui/` is the PySide6 UI.
 - Test: `QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -t .` (unittest, not pytest; logic plus a few offscreen Qt tests).
 - `git config core.hooksPath .githooks` so `.githooks/pre-push` runs that command when main is pushed and rejects the push when it fails.
