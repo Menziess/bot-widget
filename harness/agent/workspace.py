@@ -892,20 +892,44 @@ def load_workspace_rules(workspace: str) -> str:
     return "".join(reversed(parts))
 
 
-def _skill_line(skill_md: str) -> str:
-    """'- name: description (path)' from the front matter of a SKILL.md, or '' when it has no name."""
+def _skill(skill_md: str) -> dict | None:
+    """name, description and path from the front matter of a SKILL.md, or None when it has no name."""
     try:
         with open(skill_md, errors="replace") as fh:
             head = fh.read(2000)
     except OSError:
-        return ""
+        return None
     block = head.split("---", 2)[1] if head.startswith("---") and head.count("---") >= 2 else ""
     name = re.search(r"^name:\s*(.+)$", block, re.M)
     description = re.search(r"^description:\s*(.*?)(?=^\S|\Z)", block, re.M | re.S)
     if not name:
-        return ""
+        return None
     text = " ".join(re.sub(r"^[>|][-+]?", "", (description.group(1) if description else "").strip()).split())
-    return f"- {name.group(1).strip()}: {text.strip(chr(34) + chr(39))[:300]} ({skill_md})"
+    return {"name": name.group(1).strip().strip("\"'"), "description": text.strip("\"'")[:300], "path": skill_md}
+
+
+def load_skills(paths: str) -> list[dict]:
+    """The skills in a HARNESS_CONTEXT_PATHS list: a folder's own SKILL.md and that of each folder inside it."""
+    found: list[dict] = []
+    for entry in (paths or "").split(os.pathsep):
+        path = os.path.realpath(os.path.expanduser(entry.strip())) if entry.strip() else ""
+        if not os.path.isdir(path):
+            continue
+        for skill_md in [os.path.join(path, "SKILL.md"), *sorted(glob.glob(os.path.join(path, "*", "SKILL.md")))]:
+            skill = _skill(skill_md) if os.path.isfile(skill_md) else None
+            if skill and skill["path"] not in {known["path"] for known in found}:
+                found.append(skill)
+    return found
+
+
+def skill_body(skill: dict, limit: int = 20000) -> str:
+    """The SKILL.md without its front matter."""
+    try:
+        with open(skill["path"], errors="replace") as fh:
+            text = fh.read(limit)
+    except OSError:
+        return ""
+    return text.split("---", 2)[2].strip() if text.startswith("---") and text.count("---") >= 2 else text
 
 
 def load_context_paths(paths: str) -> str:
@@ -920,17 +944,12 @@ def load_context_paths(paths: str) -> str:
     except ValueError:
         limit = MAX_RULE_CHARS
     texts: list[str] = []
-    skills: list[str] = []
     for entry in (paths or "").split(os.pathsep):
         path = os.path.realpath(os.path.expanduser(entry.strip())) if entry.strip() else ""
         if os.path.isfile(path):
             found = (os.path.basename(path), path)
         elif os.path.isdir(path):
             found = _rules_in(path)
-            for skill_md in [os.path.join(path, "SKILL.md"), *sorted(glob.glob(os.path.join(path, "*", "SKILL.md")))]:
-                line = _skill_line(skill_md) if os.path.isfile(skill_md) else ""
-                if line and line not in skills:
-                    skills.append(line)
         else:
             continue
         if found and not _is_secret_path(found[1]):
@@ -940,6 +959,7 @@ def load_context_paths(paths: str) -> str:
             except OSError:
                 pass
     out = "".join(texts)[:limit]
+    skills = [f"- {s['name']}: {s['description']} ({s['path']})" for s in load_skills(paths)]
     if skills:
         out += "\n# Skills. When the task matches one, read its SKILL.md first:\n" + "\n".join(skills)[:4000]
     return out

@@ -186,6 +186,9 @@ def build(store, bot: str, model_window: int = 0, model=None, workspace: str | N
     facts = store.get("facts")
     if facts:
         _push("system", "Facts to keep:\n" + facts)
+    skill = store.get("skill")
+    if skill:
+        _push("system", skill)
 
     # ── Recent turns (verbatim) ────────────────────────────────────
     recent = list(reversed(store.messages(limit=KEEP_TURNS * 2)))

@@ -209,6 +209,7 @@ Extra instructions and skills come from folders and files of your choice, set in
 - A folder gives its `AGENTS.md`, `CLAUDE.md` or `.clinerules` as instructions
 - A folder that holds a `SKILL.md`, or folders that each hold one, gives skills
 - A skill is listed by name, description and path. The bot reads its `SKILL.md` when the task matches
+- Each skill is also a slash command, such as `/parking`. Typing it makes the bot follow that skill's whole text, in this turn and the ones after it, until you run another. What you type after the name stays in the message
 - The text of the instructions is cut at `HARNESS_RULES_MAX_CHARS`, and the skill list at 4000 characters
 - The bot reads the skill file itself, which it may do in any folder. Nothing in a skill runs by itself
 - Edit widget.json on the `/bots` page saves this and restarts only that bot

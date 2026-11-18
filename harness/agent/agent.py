@@ -16,8 +16,8 @@ import threading
 import time
 
 from acp import PROTOCOL_VERSION
-from acp.schema import (AgentMessageChunk, AgentThoughtChunk, InitializeResponse, LoadSessionResponse,
-                        NewSessionResponse,
+from acp.schema import (AgentMessageChunk, AgentThoughtChunk, AvailableCommand, AvailableCommandsUpdate,
+                        InitializeResponse, LoadSessionResponse, NewSessionResponse,
                         PermissionOption, PromptResponse, TextContentBlock, ToolCallProgress, ToolCallStart,
                         ToolCallUpdate, UsageUpdate, UserMessageChunk)
 
@@ -75,6 +75,9 @@ class LeanAgent:
                                   os.path.basename(os.path.abspath(self.folder)))
         # HARNESS_SHELL_READONLY=0 makes every shell command ask again.
         self.shell_readonly_free = os.environ.get("HARNESS_SHELL_READONLY", "1") != "0"
+        from harness.agent.workspace import load_skills
+        self.skills = {skill["name"].lower(): skill for skill in load_skills(os.environ.get("HARNESS_CONTEXT_PATHS") or "")}
+        self._tasks: set = set()  # a task that nothing refers to can be dropped before it ends
         self.conn = None
         self._cancelled: set[str] = set()
         self._turns: set[str] = set()  # a session with a turn running: only then does a cancel mean anything
@@ -106,6 +109,7 @@ class LeanAgent:
         session_id = f"{self.bot}-{int(time.time())}"
         self._cwds[session_id] = cwd or ""
         self.stores[session_id] = SessionStore(self.folder)
+        self._advertise_skills(session_id)
         return NewSessionResponse(session_id=session_id)
 
     async def load_session(self, cwd: str, session_id: str, mcp_servers=None,
@@ -113,6 +117,7 @@ class LeanAgent:
         """A restart finds the conversation where it was: the same file, replayed to the widget."""
         store = self.stores.setdefault(session_id, SessionStore(self.folder))
         self._cwds[session_id] = cwd or ""
+        self._advertise_skills(session_id)
         for message in store.messages(limit=context.KEEP_TURNS * 2):
             if message["role"] == "tool":
                 # An ordinary tool line stays out of the bubble. A decline must still be said,
@@ -124,6 +129,26 @@ class LeanAgent:
             await self._chunk(session_id, "user" if message["role"] == "user" else "agent", message["text"])
         # A turn that was open when the process went away: say so, so the widget can ask it to pick up again.
         return LoadSessionResponse(field_meta={"interrupted": True}) if store.get("open_turn") else None
+
+    def _advertise_skills(self, session_id: str) -> None:
+        """Each skill becomes a slash command in the widget, sent once the session exists."""
+        if not self.skills or self.conn is None:
+            return
+        update = AvailableCommandsUpdate(session_update="available_commands_update", available_commands=[
+            AvailableCommand(name=skill["name"], description=skill["description"]) for skill in self.skills.values()])
+        task = asyncio.get_running_loop().create_task(self.conn.session_update(session_id=session_id, update=update))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    def _run_skill(self, store: SessionStore, text: str) -> None:
+        """A message that starts with /name of a skill puts that skill's text in front of the model, for this turn and
+        the ones after it, until another skill is run."""
+        name = text.split(None, 1)[0][1:].lower() if text.startswith("/") and text.split() else ""
+        skill = self.skills.get(name)
+        if skill:
+            from harness.agent.workspace import skill_body
+            store.set("skill", f"The user ran the skill /{skill['name']} (file: {skill['path']}). Follow it:\n"
+                               + skill_body(skill))
 
     async def cancel(self, session_id: str, **kwargs) -> None:
         """Stop the turn now. A cancel with no turn running is dropped: it used to arrive before the
@@ -146,6 +171,7 @@ class LeanAgent:
         text = "".join(block.text for block in prompt if getattr(block, "text", ""))
         if text != RESUME_PROMPT:
             store.add("user", text)
+            self._run_skill(store, text)
         store.set("open_turn", "1")
         self._cancelled.discard(session_id)
         self._aio = asyncio.get_running_loop()
