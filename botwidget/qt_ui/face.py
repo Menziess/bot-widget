@@ -109,6 +109,7 @@ DRAG_RESTACK_S = 0.25
 REFRESH_NOTE_S = 8.0
 THINKING_TEXT = "Thinking"
 THINKING_FONT = 11  # quieter than the bubble's 15
+WATCHING_TEXT = "Watching"  # while the bot takes a screenshot
 THINKING_PAD_X = 8
 THINKING_PAD_Y = 3
 # On the wallpaper, not in the bubble, so this stays put when the bubble's glass slider is turned clear.
@@ -134,12 +135,20 @@ class ThinkingRow(QWidget):
         font.setPixelSize(THINKING_FONT)
         self.setFont(font)
         self._ink = color(SAND_INK_SOFT)
-        metrics = QFontMetrics(font)
-        self.setFixedSize(metrics.horizontalAdvance(THINKING_TEXT) + 2 * THINKING_PAD_X,
-                          metrics.height() + 2 * THINKING_PAD_Y)
+        self._metrics = QFontMetrics(font)
+        self._text = THINKING_TEXT
+        self.setFixedSize(self._width_of(THINKING_TEXT, WATCHING_TEXT), self._metrics.height() + 2 * THINKING_PAD_Y)
+
+    def _width_of(self, *texts: str) -> int:
+        return max(self._metrics.horizontalAdvance(text) for text in texts) + 2 * THINKING_PAD_X
 
     def text(self) -> str:
-        return THINKING_TEXT
+        return self._text
+
+    def set_text(self, text: str):
+        if text != self._text:
+            self._text = text
+            self.update()
 
     def _apply_flags(self):
         layer = window_layer(getattr(self, "face", None))
@@ -183,7 +192,7 @@ class ThinkingRow(QWidget):
         painter.drawRoundedRect(rect, radius, radius)
         painter.setPen(self._ink)
         painter.setFont(self.font())
-        painter.drawText(self.rect(), Qt.AlignHCenter | Qt.AlignVCenter, THINKING_TEXT)
+        painter.drawText(self.rect(), Qt.AlignHCenter | Qt.AlignVCenter, self._text)
 
 
 def global_pointer() -> bool:
@@ -292,6 +301,7 @@ class FaceWindow(QWidget):
         self._asked_at = 0.0  # when, as a time since the epoch
         self._think_quiet = False  # the cloud closed itself: a new thought does not open it again
         # You just sent something: the cloud stays at its dots, also with the pointer on it, until the pointer has
+        self._activity_line = ""  # what the bot is doing now: a tool and its arguments, or a thought
         # left and comes back, or you click the face. Only then do the thought and the field open.
         self._think_held = False
         self._last_bot = None
@@ -514,6 +524,8 @@ class FaceWindow(QWidget):
         show = self._working and self.isVisible() and not self._has_attention() and not self._thinking_cloud_open()
         if show:
             row.place()
+            tool = (self._activity_line.split(None, 1) or [""])[0].lower()
+            row.set_text(WATCHING_TEXT if "screenshot" in tool else THINKING_TEXT)
             if not row.isVisible():
                 row.show()
                 desktops.apply(row)
@@ -1448,6 +1460,7 @@ class FaceWindow(QWidget):
         self._working = bool(chat.get("activity")) or self._has_attention()
         self._waiting = bool(chat.get("waiting"))
         self._place_thinking()
+        self._activity_line = chat.get("activity") or ""
         if getattr(self, "_screenshot_active", False):
             # The screen is dark and the pointer is on the overlay: a bubble would only stay behind, empty.
             self.bubble.close_bubble("screenshot")

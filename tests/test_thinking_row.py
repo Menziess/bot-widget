@@ -76,7 +76,7 @@ class ThinkingRowUnderWorkingFace(unittest.TestCase):
             if widget is face or not widget.isVisible():
                 continue
             text = widget.text() if callable(getattr(widget, "text", None)) else ""
-            if text != "Thinking":
+            if text not in ("Thinking", "Watching"):
                 continue
             if widget.parent() is face or getattr(widget, "face", None) is face:
                 found.append(widget)
@@ -92,6 +92,14 @@ class ThinkingRowUnderWorkingFace(unittest.TestCase):
     def test_should_hide_the_row_when_the_face_is_idle(self):
         self._work(self.window, False)
         self.assertEqual(self._rows(self.window), [])
+
+    def test_should_say_watching_while_the_bot_takes_a_screenshot_and_thinking_again_after(self):
+        self.window._sync_bubble({"messages": [], "activity": "browser_screenshot {}"})
+        self.assertEqual(self._rows(self.window)[0].text(), "Watching")
+        self.window._sync_bubble({"messages": [], "activity": "shell {'command': 'ls'}"})
+        self.assertEqual(self._rows(self.window)[0].text(), "Thinking")
+        self.window._sync_bubble({"messages": [], "activity": "screenshot"})
+        self.assertEqual(self._rows(self.window)[0].text(), "Watching")
 
     def test_should_show_thinking_under_a_working_face(self):
         from PySide6.QtCore import QPoint, Qt
