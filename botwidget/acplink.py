@@ -134,8 +134,9 @@ def options_for(agent_id: str) -> dict:
 
 
 def _bubble_line(text: str) -> str:
-    """One short line for the cloud: the first line of a thought, cut where the bubble would."""
-    line = " ".join((text or "").split())
+    """One short line for the cloud: the line a thought is on, cut where the bubble would."""
+    lines = [" ".join(line.split()) for line in (text or "").splitlines()]
+    line = next((line for line in reversed(lines) if line), "")
     return line[:ACTIVITY_CHARS]
 
 
@@ -157,6 +158,7 @@ class AcpLink:
         # Read by the face; guarded by the lock because the agent's thread writes them.
         self._lock = threading.Lock()
         self._activity = ""
+        self._thought = ""  # what has come in of the thought that is going by; it arrives in pieces
         self._note = ""
         self._context = ""
         self._sending = False
@@ -358,12 +360,14 @@ class AcpLink:
                 self.failed = f"{self.target} did not start: {error}"
                 self._note = self.failed
                 self._activity = ""
+                self._thought = ""
                 self._sending = False
             from botwidget.dev import note_tool
             note_tool(False)
             return
         with self._lock:
             self._activity = ""
+            self._thought = ""
             self._sending = False
             if turn.error:
                 self.stopped = True
@@ -507,8 +511,10 @@ class AcpLink:
                     self._history.append({"role": role, "text": update.text})
                 return
             if update.kind == "thought" and update.text.strip():
-                self._activity = _bubble_line(update.text)
+                self._thought += update.text
+                self._activity = _bubble_line(self._thought)
             elif update.kind == "tool":
+                self._thought = ""
                 self._activity = _bubble_line(update.text) or self._activity
                 tool = True
             elif update.kind == "usage":
@@ -537,6 +543,7 @@ class AcpLink:
                 self.messages.append({"role": "user", "text": update.text})
                 wake = True
             elif update.kind == "text" and update.text:
+                self._thought = ""
                 self._said = True
                 # shortcut: one answer message per turn; ACP message ids are ignored for now.
                 if self.messages and self.messages[-1]["role"] == "bot":

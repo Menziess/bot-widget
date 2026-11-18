@@ -317,6 +317,20 @@ class AcpTurns(unittest.TestCase):
         self.assertIn("did not start", link.chat()["failed"])
         self.assertTrue(link.stopped)
 
+    def test_a_thought_that_arrives_in_pieces_shows_as_one_growing_line_not_as_the_last_piece(self):
+        """Should keep what has come in of the thought: the cloud showed "DE" and "." as the thought went by."""
+        from harness.acp_client import Update
+        link = self.link()
+        self.assertTrue(wait_for(lambda: not link.active()))
+        for piece in ("Laat", " me", " even", " kij", "ken"):
+            link._updated(Update("thought", piece))
+        self.assertEqual(link.chat()["activity"], "Laat me even kijken")
+        link._updated(Update("thought", "\nVolgende"))
+        self.assertEqual(link.chat()["activity"], "Volgende", "the line the thought is on now")
+        link._updated(Update("tool", "shell ls"))
+        link._updated(Update("thought", "Klaar"))
+        self.assertEqual(link.chat()["activity"], "Klaar", "a thought after a tool starts over")
+
     def test_a_second_send_waits_and_a_silent_turn_says_nothing_came_back(self):
         """Should refuse a send while one is running, and say so when a turn ends with no words."""
         import asyncio
