@@ -358,7 +358,8 @@ Some tests are skipped on macOS and only run on Linux and Windows, so a green ru
 scripts/test-linux
 ```
 
-- Docker needs a running engine, for example OrbStack
+- Docker needs a running engine, for example OrbStack (`orb start`), which you stop afterwards with `orb stop`
+- Rather than start or stop OrbStack while the script runs, wait until it has finished: an engine that stops in the middle shows up as `Error waiting for container: Canceled: grpc: the client connection is closing`, which is no failing test
 - It tests the last commit (`git archive HEAD`), so what is not committed is not in it
 - The container is `python:3.12` with the Qt libraries from the ubuntu job in ci.yml, and the package is installed like a user would
 - The output is the failing tests and the summary line, and the script exits with the status of the tests
