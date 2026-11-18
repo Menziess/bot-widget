@@ -110,6 +110,7 @@ DRAG_RESTACK_S = 0.25
 REFRESH_NOTE_S = 8.0
 THINKING_TEXT = "Thinking"
 WATCHING_TEXT = "Watching"  # while the bot takes a screenshot
+WATCHING_HOLD_S = 2.5
 THINKING_FONT = 11  # quieter than the bubble's 15
 THINKING_PAD_X = 8
 THINKING_PAD_Y = 3
@@ -301,7 +302,7 @@ class FaceWindow(QWidget):
         self._asked = False  # a message went out: the next answer is its reply
         self._asked_at = 0.0  # when, as a time since the epoch
         self._think_quiet = False  # the cloud closed itself: a new thought does not open it again
-        self._activity_line = ""  # what the bot is doing now: a tool and its arguments, or a thought
+        self._watching_until = 0.0  # a screenshot is over in a blink: the row keeps saying Watching for a moment
         # You just sent something: the cloud stays at its dots, also with the pointer on it, until the pointer has
         # left and comes back, or you click the face. Only then do the thought and the field open.
         self._think_held = False
@@ -524,8 +525,7 @@ class FaceWindow(QWidget):
             return
         show = self._working and self.isVisible() and not self._has_attention() and not self._thinking_cloud_open()
         if show:
-            tool = (self._activity_line.split(None, 1) or [""])[0].lower()
-            row.set_text(WATCHING_TEXT if "screenshot" in tool else THINKING_TEXT)
+            row.set_text(WATCHING_TEXT if time.monotonic() < self._watching_until else THINKING_TEXT)
             row.place()
             if not row.isVisible():
                 row.show()
@@ -1460,7 +1460,8 @@ class FaceWindow(QWidget):
         """Cloud during a running turn, the conversation as long as the bubble is pinned or fresh."""
         self._working = bool(chat.get("activity")) or self._has_attention()
         self._waiting = bool(chat.get("waiting"))
-        self._activity_line = chat.get("activity") or ""
+        if "screenshot" in (chat.get("activity") or "").lower():
+            self._watching_until = time.monotonic() + WATCHING_HOLD_S
         self._place_thinking()
         if getattr(self, "_screenshot_active", False):
             # The screen is dark and the pointer is on the overlay: a bubble would only stay behind, empty.
