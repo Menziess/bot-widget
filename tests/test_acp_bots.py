@@ -426,7 +426,9 @@ class ApprovalsPage(WidgetSave):
         self.assertEqual(self.box.menu_command("page/approvals", "bots"), "approvals")
         self.assertIn("shell git status", self.page())
         text = json.dumps({"*": {"shell git status": True}, "alpha": {"shell rm": False}})
+        self.box._close_bubbles = lambda: self.calls.append("closed")
         self.assertIsNone(self.box.menu_command("action/save-approvals", "approvals", {"editor": text}))
+        self.assertIn("closed", self.calls, "a save closes the bubble, as on the other pages")
         self.assertEqual(json.load(open(self.path)), json.loads(text))
         self.assertEqual(json.load(open(self.path + ".bak")), {"*": {"shell git status": True}})
 
@@ -434,11 +436,13 @@ class ApprovalsPage(WidgetSave):
         with open(self.path, "w") as fh:
             json.dump({"*": {}}, fh)
         self.box.menu_command("page/approvals", "bots")
+        self.box._close_bubbles = lambda: self.calls.append("closed")
         for text, reason in (("{", "not valid JSON"), ('{"alpha": {"shell ls": "yes"}}', "alpha")):
             self.assertEqual(self.box.menu_command("action/save-approvals", "approvals", {"editor": text}), "approvals")
             self.assertIn(reason, self.page())
             self.assertIn(text.replace('"', '\\"'), self.page())
         self.assertEqual(json.load(open(self.path)), {"*": {}})
+        self.assertNotIn("closed", self.calls, "a refused edit stays open")
 
 
 class MemoryPage(WidgetSave):

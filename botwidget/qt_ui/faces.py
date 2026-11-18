@@ -706,6 +706,7 @@ class Faces(QObject):
         error = save_approvals(shared_approvals_path(), data)
         if not error:
             self._approvals_text = None
+            self._close_bubbles()
         return error
 
     def _commit_connection(self) -> str:
