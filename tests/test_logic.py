@@ -790,6 +790,18 @@ class BubbleLayout(unittest.TestCase):
         self.assertGreater(rects[1][0], rects[0][0] + rects[0][1], "a gap between the panels")
         self.assertEqual(rects[-1][0] + rects[-1][1], content_height(panels))
 
+    def test_the_text_of_a_page_with_a_wide_editor_is_as_wide_as_the_editor(self):
+        """Should not wrap the explanation at the width of a chat message when the page is much wider."""
+        from botwidget import menu_pages
+        panels = bubble_layout.bubble_panels(self.measure, menu_pages.page_blocks("widget-json", {"json_text": "{}"}))
+        editor = max(line["width"] for panel in panels for line in panel["lines"] if line.get("control") == "editor")
+        self.assertGreater(editor, 400)
+        help_lines = [line for panel in panels for line in panel["lines"]
+                      if line["kind"] == "text" and "Checked before saving" in " ".join(w[0] for w in line["words"])]
+        self.assertGreater(help_lines[0]["width"], 300, "the first line of the explanation fills the page")
+        text_lines = [line for panel in panels for line in panel["lines"] if line["kind"] == "text" and line["words"]]
+        self.assertLessEqual(len(text_lines), 4, "the heading and an explanation of three lines at most")
+
     def test_a_block_the_layout_does_not_know_is_left_out(self):
         """Should skip a kind it cannot draw, and a panel that then has no lines."""
         laid, _width = bubble_layout.md_layout(self.measure, [{"kind": "nope"}], 200)

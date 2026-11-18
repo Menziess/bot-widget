@@ -221,8 +221,7 @@ def md_layout(measure, text, max_w: int = BUBBLE_MAX_W) -> tuple:
     return laid, widest
 
 
-def bubble_panels(measure, blocks: list, max_w: int = BUBBLE_MAX_W) -> list:
-    """Panels with broken lines; the widest text comes with them."""
+def _panels(measure, blocks: list, max_w: int) -> list:
     content_w = max(MIN_CONTENT_W, max_w - 2 * PAD_BODY - 2 * PAD_PANEL_X)
     panels = []
     for panel in split_panels(blocks):
@@ -231,4 +230,16 @@ def bubble_panels(measure, blocks: list, max_w: int = BUBBLE_MAX_W) -> list:
             continue
         panels.append({"role": panel["role"], "copy": panel.get("copy", ""), "queued": panel.get("queued", ""),
                        "back": panel.get("back", ""), "lines": lines, "text_w": widest})
+    return panels
+
+
+def bubble_panels(measure, blocks: list, max_w: int = BUBBLE_MAX_W) -> list:
+    """Panels with broken lines; the widest text comes with them."""
+    panels = _panels(measure, blocks, max_w)
+    content_w = max(MIN_CONTENT_W, max_w - 2 * PAD_BODY - 2 * PAD_PANEL_X)
+    wide = max((panel["text_w"] for panel in panels), default=0)
+    if wide > content_w:
+        # A control wider than a chat message (an editor, say) makes the bubble that wide: the text takes the
+        # whole width too, instead of wrapping in a narrow column beside it.
+        panels = _panels(measure, blocks, wide + 2 * PAD_BODY + 2 * PAD_PANEL_X)
     return panels
