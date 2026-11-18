@@ -350,6 +350,20 @@ On Linux the installer names its command `bot-widget` so it does not clash with 
 - Everything that touches Qt lives in `botwidget/qt_ui/`
 - `BOT_WIDGET_OPENBOT_DIR` points the widget at another OpenBot data folder, handy for testing
 
+### Testing on Linux from a Mac
+
+Some tests are skipped on macOS and only run on Linux and Windows, so a green run on your Mac can still fail on GitHub. Run the Linux job in Docker before you push.
+
+```sh
+scripts/test-linux
+```
+
+- Docker needs a running engine, for example OrbStack
+- It tests the last commit (`git archive HEAD`), so what is not committed is not in it
+- The container is `python:3.12` with the Qt libraries from the ubuntu job in ci.yml, and the package is installed like a user would
+- The output is the failing tests and the summary line, and the script exits with the status of the tests
+- Windows cannot run this way, only GitHub runs it
+
 ## Releasing
 
 The git tag is the version. Push a tag and the release workflow builds and publishes everything.
