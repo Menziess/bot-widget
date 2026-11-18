@@ -472,14 +472,15 @@ class LeanAgent:
                 result = await self._handle_write_file(session_id, call, arguments, store, title, verdict is False)
                 return result
             if not remembered:
-                prefix = self._shell_prefix(command) if name in ("shell", "shell_background") else ""
-                choice = await self._ask_choice(session_id, call["id"], title, prefix)
+                prefixes = self._shell_prefixes(command) if name in ("shell", "shell_background") else []
+                choice = await self._ask_choice(session_id, call["id"], title, ", ".join(prefixes))
                 if not choice:
                     await self._tool_call(session_id, call["id"], title, "completed", "failed")
                     return self._note_tool(store, name, "declined by the user; nothing was done",
                                            "The user declined this action. Do not try it another way.")
-                if choice == "allow_always" and prefix:
-                    self.shell_allow.add(getattr(self.tools, "workspace", "") or "", prefix)
+                if choice == "allow_always":
+                    for prefix in prefixes:
+                        self.shell_allow.add(getattr(self.tools, "workspace", "") or "", prefix)
                 self._remember(name, arguments)
         try:
             result = tool.run(arguments)
@@ -778,9 +779,10 @@ class LeanAgent:
         if mode not in ("allow", "allow_session") or self._verdict(name, arguments) is False:
             return
         if name in ("shell", "shell_background"):
-            prefix = self._shell_prefix(str(arguments.get("command") or ""))
-            rule = f"shell {prefix}" if prefix else ""
-        elif name in ("write_file", "edit", "delete_file"):
+            for prefix in self._shell_prefixes(str(arguments.get("command") or "")):
+                self.rules.remember(f"shell {prefix}", persist=mode == "allow")
+            return
+        if name in ("write_file", "edit", "delete_file"):
             rule = f"{name} {os.path.dirname(self._approve_texts(name, arguments)[0].split(' ', 1)[1])}/"
         else:
             rule = name
@@ -793,9 +795,9 @@ class LeanAgent:
             return False
         return self.shell_allow.allows(workspace, command, read_only=self.shell_readonly_free)
 
-    def _shell_prefix(self, command: str) -> str:
-        from harness.agent.workspace import suggest_prefix
-        return suggest_prefix(command, getattr(self.tools, "workspace", "") or "")
+    def _shell_prefixes(self, command: str) -> list[str]:
+        from harness.agent.workspace import suggest_prefixes
+        return suggest_prefixes(command, getattr(self.tools, "workspace", "") or "", self.shell_readonly_free)
 
     async def _ask(self, session_id: str, call_id: str, title: str) -> bool:
         """Accept and Decline in the bubble; anything but an explicit allow counts as no."""

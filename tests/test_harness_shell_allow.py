@@ -9,7 +9,7 @@ import unittest
 from harness.agent.agent import LeanAgent
 from harness.agent.tools import Tools
 from harness.agent.workspace import (EditStore, ShellAllow, is_read_only_command, shell_segments,
-                                     suggest_prefix, workspace_builtins)
+                                     suggest_prefixes, workspace_builtins)
 from tests.test_h7_diffs import ScriptModel, _Conn
 
 
@@ -70,18 +70,33 @@ class SuggestAndSave(unittest.TestCase):
         self.allow = ShellAllow(os.path.join(self.dir, "allow.json"))
 
     def test_suggested_prefix(self):
-        self.assertEqual(suggest_prefix("npm test"), "npm test")
-        self.assertEqual(suggest_prefix("pytest -x tests"), "pytest")
-        self.assertEqual(suggest_prefix("git commit -m x"), "git commit")
-        self.assertEqual(suggest_prefix("npm test && npm run build"), "")
+        self.assertEqual(suggest_prefixes("npm test"), ["npm test"])
+        self.assertEqual(suggest_prefixes("pytest -x tests"), ["pytest"])
+        self.assertEqual(suggest_prefixes("git commit -m x"), ["git commit"])
         for risky in ("sudo apt install x", "bash -c 'x'", "python x.py", "./run.sh"):
-            self.assertEqual(suggest_prefix(risky, self.ws), "", risky)
+            self.assertEqual(suggest_prefixes(risky, self.ws), [], risky)
+
+    def test_a_chain_offers_one_prefix_per_part_unless_one_part_cannot_be_saved(self):
+        self.assertEqual(suggest_prefixes("npm test && npm run build"), ["npm test", "npm run"])
+        self.assertEqual(suggest_prefixes("acli jira a && acli jira b | tail -5"), ["acli jira", "tail"])
+        self.assertEqual(suggest_prefixes("npm test && python x.py", self.ws), [])
+        self.assertEqual(suggest_prefixes("npm test > out.txt"), [])
+        self.assertEqual(suggest_prefixes("cd .. && npm test", self.ws, skip_read_only=True), ["npm test"])
+
+    def test_a_redirect_that_only_merges_or_discards_output_does_not_count(self):
+        self.assertEqual(suggest_prefixes("acli jira a --x 2>&1 | tail -80"), ["acli jira", "tail"])
+        self.assertEqual(suggest_prefixes("npm test 2>/dev/null"), ["npm test"])
+        self.assertEqual(suggest_prefixes("npm test >/dev/null 2>&1"), ["npm test"])
+        self.assertEqual(suggest_prefixes("npm test &>/dev/null"), ["npm test"])
+        self.assertEqual(suggest_prefixes("npm test > out.txt"), [])
+        self.assertEqual(suggest_prefixes("npm test 2> err.txt"), [])
+        self.assertEqual(suggest_prefixes("npm test >&2"), [])
 
     def test_program_by_absolute_path_is_offered_unless_inside_the_workspace_or_a_shell(self):
-        self.assertEqual(suggest_prefix("/opt/tool/bin/tool run --help", self.ws), "/opt/tool/bin/tool run")
-        self.assertEqual(suggest_prefix(f"{self.ws}/run.sh", self.ws), "")
-        self.assertEqual(suggest_prefix("/bin/bash -c x", self.ws), "")
-        self.assertEqual(suggest_prefix("/opt/tool/bin/tool run", ""), "")
+        self.assertEqual(suggest_prefixes("/opt/tool/bin/tool run --help", self.ws), ["/opt/tool/bin/tool run"])
+        self.assertEqual(suggest_prefixes(f"{self.ws}/run.sh", self.ws), [])
+        self.assertEqual(suggest_prefixes("/bin/bash -c x", self.ws), [])
+        self.assertEqual(suggest_prefixes("/opt/tool/bin/tool run", ""), [])
         self.assertFalse(self.allow.add(self.ws, "/bin/bash -c"))
 
     def test_saved_prefix_allows_only_matching_commands_in_that_workspace(self):
@@ -159,6 +174,18 @@ class ShellThroughAgent(unittest.IsolatedAsyncioTestCase):
         result = await agent._use_tool(sid, store, self._call("touch two.txt"))
         self.assertIn("declined", result)
         self.assertFalse(os.path.exists(os.path.join(self.ws, "two.txt")))
+
+    async def test_always_allow_on_a_chain_saves_each_part_and_a_cd_needs_no_saving(self):
+        conn = _Conn()
+        conn._responses.append(("selected", "allow_always"))
+        agent, sid, store = await self._agent(conn)
+        await agent._use_tool(sid, store, self._call("cd . && touch one.txt && touch two.txt"))
+        self.assertEqual([o.option_id for o in conn.permission_requests[0]["options"]],
+                         ["allow", "allow_always", "decline"])
+        self.assertIn("`touch one.txt, touch two.txt`", conn.permission_requests[0]["options"][1].name)
+        self.assertEqual(agent.shell_allow.prefixes(self.ws), ["touch one.txt", "touch two.txt"])
+        await agent._use_tool(sid, store, self._call("cd . && touch two.txt"))
+        self.assertEqual(len(conn.permission_requests), 1)
 
     async def test_readonly_switch_off_asks_again(self):
         os.environ["HARNESS_SHELL_READONLY"] = "0"

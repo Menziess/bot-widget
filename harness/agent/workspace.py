@@ -477,7 +477,7 @@ def shell_run(workspace: str, command: str, timeout: int = 30) -> str:
 READONLY_COMMANDS = frozenset({
     "ls", "cat", "head", "tail", "wc", "pwd", "echo", "rg", "grep", "find", "tree", "stat", "file",
     "which", "diff", "du", "df", "date", "whoami", "uname", "basename", "dirname", "realpath",
-    "readlink", "nl", "true",
+    "readlink", "nl", "true", "cd",
 })
 READONLY_GIT = frozenset({
     "status", "log", "diff", "show", "ls-files", "rev-parse", "blame", "shortlog", "describe",
@@ -489,6 +489,23 @@ _NEVER_SAVED = frozenset({"sudo", "su", "sh", "bash", "zsh", "env", "xargs", "ev
                           "curl", "wget", "rm", "dd", "chmod", "chown", "mv", "cp", "python", "python3",
                           "node", "perl", "ruby", "nohup", "time", "watch"})
 _OPERATORS = frozenset({"&&", "||", ";", "|"})
+
+
+def _without_quiet_redirects(tokens: list[str]) -> list[str]:
+    """Drop 2>&1 and a redirect to /dev/null: they merge or discard output and write no file."""
+    kept: list[str] = []
+    i = 0
+    while i < len(tokens):
+        if tokens[i:i + 3] == ["2", ">&", "1"]:
+            i += 3
+        elif tokens[i] in (">", "&>", ">>") and tokens[i + 1:i + 2] == ["/dev/null"]:
+            if kept and kept[-1] in ("1", "2"):
+                kept.pop()
+            i += 2
+        else:
+            kept.append(tokens[i])
+            i += 1
+    return kept
 
 
 def shell_segments(command: str) -> list[list[str]] | None:
@@ -506,7 +523,7 @@ def shell_segments(command: str) -> list[list[str]] | None:
     except ValueError:
         return None
     segments: list[list[str]] = [[]]
-    for token in tokens:
+    for token in _without_quiet_redirects(tokens):
         if token in _OPERATORS:
             if not segments[-1]:
                 return None
@@ -566,20 +583,29 @@ def is_read_only_command(workspace: str, command: str) -> bool:
     return all(_segment_read_only(workspace, seg) for seg in segments)
 
 
-def suggest_prefix(command: str, workspace: str = "") -> str:
-    """The prefix an 'always allow' would save for *command*, or '' when it should not be offered.
-    A program by absolute path counts, unless it sits in the workspace, where the bot could rewrite it."""
+def suggest_prefixes(command: str, workspace: str = "", skip_read_only: bool = False) -> list[str]:
+    """The prefixes an 'always allow' would save for *command*, one per part, or [] when it should not be offered:
+    one part that cannot be saved takes the offer away from the whole chain. A part that is read-only needs no
+    saving when *skip_read_only*. A program by absolute path counts, unless it sits in the workspace, where the
+    bot could rewrite it."""
     segments = shell_segments(command)
-    if not segments or len(segments) != 1 or shell_refused(command):
-        return ""
-    tokens = segments[0]
-    head = tokens[0]
-    if os.path.basename(head) in _NEVER_SAVED or ("/" in head and (
-            not head.startswith("/") or not workspace or not outside_workspace(workspace, head))):
-        return ""
-    if len(tokens) >= 2 and not tokens[1].startswith("-") and not any(c in tokens[1] for c in "$*?/~"):
-        return f"{tokens[0]} {tokens[1]}"
-    return tokens[0]
+    if not segments or shell_refused(command):
+        return []
+    found: list[str] = []
+    for tokens in segments:
+        if skip_read_only and _segment_read_only(workspace, tokens):
+            continue
+        head = tokens[0]
+        if os.path.basename(head) in _NEVER_SAVED or ("/" in head and (
+                not head.startswith("/") or not workspace or not outside_workspace(workspace, head))):
+            return []
+        if len(tokens) >= 2 and not tokens[1].startswith("-") and not any(c in tokens[1] for c in "$*?/~"):
+            prefix = f"{tokens[0]} {tokens[1]}"
+        else:
+            prefix = tokens[0]
+        if prefix not in found:
+            found.append(prefix)
+    return found
 
 
 def prefix_matches(prefix: str, tokens: list[str]) -> bool:
