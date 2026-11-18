@@ -125,7 +125,7 @@ QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border:
 QTextBrowser, QTextBrowser > QWidget {{ background: transparent; border: none; padding: 0; }}
 QScrollBar:vertical {{ background: transparent; width: 6px; margin: 0; }}
 QScrollBar::handle:vertical {{ background: transparent; border-radius: 3px; min-height: 24px; }}
-QScrollArea:hover QScrollBar::handle:vertical {{ background: rgba(28, 28, 28, 115); }}
+QScrollArea:hover QScrollBar::handle:vertical, QScrollArea[bar="true"] QScrollBar::handle:vertical {{ background: rgba(28, 28, 28, 115); }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; border: none; height: 0; }}
 QPlainTextEdit {{
@@ -481,18 +481,24 @@ class OlderScroll(QScrollArea):
     momentum after a lifted finger; whether a finger is still on the pad); what the bubble does with that is up to
     the bubble."""
 
-    pulled = Signal(float, bool, bool)
+    pulled = Signal(float, bool, bool, bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.pull_active = lambda: False
+        self._last_wheel = 0.0
 
     def wheelEvent(self, event):
         bar = self.verticalScrollBar()
         phase = event.phase()
         pixels = event.pixelDelta().y() or event.angleDelta().y() / 120 * WHEEL_PX
+        now = time.monotonic()
+        # A new scroll: a new finger on the pad, or the wheel was still. Any wheel event counts, not only those at the
+        # top: scrolling up through a long message must not look like a new scroll when it reaches the top again.
+        fresh = phase == Qt.ScrollBegin or now - self._last_wheel > LET_GO_S
+        self._last_wheel = now
         if bar.value() <= bar.minimum() and (pixels > 0 or self.pull_active()):
-            self.pulled.emit(float(pixels), phase == Qt.ScrollMomentum, phase in (Qt.ScrollBegin, Qt.ScrollUpdate))
+            self.pulled.emit(float(pixels), phase == Qt.ScrollMomentum, phase in (Qt.ScrollBegin, Qt.ScrollUpdate), fresh)
             event.accept()
             return
         super().wheelEvent(event)
@@ -1321,6 +1327,14 @@ class BubbleWindow(QWidget):
         """Is exactly this already showing in the bubble? Then nothing needs to be redrawn."""
         return self.kind == kind and self.full_text == text and self._input == input and self.isVisible()
 
+    def _show_scrollbar(self, on: bool) -> None:
+        """The handle shows while the pointer is on the bubble. :hover alone waits for a mouse move, which a pointer
+        that stays where the bubble opened never makes."""
+        if self._scroll.property("bar") != on:
+            self._scroll.setProperty("bar", on)
+            self._scroll.style().unpolish(self._scroll)
+            self._scroll.style().polish(self._scroll)
+
     def holding(self) -> bool:
         """The field has the keyboard, or words are selected to copy, or a file waits to be sent, or a form has
         been typed in: the bubble stays for as long as one of those lasts. Words typed in a field you left stay as a draft; the bubble may go."""
@@ -2047,7 +2061,7 @@ class BubbleWindow(QWidget):
         first = self.blocks[0] if self.blocks else {}
         return first.get("back", "") if first.get("role") == "more" else ""
 
-    def _on_pulled(self, pixels: float, momentum: bool, held: bool):
+    def _on_pulled(self, pixels: float, momentum: bool, held: bool, fresh: bool | None = None):
         """Scrolling at the top. In the chat it shows the line for the message before, pulls it by the distance, and
         far enough loads it; on a page of the menu the line is always there, and far enough goes back."""
         now = time.monotonic()
@@ -2057,9 +2071,10 @@ class BubbleWindow(QWidget):
         if self._pull_spent:
             # The message came in: what is left of this scrolling, coasting included, does nothing. A new scroll
             # (after the wheel has been quiet for a moment, or with a new finger) pulls the next one.
-            quiet = now - self._pull_last > LET_GO_S
-            self._pull_last = now
-            if not quiet:
+            if fresh is None:  # the command list has no gestures to tell: the wheel being quiet is a new scroll
+                fresh = now - self._pull_last > LET_GO_S
+                self._pull_last = now
+            if not fresh:
                 return
             self._pull_spent = False
         if not self._more_open and pixels > 0:
@@ -2418,6 +2433,7 @@ class BubbleWindow(QWidget):
             self._slide.start()
             return
         pointer = self.face.pointer_near(self)
+        self._show_scrollbar(bool(pointer))
         self._follow_speed(now)
         if pointer and self._held is not None and self._pointer_on_card():
             self._release_hold()  # on the card: the window can be the card again, the pointer stays inside
