@@ -7577,6 +7577,24 @@ class BubbleTextDocument(unittest.TestCase):
         self.assertIn("Robo", doc.toPlainText())
         self.assertIn("hello there", doc.toPlainText())
 
+    def test_a_table_row_wider_than_measured_does_not_wrap_again_and_push_the_text_below(self):
+        table = "| Ticket | Titel | Status |\n|---|---|---|\n| DT-14479 | Send all custom alerts | Backlog |"
+        messages = [{"role": "bot", "text": table}, {"role": "user", "text": "Daarna"}]
+        panels = bubble_layout.bubble_panels(lambda text, style, size: len(text) * 4.0,
+                                             markdown.conversation_blocks(messages, "Robo"))
+        from PySide6.QtGui import QTextDocument
+
+        from botwidget.qt_ui.text_doc import fill_document
+        doc = QTextDocument()
+        fill_document(doc, panels, bubble.bubble_width(panels) + 2 * theme.PAD_PANEL_X)
+        doc.size()
+        block, wrapped = doc.begin(), []
+        while block.isValid():
+            if block.layout().lineCount() > 1:
+                wrapped.append(block.text())
+            block = block.next()
+        self.assertEqual(wrapped, [])
+
     def test_refilling_replaces_the_old_text_instead_of_stacking_under_it(self):
         from botwidget.qt_ui.text_doc import fill_document
         doc, _panels = self.document([{"role": "user", "text": "first question"}])

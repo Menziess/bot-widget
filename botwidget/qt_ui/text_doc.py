@@ -94,6 +94,9 @@ def fill_document(doc, panels: list, box_w: int):
             block.setLineHeight(float(line_height(line)),
                                 QTextBlockFormat.LineHeightTypes.FixedHeight.value)
             if line.get("tabs"):
+                # The layout already wrapped the cells; a row wider by a pixel must not wrap again and push the text
+                # below it out of the shapes drawn for it.
+                block.setNonBreakableLines(True)
                 block.setTabPositions([QTextOption.Tab(PAD_PANEL_X + line["indent"] + x, QTextOption.LeftTab)
                                        for x in line["tabs"]])
             if first:
