@@ -2163,17 +2163,17 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertTrue(bubble.kind)
 
-    def test_an_empty_pinned_field_closes_when_the_pointer_leaves(self):
+    def test_an_empty_pinned_field_stays_when_the_pointer_leaves(self):
         self.hover()
         self.window.pin()
         bubble = self.window.bubble
         bubble._tick()
         self.where["at"] = (5000, 5000)
         bubble._tick()
-        self.assertEqual(bubble.kind, "")
-        self.assertFalse(self.window.pinned)
+        self.assertEqual(bubble.kind, "say")
+        self.assertTrue(self.window.pinned)
 
-    def test_clicking_away_from_an_empty_field_closes_even_a_pinned_bubble(self):
+    def test_clicking_away_from_an_empty_field_leaves_a_pinned_bubble_open(self):
         self.window.pin()
         bubble = self.window.bubble
         has = {"focus": True}
@@ -2181,8 +2181,19 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         has["focus"] = False
         bubble._tick()
+        self.assertEqual(bubble.kind, "say")
+        self.assertTrue(self.window.pinned)
+
+    def test_letting_go_of_a_pinned_bubble_closes_it_the_usual_way(self):
+        self.hover()
+        self.window.pin()
+        bubble = self.window.bubble
+        self.window.unpin(close=False)
+        bubble._entry.clearFocus()
+        bubble._tick()
+        self.where["at"] = (5000, 5000)
+        bubble._tick()
         self.assertEqual(bubble.kind, "")
-        self.assertFalse(self.window.pinned)
 
     def test_only_the_latest_message_shows_at_first(self):
         self.hover()
@@ -3723,6 +3734,7 @@ class BubbleHover(unittest.TestCase):
             window.pin()
             bubble._tick()
             self.assertTrue(bubble.isVisible(), "a click keeps it too")
+            window.unpin(close=False)
             self.where["at"] = (5000, 5000)
             bubble._tick()
             self.assertFalse(bubble.isVisible(), "the pointer went away: it closes")
@@ -3900,6 +3912,14 @@ class BubbleHover(unittest.TestCase):
         self.click_face()
         self.assertFalse(self.window.pinned)
         self.assertTrue(self.window.bubble.isVisible(), "it goes when the pointer or the keyboard leaves")
+
+    def test_a_pinned_bubble_stays_when_the_pointer_and_the_keyboard_are_elsewhere(self):
+        self.hover()
+        self.window.pinned = True
+        self.window.bubble._entry.clearFocus()
+        self.assertTrue(self.window.bubble.holding())
+        self.window.pinned = False
+        self.assertFalse(self.window.bubble.holding())
 
     def test_shift_clicking_a_thinking_face_mutes_its_thinking_and_shift_clicking_again_brings_it_back(self):
         self.start_working()

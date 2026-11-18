@@ -1056,6 +1056,8 @@ class FaceWindow(QWidget):
         if self.motion.playing is None and not (self._working or self.has_pending):
             px, py = self._pointer()
             vx, vy = px - (self.x() + AVATAR_SIZE / 2), py - (self.y() + AVATAR_SIZE / 2)
+            if self.pinned:
+                vx = vy = 0  # a pinned bubble: the face keeps looking straight at you
             target = eye_aim(vx, vy, far=global_pointer())
             if target is not None:
                 dx, dy, converge, scale = target
