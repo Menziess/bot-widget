@@ -31,6 +31,13 @@ from harness.agent.workspace import (_diff_text, _real_path, compute_edit, outsi
 
 MAX_STEPS = 30  # default for HARNESS_MAX_STEPS: a tool loop that never settles must still end the turn
 LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the same arguments this many times in a row
+# A skill is over when the model calls one of these. A message that ends without a call (a bare "let me look") gets
+# SKILL_NUDGES nudges to go on first.
+SKILL_ENDINGS = {"done": "Call this when the skill is finished and you have said the result.",
+                 "wait_for_user": "Call this when you have asked the user something and wait for the answer."}
+SKILL_NUDGES = 2
+SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
+               "call. If you are finished call done, and if you wait for the user's answer call wait_for_user.")
 
 
 def _env_int(name: str, default: int) -> int:
@@ -148,7 +155,9 @@ class LeanAgent:
         if skill:
             from harness.agent.workspace import skill_body
             store.set("skill", f"The user ran the skill /{skill['name']} (file: {skill['path']}). Follow it:\n"
-                               + skill_body(skill))
+                               + skill_body(skill)
+                               + "\n\nCall the tool done when the skill is finished and wait_for_user when you wait for "
+                               "the user's answer. Never end a message on only a promise to do something.")
 
     async def cancel(self, session_id: str, **kwargs) -> None:
         """Stop the turn now. A cancel with no turn running is dropped: it used to arrive before the
@@ -199,6 +208,13 @@ class LeanAgent:
             self.tools.add(t)
         self.tools.add(Tool("approval_log", "Who accepted or declined which action recently, and how (bubble, cli, timeout).",
                             {"type": "object", "properties": {}}, lambda _args: approvals.recent()))
+        skill_on = bool(store.get("skill"))
+        for name, what in SKILL_ENDINGS.items():
+            if skill_on:
+                self.tools.add(Tool(name, what, {"type": "object", "properties": {}}, lambda _args: "Ok."))
+            else:
+                self.tools.tools.pop(name, None)
+        nudges = 0
         started = time.monotonic()
         first = 0.0
         answer = []
@@ -247,7 +263,13 @@ class LeanAgent:
                 last = {"finish": finish, "calls": len(calls), "thought_chars": thought_chars,
                         "text_tail": "".join(step_text)[-200:]}
                 if cancelled or not calls:
-                    break
+                    if cancelled or not skill_on or nudges >= SKILL_NUDGES:
+                        break
+                    nudges += 1
+                    if step_text:
+                        messages.append({"role": "assistant", "content": "".join(step_text)})
+                    messages.append({"role": "user", "content": SKILL_NUDGE})
+                    continue
                 for call in calls:
                     recent_calls.append(self._call_cache_key(call))
                 if repeats > 1 and len(recent_calls) >= repeats and len(set(recent_calls[-repeats:])) == 1:
@@ -262,6 +284,8 @@ class LeanAgent:
                 for call, result in zip(calls, results):
                     messages.append({"role": "tool", "tool_call_id": call["id"],
                                      "content": TOOL_OUTPUT + "\n" + result})
+                if skill_on and any((call.get("function") or {}).get("name") in SKILL_ENDINGS for call in calls):
+                    break
             else:
                 # The loop ran out of steps with the model still asking for tools.
                 if calls and not cancelled:
