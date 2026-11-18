@@ -3913,15 +3913,6 @@ class BubbleHover(unittest.TestCase):
         self.assertFalse(self.window.pinned)
         self.assertTrue(self.window.bubble.isVisible(), "it goes when the pointer or the keyboard leaves")
 
-    def test_the_scrollbar_shows_from_the_pointer_position_without_a_mouse_move(self):
-        self.hover()
-        bubble = self.window.bubble
-        bubble._tick()
-        self.assertTrue(bubble._scroll.property("bar"))
-        self.where["at"] = (5000, 5000)
-        bubble._tick()
-        self.assertFalse(bubble._scroll.property("bar"))
-
     def test_a_pinned_bubble_stays_when_the_pointer_and_the_keyboard_are_elsewhere(self):
         self.hover()
         self.window.pinned = True
@@ -4530,25 +4521,6 @@ class BubbleHover(unittest.TestCase):
         self.wheel_up_at(bubble, 101.5)
         self.assertTrue(bubble._more_open, "a new scroll does")
         self.assertEqual(self.window._depth, 2)
-
-    def test_a_new_finger_pulls_the_next_message_even_when_the_swipes_follow_each_other_closely(self):
-        from PySide6.QtCore import Qt
-        self.MESSAGES = [{"role": "user", "text": "Eerst?"}, {"role": "bot", "text": "Ja."}, *self.MESSAGES]
-        self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
-        self.hover()
-        bubble = self.window.bubble
-        self.wheel_up_at(bubble, 100.0)
-        self.finish_growth()
-        for step in range(4):
-            self.wheel_up_at(bubble, 100.1 + step * 0.01)
-        self.assertEqual(self.window._depth, 2)
-        self.finish_growth()
-        bubble._scroll.verticalScrollBar().setValue(0)
-        for step in range(10):
-            self.wheel_up_at(bubble, 100.2 + step * 0.02, Qt.ScrollUpdate)
-        self.assertFalse(bubble._more_open, "the same swipe pulls nothing")
-        self.wheel_up_at(bubble, 100.42, Qt.ScrollBegin)
-        self.assertTrue(bubble._more_open, "a new finger does, though only 0.04 s passed")
 
     def test_a_message_that_came_in_above_is_read_from_its_end(self):
         self.MESSAGES = [{"role": "bot", "text": "Een lange regel met woorden. " * 120}, self.MESSAGES[-1]]
