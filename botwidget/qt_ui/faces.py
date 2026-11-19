@@ -305,6 +305,7 @@ class Faces(QObject):
                 "hue": None,
             }
             self._open(bot, slot)
+        self._settle_placeholder()
         self.relay_message.connect(self.apply_relay)
         self.relay = grok_relay.Relay(self.relay_message.emit)
         self.relay.start()
@@ -493,16 +494,30 @@ class Faces(QObject):
     def toggle(self, agent_id: str, on: bool):
         bots = {bot["id"]: bot for bot in _all_bots()}
         if on and agent_id not in self.faces and agent_id in bots:
+            placeholder = self.faces.get(UNLINKED_ID)
+            if placeholder is not None and agent_id not in self.pos:
+                self.pos[agent_id] = list(placeholder.spot())
             self._open(bots[agent_id], len(self.faces))
+            self._settle_placeholder()
         if not on and agent_id in self.faces:
             gone = self.faces.pop(agent_id)
             page = gone._menu_page
             gone.close_face(keep_acp=True)
             self._nap(agent_id, gone.acp)
+            self._settle_placeholder()
             if page and self.faces:
                 # The page was in the bubble of the face that went: it carries on in the bubble of another.
                 next(iter(self.faces.values())).open_menu(page)
         self._save()
+
+    def _settle_placeholder(self):
+        """The placeholder face exists exactly when there is no bot at all, also none hidden in the arc."""
+        if not _all_bots():
+            if UNLINKED_ID not in self.faces:
+                self._open({"id": UNLINKED_ID, "name": UNLINKED_NAME, "threadId": "openbot-thread-" + UNLINKED_ID,
+                            "hue": None}, 0)
+        elif UNLINKED_ID in self.faces:
+            self.faces.pop(UNLINKED_ID).close_face()
 
     def refresh_others(self, agent_id: str):
         """/refresh reloads every bot, not only the one it was typed into; Grok Bot is asked again too."""
@@ -618,6 +633,7 @@ class Faces(QObject):
                 face.bot_name = bot["name"]
                 face.setWindowTitle(bot["name"])
                 face.set_avatar(_avatar(bot))
+        self._settle_placeholder()
 
     def _take(self, fields: dict | None, page: str):
         if not fields:

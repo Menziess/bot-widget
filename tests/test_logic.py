@@ -579,7 +579,7 @@ class GrokAvatarFallback(unittest.TestCase):
         link, closed = SimpleNamespace(active=lambda: False, close=lambda: None), []
         face = SimpleNamespace(acp=link, _menu_page=None, close_face=lambda keep_acp=False: closed.append(keep_acp))
         faces.faces = {"a": face}
-        with mock.patch.object(faces_module, "_all_bots", return_value=[]), \
+        with mock.patch.object(faces_module, "_all_bots", return_value=[{"id": "a", "name": "A"}]), \
                 mock.patch.object(faces_module.QTimer, "singleShot") as shot:
             faces.toggle("a", False)
         self.assertEqual(closed, [True], "the agent is not closed with the face")
