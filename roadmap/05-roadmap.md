@@ -84,6 +84,20 @@ Run the measurement plan from 04-efficiency.md and write down the result.
 
 Done when a decision is recorded, keep OpenBot for everything, use the lean agent for some bots, or drop the idea.
 
+### 6. Self-modify, one to two weeks
+
+**Status: not started.**
+
+The widget picks up a task itself, builds it, restarts with rollback, and self-tests. No teacher sends the task.
+
+Done when these hold.
+
+- A task written on this roadmap is taken by the running widget with no teacher message
+- The widget builds that task in a worktree, runs the suite, and restarts the existing `--dev` process only with SIGUSR1
+- A red suite or a failed health check resets the checkout to the last good commit and restarts again
+- After a green restart the widget runs one check that reads a file it just wrote, and the file matches
+- Three tasks in a row finish this way, and the scoreboard shows the widget as the one that took them
+
 ## Order and cut points
 
 Stopping after phase 1 still has value, because the widget then supports many existing agents. Stopping after phase 2 gives a minimal own backend. Phases 3 and 4 are where the savings come from, and also where most of the work and the risk sit.
@@ -146,6 +160,22 @@ Design, for when it is built:
 - Off unless the owner turns it on for that bot. It is not in the default tool list.
 
 Linux check, 2026-11-21. The widget probes AT-SPI at startup through PyGObject and the Atspi 2.0 typelib (`gir1.2-atspi-2.0`), which this Ubuntu desktop already has. `python3-pyatspi` is not used. One log line, the same fact in the harness runtime facts, and a read-only `accessibility` tool that can name a top-level application (the widget's own name on the bus is `botwidget`). Windows UI Automation and macOS AX are named and not implemented. Pointer and keyboard actions are still not built.
+
+A fresh venv gets that system `gi` by a symlink when `botwidget` is imported (`link_system_gi`). Done 2026-11-21.
+
+The in-widget consent dialog is not built. `CONSENT` in `botwidget/system/a11y.py` is the design: title, the two desktop packages, Agree or Not now, and `install_after_agree` as the only install entry. Nothing calls `pkexec` until that dialog exists and the user picks Agree. Add the dialog when a real probe returns available false.
+
+The system prompt names `accessibility`, and a reply that skips the call is nudged once. The tool result lists application names even when query is empty. Self-modify is phase 6.
+
+### Open from the teacher rounds, 2026-11-21
+
+Skip what is already done (idle send, named python and unsigned commit, student-worktree approvals, the `gi` link, the instance check that ignores a prompt, false file and commit claims).
+
+- Pointer and keyboard actions. Still the desktop computer use design above.
+- The consent dialog above. Design and `install_after_agree` only.
+- A write outside the home workspace still raises the approval bubble. The supervisor may accept it when the title stays inside the student tree. A person should not see that bubble for a path the loop already allowed.
+- The local model sometimes answers from history after a failed tool call and never calls the tool again. The one accessibility nudge does not cover that later turn. See "A bot that repeats its last failure" above.
+- A live accessibility answer can still start with a made-up line ("No applications matched") and then show the tool's list. The tool itself did run (2026-11-21, one chat turn, result included `botwidget`).
 
 ## Where to start (historical)
 
