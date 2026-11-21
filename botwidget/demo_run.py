@@ -5,6 +5,7 @@ tab, and never navigates a tab it did not open.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -102,14 +103,20 @@ def _repair(board: Board) -> None:
     folder = os.path.join(ROOT, "repair")
     os.makedirs(folder, exist_ok=True)
     path = os.path.join(folder, "test_seed.py")
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write("import unittest\n\nclass T(unittest.TestCase):\n    def test_seed(self):\n        self.assertEqual(1, 0)\n")
+    cache = os.path.join(folder, "__pycache__")
+
+    def plant(source: str):
+        # Same-second rewrite would keep the first bytecode, so the fixed file still fails.
+        shutil.rmtree(cache, ignore_errors=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(source)
+
+    plant("import unittest\n\nclass T(unittest.TestCase):\n    def test_seed(self):\n        self.assertEqual(1, 0)\n")
     broken = subprocess.run([sys.executable, "-m", "unittest", "test_seed"], cwd=folder, capture_output=True, text=True)
     if broken.returncode == 0:
         board.consider("repair", {"checked": True, "ok": False, "detail": "seed did not fail"})
         return
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write("import unittest\n\nclass T(unittest.TestCase):\n    def test_seed(self):\n        self.assertEqual(1, 1)\n")
+    plant("import unittest\n\nclass T(unittest.TestCase):\n    def test_seed(self):\n        self.assertEqual(1, 1)\n")
     fixed = subprocess.run([sys.executable, "-m", "unittest", "test_seed"], cwd=folder, capture_output=True, text=True)
     board.consider("repair", repair_result(fixed.returncode))
 
