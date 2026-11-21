@@ -15,3 +15,5 @@ The teacher gives one hint per retry, at most two retries, then fixes the task a
 A task that changes a limit passes the window's values through. `leave_open` takes `LEAVE_GRACE_S`, `LEAVE_MOVING_PX_S` and `LEAVE_MAX_S` from the window. A private copy of the leave cap ignores the test, which sets `LEAVE_MAX_S` to 0, and the bubble tests stay open.
 
 Stop when retries are spent, the PC is going off, or the run grows large. Record that stop on the scoreboard.
+
+The --dev demo sends its six tasks through that same remote control, one at a time, and ticks a row only after a code check. The model's sentence does not tick a row. Chrome is attached from the debugging port file the browser already wrote. The Agree / Not now dialog is still only the design named `CONSENT`. A live accessibility answer can still speak before the tool runs; a turn that already called the tool is not asked again.
