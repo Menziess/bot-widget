@@ -58,6 +58,10 @@ def main():
     if "--version" in sys.argv[1:]:
         print(__version__)
         return
+    if "doctor" in sys.argv[1:]:
+        from botwidget.system.a11y import doctor
+        print(doctor())
+        return
     if sys.argv[1:2] in (["bots"], ["read"], ["ask"], ["approve"], ["decline"]):
         remote.main(sys.argv[1:])
         return
@@ -102,6 +106,11 @@ def main():
         remote.serve(faces)
     faces.hotkey_on = register_hotkey(faces.hotkey)
     faces.welcome(startup.apply_default())
+    from botwidget.qt_ui.demo_board import DemoBoard, demo_wanted
+    if demo_wanted():
+        app._demo_board = DemoBoard()
+        from botwidget.demo_run import start as start_demo
+        start_demo()
     first = next(iter(faces.faces.values()), None)
     if first and os.environ.get("BOT_WIDGET_OPEN_CHAT"):
         QTimer.singleShot(800, first.pin)

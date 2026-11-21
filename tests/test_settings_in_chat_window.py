@@ -311,6 +311,25 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertIsNone(self.window._menu_page)
         self.assertTrue(self.bubble._list_only)
 
+    def test_should_reopen_the_same_page_when_the_pointer_comes_back(self):
+        """Should show Settings again after the pointer left that page, without writing config."""
+        self.window.open_menu("settings")
+        self._finish()
+        with mock.patch.object(self.window, "pointer_near", return_value=False):
+            self.assertTrue(self.bubble.close_bubble("left"))
+        self.window._sync_bubble(self.window._latest(), force=True)
+        self.assertEqual(self.window._page_memory, "settings")
+        self.assertIsNone(self.window._menu_page)
+        self.assertFalse(self.bubble.isVisible())
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch("botwidget.qt_ui.face.pointer_on", return_value=True), \
+                mock.patch.object(self.window, "_pointer_is_busy", return_value=False):
+            self.window._check_hover()
+        self._finish()
+        self.assertEqual(self.window._menu_page, "settings")
+        self.assertIn("Sound on a new answer", self.bubble.full_text)
+        self.assertIsNone(self.window._page_memory)
+
     def test_should_return_to_the_chat_with_the_field_on_a_left_click(self):
         """Should leave a page for the chat when its face is left-clicked, and never open settings that way."""
         from PySide6.QtCore import Qt

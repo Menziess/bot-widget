@@ -97,7 +97,7 @@ def prepare_retry(checkout: str, attempt: int) -> tuple[str, float]:
 def run(folder: str = PACKAGE, poll: float = POLL_S, checkout: str | None = None):
     """Keeps the widget running with the newest code. A crash retries with backoff after a fast-forward."""
     ensure_single_instance(DEV_PIDFILE, (b"--dev",))
-    extra = ["--keep-login"] if "--keep-login" in sys.argv else []
+    extra = [flag for flag in ("--keep-login", "--demo") if flag in sys.argv]
     seen = snapshot(folder)
     started = launched(seen)
     child = start(extra)

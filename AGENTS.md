@@ -48,6 +48,7 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 - An unread answer closes after its reading time unless the pointer was on it
 - Clicking inside the bubble never opens or closes it
 - Clicking the face while its bubble is open pins the bubble: it stays when the pointer leaves or another window is clicked, and the face keeps looking straight at you. Clicking the face again lets it go, and it then closes the usual way
+- When the pointer leaves a menu page, the next hover opens that same page. The page is remembered in memory for the session only. A click on the face, Escape, or the line back to the command list forgets it
 
 ### Arc
 - The arc opens when the pointer is near the top middle of the screen, on the /bots page, or when a face is dragged into it
@@ -71,6 +72,6 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 
 ## Desktop accessibility
 
-- The user never runs an install command for this. Linux reads AT-SPI through PyGObject and the Atspi 2.0 typelib a GNOME desktop already ships (`gir1.2-atspi-2.0` and `python3-gi` in `botwidget/system/a11y.py`). `python3-pyatspi` is not a dependency. Importing `botwidget` links that system `gi` into the venv when it is missing.
+- The user never runs an install command for this. Linux reads AT-SPI through PyGObject and the Atspi 2.0 typelib a GNOME desktop already ships (`gir1.2-atspi-2.0` and `python3-gi` in `botwidget/system/a11y.py`). `python3-pyatspi` is not a dependency. `botwidget doctor` links that system `gi` into the venv when it is missing. Importing `botwidget` does not. When `gi` is missing the probe says to run `botwidget doctor`.
 - Startup logs once whether accessibility is available and why. The same line is in the harness runtime facts, and the read-only `accessibility` tool can name a running application.
 - Windows (UI Automation) and macOS (AX) are named in that module and not implemented. A PolicyKit install is only for a desktop that is actually missing the typelib, and only after the user agrees in the widget. Do not print a sudo line.

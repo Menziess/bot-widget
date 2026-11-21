@@ -2541,6 +2541,7 @@ class BubbleWindow(QWidget):
         if reason in ("left", "unread"):
             self.face.pinned = False
             self.face._answer_view = False
+        self._closed_because = reason
         self.place("")
         self._release_bots_arc()
         return True

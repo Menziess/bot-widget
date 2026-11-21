@@ -87,6 +87,29 @@ class AccessibilityProbe(unittest.TestCase):
         a11y.install_after_agree(True, run=lambda command, check=False: calls.append(command))
         self.assertEqual(calls, [["pkexec", "apt-get", "install", "-y", "gir1.2-atspi-2.0", "python3-gi"]])
 
+    def test_a_missing_gi_says_to_run_doctor_and_does_not_link(self):
+        def load():
+            raise ModuleNotFoundError("No module named 'gi'")
+
+        with mock.patch.object(a11y, "_platform_name", return_value="linux"):
+            row = a11y.accessibility(load=load)
+        self.assertFalse(row["available"])
+        self.assertIn("botwidget doctor", row["reason"])
+        self.assertNotIn("sudo", row["reason"])
+
+    def test_doctor_links_then_reports(self):
+        with mock.patch.object(a11y, "link_system_gi", return_value=["/venv/gi"]) as link, \
+                mock.patch.object(a11y, "accessibility", return_value={"available": True, "reason": "AT-SPI", "platform": "linux"}):
+            text = a11y.doctor()
+        link.assert_called_once_with()
+        self.assertIn("linked gi", text)
+        self.assertIn("accessibility: yes", text)
+
+    def test_importing_botwidget_does_not_link_gi(self):
+        with open(os.path.join(os.path.dirname(__file__), "..", "botwidget", "__init__.py")) as fh:
+            source = fh.read()
+        self.assertNotIn("link_system_gi", source)
+
     def test_a_fresh_venv_gets_the_system_gi_link(self):
         with tempfile.TemporaryDirectory() as folder:
             source = os.path.join(folder, "dist")

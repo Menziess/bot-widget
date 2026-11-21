@@ -131,9 +131,27 @@ def _platform_name() -> str:
     return "linux"
 
 
+def gi_missing(error: BaseException) -> bool:
+    """True when Python cannot import the desktop gi the doctor step links in."""
+    text = str(error)
+    return isinstance(error, ImportError) and "No module named" in text and "gi" in text
+
+
 def _linux_reason(error: BaseException) -> str:
+    if gi_missing(error):
+        return "gi is not on the path. Run `botwidget doctor`."
     text = f"{type(error).__name__}: {error}"
     return "AT-SPI typelib is not usable (" + text + "). The desktop packages are gir1.2-atspi-2.0 and python3-gi."
+
+
+def doctor() -> str:
+    """Link the desktop gi into this venv, then say whether accessibility works. Never called on import."""
+    made = link_system_gi()
+    clear()
+    row = accessibility()
+    link = "linked " + ", ".join(os.path.basename(path) for path in made) if made else "no new link"
+    word = "yes" if row["available"] else "no"
+    return f"{link}; accessibility: {word} ({row['reason']})"
 
 
 def link_system_gi(site_packages: str | None = None, source: str = SYSTEM_GI) -> list[str]:
