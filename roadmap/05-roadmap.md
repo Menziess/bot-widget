@@ -105,17 +105,15 @@ Stopping after phase 1 still has value, because the widget then supports many ex
 Questions only the owner can answer. Settled so far: the lean agent is one process per bot, memory has user, project and topic scopes, and a local model is the default.
 
 - Which backends matter first, among Pi, OpenCode, Hermes, Claude Code and Codex
-- Which models, and whether a local model is the default
+- Which models to offer besides the local default
 - Whether the widget should keep OpenBot as the default backend
-- Whether bots keep their own memory, and where it lives
-- Whether one agent process serves all bots or one per bot
 - Where the code lives, as a separate package or repository so that the widget stays thin
 - How much of OpenBot's feature set is wanted at all, teammates, routines, browser
 
 ## What is next
 
 - Run one hosted model behind both OpenBot and the lean agent on twenty tasks each, to settle cost per finished task
-- Try a second real ACP agent (OpenCode, Claude Code or Codex), to see how much adapters differ
+- Try a second real ACP agent (OpenCode, Claude Code or Codex), to see how much adapters differ. OpenCode is done: `18cf2e5` (2026-11-17), OpenCode 2.1.3 over `opencode acp`, protocol 1, stop reason end_turn. It sent available_commands_update with an empty command list before the answer. The client leaves that update off the first-answer clock. Since `edab6ed` the lean agent sends the same update when it has skills. A one-word prompt on the local model took about 209 seconds to the first text. Claude Code and Codex are not tried.
 - Decide whether approvals should be removable per bot, not only for all bots at once
 - Attach to the running everyday Chrome over CDP, browser-use-style. Chrome's "Allow remote debugging?" consent once, then the existing session: his own tabs and logins. No extension, no separate profile, and no `--remote-debugging-port` relaunch. The base stays the direct-CDP reader in `harness/browser_local.py`, not the browser-use package, Playwright, or an extension.
 - Requirements: `list_tabs`/`switch_tab` to reuse existing tabs; never open a new window (a new tab in the existing window only when needed); `goto_url` + `wait_for_load`; read via `document.body.innerText` plus background-tab screenshots; click via JS `element.click()` on an element found by its text; `fetch()` inside the page using the logged-in session, and never display or store tokens.
@@ -124,16 +122,15 @@ Questions only the owner can answer. Settled so far: the lean agent is one proce
 
 ### Feature requests, 2026-11-17
 
-Not built. In the order the owner asked.
+Still open, except the line marked done. In the order the owner asked.
 
 - **Browser actions as tools.** Click by text, go to an address, open a tab, scroll and fill in forms. `Cdp` already has `click_text`, `goto_url`, `open_tab`, `screenshot` and `page_fetch`; scrolling and filling forms do not exist yet. Every action that changes a page asks first, like a write.
 - **Other browsers.** Edge and Brave speak the same protocol and only need their folders and process names. Arc is probably the same. Firefox needs WebDriver BiDi. Safari has no equivalent.
-- **Skills in the lean agent.** Skills exist only for ACP bots such as OpenCode. The lean agent has no skill system, so it cannot find the browser-use skill, and it has no instruction for when to fall back to it.
+- **Skills in the lean agent.** Done. `edab6ed` advertises each skill as a slash command and runs it. `ea42592` ends the skill on done, on a message that is not about it, on cancel, or after ten minutes, with no /stop. `ac7a6bb` hides the tools a skill names in deny-tools. The system prompt tells the bot when clicking and forms need the browser-use MCP server.
 - **browser-use over MCP.** Tried 2026-11-17 through `HARNESS_MCP_SERVER="uvx --python 3.12 browser-use@latest --cli-mcp"`: the server starts, adds `browser_exec`, `browser_screenshot`, `browser_login` and `browser_feedback`, and `browser_exec` read the tabs of the local Chrome. It runs on this machine and drives the local Chrome; cloud browsers only start with `browser_login`. Open points: `browser_exec` runs any Python, so it must keep asking; `browser_login` and `browser_feedback` (sends text to the vendor) should not be offered; no model has decided between the built-ins and this server yet.
 - **A permanent Allow.** Chrome has no setting for it. The ways round it are a native-messaging extension or a tool that clicks the dialog; both are against the choice in `browser-choice.md`.
-- **A bot that repeats its last failure.** After a failed tool call the local model sometimes answers from history and never calls the tool again, so a fixed problem looks unfixed. Drop or mark failed tool results once they are stale.
+- **A bot that repeats its last failure.** After a failed tool call the local model sometimes answers from history and never calls the tool again, so a fixed problem looks unfixed. Drop or mark failed tool results once they are stale. Not done: a declined write stays in the next request so the model still sees it.
 - **Linux and Windows.** Try the port lookup (`lsof -c chrome`, the `%LOCALAPPDATA%` file) on those systems.
-- Tried 2026-11-17: OpenCode 2.1.3 over `opencode acp`, protocol 1, stop reason end_turn. It sends available_commands_update with an empty command list before the answer. The lean agent never sends that update. The client already leaves it off the first-answer clock. A one-word prompt on the local model took about 209 seconds to the first text.
 
 ### Desktop computer use, 2026-11-21
 

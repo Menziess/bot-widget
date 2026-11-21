@@ -35,9 +35,10 @@ the choice closest to the roadmap stands until then.
 - **One sqlite file per bot**, `~/.local/share/botwidget/harness/<bot>/session.sqlite`, so a
   restart keeps the conversation and one corrupt bot cannot take the others down.
 - **Never summarise inside a turn.** The request is a stable prefix (system text, pinned facts,
-  the current summary) plus the recent turns, trimmed to a budget; older turns are summarised in
-  a background task after the turn has been answered, and the next request picks up the new
-  summary. A turn therefore never waits on a model call it does not need.
+  the current summary) plus the recent turns, trimmed to a budget. Older turns are summarised
+  after the answer is stored, once the chat holds more than 40 messages (`2785fff`). The turn
+  that crosses that line does not wait. The next request does, so the summary is in the prefix
+  and "Compacted older turns." cannot show while an answer is streaming.
 - **Chat Completions is the first and only adapter in v0**, pointed at any OpenAI-compatible base
   URL (local server or hosted). Anthropic-native caching is phase 4.
 - **Usage is appended to `usage.jsonl` next to the session store**, one line per turn: time,

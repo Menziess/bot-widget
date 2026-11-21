@@ -14,9 +14,7 @@ thought or answer chunk, which is a model call and says nothing about the agent'
 
 | fake Anthropic, 20-turn replay | `AnthropicMessages` + fake Messages API | — | — | end_turn | Prefix-cache share of input tokens: 0% on turn 1, 54% on turn 3, 70% by turn 5, 95% by turn 20. Two real agent turns through the same adapter logged a non-zero `cached_tokens`, which is the phase 4 done-criterion. Not a paid provider: the fake models the cache. |
 
-Only one real ACP agent is installed on this machine (`hermes-acp`). Pi is installed but speaks
-its own protocol; OpenCode, Claude Code and Codex are not installed. Trying a second real agent
-is still open, and the adapter has to be expected to differ per agent until then.
+OpenCode 2.1.3 was tried on 2026-11-17 (`18cf2e5`, `opencode acp`): protocol 1, stop reason end_turn, an empty available_commands_update before the answer, about 209 seconds to the first text on the local model. Pi speaks its own protocol. Claude Code and Codex are not tried, so the adapter can still differ per agent.
 
 Numbers from Ollama are model speed on this machine (a large quantised model on CPU), not a
 property of the harness. A small model answers in a fraction of a second.
