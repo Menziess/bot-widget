@@ -42,9 +42,29 @@ PROMPTS = {
 }
 
 
+def _parent_runs_dev() -> bool:
+    """An old supervisor never put BOTWIDGET_DEV in the child's environment."""
+    ppid = os.getppid()
+    path = os.environ.get("BOTWIDGET_DEV_PID") or os.path.join(
+        __import__("tempfile").gettempdir(), "bot_widget_dev.pid")
+    try:
+        with open(path) as fh:
+            recorded = int(fh.read().strip())
+    except (OSError, ValueError):
+        recorded = None
+    if recorded == ppid:
+        return True
+    try:
+        with open(f"/proc/{ppid}/cmdline", "rb") as fh:
+            raw = fh.read()
+    except OSError:
+        return False
+    return b"--dev" in raw
+
+
 def dev_running() -> bool:
     """The --dev supervisor's child does not see --dev on its own command line."""
-    return os.environ.get("BOTWIDGET_DEV") == "1" or "--dev" in sys.argv[1:]
+    return os.environ.get("BOTWIDGET_DEV") == "1" or "--dev" in sys.argv[1:] or _parent_runs_dev()
 
 
 def check(key: str) -> dict:

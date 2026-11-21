@@ -96,6 +96,13 @@ def prepare_retry(checkout: str, attempt: int) -> tuple[str, float]:
     return fast_forward(checkout), retry_delay(attempt)
 
 
+def poke_action(code_changed: bool) -> str:
+    """SIGUSR1. New supervisor code replaces this process (same pid). Otherwise only the child restarts."""
+    if code_changed:
+        os.execv(sys.executable, [sys.executable, *sys.argv])
+    return "child"
+
+
 def run(folder: str = PACKAGE, poll: float = POLL_S, checkout: str | None = None):
     """Keeps the widget running with the newest code. A crash retries with backoff after a fast-forward."""
     ensure_single_instance(DEV_PIDFILE, (b"--dev",))
@@ -112,6 +119,8 @@ def run(folder: str = PACKAGE, poll: float = POLL_S, checkout: str | None = None
 
     def poke(*_):
         nonlocal restart_now
+        if poke_action(needs_restart(snapshot(folder), seen, started)) == "reexec":
+            return
         restart_now = True
 
     if hasattr(signal, "SIGUSR1"):

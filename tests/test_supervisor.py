@@ -159,6 +159,15 @@ class LockAndTakeover(unittest.TestCase):
 class CrashRetry(unittest.TestCase):
     """Should retry a crash instead of waiting forever, and fast-forward before the retry."""
 
+    def test_a_poke_reexecs_when_the_supervisor_code_changed(self):
+        """Should replace the supervisor process when its own code changed, and only restart the child otherwise."""
+        with mock.patch("os.execv") as execv:
+            dev.poke_action(True)
+        execv.assert_called_once_with(sys.executable, [sys.executable, *sys.argv])
+        with mock.patch("os.execv") as execv:
+            self.assertEqual(dev.poke_action(False), "child")
+        execv.assert_not_called()
+
     def test_a_syntax_error_retries_and_a_handover_stops(self):
         self.assertEqual(dev.on_child_exit(1), "retry")
         self.assertEqual(dev.on_child_exit(dev.HANDOVER_EXIT), "stop")

@@ -23,6 +23,23 @@ class DemoCommand(unittest.TestCase):
         with mock.patch("sys.argv", ["botwidget"]), mock.patch.dict(os.environ, {"BOTWIDGET_DEV": "1"}):
             self.assertTrue(dev_running())
 
+    def test_should_see_dev_when_the_parent_is_the_supervisor(self):
+        """Should count a child as dev when its parent is the --dev supervisor, even without BOTWIDGET_DEV."""
+        from botwidget.demo_chat import dev_running
+        pidfile = "/tmp/bot-widget-dev-test.pid"
+        with open(pidfile, "w") as fh:
+            fh.write(str(os.getppid()))
+        self.addCleanup(lambda: os.path.exists(pidfile) and os.remove(pidfile))
+        env = {"BOTWIDGET_DEV_PID": pidfile}
+        env.pop("BOTWIDGET_DEV", None)
+        with mock.patch("sys.argv", ["botwidget"]), mock.patch.dict(os.environ, env, clear=False):
+            os.environ.pop("BOTWIDGET_DEV", None)
+            self.assertTrue(dev_running())
+        with mock.patch("sys.argv", ["botwidget"]), mock.patch.dict(os.environ, {}, clear=False), \
+                mock.patch("botwidget.demo_chat._parent_runs_dev", return_value=True):
+            os.environ.pop("BOTWIDGET_DEV", None)
+            self.assertTrue(dev_running())
+
     def test_should_reject_demo_when_not_dev(self):
         from botwidget.qt_ui.face import FaceWindow
         face = FaceWindow.__new__(FaceWindow)
