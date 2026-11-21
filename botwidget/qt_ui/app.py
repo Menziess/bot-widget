@@ -77,6 +77,8 @@ def main():
     if auto_update() and updates.install_staged():
         sys.exit(0)
     prepare_gui_environment()
+    from botwidget.system.a11y import log_once
+    log_once()
     app = QApplication(sys.argv)
     install_quit_signals(app)
     # WM_CLASS class must be botwidget (StartupWMClass). "Bot Widget" as the class made GNOME show a

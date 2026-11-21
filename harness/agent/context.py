@@ -96,6 +96,9 @@ def runtime_facts(model=None) -> str:
     if getattr(model, "vision", None) is False:
         facts += ("\n- Images: you cannot see images. When the user attaches a picture, say so and ask for a "
                   "description; never open or view it with the browser or any other tool.")
+    from botwidget.system.a11y import accessibility
+    row = accessibility()
+    facts += f"\n- Accessibility: {'yes' if row['available'] else 'no'}. {row['reason']}"
     return facts
 
 # Workspace rules appended to the system prompt when HARNESS_WORKSPACE is set.

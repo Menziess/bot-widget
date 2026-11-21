@@ -122,6 +122,21 @@ def trash_file(at: str) -> str:
     return f"Moved {at} to {gone}."
 
 
+def accessibility_text(query: str = "") -> str:
+    """Whether the desktop accessibility bus is up, and which application names match query."""
+    from botwidget.system.a11y import accessibility, application_names
+    row = accessibility()
+    lines = [
+        f"available: {'yes' if row['available'] else 'no'}",
+        f"reason: {row['reason']}",
+        f"platform: {row['platform']}",
+    ]
+    if query:
+        matches = [name for name in application_names() if query.lower() in name.lower()]
+        lines.append("matches: " + (", ".join(matches) if matches else "none"))
+    return "\n".join(lines)
+
+
 def builtins() -> list[Tool]:
     return [
         Tool("read_file", "Read a text file. Read-only.", {
@@ -138,6 +153,12 @@ def builtins() -> list[Tool]:
              "permission.", {
             "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
             lambda arguments: trash_file(_path(arguments["path"])), writes=True),
+        Tool("accessibility",
+             "Read desktop accessibility. Read-only. Says whether AT-SPI (Linux), UI Automation (Windows) or AX "
+             "(macOS) is available, and with a query returns matching application names. Windows and macOS are not "
+             "implemented yet.",
+             {"type": "object", "properties": {"query": {"type": "string"}}},
+             lambda arguments: accessibility_text(str(arguments.get("query") or ""))),
         Tool("browser_tabs",
              "List the tabs in the user's already open Chrome. Read-only. Use this to see the browser.",
              {"type": "object", "properties": {}},

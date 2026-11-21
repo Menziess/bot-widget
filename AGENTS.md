@@ -67,3 +67,9 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 - A relay status of stuck or needs you shows that same dot. start and done do not. With no local approval the bubble shows the status line, not Accept or Decline
 - A turn that a restart cut off is picked up again when the widget is back
 - The eyes follow the pointer wherever it is
+
+## Desktop accessibility
+
+- The user never runs an install command for this. Linux reads AT-SPI through PyGObject and the Atspi 2.0 typelib a GNOME desktop already ships (`gir1.2-atspi-2.0` and `python3-gi` in `botwidget/system/a11y.py`). `python3-pyatspi` is not a dependency.
+- Startup logs once whether accessibility is available and why. The same line is in the harness runtime facts, and the read-only `accessibility` tool can name a running application.
+- Windows (UI Automation) and macOS (AX) are named in that module and not implemented. A PolicyKit install is only for a desktop that is actually missing the typelib, and only after the user agrees in the widget. Do not print a sudo line.
