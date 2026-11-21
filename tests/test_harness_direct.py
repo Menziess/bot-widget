@@ -223,6 +223,80 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
                 kinds.append("compacted")
         self.assertEqual(kinds[:3], ["text", "compacted", "text"])
 
+    async def test_a_slow_summary_does_not_block_the_next_send_past_the_timeout(self):
+        """Should send once SUMMARY_WAIT_S passes, keep the summary off the streaming answer, and apply it before a later turn."""
+        summary_gate = threading.Event()
+        release_stream = threading.Event()
+        returned = threading.Event()
+        self.addCleanup(summary_gate.set)
+        self.addCleanup(release_stream.set)
+        text_seen = threading.Event()
+        sent = []
+
+        def slow_step(stop):
+            yield ("text", "tweede")
+            text_seen.set()
+            if not release_stream.wait(5):
+                raise TimeoutError("stream")
+
+        model = ScriptModel([[("text", "eerste")], slow_step, [("text", "derde")]])
+
+        def complete(messages):
+            model.completed.append(messages)
+            if not summary_gate.wait(5):
+                raise TimeoutError("summary")
+            returned.set()
+            return "folded notes"
+
+        model.complete = complete
+
+        def stream(messages, tools=None, stop=None, opened=None):
+            sent.append(messages)
+            return ScriptModel.stream(model, messages, tools, stop, opened)
+
+        model.stream = stream
+        agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools("", workspace=self.folder))
+        conn = Conn()
+        agent.on_connect(conn)
+        session = (await agent.new_session(".")).session_id
+        store = agent.stores[session]
+        for number in range(SUMMARY_AFTER - 1):
+            store.add("user" if number % 2 == 0 else "bot", f"line {number}")
+        first = await agent.prompt(session, [Block("een")])
+        self.assertEqual(first.stop_reason, "end_turn")
+        self.assertEqual(store.summary, "")
+
+        def compacted():
+            return sum(1 for _sid, update in conn.updates
+                       if getattr(update, "session_update", "") == "usage_update"
+                       and (getattr(update, "field_meta", None) or {}).get("compacted"))
+
+        with mock.patch("harness.agent.context.SUMMARY_WAIT_S", 0.05):
+            started = time.monotonic()
+            second = asyncio.create_task(agent.prompt(session, [Block("twee")]))
+            saw_text = await asyncio.to_thread(text_seen.wait, 2)
+        self.assertTrue(saw_text)
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertFalse(summary_gate.is_set())
+        self.assertEqual(store.summary, "")
+        during = compacted()
+        summary_gate.set()
+        self.assertTrue(await asyncio.to_thread(returned.wait, 2))
+        await asyncio.sleep(0.05)
+        self.assertTrue(agent._streaming)
+        self.assertEqual(store.summary, "")
+        self.assertEqual(compacted(), during)
+        release_stream.set()
+        result = await asyncio.wait_for(second, timeout=3)
+        self.assertEqual(result.stop_reason, "end_turn")
+        await asyncio.wait_for(agent._summary_task, timeout=2)
+        self.assertEqual(store.summary, "folded notes")
+        self.assertGreater(compacted(), during)
+        self.assertFalse(agent._streaming)
+        await agent.prompt(session, [Block("drie")])
+        blob = " ".join(message.get("content") or "" for message in sent[-1])
+        self.assertIn("folded notes", blob)
+
     async def _prompt_with_history(self, seeded: int, reply: str):
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)

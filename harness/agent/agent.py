@@ -3,7 +3,8 @@ behind it.
 
 No tools yet. A turn is: store the message, build the request, stream the answer into the bubble,
 store the answer, write a usage line, and only then let a summary run. This turn does not wait
-for it. The next request does, so a summary never runs while an answer streams.
+for it. The next request waits up to context.SUMMARY_WAIT_S, then sends anyway. A summary never
+runs while an answer streams; one that finishes late is stored before a later turn.
 """
 
 import asyncio
@@ -95,6 +96,8 @@ class LeanAgent:
         self._tasks: set = set()  # a task that nothing refers to can be dropped before it ends
         self._summarising = False
         self._streaming = False  # an answer is on its way to the bubble
+        self._stream_idle = asyncio.Event()
+        self._stream_idle.set()  # set while no answer is streaming; a late summary waits on it
         self._summary_task = None  # compaction from the previous turn, awaited before the next request
         self.conn = None
         self._cancelled: set[str] = set()
@@ -316,6 +319,7 @@ class LeanAgent:
         recent_calls: list[str] = []
         stopped = ""
         await self._wait_for_summary()
+        self._stream_idle.clear()
         self._streaming = True
 
         async def show_text(value: str) -> None:
@@ -424,6 +428,7 @@ class LeanAgent:
             return PromptResponse(stop_reason="refusal", field_meta={"error": str(error)[:300]})
         finally:
             self._streaming = False
+            self._stream_idle.set()
         cancelled = cancelled or session_id in self._cancelled
         self._cancelled.discard(session_id)
         said = "".join(answer)
@@ -441,16 +446,25 @@ class LeanAgent:
                      # A cancel before the first usage chunk has no cache figure; 0 would look measured.
                      "estimated": not counted,
                      "cancelled": cancelled})
-        # After the answer is stored. This turn does not wait. The next request does.
-        if not cancelled:
+        # After the answer is stored. This turn does not wait. The next request does, briefly.
+        # A summary still in flight keeps the task: replacing it would drop the wait for a later turn.
+        if not cancelled and not self._summarising:
             self._summary_task = asyncio.create_task(self.summarise(store))
         return PromptResponse(stop_reason="cancelled" if cancelled else "end_turn")
 
     async def _wait_for_summary(self) -> None:
-        """The previous turn's compaction finishes before this request is built."""
+        """Give the previous turn's compaction SUMMARY_WAIT_S to finish before this request is built.
+
+        On timeout the request is sent anyway. The summary keeps running and is stored once no
+        answer is streaming, so a later turn sees it.
+        """
         task = self._summary_task
-        if task is not None and not task.done():
-            await task
+        if task is None or task.done():
+            return
+        # wait, not wait_for: a timeout must leave the summary running.
+        done, _pending = await asyncio.wait({task}, timeout=context.SUMMARY_WAIT_S)
+        if task in done:
+            task.result()
 
     def _pin(self, store: SessionStore) -> Tool:
         """A fact the user wants kept: written to the store, so it rides along after the summary folds
@@ -1071,25 +1085,30 @@ class LeanAgent:
         """Fold older turns into the summary once SUMMARY_AFTER is passed.
 
         Runs after an answer is stored and before the next request. A second one at a time
-        is skipped. It waits out an answer that is still streaming.
+        is skipped. It waits out an answer that is still streaming, including one that started
+        because the next request stopped waiting.
         """
         if self._summarising:
             return
         self._summarising = True
         try:
             while self._streaming:
-                await asyncio.sleep(0)
+                await self._stream_idle.wait()
             older = context.to_summarise(store)
             if not older:
                 return
+            # The messages this summary covers. A turn that lands while it runs must not move the mark.
+            upto = store.count() - context.KEEP_TURNS * 2
             text = "\n".join(f"{message['role']}: {message['text']}" for message in older)
             summary = await asyncio.to_thread(
                 self.model.complete,
                 [{"role": "system", "content": context.SUMMARY_PROMPT},
                  {"role": "user", "content": (store.summary + "\n" if store.summary else "") + text}])
+            while self._streaming:
+                await self._stream_idle.wait()
             if summary.strip():
                 store.set_summary(summary.strip())
-                store.set("summary_upto", str(len(store.messages()) - context.KEEP_TURNS * 2))
+                store.set("summary_upto", str(upto))
                 for session_id in self.stores:
                     await self._usage(session_id, store, compacted=True)
         except ModelError:
