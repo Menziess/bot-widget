@@ -160,7 +160,11 @@ OLDER_END_SHARE = 0.4  # a message that came in above is shown from its end, wit
 # loads the message at once. On a page of the menu the same line is the way back, but it is not drawn until you
 # scroll, or the pointer or a press comes near it. It fades out again after a short idle.
 MORE_ZONE_PX = 28
-# A pointer that left the bubble does not close it at once. The limits live on leave_open.
+# A pointer that left the bubble does not close it at once: a moment of grace, and longer while the pointer still
+# moves fast (on its way somewhere, probably back), up to a limit. Tests set LEAVE_MAX_S to 0.
+LEAVE_GRACE_S = 0.4
+LEAVE_MOVING_PX_S = 300
+LEAVE_MAX_S = 1.5
 FIELD_LINGER_S = 0.8  # the field for a message stays this long after the pointer left
 PULL_PX = 140
 WHEEL_PX = 40  # one notch of a mouse wheel, which has no pixel distance of its own
@@ -1373,7 +1377,7 @@ class BubbleWindow(QWidget):
             return False  # the position is stale there: the bubble goes the moment the pointer is not on it
         self._left_since = self._left_since or now
         away = now - self._left_since
-        return leave_open(away, self._pointer_speed)
+        return leave_open(away, self._pointer_speed, LEAVE_GRACE_S, LEAVE_MOVING_PX_S, LEAVE_MAX_S)
 
     def shown_by_pointer(self):
         """The pointer is on the face, so it has been near: leaving takes the bubble with it, also when it was

@@ -52,12 +52,13 @@ LEAVE_MOVING_PX_S = 300
 LEAVE_MAX_S = 1.5
 
 
-def leave_open(away_s: float, speed_px_s: float) -> bool:
+def leave_open(away_s: float, speed_px_s: float, grace: float = LEAVE_GRACE_S,
+               moving: float = LEAVE_MOVING_PX_S, cap: float = LEAVE_MAX_S) -> bool:
     """Whether the bubble may still stay open after the pointer left.
 
-    True while away_s < LEAVE_MAX_S and (away_s < LEAVE_GRACE_S or speed_px_s > LEAVE_MOVING_PX_S).
+    The window passes its own limits. Tests zero that cap without touching this default.
     """
-    return away_s < LEAVE_MAX_S and (away_s < LEAVE_GRACE_S or speed_px_s > LEAVE_MOVING_PX_S)
+    return away_s < cap and (away_s < grace or speed_px_s > moving)
 
 
 def reading_seconds(text: str) -> float:

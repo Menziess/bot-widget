@@ -22,11 +22,12 @@ class LeaveOpen(unittest.TestCase):
         self.assertTrue(leave_open(1.0, 301))
         self.assertFalse(leave_open(1.5, 900))
 
-    def test_the_window_uses_the_shared_limits(self):
+    def test_the_window_passes_its_own_limits(self):
         self.assertEqual((LEAVE_GRACE_S, LEAVE_MOVING_PX_S, LEAVE_MAX_S), (0.4, 300, 1.5))
-        source = inspect.getsource(bubble_window)
-        self.assertNotIn("LEAVE_GRACE_S =", source)
+        source = inspect.getsource(bubble_window.BubbleWindow._leave_grace)
+        self.assertIn("LEAVE_MAX_S", source)
         self.assertIn("leave_open", source)
+        self.assertFalse(leave_open(0.2, 0, cap=0.0))
 
 
 if __name__ == "__main__":
