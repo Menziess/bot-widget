@@ -317,6 +317,23 @@ class LeanAgent:
         stopped = ""
         await self._wait_for_summary()
         self._streaming = True
+
+        async def show_text(value: str) -> None:
+            nonlocal shown, first
+            # A later chunk may repeat the whole answer, or grow it. A not_for_me echo
+            # from a skill nudge is not part of what the user reads.
+            new = fold_chunk(shown, value)
+            if new == shown:
+                return
+            extra = new[len(shown):] if new.startswith(shown) else new
+            shown = new
+            if not extra:
+                return
+            if not first:
+                first = time.monotonic()  # the first word, not the first event
+            answer.append(extra)
+            await self._chunk(session_id, "agent", extra)
+
         try:
             if not self._checked and hasattr(self.model, "ready"):
                 await asyncio.to_thread(self.model.ready)
@@ -327,6 +344,9 @@ class LeanAgent:
                 steps += 1
                 calls = []
                 step_text, thought_chars, finish = [], 0, ""
+                # Held until this step's tool calls arrive. A nudge whose only tool is not_for_me
+                # says nothing else, so that reply stays out of the bubble and the stored answer.
+                held: list[str] | None = [] if nudges else None
                 async for kind, value in self._events(session_id, messages):
                     if kind == "cancelled":
                         cancelled = True
@@ -349,19 +369,15 @@ class LeanAgent:
                     if kind != "text":
                         continue
                     step_text.append(value)
-                    # A later chunk may repeat the whole answer, or grow it. A not_for_me echo
-                    # from a skill nudge is not part of what the user reads.
-                    new = fold_chunk(shown, value)
-                    if new == shown:
+                    if held is not None:
+                        held.append(value)
                         continue
-                    extra = new[len(shown):] if new.startswith(shown) else new
-                    shown = new
-                    if not extra:
-                        continue
-                    if not first:
-                        first = time.monotonic()  # the first word, not the first event
-                    answer.append(extra)
-                    await self._chunk(session_id, "agent", extra)
+                    await show_text(value)
+                if held:
+                    names = {(call.get("function") or {}).get("name") for call in calls}
+                    if names != {"not_for_me"}:
+                        for value in held:
+                            await show_text(value)
                 # What the last step looked like, so a turn that ends on talk without the call can be explained.
                 last = {"finish": finish, "calls": len(calls), "thought_chars": thought_chars,
                         "text_tail": "".join(step_text)[-200:]}

@@ -1,5 +1,6 @@
 """The bubble shows the model's final text once, and not a trailing tool-call echo."""
 
+import json
 import os
 import shutil
 import tempfile
@@ -94,6 +95,43 @@ class AnswerText(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("not_for_me", text)
         self.assertNotIn("notforme", text)
         self.assertEqual(agent.stores[session].messages()[-1]["text"], final)
+
+    @staticmethod
+    def tool(name):
+        return ("tool_calls", [{"id": name, "function": {"name": name, "arguments": "{}"}}])
+
+    async def test_a_not_for_me_nudge_hides_its_sentence_and_another_tool_shows_one(self):
+        """Should leave the shown answer unchanged when a nudge's only tool is not_for_me, and show a sentence that arrives with another tool."""
+        skill = os.path.join(self.tmp, "skills", "parking")
+        os.makedirs(skill)
+        with open(os.path.join(skill, "SKILL.md"), "w") as fh:
+            fh.write("---\nname: parking\ndescription: Book a parking ticket\n---\nSTEP ONE: book it\n")
+        final = "De tools zijn beschikbaar in deze chat."
+        sentence = "Dit bericht hoort niet bij deze skill."
+        agent, conn, session = await self.agent([
+            [("text", final), ("finish", "stop")],
+            [("text", sentence), self.tool("not_for_me")],
+            [("finish", "stop")],
+        ], skills=os.path.join(self.tmp, "skills"))
+        await self.say(agent, session, "/parking")
+        self.assertEqual(shown(conn), final)
+        stored = " ".join(message["text"] for message in agent.stores[session].messages())
+        stored += " ".join(message["text"] for message in agent._skill_store().messages())
+        self.assertNotIn(sentence, stored)
+        logged = os.path.join(self.tmp, "bot", "skill", "usage.jsonl")
+        with open(logged) as fh:
+            tails = [json.loads(line)["last_step"]["text_tail"] for line in fh]
+        self.assertIn(sentence, tails)
+
+        other = "Geboekt voor vrijdag."
+        agent, conn, session = await self.agent([
+            [("text", "Ik kijk."), ("finish", "stop")],
+            [("text", other), self.tool("done")],
+        ], skills=os.path.join(self.tmp, "skills"))
+        await self.say(agent, session, "/parking vrijdag")
+        self.assertIn("Ik kijk.", shown(conn))
+        self.assertIn(other, shown(conn))
+        self.assertIn(other, agent.stores[session].messages()[-1]["text"])
 
     async def test_a_glued_sentinel_is_not_part_of_the_final_text(self):
         """Should strip a not_for_me run glued onto the end of one chunk."""
