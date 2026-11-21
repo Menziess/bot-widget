@@ -1,0 +1,10 @@
+{
+  "user": "Say hello to the room.",
+  "skill": false,
+  "bubble": "Hello from the front desk.",
+  "steps": [
+    [
+      {"kind": "text", "text": "Hello from the front desk."}
+    ]
+  ]
+}

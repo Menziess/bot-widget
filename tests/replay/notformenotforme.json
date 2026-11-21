@@ -1,0 +1,10 @@
+{
+  "user": "Is bay 4 free?",
+  "skill": false,
+  "bubble": "Bay 4 is free until 21:00.",
+  "steps": [
+    [
+      {"kind": "text", "text": "Bay 4 is free until 21:00.not_for_menot_for_me"}
+    ]
+  ]
+}

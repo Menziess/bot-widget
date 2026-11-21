@@ -19,7 +19,7 @@ import time
 from botwidget.config import widget_config
 from harness import RESUME_PROMPT, approvals
 from harness.acp_client import AcpClient, split_command
-from harness.stream_text import fold_chunk
+from harness.stream_text import fold_chunk, note_raw
 
 PREFIX = "acp:"
 DEFAULT_TARGET = "hermes-acp"
@@ -424,6 +424,10 @@ class AcpLink:
     def _environment(self) -> dict:
         """The face's own HARNESS_* values, plus the key read from its file: never from widget.json."""
         env = dict(self.env)
+        # The agent process does not inherit the widget environment. The replay log is the exception.
+        replay_log = os.environ.get("BOTWIDGET_REPLAY_LOG", "").strip()
+        if replay_log:
+            env["BOTWIDGET_REPLAY_LOG"] = replay_log
         if self.key_file:
             try:
                 with open(os.path.expanduser(self.key_file)) as fh:
@@ -560,6 +564,7 @@ class AcpLink:
             elif update.kind == "text" and update.text:
                 self._thought = ""
                 self._said = True
+                note_raw({"source": "acp", "kind": "text", "text": update.text})
                 # shortcut: one answer message per turn; ACP message ids are ignored for now.
                 _append_message(self.messages, "bot", update.text, fold=True)
                 if self._followup:

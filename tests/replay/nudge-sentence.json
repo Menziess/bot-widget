@@ -1,0 +1,19 @@
+{
+  "user": "/parking tomorrow",
+  "skill": true,
+  "bubble": "Bay 4 is free until 21:00.",
+  "steps": [
+    [
+      {"kind": "text", "text": "Bay 4 is free until 21:00."},
+      {"kind": "finish", "reason": "stop"}
+    ],
+    [
+      {"kind": "nudge"},
+      {"kind": "text", "text": "This message is not about the skill."},
+      {"kind": "tool", "name": "not_for_me"}
+    ],
+    [
+      {"kind": "finish", "reason": "stop"}
+    ]
+  ]
+}

@@ -349,6 +349,19 @@ Keep the installed app next to your checkout and hop between them from the /sett
 On Linux the installer names its command `bot-widget` so it does not clash with the `botwidget` command from `uv tool install`.
 
 - Unit tests need no display and no Qt, run them with `QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -t .`
+- A repeated answer, a leaked tool name, or a skill-nudge sentence is fixed in one place, `harness/stream_text.py`. Each of those is also a fixture under `tests/replay/`: the raw events a backend emitted, and the bubble text they must become. The replay test runs every fixture through the agent
+
+To replay a real chat without committing it, point the log outside the checkout and turn that log into a fixture. The fixture lands in `/tmp/botwidget-replay/` unless you pass another path, and a path inside the checkout is refused.
+
+```sh
+BOTWIDGET_REPLAY_LOG=/tmp/botwidget-replay/live.jsonl botwidget --dev
+.venv/bin/python scripts/replay_capture /tmp/botwidget-replay/live.jsonl
+BOTWIDGET_REPLAY_DIR=/tmp/botwidget-replay QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.replay.test_replay
+```
+
+- The log is one JSON object per line: a model step, a text chunk, a tool name, or the text the bubble received. The widget passes `BOTWIDGET_REPLAY_LOG` through to the agent. Leave it unset and nothing is written
+- The source can also be a harness session folder. That folder keeps the stored answer, not the chunks, so each bot line becomes one final event
+- The bubble field in the written file is what the stage shows today. Change it when that text is wrong, then run the replay again. Copy a fixture into `tests/replay/` only after the text is synthetic
 - `git config core.hooksPath .githooks` runs that command before a push of main and rejects the push when the tests fail
 - Everything that differs per operating system lives in `botwidget/system/`, one module per OS with the same function names
 - Everything that touches Qt lives in `botwidget/qt_ui/`

@@ -25,7 +25,7 @@ from acp.schema import (AgentMessageChunk, AgentThoughtChunk, AvailableCommand, 
 from harness import RESUME_PROMPT, approvals
 from harness.agent import context
 from harness.agent.models import ModelError
-from harness.stream_text import fold_chunk
+from harness.stream_text import fold_chunk, note_raw
 from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
 from harness.agent.workspace import (_diff_text, _real_path, compute_edit, outside_workspace,
@@ -322,11 +322,10 @@ class LeanAgent:
         self._stream_idle.clear()
         self._streaming = True
 
-        async def show_text(value: str) -> None:
+        async def show_text(value: str, tool_names: set[str] | None = None) -> None:
             nonlocal shown, first
-            # A later chunk may repeat the whole answer, or grow it. A not_for_me echo
-            # from a skill nudge is not part of what the user reads.
-            new = fold_chunk(shown, value)
+            # Every piece the bubble will show, including a nudge reply, goes through one stage.
+            new = fold_chunk(shown, value, tool_names)
             if new == shown:
                 return
             extra = new[len(shown):] if new.startswith(shown) else new
@@ -348,9 +347,10 @@ class LeanAgent:
                 steps += 1
                 calls = []
                 step_text, thought_chars, finish = [], 0, ""
-                # Held until this step's tool calls arrive. A nudge whose only tool is not_for_me
-                # says nothing else, so that reply stays out of the bubble and the stored answer.
+                # Held until this step's tool calls arrive. fold_chunk drops the reply when the
+                # only tool is not_for_me, and keeps it when the step did real work.
                 held: list[str] | None = [] if nudges else None
+                note_raw({"source": "model", "kind": "nudge" if nudges else "step"})
                 async for kind, value in self._events(session_id, messages):
                     if kind == "cancelled":
                         cancelled = True
@@ -362,6 +362,9 @@ class LeanAgent:
                         continue
                     if kind == "tool_calls":
                         calls = value
+                        for call in value:
+                            note_raw({"source": "model", "kind": "tool",
+                                      "name": (call.get("function") or {}).get("name") or ""})
                         continue
                     if kind == "finish":
                         finish = value
@@ -372,6 +375,7 @@ class LeanAgent:
                         continue
                     if kind != "text":
                         continue
+                    note_raw({"source": "model", "kind": "text", "text": value})
                     step_text.append(value)
                     if held is not None:
                         held.append(value)
@@ -379,9 +383,8 @@ class LeanAgent:
                     await show_text(value)
                 if held:
                     names = {(call.get("function") or {}).get("name") for call in calls}
-                    if names != {"not_for_me"}:
-                        for value in held:
-                            await show_text(value)
+                    for value in held:
+                        await show_text(value, names)
                 # What the last step looked like, so a turn that ends on talk without the call can be explained.
                 last = {"finish": finish, "calls": len(calls), "thought_chars": thought_chars,
                         "text_tail": "".join(step_text)[-200:]}

@@ -1,0 +1,12 @@
+{
+  "user": "What can you do here?",
+  "skill": false,
+  "bubble": "I can answer in this chat.",
+  "steps": [
+    [
+      {"kind": "text", "text": "I can"},
+      {"kind": "text", "text": "I can answer in this chat."},
+      {"kind": "final", "text": "I can answer in this chat."}
+    ]
+  ]
+}

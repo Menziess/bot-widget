@@ -3,6 +3,7 @@
 - Stay on the default branch. Do not create a branch unless asked. A branch that is asked for starts with `feature/`. Ask before committing. Never push on your own: wait until the owner says push, also after a green check or an earlier yes, because a yes covers that push only. Commits may pile up locally; the owner often pushes several of them in one go.
 - `botwidget/` is toolkit-free logic; `botwidget/qt_ui/` is the PySide6 UI.
 - Test: `QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -t .` (unittest, not pytest; logic plus a few offscreen Qt tests).
+- An output glitch (repeated text, a leaked tool name, a skill-nudge leftover) is fixed in the one sanitizing stage, `harness/stream_text.py`, and locked with a replay fixture under `tests/replay/`. Keep improving that stage and folding the next glitch into it, instead of adding another one-off patch.
 - `git config core.hooksPath .githooks` so `.githooks/pre-push` runs that command when main is pushed and rejects the push when it fails.
 - Run live: `botwidget --dev` (restarts on .py changes). Check UI changes by eye.
 - To talk to a running widget's bot from a shell (the widget needs `"remote_control": true` in widget.json, off by default), use `botwidget bots | ask BOT TEXT | read BOT` (`botwidget/remote.py`; README, Talking to a bot from a shell). From a checkout run `.venv/bin/python -m botwidget ...`: the `botwidget` on PATH may be the uv install, which is another copy.
