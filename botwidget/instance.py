@@ -1,8 +1,13 @@
-"""One widget at a time: a previously started widget is stopped first."""
+"""One widget at a time: a previously started widget is stopped first.
+
+`instances_main` only lists processes. A `--dev` reloader and its child are one widget.
+"""
 
 import atexit
 import os
 import signal
+import subprocess
+import sys
 import tempfile
 import time
 
@@ -36,3 +41,102 @@ def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
     with open(pidfile, "w") as fh:
         fh.write(str(os.getpid()))
     atexit.register(lambda: os.path.exists(pidfile) and os.remove(pidfile))
+
+
+def is_widget_cmd(cmd: str) -> bool:
+    if "--instances" in cmd:
+        return False
+    return looks_like_widget(cmd.encode("utf-8", "replace"))
+
+
+def parse_ps(text: str) -> list:
+    """pid, ppid, command rows from `ps -o pid=,ppid=,command=`."""
+    rows = []
+    for line in text.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) < 2:
+            continue
+        try:
+            pid, ppid = int(parts[0]), int(parts[1])
+        except ValueError:
+            continue
+        rows.append((pid, ppid, parts[2] if len(parts) > 2 else ""))
+    return rows
+
+
+def widget_groups(procs, own_pid=None) -> list:
+    """Group a --dev supervisor with widget descendants. Each group is one widget.
+
+    A child of the reloader (or of that child) shares the supervisor's group.
+    """
+    widgets = []
+    for pid, ppid, cmd in procs:
+        if own_pid and pid == own_pid:
+            continue
+        if is_widget_cmd(cmd):
+            widgets.append((pid, ppid, cmd))
+    by_pid = {pid: ppid for pid, ppid, _cmd in widgets}
+    dev = {pid for pid, _ppid, cmd in widgets if "--dev" in cmd.split()}
+    members = {}
+    for pid in by_pid:
+        leader = None
+        walk = pid
+        seen = set()
+        while walk in by_pid and walk not in seen:
+            seen.add(walk)
+            if walk in dev:
+                leader = walk
+                break
+            walk = by_pid[walk]
+        if leader is None:
+            leader = pid
+        members.setdefault(leader, []).append(pid)
+    groups = []
+    for leader, pids in members.items():
+        groups.append([leader] + [pid for pid in pids if pid != leader])
+    return groups
+
+
+def render_instances(groups, procs) -> str:
+    cmds = {pid: cmd for pid, _ppid, cmd in procs}
+    n = len(groups)
+    noun = "widget" if n == 1 else "widgets"
+    lines = [f"botwidget: {n} {noun} running"]
+    for group in groups:
+        bits = [f"{group[0]} {cmds.get(group[0], '').strip()}"]
+        for kid in group[1:]:
+            bits.append(f"child {kid} {cmds.get(kid, '').strip()}")
+        lines.append("- " + "; ".join(bits))
+    return "\n".join(lines) + "\n"
+
+
+def read_process_table():
+    """Process rows, or None when the table cannot be read. Never kills a process."""
+    if os.name == "nt":
+        return None
+    try:
+        result = subprocess.run(
+            ["ps", "-ax", "-o", "pid=,ppid=,command="],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return parse_ps(result.stdout)
+
+
+def instances_main(procs=None, own_pid=None) -> int:
+    """Exit 0 when at most one widget is running. Never kills anything."""
+    if procs is None:
+        procs = read_process_table()
+        own_pid = os.getpid()
+        if procs is None:
+            print("botwidget: cannot list processes", file=sys.stderr)
+            return 2
+    groups = widget_groups(procs, own_pid=own_pid)
+    sys.stdout.write(render_instances(groups, procs))
+    return 0 if len(groups) <= 1 else 1
