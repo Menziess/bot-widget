@@ -54,7 +54,9 @@ def snapshot(folder: str = PACKAGE) -> dict:
 
 
 def start(extra: list = ()) -> subprocess.Popen:
-    return subprocess.Popen([sys.executable, "-m", "botwidget", *extra])
+    env = os.environ.copy()
+    env["BOTWIDGET_DEV"] = "1"
+    return subprocess.Popen([sys.executable, "-m", "botwidget", *extra], env=env)
 
 
 def needs_restart(current: dict, seen: dict, started_ns: int) -> bool:

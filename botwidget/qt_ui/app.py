@@ -109,8 +109,6 @@ def main():
     from botwidget.qt_ui.demo_board import DemoBoard, demo_wanted
     if demo_wanted():
         app._demo_board = DemoBoard()
-        from botwidget.demo_run import start as start_demo
-        start_demo()
     first = next(iter(faces.faces.values()), None)
     if first and os.environ.get("BOT_WIDGET_OPEN_CHAT"):
         QTimer.singleShot(800, first.pin)

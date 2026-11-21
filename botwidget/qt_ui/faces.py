@@ -555,8 +555,6 @@ class Faces(QObject):
             "connections": acp_bots.public_connections(config.get("connections")),
             "connection_form": getattr(self, "_connection_draft", None),
             "connection_error": getattr(self, "_connection_error", ""),
-            "dev": startup.from_checkout(),
-            "debug": startup.from_checkout() and config.get("debug") is True,
             "confirm_remove": getattr(self, "_confirm_remove", ""),
             "json_text": getattr(self, "_json_text", ""), "json_error": getattr(self, "_json_error", ""),
             "approvals_text": self._approvals_view(), "approvals_error": getattr(self, "_approvals_error", ""),
@@ -583,7 +581,6 @@ class Faces(QObject):
         "check_updates": lambda faces, on: save_widget_config(check_updates=on),
         "save_battery": lambda faces, on: save_widget_config(save_battery=on),
         "auto_update": lambda faces, on: save_widget_config(auto_update=on),
-        "debug": lambda faces, on: faces._set_debug(on),
     }
     CONNECTIONS = {"openbot": "openbot", "grokbot": "gbot", "hermesbot": "hermes"}
     LINKS = {"openbot": OPENBOT_URL, "grokbot": GROKBOT_URL, "hermesbot": HERMES_URL, "download": updates.DOWNLOAD_URL}
@@ -888,12 +885,6 @@ class Faces(QObject):
             self._forget_memory(name)
             return "memory"
         return None
-
-    def _set_debug(self, on: bool):
-        """Sample thoughts. An installed copy has no such switch, and a flag left in the file does nothing there."""
-        if not startup.from_checkout():
-            return
-        save_widget_config(debug=bool(on))
 
     def _open_memory(self, memory_id: str) -> None:
         from harness.agent.memory import list_memories

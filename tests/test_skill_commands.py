@@ -132,7 +132,8 @@ class SkillRowsInTheBubble(unittest.TestCase):
 
     def test_should_show_only_built_ins_when_the_bot_has_no_skills(self):
         self.window.bubble.show_command_menu()
-        self.assertEqual(self.window.bubble._slash.rows, list(menu_pages.commands()))
+        from botwidget.demo_chat import dev_running
+        self.assertEqual(self.window.bubble._slash.rows, list(menu_pages.commands(dev=dev_running())))
 
     def test_should_show_the_update_on_this_bot_and_send_the_skill_with_typed_arguments(self):
         self._link((("review", "Look at a diff"), ("screenshot", "nope"), ("", "skip")))
@@ -140,8 +141,10 @@ class SkillRowsInTheBubble(unittest.TestCase):
         self.window.bubble._entry.setText("/review the diff")
         self.window.bubble.show_command_menu()
         rows = self.window.bubble._slash.rows
-        self.assertEqual(rows[:len(menu_pages.COMMANDS)], list(menu_pages.COMMANDS))
-        self.assertEqual(rows[len(menu_pages.COMMANDS):], [("/review", "Look at a diff")])
+        from botwidget.demo_chat import dev_running
+        built_in = list(menu_pages.commands(dev=dev_running()))
+        self.assertEqual(rows[:len(built_in)], built_in)
+        self.assertEqual(rows[len(built_in):], [("/review", "Look at a diff")])
         with mock.patch.object(self.window, "start_screenshot") as shot, \
                 mock.patch.object(self.window, "open_menu") as page:
             self.window.bubble._slash.chosen.emit("/review")

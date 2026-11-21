@@ -30,15 +30,17 @@ def _slash_name(name: str) -> str:
     return f"/{word}" if word else ""
 
 
-def commands(available=()) -> tuple:
+def commands(available=(), *, dev: bool = False) -> tuple:
     """Built-in commands, then this bot's skill commands.
 
-    A sample thought is a switch in Settings, and only in a checkout. A skill whose
+    /demo is offered only while the widget was started with --dev. A skill whose
     name is empty or already a built-in (such as /screenshot) is left out.
     """
-    if not available:
-        return COMMANDS
     rows = list(COMMANDS)
+    if dev:
+        rows.append(("/demo", "run the chat demo"))
+    if not available:
+        return tuple(rows)
     taken = {name.lower() for name, _note in rows}
     for item in available:
         if isinstance(item, (tuple, list)):
@@ -54,36 +56,6 @@ def commands(available=()) -> tuple:
     return tuple(rows)
 
 
-DEBUG_THOUGHT = "Debug: this is what a thought looks like while the bot works…"
-DEBUG_MESSAGE = """# Header one
-## Header two
-### Header three
-
-Plain text with **bold**, *italic*, `inline code`, a [link](https://openbot.run/) and a bare URL https://example.com/page.
-
-> A quote that goes on for a while, so you can see how a quoted line wraps over more than one line.
-
-- A bullet with **bold** in it
-- A second bullet
-1. A numbered line
-2. Another numbered line
-
----
-
-| Name | Kind | Notes |
-|--|--|--|
-| Short | text | fits in one line |
-| A long cell | markdown | this cell has so many words in it that it has to wrap over several lines in the table |
-| `code` | **bold** | *italic* and a [link](https://x.ai/bot) |
-
-```python
-def greet(name):
-    return f"Hi, {name}!"
-
-print(greet("world"))
-```
-
-A file path: ~/Projects/private/bot-widget/README.md"""
 FEEDBACK_ISSUE = "https://github.com/Menziess/bot-widget/issues/new"
 
 
@@ -158,9 +130,6 @@ def settings(state: dict) -> list:
     ]
     if state.get("can_install_updates"):
         blocks.append(_toggle("Install updates automatically", "toggle/auto_update", state["auto_update"]))
-    if state.get("dev"):
-        blocks.append(_toggle("Sample thought, click the face for a sample message", "toggle/debug",
-                              bool(state.get("debug"))))
     blocks += [plain_block("gap"), _button("Quit Bot Widget", "action/quit")]
     return blocks
 

@@ -69,7 +69,7 @@ CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 SETTING_KEYS = ("drafts", "save_battery", "sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied", "unlinked_hint_shown", "variant",
                 "local_command", "muted_bots", "glass_clear", "grokbot_target", "hermesbot_target", "grok_relay",
-                "acp_bots", "connections", "debug", "sources_off", "remote_control", "page_memory_s")
+                "acp_bots", "connections", "sources_off", "remote_control", "page_memory_s")
 
 
 # With quiet hours on, the sound stays off from this hour until the other, around midnight.

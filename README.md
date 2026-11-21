@@ -76,6 +76,7 @@ botwidget
 - Paste a file or a picture in the field to send it along, it shows as a chip that you can remove, and the message gets a list of the files in a `botwidget-transfers` folder in the system temp folder, which the system cleans up by itself
 - Drag the face to move it, it bounces off screen edges
 - A small orange dot on the face means a message of yours is waiting for OpenBot or was refused
+- /demo runs the chat demo (the tasks go through the chat, and code checks the outcome). It is in the list only while the widget was started with --dev
 - Right-click the face, or start the field with a slash, and a list of commands opens below the field. A skill takes arguments: while the first word is the skill, its row stays and shows what you type behind it, up to the width of the bubble. /feedback opens a new GitHub issue in the browser, already filled with the version, the system and how it was installed
 - Pick a command with the arrows and Return, Tab fills it in, and Escape closes the list and clears the command you typed (a message that was already there stays)
 - A page (settings, bots, connections) goes away by itself like any bubble. Escape returns straight to the chat. A click outside closes it. A left click on its face brings the chat back, and the line at the top (scrolling up past the top of the page) goes one level up (a page to the command list) in the same bubble, with the field to type in

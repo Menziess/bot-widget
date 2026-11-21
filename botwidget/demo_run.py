@@ -137,9 +137,6 @@ def _control(board: Board) -> None:
 
 def run() -> Board:
     """Run every demo task once and write the checklist the panel reads."""
-    flag = os.path.join(ROOT, "enable")
-    if os.path.exists(flag):
-        os.remove(flag)
     board = Board()
     _publish(board)
     for step in (_browser, _files, _script, _process, _a11y, _repair, _control):

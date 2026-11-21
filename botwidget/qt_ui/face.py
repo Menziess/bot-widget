@@ -1353,16 +1353,7 @@ class FaceWindow(QWidget):
         if getattr(self, "_screenshot_active", False):
             # Screenshot mode: show "Watching…" instead of the Waking line.
             chat = {**chat, "activity": "Watching…"}
-        elif self._debug_on():
-            # Settings: the bot looks busy with a thought, and a click shows a message with every piece of markdown.
-            chat = {**chat, "activity": menu_pages.DEBUG_THOUGHT,
-                    "messages": [*(chat.get("messages") or []), {"role": "bot", "text": menu_pages.DEBUG_MESSAGE}]}
         return chat
-
-    def _debug_on(self) -> bool:
-        """Sample thoughts. Only a checkout honors the switch, so an installed copy ignores a leftover flag."""
-        from botwidget.startup import from_checkout
-        return from_checkout() and widget_config().get("debug") is True
 
     def _poll_pending(self):
         """Check whether a question or approval is waiting and refresh the bubble.
@@ -1871,7 +1862,10 @@ class FaceWindow(QWidget):
         asking = bool(self.acp and self._attention.get("approvals"))
         if asking:
             self.acp.interrupt()
-        if self._working and not self._debug_on():
+        if not files and text.strip().lower() == "/demo":
+            self._start_demo()
+            return
+        if self._working:
             self._queue.insert(0 if asking else len(self._queue),
                                {"text": text, "files": files, "id": uuid.uuid4().hex[:8]})
             self._sync_bubble(self._latest(), force=True, replace_menu=self.bubble._list_only)
@@ -1891,6 +1885,15 @@ class FaceWindow(QWidget):
         # The right-click list is all that is open when a skill row was picked: the cloud takes its place.
         self._sync_bubble(self._latest(), replace_menu=self.bubble._list_only)
         self._poll_timer.start(300)
+
+    def _start_demo(self):
+        """The chat demo. Hidden unless this process was started with --dev."""
+        from botwidget.demo_chat import begin, dev_running
+        from botwidget.markdown import status_block
+        if not dev_running():
+            self.bubble.show_blocks([status_block("/demo only runs with --dev")], "say")
+            return
+        begin(self)
 
     def _next_queued(self):
         """The turn is over: the oldest queued message goes out, and the next waits for that turn to finish."""
@@ -1953,7 +1956,8 @@ class FaceWindow(QWidget):
         extra = ()
         if link is not None and hasattr(type(link), "available_commands"):
             extra = link.available_commands() or ()
-        return menu_pages.commands(extra) if extra else menu_pages.commands()
+        from botwidget.demo_chat import dev_running
+        return menu_pages.commands(extra, dev=dev_running())
 
     def _set_attention(self, data: dict) -> bool:
         """Remember what waits for you; True when that is something else than before."""

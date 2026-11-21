@@ -13,8 +13,8 @@ BOARD = os.environ.get("BOTWIDGET_DEMO_BOARD") or "/tmp/t-demo/checklist.json"
 
 
 def demo_wanted() -> bool:
-    root = os.environ.get("BOTWIDGET_DEMO_ROOT") or "/tmp/t-demo"
-    return "--demo" in sys.argv[1:] or os.path.exists(os.path.join(root, "enable"))
+    """The checklist follows --demo. /demo in the chat starts a run. A file under /tmp does not."""
+    return "--demo" in sys.argv[1:]
 
 
 class DemoBoard(QWidget):

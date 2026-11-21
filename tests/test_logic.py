@@ -3020,7 +3020,7 @@ class BubbleHover(unittest.TestCase):
             self.assertTrue(bubble.isVisible(), f"pointing at the face opened nothing, after {log[-6:]}")
 
         from botwidget import menu_pages
-        patch = mock.patch.object(menu_pages, "commands", lambda: menu_pages.COMMANDS)  # an installed copy: no /debug
+        patch = mock.patch.object(menu_pages, "commands", lambda *_args, **_kwargs: menu_pages.COMMANDS)
         patch.start()
         self.addCleanup(patch.stop)
         ops = ["hover", "on_bubble", "edge", "leave", "left_click", "right_click", "choose", "back", "refresh",
@@ -4224,7 +4224,8 @@ class BubbleHover(unittest.TestCase):
         self.app.processEvents()
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
         from botwidget import menu_pages
-        self.assertEqual([c for c, _n in bubble._slash.rows], [c for c, _n in menu_pages.commands()])
+        from botwidget.demo_chat import dev_running
+        self.assertEqual([c for c, _n in bubble._slash.rows], [c for c, _n in menu_pages.commands(dev=dev_running())])
         self.assertGreater(bubble._slash.geometry().top(), bubble._entry.geometry().bottom(), "below the field")
         self.assertGreater(bubble.height(), height, "the bubble makes room for the list")
         bubble._entry.setText("/b")
@@ -5149,35 +5150,17 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "", "the keyboard is gone again: it may go")
 
-    def test_debug_is_a_settings_switch_only_in_a_local_copy(self):
-        """Should offer the sample thought only as a Settings switch in a checkout, and keep the settings page full of its own text."""
-        from unittest import mock
+    def test_an_old_debug_key_does_not_change_settings_or_the_chat(self):
+        """Should ignore a leftover debug key from the removed sample-thought setting."""
         from botwidget import menu_pages
-        from botwidget.config import save_widget_config
-        turned_on = {**self.settings_state(), "dev": True, "debug": True}
-        self.assertIn("toggle/debug", [block.get("command") for block in menu_pages.settings(turned_on)])
+        from botwidget.config import save_widget_config, widget_config
         self.assertNotIn("toggle/debug", [block.get("command") for block in menu_pages.settings(self.settings_state())])
-        self.assertNotIn("/debug", [command for command, _note in menu_pages.commands()])
-        save_widget_config(debug=True)
-        with mock.patch("botwidget.startup.from_checkout", return_value=False):
-            self.assertFalse(self.window._debug_on(), "an installed copy ignores the flag")
-            self.assertEqual(self.window._latest().get("activity", ""), "")
-        with mock.patch("botwidget.startup.from_checkout", return_value=True):
-            self.assertTrue(self.window._debug_on())
-            chat = self.window._latest()
-            self.assertEqual(chat["activity"], menu_pages.DEBUG_THOUGHT)
-            self.window._sync_bubble(chat, force=True)
-            self.assertTrue(self.window._working, "it looks busy")
-            self.assertTrue(self.window._toggle_answer_view())
-            self.assertIn("Header one", self.window.bubble.full_text)
-            self.assertIn("```python", menu_pages.DEBUG_MESSAGE)
-        save_widget_config(debug=False)
-        with mock.patch("botwidget.startup.from_checkout", return_value=True):
-            self.assertFalse(self.window._debug_on(), "a toggle")
-            self.assertEqual(self.window._latest().get("activity", ""), "")
+        self.assertNotIn("Sample thought", "".join(
+            block.get("text") or "" for block in menu_pages.settings({**self.settings_state(), "debug": True})))
+        save_widget_config(sound=widget_config().get("sound") is True)
         self.open_settings()
         self.assertIn("Sound on a new answer", self.window.bubble.full_text)
-        self.assertNotIn("Header one", self.window.bubble.full_text, "the sample is not the settings page")
+        self.assertNotIn("Sample thought", self.window.bubble.full_text)
 
     def test_the_balls_hang_together_as_a_chain_and_go_with_the_bubble(self):
         from unittest import mock
@@ -6416,7 +6399,7 @@ class MenuInBubble(unittest.TestCase):
         self.assertTrue(bubble.isVisible())
         self.assertEqual(bubble._entry.text(), "")
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
-        self.assertEqual(bubble._slash.rows, list(menu_pages.commands()))
+        self.assertEqual(bubble._slash.rows, list(menu_pages.commands(dev=__import__("botwidget.demo_chat", fromlist=["dev_running"]).dev_running())))
         self.assertEqual(self.text(), "")
         self.assertFalse(bubble._entry.isVisibleTo(bubble))
 
@@ -6448,7 +6431,7 @@ class MenuInBubble(unittest.TestCase):
             self.window._check_hover()
         self.assertTrue(bubble._list_only, "the menu stays")
         bubble._tick_dots()  # the dots of the thought before must not trip over a bubble without text
-        self.assertEqual(bubble._slash.rows, list(menu_pages.commands()))
+        self.assertEqual(bubble._slash.rows, list(menu_pages.commands(dev=__import__("botwidget.demo_chat", fromlist=["dev_running"]).dev_running())))
         self.window.on_user_message("/settings")
         self.assertIn("Sound on a new answer", self.text())
 
@@ -6497,7 +6480,7 @@ class MenuInBubble(unittest.TestCase):
         self.assertIn("Settings", self.text())
         window._menu_command("page/commands")
         self.assertFalse(window.pinned, "the arrow back does not pin")
-        self.assertEqual(bubble._slash.rows, list(menu_pages.commands()))
+        self.assertEqual(bubble._slash.rows, list(menu_pages.commands(dev=__import__("botwidget.demo_chat", fromlist=["dev_running"]).dev_running())))
         with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=time.monotonic() + 60):
             bubble._tick()
         self.assertFalse(bubble.isVisible(), "the pointer is not on it: it goes")
@@ -6550,7 +6533,7 @@ class MenuInBubble(unittest.TestCase):
         self.right_click()
         self.assertEqual(bubble._entry.text(), "Een bericht dat bijna af is")
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
-        self.assertEqual(bubble._slash.rows, list(menu_pages.commands()), "the whole list, the text is no filter")
+        self.assertEqual(bubble._slash.rows, list(menu_pages.commands(dev=__import__("botwidget.demo_chat", fromlist=["dev_running"]).dev_running())), "the whole list, the text is no filter")
 
     def test_picking_a_command_leaves_the_message_in_the_field_also_after_coming_back(self):
         self.window.pin()

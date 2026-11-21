@@ -1500,7 +1500,7 @@ class MenuAndCatcher(unittest.TestCase):
                 mock.patch("botwidget.qt_ui.faces.grok_relay.link_channel", return_value={"prompt": "hi"}), \
                 mock.patch("botwidget.qt_ui.faces.grok_relay.channel", return_value="topic"), \
                 mock.patch("botwidget.qt_ui.faces.grok_relay.chief_prompt", return_value="chief"):
-            self.assertEqual(faces.menu_command("toggle/debug", "settings"), "settings")
+            self.assertIsNone(faces.menu_command("toggle/debug", "settings"))
             self.assertEqual(faces.menu_command("toggle/always_on_top", "settings"), "settings")
             self.assertEqual(faces.menu_command("toggle/all_desktops", "settings"), "settings")
             self.assertEqual(faces.menu_command("toggle/login", "settings"), "settings")
@@ -1513,8 +1513,6 @@ class MenuAndCatcher(unittest.TestCase):
             self.assertEqual(faces.menu_command("connect/openbot", "connections"), "connections")
             self.assertEqual(faces.menu_command("mute/nobody", "bots"), "bots")
             self.assertEqual(faces.menu_command("mute/home", "bots"), "bots")
-        with mock.patch("botwidget.qt_ui.faces.startup.from_checkout", return_value=False):
-            faces._set_debug(True)
         with mock.patch("botwidget.qt_ui.faces.QGuiApplication.primaryScreen", return_value=None):
             self.assertEqual(faces._hotspot(), (0.0, 0.0))
         faces._edge_tick()
