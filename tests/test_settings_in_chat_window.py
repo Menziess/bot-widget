@@ -311,6 +311,40 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertIsNone(self.window._menu_page)
         self.assertTrue(self.bubble._list_only)
 
+    def test_should_collapse_when_the_pointer_clicks_outside_the_bubble(self):
+        """Should hide the bubble when a press lands outside it and its face, and forget the page."""
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication, QWidget
+        self.window.open_menu("settings")
+        self._finish()
+        self.assertTrue(self.bubble.isVisible())
+        other = QWidget()
+        other.show()
+        self.addCleanup(other.close)
+        point = QPointF(4, 4)
+        QApplication.sendEvent(other, QMouseEvent(
+            QEvent.MouseButtonPress, point, point, Qt.LeftButton, Qt.LeftButton, Qt.NoModifier))
+        self._finish()
+        self.assertFalse(self.bubble.isVisible())
+        self.assertEqual(self.bubble.kind, "")
+        self.assertIsNone(self.window._menu_page)
+        self.assertIsNone(self.window._page_memory)
+
+    def test_should_collapse_when_escape_is_pressed(self):
+        """Should return from a menu page to the chat on Escape, and forget the page."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.window.open_menu("settings")
+        self._finish()
+        QTest.keyClick(self.bubble, Qt.Key_Escape)
+        self._finish()
+        self.assertTrue(self.bubble.isVisible())
+        self.assertIsNone(self.window._menu_page)
+        self.assertIsNone(self.window._page_memory)
+        self.assertIn("Hello from the bot.", self.bubble.full_text)
+        self.assertNotIn("Sound on a new answer", self.bubble.full_text)
+
     def test_should_reopen_the_same_page_when_the_pointer_comes_back(self):
         """Should show Settings again after the pointer left that page, without writing config."""
         self.window.open_menu("settings")
@@ -329,6 +363,80 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertEqual(self.window._menu_page, "settings")
         self.assertIn("Sound on a new answer", self.bubble.full_text)
         self.assertIsNone(self.window._page_memory)
+
+    def _leave_page(self, reason: str):
+        with mock.patch.object(self.window, "pointer_near", return_value=False):
+            self.assertTrue(self.bubble.close_bubble(reason), reason)
+        self.window._sync_bubble(self.window._latest(), force=True)
+
+    def _hover(self):
+        with mock.patch("botwidget.qt_ui.face.global_pointer", return_value=False), \
+                mock.patch("botwidget.qt_ui.face.pointer_on", return_value=True), \
+                mock.patch.object(self.window, "_pointer_is_busy", return_value=False):
+            self.window._check_hover()
+        self._finish()
+
+    def test_should_close_a_page_when_the_pointer_leaves(self):
+        """Should hide the bubble when the pointer leaves a menu page, and keep that page for the next hover."""
+        self.window.open_menu("settings")
+        self._finish()
+        self._leave_page("left")
+        self.assertFalse(self.bubble.isVisible())
+        self.assertIsNone(self.window._menu_page)
+        self.assertEqual(self.window._page_memory, "settings")
+
+    def test_should_show_the_chat_when_the_pointer_returns_after_the_page_memory(self):
+        """Should open the normal chat once the remembered page is older than the limit."""
+        import time
+        self.window.open_menu("settings")
+        self._finish()
+        self._leave_page("left")
+        self.window._page_memory_until = time.monotonic() - 1
+        self._hover()
+        self.assertIsNone(self.window._menu_page)
+        self.assertIsNone(self.window._page_memory)
+        self.assertIn("Hello from the bot.", self.bubble.full_text)
+        self.assertNotIn("Sound on a new answer", self.bubble.full_text)
+
+    def test_should_forget_the_page_when_a_click_away_closes_it(self):
+        """Should close on a click into another window and open the chat on the next hover."""
+        self.window.open_menu("settings")
+        self._finish()
+        self._leave_page("focus_elsewhere")
+        self.assertFalse(self.bubble.isVisible())
+        self.assertIsNone(self.window._page_memory)
+        self._hover()
+        self.assertIsNone(self.window._menu_page)
+        self.assertIn("Hello from the bot.", self.bubble.full_text)
+
+    def test_should_forget_the_page_when_escape_closes_it(self):
+        """Should leave the page on Escape and not bring that page back on the next hover."""
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        self.window.open_menu("settings")
+        self._finish()
+        self.bubble.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key_Escape, Qt.KeyboardModifier.NoModifier))
+        self._finish()
+        self.assertTrue(self.bubble.isVisible())
+        self.assertIsNone(self.window._menu_page)
+        self.assertIsNone(self.window._page_memory)
+        self.assertIn("Hello from the bot.", self.bubble.full_text)
+        self.assertNotIn("Sound on a new answer", self.bubble.full_text)
+
+    def test_should_take_the_page_memory_limit_from_the_setting(self):
+        """Should keep a page for the seconds named in widget.json, and for 60 when that key is absent."""
+        import time
+        from botwidget.config import page_memory_s
+        self.assertEqual(page_memory_s(), 60)
+        with mock.patch("botwidget.config.widget_config", return_value={"page_memory_s": 12}):
+            self.assertEqual(page_memory_s(), 12)
+        with mock.patch("botwidget.qt_ui.face.page_memory_s", return_value=12):
+            self.window.open_menu("bots")
+            self._finish()
+            before = time.monotonic()
+            self._leave_page("left")
+        self.assertEqual(self.window._page_memory, "bots")
+        self.assertAlmostEqual(self.window._page_memory_until - before, 12, delta=2)
 
     def test_should_return_to_the_chat_with_the_field_on_a_left_click(self):
         """Should leave a page for the chat when its face is left-clicked, and never open settings that way."""
@@ -363,8 +471,8 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self._assert_chat_field()
         self.assertNotEqual(self.bubble.kind, "think")
 
-    def test_should_return_to_the_chat_when_escape_is_pressed_on_the_page_or_the_face(self):
-        """Should bring the chat back when Escape is pressed on a page, or on the face that holds it."""
+    def test_should_collapse_when_escape_is_pressed_on_the_page_or_the_face(self):
+        """Should hide the bubble when Escape is pressed on a page, or on the face that holds it."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         for page, on_face in (("settings", False), ("connections", True)):
@@ -380,7 +488,11 @@ class SettingsInTheChatWindow(unittest.TestCase):
                 else:
                     QTest.keyClick(self.bubble, Qt.Key_Escape)
                 self._finish()
-                self._assert_chat_field()
+                self.assertTrue(self.bubble.isVisible(), "Escape returns to the chat, not one level up")
+                self.assertIsNone(self.window._menu_page)
+                self.assertIsNone(self.window._page_memory)
+                self.assertFalse(self.bubble._list_only)
+                self.assertIn("Hello from the bot.", self.bubble.full_text)
 
     def test_should_leave_the_command_list_for_the_chat_when_scrolled_up_past_the_top(self):
         """Should go back to the chat when a right-click list is pulled far enough, as a page goes back."""

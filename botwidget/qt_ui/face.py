@@ -35,6 +35,7 @@ from botwidget.config import (
     WORK_POLL_INTERVAL,
     always_on_top,
     automation_ready,
+    page_memory_s,
     muted_bots,
     save_widget_config,
     set_muted,
@@ -313,7 +314,8 @@ class FaceWindow(QWidget):
         self._hover_blocked_until = 0.0  # closed on purpose while the pointer is on the face
         self._hover_retry = 0.0
         self._menu_page = None  # a page of the menu is in the bubble
-        self._page_memory = None  # that page, after the pointer left, until the next hover
+        self._page_memory = None  # that page, after a hover-leave, until the next hover or the deadline
+        self._page_memory_until = 0.0
         self._depth = 1  # how many of the latest messages the bubble shows
         self._loading_older = False
         self._refreshing = False  # /refresh asked; the next poll says how it went
@@ -589,9 +591,11 @@ class FaceWindow(QWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and self.bubble.isVisible():
-            if self._menu_page is not None:
+            # A page, or the command list, goes straight back to the chat. The chat itself still closes.
+            if self._menu_page is not None or self.bubble._list_only:
                 self.open_input()
             else:
+                self._forget_page()
                 self.unpin()
             return
         super().keyPressEvent(event)
@@ -968,10 +972,11 @@ class FaceWindow(QWidget):
                 and now >= self._hover_blocked_until and now >= self._hover_retry and not self._pointer_is_busy()):
             self._hover_retry = now + HOVER_RETRY_S
             self._depth = 1
+            self._drop_stale_page(now)
             self._sync_bubble(self._latest(), force=True)
             page = self._page_memory
             if page and not self.bubble.isVisible():
-                # The pointer left a page. This hover opens that page, not the chat.
+                # The pointer left a page, and the deadline has not passed. This hover opens that page.
                 self._page_memory = None
                 self.open_menu(page)
             else:
@@ -1162,7 +1167,7 @@ class FaceWindow(QWidget):
 
     def open_input(self):
         """Click on the face: the bubble is there and the cursor is in the field."""
-        self._page_memory = None
+        self._forget_page()
         menu = self._menu_page is not None or self.bubble._list_only
         if menu or not self.bubble.isVisible():
             # Clicking the face from a page of the menu, or its command list, is asking for the chat again.
@@ -1250,7 +1255,7 @@ class FaceWindow(QWidget):
         self.pinned = True
         self._think_held = False
         self._menu_page = None
-        self._page_memory = None
+        self._forget_page()
         self._arc_for_page(None)
         # A click looks at a local question; the next poll puts that dot back if it still waits.
         # stuck / needs_you stay lit: opening the bubble does not unstick the bot.
@@ -1262,11 +1267,42 @@ class FaceWindow(QWidget):
         self._activate_here()
         self.bubble.focus_entry()
 
+    def _forget_page(self):
+        self._page_memory = None
+        self._page_memory_until = 0.0
+
+    def _remember_page(self, page: str):
+        self._page_memory = page
+        self._page_memory_until = time.monotonic() + page_memory_s()
+
+    def _drop_stale_page(self, now: float):
+        if self._page_memory and now >= self._page_memory_until:
+            self._forget_page()
+
+    def collapse(self):
+        """Escape, or a click outside the bubble: hide it and forget the page.
+
+        The chat text is marked as already shown, so the next poll does not open the chat in its place.
+        """
+        self._forget_page()
+        self._menu_page = None
+        self._arc_for_page(None)
+        messages = self._with_local((self._chat or {}).get("messages") or [])
+        self._shown_text = block_text(self._chat_blocks(messages, greet=False))
+        self.unpin()
+
     def unpin(self, close: bool = True):
         self.pinned = False
         self._answer_view = False
         if not close:
             return
+        if self._menu_page is not None:
+            # The page is gone with the bubble. A later hover opens the chat, not this page.
+            self._forget_page()
+            self._menu_page = None
+            self._arc_for_page(None)
+            messages = self._with_local((self._chat or {}).get("messages") or [])
+            self._shown_text = block_text(self._chat_blocks(messages, greet=False))
         if self._hovered:
             self._hover_blocked_until = time.monotonic() + REOPEN_AFTER_S
         if self._working:
@@ -1512,15 +1548,23 @@ class FaceWindow(QWidget):
                 play_sound()
         if self._drag_origin is not None or time.monotonic() < self._welcome_until:
             return
+        self._drop_stale_page(time.monotonic())
         if self._page_memory and not self.bubble.isVisible():
             return  # the next hover opens this page; a poll must not lay the chat over it
         if self._menu_page is not None:
             if self.bubble.isVisible():
                 return  # a page of the menu is open: the conversation waits
-            if getattr(self.bubble, "_closed_because", "") == "left":
-                self._page_memory = self._menu_page
+            reason = getattr(self.bubble, "_closed_because", "")
+            if reason == "left":
+                self._remember_page(self._menu_page)
+            else:
+                self._forget_page()
             self._menu_page = None
-            if self._page_memory:
+            self._arc_for_page(None)
+            if self._page_memory or reason in ("unpin", "focus_elsewhere", "click_away") or not (force or show_now):
+                # A hover-leave keeps the page. Escape and a click outside stay collapsed until the next hover.
+                if not self._page_memory:
+                    self._shown_text = block_text(self._chat_blocks(self._with_local(stored), greet=False))
                 return
         if self.bubble._list_only and self.bubble.isVisible() and not replace_menu:
             return  # the right-click menu is open: a busy bot's thinking cloud must not replace it
@@ -1698,7 +1742,7 @@ class FaceWindow(QWidget):
         bubbles close and it never gives way to one of them."""
         self.bubble.heal()
         self._menu_page = None
-        self._page_memory = None
+        self._forget_page()
         self.pinned = False
         if self.faces is not None:
             self.faces.close_bubbles_except(self.agent_id)
@@ -1725,7 +1769,7 @@ class FaceWindow(QWidget):
             # Remove stays on Again only while this page is still open.
             self.faces._confirm_remove = ""
         self._menu_page = page
-        # A page goes away by itself like any bubble. Escape returns to the chat.
+        # A page goes away by itself like any bubble. Escape collapses it.
         self.pinned = False
         # The others close first: a tall page would otherwise give way to a bubble it is about to replace.
         self.faces.close_bubbles_except(self.agent_id)

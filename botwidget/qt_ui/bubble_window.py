@@ -766,10 +766,17 @@ class TapWatcher(QObject):
             pressed = event.type() == QEvent.MouseButtonPress  # PySide raises on event types it has no name for
         except (ValueError, SystemError):
             return False
-        if pressed and event.source() != Qt.MouseEventNotSynthesized and isinstance(watched, QWidget):
-            window = watched.window()
-            if isinstance(window, BubbleWindow):
-                window._tapped = True
+        if not pressed or not isinstance(watched, QWidget):
+            return False
+        window = watched.window()
+        if event.source() != Qt.MouseEventNotSynthesized and isinstance(window, BubbleWindow):
+            window._tapped = True
+        # A press on the face or inside its bubble is that window's own click. Anywhere else collapses it.
+        if getattr(window, "travels", False) or hasattr(window, "bubble"):
+            return False
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, BubbleWindow) and widget.isVisible() and not widget.holding():
+                widget.face.collapse()
         return False
 
 
@@ -1165,11 +1172,12 @@ class BubbleWindow(QWidget):
 
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and not self._input:
-            # A typed command list handles its own Escape in the field. Here the bubble itself has the key:
-            # a menu page goes back to the chat, and the chat (or the right-click list) still closes.
-            if getattr(self.face, "_menu_page", None):
+            # A typed command list handles its own Escape in the field. Here the bubble itself has the key.
+            # A menu page goes straight back to the chat. The chat still closes.
+            if getattr(self.face, "_menu_page", None) or self._list_only:
                 self.face.open_input()
             else:
+                self.face._forget_page()
                 self.face.unpin()
             return
         super().keyPressEvent(event)

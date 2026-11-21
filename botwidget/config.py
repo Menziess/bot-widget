@@ -69,11 +69,21 @@ CONFIG_PATH = os.path.join(APP_DIR, "widget.json")
 
 SETTING_KEYS = ("drafts", "save_battery", "sound", "quiet_hours", "all_desktops", "always_on_top", "check_updates", "auto_update", "login_default_applied", "unlinked_hint_shown", "variant",
                 "local_command", "muted_bots", "glass_clear", "grokbot_target", "hermesbot_target", "grok_relay",
-                "acp_bots", "connections", "debug", "sources_off", "remote_control")
+                "acp_bots", "connections", "debug", "sources_off", "remote_control", "page_memory_s")
 
 
 # With quiet hours on, the sound stays off from this hour until the other, around midnight.
 QUIET_FROM, QUIET_TO = 22, 8
+
+
+def page_memory_s() -> float:
+    """How long a menu page stays ready to reopen after the pointer leaves. Absent or unusable means 60."""
+    raw = widget_config().get("page_memory_s", 60)
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        return 60.0
+    return seconds if seconds >= 0 else 60.0
 
 
 def quiet_now(hour: int, enabled: bool) -> bool:

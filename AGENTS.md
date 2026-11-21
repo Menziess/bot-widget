@@ -43,12 +43,12 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 - The bubble also stays while words are typed or selected, a draft is in the field, a file waits to be sent, a form was typed in, or the bot works
 - Keyboard focus that came from resting the pointer on the face never keeps the bubble open, only typing, a click in the field or one of the reasons above does
 - The bubble closes shortly after the pointer left: 0.4 seconds, longer while the pointer moves faster than 300 pixels a second, never beyond 1.5 seconds
-- The bubble closes at once on Escape, when another face opens one, when a face is dragged, and when /screenshot starts
+- The bubble closes at once on Escape, when another face opens one, when a face is dragged, when the pointer clicks outside it, and when /screenshot starts
 - The bubble closes when another window is clicked into with nothing typed, and where the pointer position is unknown (Wayland) it closes the moment the pointer is not on it
 - An unread answer closes after its reading time unless the pointer was on it
 - Clicking inside the bubble never opens or closes it
 - Clicking the face while its bubble is open pins the bubble: it stays when the pointer leaves or another window is clicked, and the face keeps looking straight at you. Clicking the face again lets it go, and it then closes the usual way
-- When the pointer leaves a menu page, the next hover opens that same page. The page is remembered in memory for the session only. A click on the face, Escape, or the line back to the command list forgets it
+- When the pointer leaves a menu page, the bubble closes the way it always did. The next hover, within page_memory_s seconds (60 when that key is absent from widget.json), opens that same page. After that many seconds the next hover opens the normal chat. A click away closes the bubble and forgets the page at once. Escape on a page or any sub-screen returns straight to the chat bubble and forgets the page (never one level up). Escape on the chat closes the bubble. The page is not written to config. A click on the face, or the line back to the command list, also forgets it
 
 ### Arc
 - The arc opens when the pointer is near the top middle of the screen, on the /bots page, or when a face is dragged into it
