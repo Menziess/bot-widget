@@ -31,6 +31,12 @@ class Groups(unittest.TestCase):
         procs = [(10, 1, DEV), (11, 10, CHILD), (20, 1, DEV), (21, 20, CHILD)]
         self.assertEqual(widget_groups(procs), [[10, 11], [20, 21]])
 
+    def test_a_prompt_that_mentions_the_widget_is_not_one(self):
+        grok = ("/usr/bin/python /opt/grok agent The live botwidget --dev widget "
+                "and python -m botwidget --instances")
+        procs = [(99, 1, grok), (10, 1, DEV), (11, 10, CHILD)]
+        self.assertEqual(widget_groups(procs), [[10, 11]])
+
     def test_the_check_process_is_not_a_widget(self):
         procs = [(4, 1, "python -m botwidget --instances"), (10, 1, CHILD)]
         self.assertEqual(widget_groups(procs, own_pid=4), [[10]])

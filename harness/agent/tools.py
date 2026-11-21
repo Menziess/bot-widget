@@ -122,17 +122,27 @@ def trash_file(at: str) -> str:
     return f"Moved {at} to {gone}."
 
 
+def accessibility_requested(text: str) -> bool:
+    """The user asked for the desktop list or named this tool. A bare chat does not."""
+    low = (text or "").lower()
+    if "accessibility" in low and "tool" in low:
+        return True
+    return "which applications" in low and "open" in low
+
+
 def accessibility_text(query: str = "") -> str:
     """Whether the desktop accessibility bus is up, and which application names match query."""
     from botwidget.system.a11y import accessibility, application_names
     row = accessibility()
+    names = application_names()
     lines = [
         f"available: {'yes' if row['available'] else 'no'}",
         f"reason: {row['reason']}",
         f"platform: {row['platform']}",
+        "applications: " + (", ".join(names) if names else "none"),
     ]
     if query:
-        matches = [name for name in application_names() if query.lower() in name.lower()]
+        matches = [name for name in names if query.lower() in name.lower()]
         lines.append("matches: " + (", ".join(matches) if matches else "none"))
     return "\n".join(lines)
 
@@ -154,9 +164,9 @@ def builtins() -> list[Tool]:
             "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
             lambda arguments: trash_file(_path(arguments["path"])), writes=True),
         Tool("accessibility",
-             "Read desktop accessibility. Read-only. Says whether AT-SPI (Linux), UI Automation (Windows) or AX "
-             "(macOS) is available, and with a query returns matching application names. Windows and macOS are not "
-             "implemented yet.",
+             "Call this when the user asks which applications are open, or says to use the accessibility tool. "
+             "Read-only. Lists application names from AT-SPI (Linux), UI Automation (Windows) or AX (macOS). "
+             "query is an optional substring. Windows and macOS are not implemented yet. Never invent names.",
              {"type": "object", "properties": {"query": {"type": "string"}}},
              lambda arguments: accessibility_text(str(arguments.get("query") or ""))),
         Tool("browser_tabs",

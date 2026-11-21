@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from harness.teacher import (
-    GIT_COMMIT, VENV_PYTHON, approve_student, decide_promote, failing_test_name, judge,
+    GIT_COMMIT, VENV_PYTHON, approve_student, decide_promote, failing_test_name, false_claims, judge,
     next_action, promote_or_rollback, score_row, self_check, send_when_idle, student_worktree,
     summary, task_prompt, tokens_estimate, wait_until_idle, write_scoreboard,
 )
@@ -95,6 +95,18 @@ class TeacherLoop(unittest.TestCase):
 
     def test_failing_test_name_reads_unittest(self):
         self.assertEqual(failing_test_name("ok\nFAIL: test_a (tests.T)\n"), "test_a (tests.T)")
+
+    def test_a_claimed_file_or_commit_that_is_missing_is_a_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=folder, check=True)
+            with open(os.path.join(folder, "ok.txt"), "w") as fh:
+                fh.write("ok\n")
+            self.assertEqual(false_claims("I wrote ok.txt", folder), [])
+            self.assertEqual(false_claims("I wrote missing.txt", folder), ["missing.txt"])
+            self.assertEqual(false_claims("committed deadbee", folder), ["deadbee"])
+        row = judge(tests_ok=True, health_ok=True, turns=1, elapsed_s=1, claims_ok=False)
+        self.assertFalse(row["ok"])
+        self.assertEqual(row["failure"], "claim")
 
     def test_scoreboard_writes_json_and_markdown(self):
         with tempfile.TemporaryDirectory() as folder:

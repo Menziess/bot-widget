@@ -29,7 +29,7 @@ from harness.agent import context
 from harness.agent.models import ModelError
 from harness.stream_text import fold_chunk, note_raw
 from harness.agent.store import SessionStore
-from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
+from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools, accessibility_requested
 from harness.agent.workspace import (_diff_text, _real_path, compute_edit, outside_workspace,
                                      shell_segments)
 
@@ -42,6 +42,8 @@ SKILL_ENDINGS = {"done": "Call this when the skill is finished and you have said
                  "not_for_me": "Call this, and say nothing else, when the user's message has nothing to do with this "
                                "skill's task."}
 SKILL_NUDGES = 2
+A11Y_NUDGE = ("Call the accessibility tool now, before you answer. Leave query empty so the result lists "
+             "application names. Do not invent a list.")
 BRIEF_PROMPT = ("Write down what a helper needs from this conversation to carry out the user's last request: facts, "
                 "names, dates and decisions that matter. Leave out the rest. At most 120 words, plain text.")
 SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
@@ -308,6 +310,7 @@ class LeanAgent:
             else:
                 self.tools.tools.pop(name, None)
         nudges = 0
+        a11y_nudges = 0
         started = time.monotonic()
         first = 0.0
         answer = []
@@ -391,6 +394,18 @@ class LeanAgent:
                 last = {"finish": finish, "calls": len(calls), "thought_chars": thought_chars,
                         "text_tail": "".join(step_text)[-200:]}
                 if cancelled or not calls:
+                    asked = ""
+                    if not cancelled and not calls and a11y_nudges < 1:
+                        for message in reversed(store.messages()):
+                            if message["role"] == "user":
+                                asked = message["text"]
+                                break
+                    if asked and accessibility_requested(asked):
+                        a11y_nudges += 1
+                        if step_text:
+                            messages.append({"role": "assistant", "content": "".join(step_text)})
+                        messages.append({"role": "user", "content": A11Y_NUDGE})
+                        continue
                     if cancelled or not skill_on or nudges >= SKILL_NUDGES:
                         break
                     nudges += 1

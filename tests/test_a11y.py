@@ -1,9 +1,16 @@
 """Desktop accessibility is reported without a real bus."""
 
+import json
+import os
+import tempfile
 import unittest
 from unittest import mock
 
 from botwidget.system import a11y
+from harness.agent.agent import LeanAgent
+from harness.agent.context import SYSTEM
+from harness.agent.tools import Tools, accessibility_requested, accessibility_text
+from tests.test_harness_direct import Block, Conn, ScriptModel
 
 
 class _Child:
@@ -80,6 +87,26 @@ class AccessibilityProbe(unittest.TestCase):
         a11y.install_after_agree(True, run=lambda command, check=False: calls.append(command))
         self.assertEqual(calls, [["pkexec", "apt-get", "install", "-y", "gir1.2-atspi-2.0", "python3-gi"]])
 
+    def test_a_fresh_venv_gets_the_system_gi_link(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = os.path.join(folder, "dist")
+            site = os.path.join(folder, "site")
+            os.makedirs(os.path.join(source, "gi"))
+            with open(os.path.join(source, "gi", "__init__.py"), "w") as fh:
+                fh.write("gi = 1\n")
+            os.makedirs(os.path.join(source, "PyGObject-1.dist-info"))
+            made = a11y.link_system_gi(site, source=source)
+            self.assertTrue(os.path.islink(os.path.join(site, "gi")))
+            self.assertTrue(os.path.islink(os.path.join(site, "PyGObject-1.dist-info")))
+            self.assertEqual(a11y.link_system_gi(site, source=source), [])
+            self.assertEqual(len(made), 2)
+
+    def test_consent_is_a_design_and_does_not_run_pkexec(self):
+        self.assertFalse(a11y.CONSENT["built"])
+        self.assertEqual(a11y.CONSENT["choices"], ("Agree", "Not now"))
+        self.assertEqual(a11y.CONSENT["install"], "install_after_agree")
+        self.assertNotIn("pkexec", a11y.CONSENT["choices"])
+
     def test_windows_and_macos_are_named_and_not_available(self):
         with mock.patch.object(a11y, "_platform_name", return_value="windows"):
             row = a11y.accessibility(load=lambda: _Bus())
@@ -89,3 +116,35 @@ class AccessibilityProbe(unittest.TestCase):
             row = a11y.accessibility(load=lambda: _Bus())
         self.assertFalse(row["available"])
         self.assertIn("AX", row["reason"])
+
+
+class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
+    def test_the_prompt_names_the_tool_and_an_empty_query_lists_names(self):
+        self.assertIn("call accessibility", SYSTEM.lower())
+        self.assertTrue(accessibility_requested(
+            "Which applications are open on my desktop? Use your accessibility tool."))
+        self.assertFalse(accessibility_requested("hello"))
+        with mock.patch("botwidget.system.a11y.accessibility", return_value={"available": True, "reason": "AT-SPI", "platform": "linux"}), \
+                mock.patch("botwidget.system.a11y.application_names", return_value=["botwidget", "Chrome"]):
+            text = accessibility_text("")
+        self.assertIn("botwidget", text)
+        offered = {tool.name for tool in Tools("").tools.values()}
+        self.assertIn("accessibility", offered)
+
+    async def test_a_reply_without_the_call_is_nudged_into_the_tool(self):
+        promise = [("text", "No applications matched"), ("finish", "stop")]
+        call = ("tool_calls", [{"id": "a1", "function": {"name": "accessibility", "arguments": json.dumps({})}}])
+        folder = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder, True))
+        agent = LeanAgent("bot", ScriptModel([promise, [call, ("finish", "tool_calls")],
+                                               [("text", "botwidget is open."), ("finish", "stop")]]),
+                          folder=os.path.join(folder, "agent"))
+        agent.on_connect(Conn())
+        session = (await agent.new_session(cwd=folder)).session_id
+        with mock.patch("botwidget.system.a11y.accessibility", return_value={"available": True, "reason": "AT-SPI", "platform": "linux"}), \
+                mock.patch("botwidget.system.a11y.application_names", return_value=["botwidget"]):
+            await agent.prompt(session, [Block("Which applications are open on my desktop? Use your accessibility tool.")])
+        results = agent.stores[session].tool_results()
+        self.assertTrue(results)
+        self.assertEqual(results[-1]["name"], "accessibility")
+        self.assertIn("botwidget", results[-1]["full"])

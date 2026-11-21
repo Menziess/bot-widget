@@ -40,14 +40,34 @@ def tokens_estimate(text: str) -> int:
     return max(1, len(text) // CHARS_PER_TOKEN)
 
 
+_WROTE = re.compile(r"\b(?:wrote|written|created|saved)\s+[`']?([^\s`']+)", re.I)
+_COMMIT = re.compile(r"\b(?:commit(?:ted)?|sha)\s+([0-9a-f]{7,40})\b", re.I)
+
+
+def false_claims(text: str, root: str) -> list[str]:
+    """Files and commits the reply says it made, that are not on disk or in git."""
+    missing = []
+    for raw in _WROTE.findall(text or ""):
+        path = raw.rstrip(".,)")
+        full = path if os.path.isabs(path) else os.path.join(root, path)
+        if not os.path.isfile(full):
+            missing.append(path)
+    for sha in _COMMIT.findall(text or ""):
+        if _git(root, "cat-file", "-e", sha).returncode != 0:
+            missing.append(sha)
+    return missing
+
+
 def judge(*, tests_ok: bool, health_ok: bool, turns: int, elapsed_s: float,
-          error_tail: str = "", failing_test: str = "",
+          error_tail: str = "", failing_test: str = "", claims_ok: bool = True,
           turn_limit: int = TURN_LIMIT, time_limit_s: float = TIME_LIMIT_S) -> dict:
-    """One failure type. Tests win over health, then limits."""
+    """One failure type. Tests win over health, then a false claim, then limits."""
     if not tests_ok:
         kind = "tests"
     elif not health_ok:
         kind = "health"
+    elif not claims_ok:
+        kind = "claim"
     elif turns > turn_limit:
         kind = "turns"
     elif elapsed_s > time_limit_s:

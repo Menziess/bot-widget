@@ -11,11 +11,22 @@ shortcut: no in-widget PolicyKit install until a desktop is actually missing
 the typelib, add the agree dialog when a real probe returns available false.
 """
 
+import os
 import sys
 
 # Installed by the desktop, not by pip. Listed so a later agree step can ask
 # for these names and never for python3-pyatspi.
 LINUX_PACKAGES = ("gir1.2-atspi-2.0", "python3-gi")
+SYSTEM_GI = "/usr/lib/python3/dist-packages"
+
+# The in-widget dialog is not built. install_after_agree is the only install entry.
+CONSENT = {
+    "built": False,
+    "title": "Desktop accessibility",
+    "packages": LINUX_PACKAGES,
+    "choices": ("Agree", "Not now"),
+    "install": "install_after_agree",
+}
 
 _cached = None
 _logged = False
@@ -123,6 +134,39 @@ def _platform_name() -> str:
 def _linux_reason(error: BaseException) -> str:
     text = f"{type(error).__name__}: {error}"
     return "AT-SPI typelib is not usable (" + text + "). The desktop packages are gir1.2-atspi-2.0 and python3-gi."
+
+
+def link_system_gi(site_packages: str | None = None, source: str = SYSTEM_GI) -> list[str]:
+    """Symlink the desktop PyGObject into a venv. A fresh venv has no gi of its own.
+
+    No-op outside a virtualenv when site_packages is omitted, and when the desktop has no gi.
+    """
+    if site_packages is None:
+        if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
+            return []
+        import site
+        found = [path for path in site.getsitepackages() if path.startswith(sys.prefix)]
+        if not found:
+            return []
+        site_packages = found[0]
+    gi = os.path.join(source, "gi")
+    if not os.path.isdir(gi):
+        return []
+    os.makedirs(site_packages, exist_ok=True)
+    made = []
+    names = ["gi"]
+    try:
+        names.extend(name for name in os.listdir(source)
+                     if name.startswith("PyGObject-") and name.endswith(".dist-info"))
+    except OSError:
+        pass
+    for name in names:
+        dest = os.path.join(site_packages, name)
+        if os.path.lexists(dest):
+            continue
+        os.symlink(os.path.join(source, name), dest)
+        made.append(dest)
+    return made
 
 
 def _load_platform():

@@ -7,6 +7,7 @@
 - `git config core.hooksPath .githooks` so `.githooks/pre-push` runs that command when main is pushed and rejects the push when it fails.
 - Run live: `botwidget --dev` (restarts on .py changes). Check UI changes by eye.
 - One widget: `python -m botwidget --instances` (a `--dev` supervisor and its child are one). Do not use `pgrep` for that check.
+- Findings from a bot or from the owner always go on the roadmap, on the roadmap branch, in the phase they belong to.
 - To talk to a running widget's bot from a shell (the widget needs `"remote_control": true` in widget.json, off by default), use `botwidget bots | ask BOT TEXT | read BOT` (`botwidget/remote.py`; README, Talking to a bot from a shell). From a checkout run `.venv/bin/python -m botwidget ...`: the `botwidget` on PATH may be the uv install, which is another copy.
 - `site/` is the static website (no build, deployed by Pages on push to main). `site/face.js` ports `avatar.py` and `animation.py` to canvas; keep them in step.
 - Release: a tag `vX.Y.Z` pushed to origin builds and publishes (see README, Releasing). Bump the patch number of the latest tag (v0.1.0 becomes v0.1.1), not the minor one, unless told otherwise; when unsure, ask for the version before tagging, since a pushed tag starts the build at once.
@@ -70,6 +71,6 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 
 ## Desktop accessibility
 
-- The user never runs an install command for this. Linux reads AT-SPI through PyGObject and the Atspi 2.0 typelib a GNOME desktop already ships (`gir1.2-atspi-2.0` and `python3-gi` in `botwidget/system/a11y.py`). `python3-pyatspi` is not a dependency.
+- The user never runs an install command for this. Linux reads AT-SPI through PyGObject and the Atspi 2.0 typelib a GNOME desktop already ships (`gir1.2-atspi-2.0` and `python3-gi` in `botwidget/system/a11y.py`). `python3-pyatspi` is not a dependency. Importing `botwidget` links that system `gi` into the venv when it is missing.
 - Startup logs once whether accessibility is available and why. The same line is in the harness runtime facts, and the read-only `accessibility` tool can name a running application.
 - Windows (UI Automation) and macOS (AX) are named in that module and not implemented. A PolicyKit install is only for a desktop that is actually missing the typelib, and only after the user agrees in the widget. Do not print a sudo line.

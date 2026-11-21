@@ -5,6 +5,7 @@
 
 import atexit
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -44,9 +45,29 @@ def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
 
 
 def is_widget_cmd(cmd: str) -> bool:
-    if "--instances" in cmd:
+    """A real widget: the executable or `python -m botwidget` near the start of the command.
+
+    A process whose prompt only mentions those words is not a widget.
+    """
+    try:
+        argv = shlex.split(cmd)
+    except ValueError:
+        argv = cmd.split()
+    if not argv:
         return False
-    return looks_like_widget(cmd.encode("utf-8", "replace"))
+    window = argv[:8]
+    if "--instances" in window:
+        return False
+    exe = os.path.basename(argv[0])
+    if exe in ("botwidget", "Bot Widget", "bot_widget.py"):
+        return True
+    if not exe.startswith("python"):
+        return False
+    if "-m" in window:
+        nxt = window[window.index("-m") + 1:window.index("-m") + 2]
+        if nxt and (nxt[0] == "botwidget" or nxt[0].startswith("botwidget.")):
+            return True
+    return any(part.endswith("bot_widget.py") for part in window[1:])
 
 
 def parse_ps(text: str) -> list:
