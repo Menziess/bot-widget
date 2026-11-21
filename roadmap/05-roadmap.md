@@ -159,7 +159,9 @@ Design, for when it is built:
 - Linux under X11, macOS, and Windows. Where the platform cannot move the pointer, the tool says so and does nothing.
 - Off unless the owner turns it on for that bot. It is not in the default tool list.
 
-Linux check, 2026-11-21. The widget probes AT-SPI at startup through PyGObject and the Atspi 2.0 typelib (`gir1.2-atspi-2.0`), which this Ubuntu desktop already has. `python3-pyatspi` is not used. One log line, the same fact in the harness runtime facts, and a read-only `accessibility` tool that can name a top-level application (the widget's own name on the bus is `botwidget`). Windows UI Automation and macOS AX are named and not implemented. Pointer and keyboard actions are still not built.
+Linux check, 2026-11-21. The widget probes AT-SPI at startup through PyGObject and the Atspi 2.0 typelib (`gir1.2-atspi-2.0`), which this Ubuntu desktop already has. `python3-pyatspi` is not used. One log line, the same fact in the harness runtime facts, and a read-only `accessibility` tool that can name a top-level application (the widget's own name on the bus is `botwidget`). Windows UI Automation and macOS AX are named and not implemented.
+
+Pointer and keyboard, 2026-11-21. The tools are `computer_click`, `computer_scroll`, `computer_type`, `computer_key`, `computer_drag` and `computer_move`. Each one is a write, so the existing approval bubble asks Accept or Decline and does not offer Always allow. A decline does not call the backend. Linux calls `xdotool` on X11 and `ydotool` on Wayland when that program is on `PATH`. This machine's session is Wayland and neither program is installed, so a global click says so and does nothing. `CONSENT` in `botwidget/system/control.py` names `xdotool` and `ydotool`. Nothing calls `pkexec`. The widget can move its own window without those programs. Windows and macOS raise not implemented. `/demo` adds a computer row that ticks only when a window the demo opened is at the asked position and the asked text is in its field. That window is closed again.
 
 A fresh venv gets that system `gi` by a symlink from `botwidget doctor` (`link_system_gi`). Importing `botwidget` does not link it. When `gi` is missing the probe says to run `botwidget doctor`. Done 2026-11-21.
 
@@ -179,7 +181,7 @@ Asked as three changes. The page memory and the doctor step are on main. The dem
 
 Skip what is already done (idle send, named python and unsigned commit, student-worktree approvals, the `gi` link, the instance check that ignores a prompt, false file and commit claims).
 
-- Pointer and keyboard actions. Still the desktop computer use design above.
+- Pointer and keyboard actions. The tools and the approval gate are in. Global input on Wayland still waits on `ydotool` (see Desktop computer use above). The widget moving itself does not.
 - The consent dialog above. Design and `install_after_agree` only.
 - A write outside the home workspace still raises the approval bubble. The supervisor may accept it when the title stays inside the student tree. A person should not see that bubble for a path the loop already allowed.
 - The local model sometimes answers from history after a failed tool call and never calls the tool again. The one accessibility nudge does not cover that later turn. See "A bot that repeats its last failure" above.
