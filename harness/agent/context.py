@@ -4,7 +4,10 @@ The request is the stable prefix, the summary that is already there, the facts t
 be lost, and as many recent turns as the budget holds. Older turns are folded into the summary
 between turns: after an answer is stored, and before the next request is built. That request
 waits up to SUMMARY_WAIT_S, then sends anyway. A summary never runs while an answer is
-streaming, and one that finishes late is applied before a later turn. The trigger is SUMMARY_AFTER.
+streaming, and one that finishes late is applied before a later turn. It starts when the last
+answer filled at least FILL_SUMMARISE of the window, or when the chat holds more than
+SUMMARY_AFTER messages. The count stays so a long thread of short turns still folds, and the
+fill line so a shorter thread of long turns folds before it reaches that count.
 
 The prefix is the same text every turn, which is what makes a cached prefix possible: providers
 that cache (and the Anthropic adapter in phase 4) charge less for a block that never changes.
@@ -100,9 +103,11 @@ _WORKSPACE_RULES = ""
 _WORKSPACE_CACHE_KEY = ("", "")
 KEEP_TURNS = 12
 CONTEXT_TOKENS = 32000  # default fallback when the model's window is unknown
-SUMMARY_AFTER = 40  # messages on disk; more than this, and compaction runs between turns
+SUMMARY_AFTER = 40  # messages on disk; a second trigger for many short turns
+# Share of the context window. At or above this, the summary starts as soon as the answer is stored.
+FILL_SUMMARISE = 0.8
 # Seconds the next request waits for that compaction. Then it is sent, and the summary is stored
-# once no answer is streaming, before a later turn.
+# once no answer is streaming, before a later turn. A summary that already finished does not wait.
 SUMMARY_WAIT_S = 20
 RESULT_KEEP = 6  # tool results from earlier turns offered to the next request
 RESULT_SHARE = 0.3  # of the room left after the pinned prefix; older results shrink to stubs beyond it
@@ -129,6 +134,21 @@ def _budget_chars(model_window: int = 0) -> int:
     """Character budget derived from the model's token budget, leaving completion room."""
     window = _token_window(model_window)
     return max(1024, (window - _COMPLETION_MARGIN) * 4)
+
+
+def fill_ratio(reported: int, *, counted: bool, store, bot: str, model, workspace: str | None = None) -> float:
+    """How full the window was after this answer, from 0 to 1 and beyond.
+
+    The model's prompt token count when it sent one. Otherwise four characters per token
+    (`estimate`) on the prompt the next turn would build. The window is the model's context
+    size, else HARNESS_CONTEXT_TOKENS, else CONTEXT_TOKENS.
+    """
+    size = int(getattr(model, "context_size", 0) or 0)
+    if counted and reported > 0:
+        used, window = int(reported), _token_window(size)
+    else:
+        used, window = meter(store, bot, size, model=model, workspace=workspace)
+    return used / window if window else 0.0
 
 
 def meter(store, bot: str, size: int = 0, model=None, workspace: str | None = None) -> tuple[int, int]:
@@ -420,10 +440,14 @@ def _has_meaningful_number(text: str) -> bool:
     return _NUMBER_RE.search(text) is not None
 
 
-def to_summarise(store) -> list[dict]:
-    """The older half of the conversation, and nothing newer than the part that stays verbatim."""
+def to_summarise(store, *, filled: bool = False) -> list[dict]:
+    """The older half of the conversation, and nothing newer than the part that stays verbatim.
+
+    `filled` is the window trigger. The message count stays as the other trigger. Either way the
+    newest KEEP_TURNS are left as they are, so a full window with nothing older returns nothing.
+    """
     messages = store.messages()
-    if len(messages) <= SUMMARY_AFTER:
+    if not filled and len(messages) <= SUMMARY_AFTER:
         return []
     keep = store.get("summary_upto")
     start = int(keep or 0)

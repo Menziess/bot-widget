@@ -3,8 +3,10 @@ behind it.
 
 No tools yet. A turn is: store the message, build the request, stream the answer into the bubble,
 store the answer, write a usage line, and only then let a summary run. This turn does not wait
-for it. The next request waits up to context.SUMMARY_WAIT_S, then sends anyway. A summary never
-runs while an answer streams; one that finishes late is stored before a later turn.
+for it. The next request waits up to context.SUMMARY_WAIT_S, then sends anyway. A summary that
+already finished does not add that wait. A summary never runs while an answer streams; one that
+finishes late is stored before a later turn. It starts when the answer filled FILL_SUMMARISE of
+the window, or when the chat holds more than SUMMARY_AFTER messages.
 """
 
 import asyncio
@@ -449,10 +451,13 @@ class LeanAgent:
                      # A cancel before the first usage chunk has no cache figure; 0 would look measured.
                      "estimated": not counted,
                      "cancelled": cancelled})
-        # After the answer is stored. This turn does not wait. The next request does, briefly.
-        # A summary still in flight keeps the task: replacing it would drop the wait for a later turn.
+        # After the answer is stored, and only then. This turn does not wait. The next request does,
+        # briefly, unless this summary has already finished. A summary still in flight keeps the task.
+        filled = context.fill_ratio(
+            usage["prompt_tokens"], counted=counted, store=store, bot=self.bot, model=self.model,
+            workspace=self._workspace) >= context.FILL_SUMMARISE
         if not cancelled and not self._summarising:
-            self._summary_task = asyncio.create_task(self.summarise(store))
+            self._summary_task = asyncio.create_task(self.summarise(store, filled=filled))
         return PromptResponse(stop_reason="cancelled" if cancelled else "end_turn")
 
     async def _wait_for_summary(self) -> None:
@@ -1084,12 +1089,13 @@ class LeanAgent:
             update = AgentThoughtChunk(session_update="agent_thought_chunk", content=content)
         await self.conn.session_update(session_id=session_id, update=update)
 
-    async def summarise(self, store: SessionStore) -> None:
-        """Fold older turns into the summary once SUMMARY_AFTER is passed.
+    async def summarise(self, store: SessionStore, filled: bool = False) -> None:
+        """Fold older turns once the window is FILL_SUMMARISE full, or SUMMARY_AFTER is passed.
 
         Runs after an answer is stored and before the next request. A second one at a time
         is skipped. It waits out an answer that is still streaming, including one that started
-        because the next request stopped waiting.
+        because the next request stopped waiting. `filled` is the measurement from the answer
+        that just finished.
         """
         if self._summarising:
             return
@@ -1097,7 +1103,7 @@ class LeanAgent:
         try:
             while self._streaming:
                 await self._stream_idle.wait()
-            older = context.to_summarise(store)
+            older = context.to_summarise(store, filled=filled)
             if not older:
                 return
             # The messages this summary covers. A turn that lands while it runs must not move the mark.

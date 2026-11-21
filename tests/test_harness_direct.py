@@ -17,7 +17,8 @@ from unittest import mock
 
 from harness.acp_client import AcpClient, Turn, _text_of
 from harness.agent.agent import LeanAgent
-from harness.agent.context import BUDGET_CHARS, SUMMARY_AFTER, build, to_summarise
+from harness.agent.context import (BUDGET_CHARS, FILL_SUMMARISE, KEEP_TURNS, SUMMARY_AFTER, build,
+                                  fill_ratio, to_summarise)
 from harness.agent.models import (AnthropicMessages, ChatCompletions, ModelError, _anthropic_content,
                                   from_environment)
 from harness.agent.store import SessionStore
@@ -167,6 +168,137 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(over.model.completed), 1)
         self.assertTrue(over.store.summary)
         self.assertEqual(len(over.store.messages()), SUMMARY_AFTER + 1)
+
+    async def _prompt_filled(self, tokens: int, size: int, reply: str = "ok", usage: bool = True):
+        """One answer on a short thread, so only the window can start a summary."""
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        step = [("text", reply)]
+        if usage:
+            step.append(("usage", {"prompt_tokens": tokens, "completion_tokens": 1}))
+        model = ScriptModel([step])
+        model.context_size = size
+        agent = LeanAgent("Ada", model, folder=folder, tools=Tools("", workspace=folder))
+        agent.conn = Conn()
+        session = (await agent.new_session(".")).session_id
+        store = agent.stores[session]
+        for number in range(KEEP_TURNS * 2 + 2):
+            store.add("user" if number % 2 == 0 else "bot", f"line {number} " + ("x" * 20))
+        await agent.prompt(session, [Block("vraag")])
+        await agent._summary_task
+        agent.store = store
+        return agent
+
+    async def test_a_full_window_starts_a_summary_and_a_short_one_does_not(self):
+        """Should summarise at FILL_SUMMARISE of the reported window, and not below it."""
+        window = 100
+        under_tokens = int(FILL_SUMMARISE * window) - 1
+        over_tokens = int(FILL_SUMMARISE * window)
+        under = await self._prompt_filled(under_tokens, window)
+        self.assertLess(under_tokens / window, FILL_SUMMARISE)
+        self.assertEqual(under.model.completed, [])
+        self.assertEqual(under.store.summary, "")
+        self.assertLess(len(under.store.messages()), SUMMARY_AFTER)
+        over = await self._prompt_filled(over_tokens, window)
+        self.assertGreaterEqual(over_tokens / window, FILL_SUMMARISE)
+        self.assertEqual(len(over.model.completed), 1)
+        self.assertEqual(over.store.summary, "notes")
+
+    async def test_an_unreported_usage_estimates_tokens_as_characters_over_four(self):
+        """Should use the character estimate when the model sends no token count."""
+        full = await self._prompt_filled(0, 300, usage=False)
+        ratio = fill_ratio(0, counted=False, store=full.store, bot="Ada", model=full.model, workspace=full.folder)
+        self.assertGreaterEqual(ratio, FILL_SUMMARISE)
+        self.assertEqual(len(full.model.completed), 1)
+        quiet = await self._prompt_filled(0, 32000, usage=False)
+        self.assertLess(fill_ratio(0, counted=False, store=quiet.store, bot="Ada", model=quiet.model,
+                                   workspace=quiet.folder), FILL_SUMMARISE)
+        self.assertEqual(quiet.model.completed, [])
+
+    async def test_a_fill_summary_never_runs_while_the_answer_streams(self):
+        """Should start the model call only between answers, and store it once the stream has stopped."""
+        gate = threading.Event()
+        release_stream = threading.Event()
+        order = []
+        agent_box = []
+        self.addCleanup(gate.set)
+        self.addCleanup(release_stream.set)
+
+        class Gated(ScriptModel):
+            def complete(self, messages):
+                order.append(("summary", agent_box[0]._streaming))
+                if not gate.wait(5):
+                    raise TimeoutError("summary gate")
+                return super().complete(messages)
+
+        def slow(stop):
+            yield ("text", "tweede")
+            if not release_stream.wait(5):
+                raise TimeoutError("stream")
+
+        model = Gated([[("text", "eerste"), ("usage", {"prompt_tokens": 80, "completion_tokens": 1})], slow])
+        model.context_size = 100
+        agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools("", workspace=self.folder))
+        agent_box.append(agent)
+        agent.conn = Conn()
+        session = (await agent.new_session(".")).session_id
+        store = agent.stores[session]
+        for number in range(KEEP_TURNS * 2 + 2):
+            store.add("user" if number % 2 == 0 else "bot", f"line {number}")
+        first = await agent.prompt(session, [Block("een")])
+        self.assertEqual(first.stop_reason, "end_turn")
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and ("summary", False) not in order:
+            await asyncio.sleep(0.01)
+        self.assertIn(("summary", False), order)
+        self.assertNotIn(("summary", True), order)
+        with mock.patch("harness.agent.context.SUMMARY_WAIT_S", 0.05):
+            started = time.monotonic()
+            second = asyncio.create_task(agent.prompt(session, [Block("twee")]))
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and not agent._streaming:
+                await asyncio.sleep(0.01)
+        self.assertTrue(agent._streaming)
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertEqual(store.summary, "")
+        release_stream.set()
+        result = await asyncio.wait_for(second, timeout=3)
+        self.assertEqual(result.stop_reason, "end_turn")
+        self.assertEqual(store.summary, "")
+        self.assertFalse(agent._streaming)
+        gate.set()
+        await asyncio.wait_for(agent._summary_task, timeout=2)
+        self.assertEqual(store.summary, "notes")
+        self.assertNotIn(("summary", True), order)
+
+    async def test_the_next_send_does_not_wait_when_the_summary_already_finished(self):
+        """Should build the next request at once when the background summary is done."""
+        sent = []
+        model = ScriptModel([[("text", "eerste"), ("usage", {"prompt_tokens": 80, "completion_tokens": 1})],
+                             [("text", "tweede")]])
+        model.context_size = 100
+
+        def stream(messages, tools=None, stop=None, opened=None):
+            sent.append(messages)
+            return ScriptModel.stream(model, messages, tools, stop, opened)
+
+        model.stream = stream
+        agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools("", workspace=self.folder))
+        agent.conn = Conn()
+        session = (await agent.new_session(".")).session_id
+        store = agent.stores[session]
+        for number in range(KEEP_TURNS * 2 + 2):
+            store.add("user" if number % 2 == 0 else "bot", f"line {number}")
+        await agent.prompt(session, [Block("een")])
+        await agent._summary_task
+        self.assertEqual(store.summary, "notes")
+        with mock.patch("harness.agent.context.SUMMARY_WAIT_S", 5):
+            started = time.monotonic()
+            result = await agent.prompt(session, [Block("twee")])
+        self.assertEqual(result.stop_reason, "end_turn")
+        self.assertLess(time.monotonic() - started, 2)
+        blob = " ".join(message.get("content") or "" for message in sent[-1])
+        self.assertIn("notes", blob)
 
     async def test_compaction_never_runs_while_an_answer_streams(self):
         """Should finish folding older turns before the next answer streams, never during it."""
