@@ -6,9 +6,9 @@ import tempfile
 import unittest
 
 from harness.teacher import (
-    approve_student, decide_promote, failing_test_name, judge, next_action,
-    promote_or_rollback, score_row, self_check, summary, task_prompt, tokens_estimate,
-    write_scoreboard,
+    GIT_COMMIT, VENV_PYTHON, approve_student, decide_promote, failing_test_name, judge,
+    next_action, promote_or_rollback, score_row, self_check, send_when_idle, student_worktree,
+    summary, task_prompt, tokens_estimate, wait_until_idle, write_scoreboard,
 )
 
 
@@ -18,6 +18,8 @@ class TeacherLoop(unittest.TestCase):
         self.assertIn("/tmp/t-teacher/student", text)
         self.assertIn("test_leave_open", text)
         self.assertIn("gebruik bubble.py", text)
+        self.assertIn(VENV_PYTHON, text)
+        self.assertIn(GIT_COMMIT, text)
 
     def test_tokens_are_a_quarter_of_the_characters(self):
         self.assertEqual(tokens_estimate("abcd"), 1)
@@ -44,9 +46,47 @@ class TeacherLoop(unittest.TestCase):
 
     def test_an_approval_must_name_the_student_worktree(self):
         root = "/tmp/t-teacher/student"
-        self.assertTrue(approve_student(f"write {root}/botwidget/bubble.py", root))
+        self.assertTrue(approve_student(f"write_file {root}/botwidget/bubble.py", root))
         self.assertFalse(approve_student("write /home/stefan/.config/botwidget/widget.json", root))
-        self.assertTrue(approve_student("unittest ~/Projects/bot-widget", root))
+        self.assertFalse(approve_student("unittest ~/Projects/bot-widget", root))
+        self.assertFalse(approve_student(f"shell {GIT_COMMIT} && rm /etc/passwd", root))
+        git = f"shell git -C {root} add harness/teacher_ping.txt && git -C {root} -c commit.gpgsign=false commit -m x"
+        self.assertTrue(approve_student(git, root))
+        both = f"write_file {root}/a.py and /home/stefan/.config/botwidget/widget.json"
+        self.assertFalse(approve_student(both, root))
+
+    def test_a_task_waits_until_the_widget_is_idle(self):
+        states = iter([{"active": True}, {"active": True}, {"active": False}])
+        sent = []
+        clock = {"t": 0.0}
+
+        def now():
+            return clock["t"]
+
+        def sleep(_span):
+            clock["t"] += 1
+
+        self.assertTrue(wait_until_idle(lambda: next(states), 5, now=now, sleep=sleep))
+        stuck = {"active": True}
+        self.assertFalse(wait_until_idle(lambda: stuck, 2, now=now, sleep=sleep))
+        self.assertEqual(send_when_idle(lambda: stuck, lambda text: sent.append(text), "hi", 1,
+                                         now=now, sleep=sleep),
+                         {"ok": False, "error": "still active"})
+        self.assertEqual(sent, [])
+        idle = {"active": False}
+        self.assertEqual(send_when_idle(lambda: idle, lambda text: {"ok": True, "text": text}, "hi", 1,
+                                         now=now, sleep=sleep)["text"], "hi")
+
+    def test_home_is_not_a_place_for_the_student_worktree(self):
+        self.assertEqual(student_worktree("", "/tmp/t-teacher2/student"),
+                         os.path.realpath("/tmp/t-teacher2/student"))
+        self.assertEqual(student_worktree(os.path.expanduser("~"), "/tmp/t-teacher2/student"),
+                         os.path.realpath("/tmp/t-teacher2/student"))
+        with tempfile.TemporaryDirectory() as folder:
+            scratch = os.path.join(folder, "scratch")
+            self.assertEqual(student_worktree(folder, scratch), os.path.realpath(scratch))
+            outside = "/tmp/t-teacher2/student"
+            self.assertEqual(student_worktree(folder, outside), os.path.join(os.path.realpath(folder), ".teacher-student"))
 
     def test_self_check_reads_what_it_wrote(self):
         with tempfile.TemporaryDirectory() as folder:

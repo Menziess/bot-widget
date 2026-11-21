@@ -5,11 +5,15 @@ The running widget is the student. This module does not start a widget.
 
 import json
 import os
+import re
 import subprocess
+import time
 
 MAX_RETRIES = 2
 TURN_LIMIT = 30
 TIME_LIMIT_S = 480
+VENV_PYTHON = "/home/stefan/Projects/bot-widget/.venv/bin/python"
+GIT_COMMIT = "git -c commit.gpgsign=false commit"
 
 # shortcut: character/4 is a stand-in until the widget exposes usage, switch when a usage line is available
 CHARS_PER_TOKEN = 4
@@ -21,8 +25,9 @@ def task_prompt(worktree: str, title: str, test_module: str, hint: str = "") -> 
         f"Taak: {title}",
         f"Werk alleen in {worktree}.",
         f"De acceptatietest staat al in tests/{test_module}.py. Laat die test staan.",
-        f"Draai: QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest tests.{test_module}",
-        "Gebruik de venv van ~/Projects/bot-widget. Commit in deze worktree als de test slaagt.",
+        f"Draai: QT_QPA_PLATFORM=offscreen {VENV_PYTHON} -m unittest tests.{test_module}",
+        f"Python: {VENV_PYTHON}",
+        f"Commit, in deze worktree, als de test slaagt: {GIT_COMMIT}",
         "Geen push. Geen andere bestanden.",
     ]
     if hint:
@@ -76,13 +81,59 @@ def decide_promote(tests_ok: bool, health_ok: bool) -> str:
     return "merge" if tests_ok and health_ok else "rollback"
 
 
+_ABS_PATH = re.compile(r"(?<![A-Za-z0-9_.])(/[^\s'\"`,;|&]+)")
+
+
+def _inside(root: str, path: str) -> bool:
+    real = os.path.realpath(path)
+    return real == root or real.startswith(root + os.sep)
+
+
+def student_worktree(workspace: str, scratch: str) -> str:
+    """Where the student may edit.
+
+    A configured workspace that is not the home directory can hold the tree, so writes stay inside it.
+    Home is the default workspace and is too wide, so the scratch path stays and approvals match that path only.
+    """
+    scratch_real = os.path.realpath(scratch)
+    ws = os.path.realpath(os.path.expanduser(workspace)) if (workspace or "").strip() else ""
+    home = os.path.realpath(os.path.expanduser("~"))
+    if not ws or ws == home or _inside(ws, scratch_real):
+        return scratch_real
+    return os.path.join(ws, ".teacher-student")
+
+
 def approve_student(title: str, worktree: str) -> bool:
-    """Allow a tool only when it names the student worktree or the shared venv python."""
+    """True only when every absolute path in the title sits inside the student worktree."""
     text = title or ""
     root = os.path.realpath(worktree)
-    if root and root in text:
-        return True
-    return "unittest" in text and "bot-widget" in text
+    if not root or root not in text:
+        return False
+    paths = _ABS_PATH.findall(text)
+    return bool(paths) and all(_inside(root, path.rstrip(".")) for path in paths)
+
+
+def wait_until_idle(read, timeout_s: float, now=None, sleep=None) -> bool:
+    """Poll until the widget reports active false. False when the timeout wins. Never sends."""
+    now = now or time.monotonic
+    sleep = sleep or time.sleep
+    deadline = now() + timeout_s
+    while True:
+        chat = read()
+        if chat.get("active") is False:
+            return True
+        if now() >= deadline:
+            return False
+        sleep(0.2)
+
+
+def send_when_idle(read, send, text: str, timeout_s: float, now=None, sleep=None) -> dict:
+    """Send only after a fresh idle read. A busy widget returns ok false and send is not called."""
+    if not wait_until_idle(read, timeout_s, now=now, sleep=sleep):
+        return {"ok": False, "error": "still active"}
+    if read().get("active") is not False:
+        return {"ok": False, "error": "still active"}
+    return send(text)
 
 
 def self_check(directory: str) -> str:
