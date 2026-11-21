@@ -146,6 +146,14 @@ Still open, except the line marked done. In the order the owner asked.
 - **A bot that repeats its last failure.** After a failed tool call the local model sometimes answers from history and never calls the tool again, so a fixed problem looks unfixed. Drop or mark failed tool results once they are stale. Not done: a declined write stays in the next request so the model still sees it.
 - **Linux and Windows.** Try the port lookup (`lsof -c chrome`, the `%LOCALAPPDATA%` file) on those systems.
 
+### Bubble, demo, sample thought, 2026-11-21
+
+Done on main.
+
+- A click outside collapses the bubble. A hover-leave still reopens the same menu page. Escape on a page brings the chat back (`6039011`, after `0caa69d`).
+- `/demo` is only there with `--dev`. It sends the six tasks through the chat. Code checks the outcome. The `/tmp/t-demo/enable` file no longer starts a run. `ffad165`.
+- The "Sample thought..." settings switch is gone. An old `debug` key in widget.json is left in the file and ignored. `ffad165`.
+
 ### Desktop computer use, 2026-11-21
 
 Not built. Asked on 2026-11-21, the bot said it can only use the tools in the chat, and that is what the code does.
