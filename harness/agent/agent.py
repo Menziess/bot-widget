@@ -2,8 +2,8 @@
 behind it.
 
 No tools yet. A turn is: store the message, build the request, stream the answer into the bubble,
-store the answer, write a usage line, and only then let a background summary run. Nothing in the
-turn path ever waits for a summary.
+store the answer, write a usage line, and only then let a summary run. This turn does not wait
+for it. The next request does, so a summary never runs while an answer streams.
 """
 
 import asyncio
@@ -93,6 +93,9 @@ class LeanAgent:
         from harness.agent.workspace import load_skills
         self.skills = {skill["name"].lower(): skill for skill in load_skills(os.environ.get("HARNESS_CONTEXT_PATHS") or "")}
         self._tasks: set = set()  # a task that nothing refers to can be dropped before it ends
+        self._summarising = False
+        self._streaming = False  # an answer is on its way to the bubble
+        self._summary_task = None  # compaction from the previous turn, awaited before the next request
         self.conn = None
         self._cancelled: set[str] = set()
         self._turns: set[str] = set()  # a session with a turn running: only then does a cancel mean anything
@@ -100,7 +103,6 @@ class LeanAgent:
         self._stops: dict[str, threading.Event] = {}
         self._replies: dict[str, object] = {}
         self._queues: dict[str, asyncio.Queue] = {}
-        self._summarising = False
         self._skill = None  # the store of the skill that is running, made when the first one starts
         self._skill_ended = ""  # done or wait_for_user, once the model has said so in the turn that just ran
         self.jobs = None  # background shell jobs; created once a workspace exists
@@ -313,6 +315,8 @@ class LeanAgent:
         repeats = _env_int("HARNESS_LOOP_REPEATS", LOOP_REPEATS)  # 0 turns loop detection off
         recent_calls: list[str] = []
         stopped = ""
+        await self._wait_for_summary()
+        self._streaming = True
         try:
             if not self._checked and hasattr(self.model, "ready"):
                 await asyncio.to_thread(self.model.ready)
@@ -402,6 +406,8 @@ class LeanAgent:
                          "ms": round((time.monotonic() - started) * 1000), "error": str(error)[:300]})
             # The reason travels in _meta: "refusal" alone cannot tell a 401 from a bad prompt.
             return PromptResponse(stop_reason="refusal", field_meta={"error": str(error)[:300]})
+        finally:
+            self._streaming = False
         cancelled = cancelled or session_id in self._cancelled
         self._cancelled.discard(session_id)
         said = "".join(answer)
@@ -419,10 +425,16 @@ class LeanAgent:
                      # A cancel before the first usage chunk has no cache figure; 0 would look measured.
                      "estimated": not counted,
                      "cancelled": cancelled})
-        # Never in the turn path: the answer is out before the summary starts.
+        # After the answer is stored. This turn does not wait. The next request does.
         if not cancelled:
-            asyncio.create_task(self.summarise(store))
+            self._summary_task = asyncio.create_task(self.summarise(store))
         return PromptResponse(stop_reason="cancelled" if cancelled else "end_turn")
+
+    async def _wait_for_summary(self) -> None:
+        """The previous turn's compaction finishes before this request is built."""
+        task = self._summary_task
+        if task is not None and not task.done():
+            await task
 
     def _pin(self, store: SessionStore) -> Tool:
         """A fact the user wants kept: written to the store, so it rides along after the summary folds
@@ -1040,11 +1052,17 @@ class LeanAgent:
         await self.conn.session_update(session_id=session_id, update=update)
 
     async def summarise(self, store: SessionStore) -> None:
-        """Fold the older half into the summary, between turns; a second one at a time, never in a turn."""
+        """Fold older turns into the summary once SUMMARY_AFTER is passed.
+
+        Runs after an answer is stored and before the next request. A second one at a time
+        is skipped. It waits out an answer that is still streaming.
+        """
         if self._summarising:
             return
         self._summarising = True
         try:
+            while self._streaming:
+                await asyncio.sleep(0)
             older = context.to_summarise(store)
             if not older:
                 return

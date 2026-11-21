@@ -10,13 +10,14 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
 from harness.acp_client import AcpClient, Turn, _text_of
 from harness.agent.agent import LeanAgent
-from harness.agent.context import BUDGET_CHARS, build, to_summarise
+from harness.agent.context import BUDGET_CHARS, SUMMARY_AFTER, build, to_summarise
 from harness.agent.models import (AnthropicMessages, ChatCompletions, ModelError, _anthropic_content,
                                   from_environment)
 from harness.agent.store import SessionStore
@@ -152,6 +153,90 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
         again = await agent.prompt(opened.session_id, [Block("twee")])
         self.assertEqual(again.stop_reason, "end_turn")
         self.assertEqual(model.ready_calls, 1)
+
+    async def test_compaction_fires_at_the_threshold_and_not_before(self):
+        """Should summarise once the stored chat passes SUMMARY_AFTER, and not on the message that lands on it."""
+        under = await self._prompt_with_history(SUMMARY_AFTER - 2, "under")
+        await under._summary_task
+        self.assertEqual(under.model.completed, [])
+        self.assertEqual(len(under.store.messages()), SUMMARY_AFTER)
+        self.assertEqual(to_summarise(under.store), [])
+
+        over = await self._prompt_with_history(SUMMARY_AFTER - 1, "over")
+        await over._summary_task
+        self.assertEqual(len(over.model.completed), 1)
+        self.assertTrue(over.store.summary)
+        self.assertEqual(len(over.store.messages()), SUMMARY_AFTER + 1)
+
+    async def test_compaction_never_runs_while_an_answer_streams(self):
+        """Should finish folding older turns before the next answer streams, never during it."""
+        gate = threading.Event()
+        order = []
+        agent_box = []
+
+        class Gated(ScriptModel):
+            def stream(self, messages, tools=None, stop=None, opened=None):
+                order.append(("stream", agent_box[0]._streaming))
+                yield from super().stream(messages, tools, stop, opened)
+
+            def complete(self, messages):
+                order.append(("summary", agent_box[0]._streaming))
+                self.assert_wait(gate)
+                return super().complete(messages)
+
+            @staticmethod
+            def assert_wait(flag):
+                if not flag.wait(5):
+                    raise TimeoutError("summary gate")
+
+        model = Gated([[("text", "eerste")], [("text", "tweede")]])
+        agent = LeanAgent("Ada", model, folder=self.folder, tools=Tools("", workspace=self.folder))
+        agent_box.append(agent)
+        conn = Conn()
+        agent.on_connect(conn)
+        session = (await agent.new_session(".")).session_id
+        store = agent.stores[session]
+        for number in range(SUMMARY_AFTER - 1):
+            store.add("user" if number % 2 == 0 else "bot", f"line {number}")
+        first = await agent.prompt(session, [Block("een")])
+        self.assertEqual(first.stop_reason, "end_turn")
+        self.assertFalse(agent._streaming)
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline and ("summary", False) not in order:
+            await asyncio.sleep(0.01)
+        self.assertIn(("summary", False), order)
+        second = asyncio.create_task(agent.prompt(session, [Block("twee")]))
+        await asyncio.sleep(0.15)
+        self.assertEqual([item for item in order if item[0] == "stream"], [("stream", True)])
+        gate.set()
+        result = await asyncio.wait_for(second, timeout=3)
+        self.assertEqual(result.stop_reason, "end_turn")
+        summary_at = order.index(("summary", False))
+        second_stream = order.index(("stream", True), summary_at)
+        self.assertGreater(second_stream, summary_at)
+        kinds = []
+        for _sid, update in conn.updates:
+            name = getattr(update, "session_update", "")
+            if name == "agent_message_chunk":
+                kinds.append("text")
+            elif name == "usage_update" and (getattr(update, "field_meta", None) or {}).get("compacted"):
+                kinds.append("compacted")
+        self.assertEqual(kinds[:3], ["text", "compacted", "text"])
+
+    async def _prompt_with_history(self, seeded: int, reply: str):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        model = ScriptModel([[("text", reply)]])
+        agent = LeanAgent("Ada", model, folder=folder, tools=Tools("", workspace=folder))
+        agent.conn = Conn()
+        session = (await agent.new_session(".")).session_id
+        store = agent.stores[session]
+        for number in range(seeded):
+            store.add("user" if number % 2 == 0 else "bot", f"line {number}")
+        await agent.prompt(session, [Block("vraag")])
+        agent.model = model
+        agent.store = store
+        return agent
 
     async def test_tools_a_cancel_and_a_refusal(self):
         """Should run a tool step, stop a live stream, and report a model error."""

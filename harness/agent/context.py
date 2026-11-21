@@ -1,8 +1,9 @@
 """What goes into the next request.
 
-A turn never waits on a summary: the request is the stable prefix, the summary that is already
-there, the facts that must never be lost, and as many recent turns as the budget holds. Older
-turns are folded into the summary in the background, after the answer.
+The request is the stable prefix, the summary that is already there, the facts that must never
+be lost, and as many recent turns as the budget holds. Older turns are folded into the summary
+between turns: after an answer is stored, and before the next request is built. A summary never
+runs while an answer is streaming. The trigger is SUMMARY_AFTER.
 
 The prefix is the same text every turn, which is what makes a cached prefix possible: providers
 that cache (and the Anthropic adapter in phase 4) charge less for a block that never changes.
@@ -98,7 +99,7 @@ _WORKSPACE_RULES = ""
 _WORKSPACE_CACHE_KEY = ("", "")
 KEEP_TURNS = 12
 CONTEXT_TOKENS = 32000  # default fallback when the model's window is unknown
-SUMMARY_AFTER = 40  # messages on disk before the background summary takes the older half
+SUMMARY_AFTER = 40  # messages on disk; more than this, and compaction runs between turns
 RESULT_KEEP = 6  # tool results from earlier turns offered to the next request
 RESULT_SHARE = 0.3  # of the room left after the pinned prefix; older results shrink to stubs beyond it
 RESULT_STUB = 160  # characters of a shortened result

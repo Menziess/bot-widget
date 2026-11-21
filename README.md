@@ -134,7 +134,7 @@ You can add a bot from the widget instead of editing this file. `/bots`, then Ne
 - `key_file` is the path to a file with the API key, read at start and passed as `HARNESS_MODEL_API_KEY`. The key itself never goes in `widget.json`
 - The conversation is kept per bot; after a widget restart the face loads the same session and shows the history again
 - A write the bot asks about shows Accept and Decline in the bubble, and Always allow when the agent offers to remember the command. A running turn can be cancelled
-- The context meter under the conversation shows how full the context is, and a pin_fact tool keeps a fact through compaction
+- The context meter under the conversation shows how full the context is, and a pin_fact tool keeps a fact through compaction. Once the conversation holds more than 40 messages, older turns are folded in after an answer is finished and before the next one is requested. The line Compacted older turns shows then. It does not show while an answer is still arriving
 - What the bot remembers with its memory tools is on the `/memory` page, with Edit and Forget on every row and New memory below the list. Edit changes the text and the topic, and the memory keeps its scope and its time
 - What you accepted for good (Permission `allow`) is in `approvals.json`, on the `/approvals` page or under Edit approvals.json on `/bots`. It is one file for every bot, edited like widget.json. See below
 

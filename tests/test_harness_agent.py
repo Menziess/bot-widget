@@ -233,6 +233,16 @@ class Context(unittest.TestCase):
         store.set("summary_upto", "4")
         self.assertEqual(context.to_summarise(store)[0]["text"], "line 4", "a second pass goes on where it stopped")
 
+    def test_compaction_starts_on_the_message_after_the_threshold(self):
+        """Should fold nothing at SUMMARY_AFTER messages and the older turns on the next one."""
+        at_limit = self.store(context.SUMMARY_AFTER)
+        self.assertEqual(context.to_summarise(at_limit), [])
+        past = self.store(context.SUMMARY_AFTER + 1)
+        older = context.to_summarise(past)
+        self.assertEqual(len(older), context.SUMMARY_AFTER + 1 - context.KEEP_TURNS * 2)
+        self.assertEqual(older[0]["text"], "line 0")
+        self.assertEqual(older[-1]["text"], f"line {len(older) - 1}")
+
 
 class Turns(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
