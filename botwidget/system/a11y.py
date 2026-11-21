@@ -17,7 +17,31 @@ import sys
 # Installed by the desktop, not by pip. Listed so a later agree step can ask
 # for these names and never for python3-pyatspi.
 LINUX_PACKAGES = ("gir1.2-atspi-2.0", "python3-gi")
-SYSTEM_GI = "/usr/lib/python3/dist-packages"
+# Debian and Ubuntu keep PyGObject here. Other systems are found from their own sysconfig paths.
+_DEBIAN_GI = "/usr/lib/python3/dist-packages"
+
+
+def system_gi_source() -> str:
+    """Directory that holds the desktop `gi`, or empty when this machine has none."""
+    candidates = []
+    if os.path.isfile("/etc/debian_version"):
+        candidates.append(_DEBIAN_GI)
+    try:
+        import sysconfig
+        candidates.extend(path for path in sysconfig.get_paths().values() if path)
+    except Exception:
+        pass
+    seen = set()
+    for path in candidates:
+        if path in seen:
+            continue
+        seen.add(path)
+        if os.path.isdir(os.path.join(path, "gi")):
+            return path
+    return ""
+
+
+SYSTEM_GI = _DEBIAN_GI  # kept for callers that pass the Debian location explicitly
 
 # The in-widget dialog is not built. install_after_agree is the only install entry.
 CONSENT = {
@@ -154,11 +178,15 @@ def doctor() -> str:
     return f"{link}; accessibility: {word} ({row['reason']})"
 
 
-def link_system_gi(site_packages: str | None = None, source: str = SYSTEM_GI) -> list[str]:
+def link_system_gi(site_packages: str | None = None, source: str | None = None) -> list[str]:
     """Symlink the desktop PyGObject into a venv. A fresh venv has no gi of its own.
 
     No-op outside a virtualenv when site_packages is omitted, and when the desktop has no gi.
     """
+    if source is None:
+        source = system_gi_source()
+    if not source:
+        return []
     if site_packages is None:
         if sys.prefix == getattr(sys, "base_prefix", sys.prefix):
             return []
@@ -182,7 +210,10 @@ def link_system_gi(site_packages: str | None = None, source: str = SYSTEM_GI) ->
         dest = os.path.join(site_packages, name)
         if os.path.lexists(dest):
             continue
-        os.symlink(os.path.join(source, name), dest)
+        try:
+            os.symlink(os.path.join(source, name), dest)
+        except OSError:
+            continue
         made.append(dest)
     return made
 

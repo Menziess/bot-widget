@@ -123,7 +123,10 @@ def trash_file(at: str) -> str:
 
 
 def accessibility_requested(text: str) -> bool:
-    """The user asked for the desktop list or named this tool. A bare chat does not."""
+    """Heuristic phrase list, not a parser. A bare chat does not ask for the desktop.
+
+    shortcut: misses phrasings such as "what apps are open"; widen the list when a real ask is missed.
+    """
     low = (text or "").lower()
     if "accessibility" in low and "tool" in low:
         return True

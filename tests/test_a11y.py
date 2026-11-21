@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 
 from botwidget.system import a11y
-from harness.agent.agent import LeanAgent
+from harness.agent.agent import A11Y_NUDGE, LeanAgent
 from harness.agent.context import SYSTEM
 from harness.agent.tools import Tools, accessibility_requested, accessibility_text
 from tests.test_harness_direct import Block, Conn, ScriptModel
@@ -124,6 +124,26 @@ class AccessibilityProbe(unittest.TestCase):
             self.assertEqual(a11y.link_system_gi(site, source=source), [])
             self.assertEqual(len(made), 2)
 
+    def test_a_symlink_error_is_skipped(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source = os.path.join(folder, "dist")
+            site = os.path.join(folder, "site")
+            os.makedirs(os.path.join(source, "gi"))
+            with mock.patch("os.symlink", side_effect=OSError("busy")):
+                self.assertEqual(a11y.link_system_gi(site, source=source), [])
+            self.assertFalse(os.path.lexists(os.path.join(site, "gi")))
+
+    def test_a_non_debian_machine_does_not_use_the_debian_path(self):
+        seen = []
+
+        def isdir(path):
+            seen.append(path)
+            return False
+
+        with mock.patch("os.path.isfile", return_value=False), mock.patch("os.path.isdir", side_effect=isdir):
+            self.assertEqual(a11y.system_gi_source(), "")
+        self.assertFalse(any(str(path).startswith("/usr/lib/python3/dist-packages") for path in seen))
+
     def test_consent_is_a_design_and_does_not_run_pkexec(self):
         self.assertFalse(a11y.CONSENT["built"])
         self.assertEqual(a11y.CONSENT["choices"], ("Agree", "Not now"))
@@ -143,6 +163,7 @@ class AccessibilityProbe(unittest.TestCase):
 
 class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
     def test_the_prompt_names_the_tool_and_an_empty_query_lists_names(self):
+        self.assertIn("heuristic", accessibility_requested.__doc__.lower())
         self.assertIn("call accessibility", SYSTEM.lower())
         self.assertTrue(accessibility_requested(
             "Which applications are open on my desktop? Use your accessibility tool."))
@@ -171,3 +192,41 @@ class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(results)
         self.assertEqual(results[-1]["name"], "accessibility")
         self.assertIn("botwidget", results[-1]["full"])
+
+    async def test_a_correct_accessibility_call_is_one_answer_with_no_nudge(self):
+        seen = []
+
+        class Watch(ScriptModel):
+            def stream(self, messages, tools=None, stop=None, opened=None):
+                seen.append(messages)
+                return super().stream(messages, tools, stop, opened)
+
+        call = ("tool_calls", [{"id": "a1", "function": {"name": "accessibility", "arguments": json.dumps({})}}])
+        folder = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder, True))
+        agent = LeanAgent("bot", Watch([[call, ("finish", "tool_calls")],
+                                         [("text", "botwidget is open."), ("finish", "stop")]]),
+                          folder=os.path.join(folder, "agent"))
+        agent.on_connect(Conn())
+        session = (await agent.new_session(cwd=folder)).session_id
+        ask = "Which applications are open on my desktop? Use your accessibility tool."
+        with mock.patch("botwidget.system.a11y.accessibility", return_value={"available": True, "reason": "AT-SPI", "platform": "linux"}), \
+                mock.patch("botwidget.system.a11y.application_names", return_value=["botwidget"]):
+            await agent.prompt(session, [Block(ask)])
+        self.assertEqual(len(seen), 2)
+        blob = json.dumps(seen)
+        self.assertNotIn(A11Y_NUDGE, blob)
+        texts = [item[1].content.text for item in agent.conn.updates
+                 if getattr(item[1], "session_update", "") == "agent_message_chunk"]
+        self.assertEqual(texts, ["botwidget is open."])
+
+    async def test_a_hidden_accessibility_tool_is_not_nudged(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder, True))
+        agent = LeanAgent("bot", ScriptModel([[("text", "I cannot list them."), ("finish", "stop")]]),
+                          folder=os.path.join(folder, "agent"))
+        agent.on_connect(Conn())
+        session = (await agent.new_session(cwd=folder)).session_id
+        agent.stores[session].set("skill_deny", "accessibility")
+        await agent.prompt(session, [Block("Which applications are open on my desktop? Use your accessibility tool.")])
+        self.assertEqual(agent.stores[session].tool_results(), [])

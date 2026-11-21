@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from harness.teacher import (
-    GIT_COMMIT, VENV_PYTHON, approve_student, decide_promote, failing_test_name, false_claims, judge,
+    GIT_COMMIT, VENV_PYTHON, approve_student, decide_promote, failing_test_name, false_claims, judge, judge_turns,
     next_action, promote_or_rollback, score_row, self_check, send_when_idle, student_worktree,
     summary, task_prompt, tokens_estimate, wait_until_idle, write_scoreboard,
 )
@@ -104,6 +104,13 @@ class TeacherLoop(unittest.TestCase):
             self.assertEqual(false_claims("I wrote ok.txt", folder), [])
             self.assertEqual(false_claims("I wrote missing.txt", folder), ["missing.txt"])
             self.assertEqual(false_claims("committed deadbee", folder), ["deadbee"])
+            self.assertEqual(false_claims("I created a new file notes.txt", folder), ["notes.txt"])
+            self.assertNotIn("a", false_claims("I created a new file notes.txt", folder))
+            self.assertEqual(false_claims("Saved the settings.", folder), [])
+            self.assertEqual(false_claims("I wrote to the log", folder), [])
+            row = judge_turns(["I wrote missing.txt"], folder, tests_ok=True, health_ok=True)
+            self.assertEqual(row["false_claims"], ["missing.txt"])
+            self.assertEqual(row["failure"], "claim")
         row = judge(tests_ok=True, health_ok=True, turns=1, elapsed_s=1, claims_ok=False)
         self.assertFalse(row["ok"])
         self.assertEqual(row["failure"], "claim")

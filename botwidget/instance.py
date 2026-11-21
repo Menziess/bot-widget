@@ -24,13 +24,23 @@ def looks_like_widget(cmdline: bytes, markers: tuple = LAUNCHERS) -> bool:
     return any(name in cmdline for name in markers)
 
 
+def _cmdline_text(raw) -> str:
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", "replace")
+    return raw.replace("\x00", " ")
+
+
 def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
-    """Stop a previously started widget, so one window remains."""
+    """Stop a previously started widget, so one window remains.
+
+    markers stays for callers that still pass it. The kill uses the command check, so a
+    reused pid whose prompt merely mentions the widget is left alone.
+    """
     try:
         old = int(read_file(pidfile))
     except ValueError:
         old = None
-    if old and old != os.getpid() and looks_like_widget(process_cmdline(old), markers):
+    if old and old != os.getpid() and is_widget_cmd(_cmdline_text(process_cmdline(old))):
         os.kill(old, signal.SIGTERM)
         for _ in range(20):
             time.sleep(0.1)
@@ -44,24 +54,46 @@ def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
     atexit.register(lambda: os.path.exists(pidfile) and os.remove(pidfile))
 
 
+_BUNDLE = "Bot Widget.app/Contents/MacOS/Bot Widget"
+
+
+def _stem(token: str) -> str:
+    name = os.path.basename(token.replace("\\", "/"))
+    if name.lower().endswith(".exe"):
+        name = name[:-4]
+    if name.endswith(".app"):
+        name = name[:-4]
+    return name
+
+
 def is_widget_cmd(cmd: str) -> bool:
     """A real widget: the executable or `python -m botwidget` near the start of the command.
 
-    A process whose prompt only mentions those words is not a widget.
+    A process whose prompt only mentions those words is not a widget. The bundle path is
+    matched before the shell split, because the executable name contains spaces.
     """
+    raw = (cmd or "").replace("\x00", " ").strip()
+    if not raw or "--instances" in raw.split():
+        return False
+    flat = raw.replace("\\", "/")
+    if _BUNDLE in flat:
+        return True
+    low = flat.lower()
+    if "/botwidget.exe" in low or low.endswith("botwidget.exe") or "/bot widget.exe" in low:
+        return True
+    # A Windows command keeps backslashes. posix shlex would eat them.
+    posix = os.name != "nt" and "\\" not in raw
     try:
-        argv = shlex.split(cmd)
+        argv = shlex.split(raw, posix=posix)
     except ValueError:
-        argv = cmd.split()
+        argv = raw.split()
     if not argv:
         return False
     window = argv[:8]
-    if "--instances" in window:
-        return False
-    exe = os.path.basename(argv[0])
+    exe = _stem(argv[0])
     if exe in ("botwidget", "Bot Widget", "bot_widget.py"):
         return True
-    if not exe.startswith("python"):
+    if not exe.lower().startswith("python"):
         return False
     if "-m" in window:
         nxt = window[window.index("-m") + 1:window.index("-m") + 2]

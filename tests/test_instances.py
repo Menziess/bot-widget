@@ -1,11 +1,13 @@
 """The one-widget check groups a --dev reloader with its child. It kills nothing."""
 
 import io
+import os
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
-from botwidget.instance import instances_main, parse_ps, widget_groups
+from botwidget.instance import ensure_single_instance, instances_main, is_widget_cmd, parse_ps, widget_groups
 
 
 DEV = "python -m botwidget --dev"
@@ -41,6 +43,28 @@ class Groups(unittest.TestCase):
         procs = [(4, 1, "python -m botwidget --instances"), (10, 1, CHILD)]
         self.assertEqual(widget_groups(procs, own_pid=4), [[10]])
         self.assertEqual(widget_groups([(4, 1, CHILD)], own_pid=4), [])
+
+    def test_macos_windows_and_exe_commands_are_widgets(self):
+        mac = "/Applications/Bot Widget.app/Contents/MacOS/Bot Widget --dev"
+        windows = r"C:\Users\s\venv\Scripts\python.exe -m botwidget"
+        pythonw = r"C:\Users\s\venv\Scripts\pythonw.exe -m botwidget"
+        exe = r"C:\Program Files\Bot Widget\Bot Widget.exe"
+        self.assertTrue(is_widget_cmd(mac))
+        self.assertTrue(is_widget_cmd(windows))
+        self.assertTrue(is_widget_cmd(pythonw))
+        self.assertTrue(is_widget_cmd(exe))
+        self.assertFalse(is_widget_cmd("python -m botwidget --instances"))
+
+    def test_a_reused_pid_whose_prompt_mentions_the_widget_is_left_alone(self):
+        folder = tempfile.mkdtemp()
+        pid = os.path.join(folder, "pid")
+        with open(pid, "w") as fh:
+            fh.write("424242")
+        prompt = b"/usr/bin/python /opt/grok agent The live botwidget --dev widget"
+        with mock.patch("botwidget.instance.process_cmdline", return_value=prompt), \
+                mock.patch("botwidget.instance.os.kill") as kill:
+            ensure_single_instance(pid)
+        kill.assert_not_called()
 
     def test_ps_rows(self):
         text = "  10   1 python -m botwidget --dev\n  11  10 python -m botwidget\n"

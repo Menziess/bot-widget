@@ -105,6 +105,32 @@ class DirectCdp(unittest.TestCase):
         self.assertIn("[redacted]", fetched["body"])
         self.assertNotIn("super-secret-token", redact(body))
 
+    def test_a_fake_devtools_port_file_is_the_socket(self):
+        import tempfile
+        from unittest import mock
+        from harness import browser_local
+
+        class Socket:
+            urls = []
+
+            def __init__(self, url):
+                Socket.urls.append(url)
+
+            def call(self, method, params=None, session_id=None):
+                return {"targetInfos": []}
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "DevToolsActivePort")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("9333\n/devtools/browser/fixture\n")
+            browser_local._shared.clear()
+            with mock.patch.object(browser_local, "WebSocketCdp", Socket), \
+                    mock.patch.object(browser_local, "devtools_version", return_value=None), \
+                    mock.patch.object(browser_local.subprocess, "run", return_value=mock.Mock(stdout="")):
+                browser_local.attach(port_file=path).list_tabs()
+            browser_local._shared.clear()
+        self.assertEqual(Socket.urls, ["ws://127.0.0.1:9333/devtools/browser/fixture"])
+
     def test_the_port_file_is_the_browser_socket_when_json_version_is_closed(self):
         url = websocket_from_port_file("9222\n/devtools/browser/abc\n")
         self.assertEqual(url, "ws://127.0.0.1:9222/devtools/browser/abc")

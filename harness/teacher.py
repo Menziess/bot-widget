@@ -40,18 +40,35 @@ def tokens_estimate(text: str) -> int:
     return max(1, len(text) // CHARS_PER_TOKEN)
 
 
-_WROTE = re.compile(r"\b(?:wrote|written|created|saved)\s+[`']?([^\s`']+)", re.I)
+_WROTE = re.compile(r"\b(?:wrote|written|created|saved)\b", re.I)
 _COMMIT = re.compile(r"\b(?:commit(?:ted)?|sha)\s+([0-9a-f]{7,40})\b", re.I)
+_TOKEN = re.compile(r"`([^`]+)`|(\S+)")
+_STOP = frozenset("a an the to of and or file new settings log".split())
+
+
+def _path_token(raw: str) -> str:
+    """A path claim: a slash, a dotted extension, or a backtick. Stopwords are not paths."""
+    token = (raw or "").strip(".,);:'\"")
+    if not token or token.lower() in _STOP:
+        return ""
+    if token.startswith(("/", "./", "../")) or "/" in token:
+        return token
+    if re.search(r"\.[A-Za-z0-9]{1,8}$", token):
+        return token
+    return ""
 
 
 def false_claims(text: str, root: str) -> list[str]:
     """Files and commits the reply says it made, that are not on disk or in git."""
     missing = []
-    for raw in _WROTE.findall(text or ""):
-        path = raw.rstrip(".,)")
-        full = path if os.path.isabs(path) else os.path.join(root, path)
-        if not os.path.isfile(full):
-            missing.append(path)
+    if _WROTE.search(text or ""):
+        for backticked, plain in _TOKEN.findall(text or ""):
+            path = _path_token(backticked or plain)
+            if not path:
+                continue
+            full = path if os.path.isabs(path) else os.path.join(root, path)
+            if not os.path.isfile(full):
+                missing.append(path)
     for sha in _COMMIT.findall(text or ""):
         if _git(root, "cat-file", "-e", sha).returncode != 0:
             missing.append(sha)
@@ -76,6 +93,26 @@ def judge(*, tests_ok: bool, health_ok: bool, turns: int, elapsed_s: float,
         kind = ""
     return {"ok": kind == "", "failure": kind, "failing_test": failing_test,
             "error_tail": "\n".join(error_tail.strip().splitlines()[-8:])}
+
+
+def judge_turn(reply: str, checkout: str, **kwargs) -> dict:
+    """Judge one reply. A path it says it wrote, and that is not in the checkout, fails the claim."""
+    missing = false_claims(reply, checkout)
+    row = judge(claims_ok=not missing, **kwargs)
+    row["false_claims"] = missing
+    return row
+
+
+def judge_turns(replies: list[str], checkout: str, *, tests_ok: bool, health_ok: bool,
+                elapsed_s: float = 0) -> dict:
+    """The teacher loop. Each reply is judged, including the files it claims."""
+    row = judge(tests_ok=tests_ok, health_ok=health_ok, turns=0, elapsed_s=elapsed_s)
+    for turn, reply in enumerate(replies, start=1):
+        row = judge_turn(reply, checkout, tests_ok=tests_ok, health_ok=health_ok,
+                         turns=turn, elapsed_s=elapsed_s)
+        if not row["ok"]:
+            return row
+    return row
 
 
 def summary(row: dict) -> str:

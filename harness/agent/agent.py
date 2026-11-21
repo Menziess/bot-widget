@@ -322,6 +322,7 @@ class LeanAgent:
         max_steps = max(_env_int("HARNESS_MAX_STEPS", MAX_STEPS), 1)
         repeats = _env_int("HARNESS_LOOP_REPEATS", LOOP_REPEATS)  # 0 turns loop detection off
         recent_calls: list[str] = []
+        called: set[str] = set()
         stopped = ""
         await self._wait_for_summary()
         self._stream_idle.clear()
@@ -395,7 +396,9 @@ class LeanAgent:
                         "text_tail": "".join(step_text)[-200:]}
                 if cancelled or not calls:
                     asked = ""
-                    if not cancelled and not calls and a11y_nudges < 1:
+                    # A correct call already happened, or the tool is hidden: one answer, no second round.
+                    if (not cancelled and not calls and a11y_nudges < 1 and "accessibility" not in called
+                            and self.tools.find("accessibility") is not None):
                         for message in reversed(store.messages()):
                             if message["role"] == "user":
                                 asked = message["text"]
@@ -414,6 +417,7 @@ class LeanAgent:
                     messages.append({"role": "user", "content": SKILL_NUDGE})
                     continue
                 for call in calls:
+                    called.add((call.get("function") or {}).get("name") or "")
                     recent_calls.append(self._call_cache_key(call))
                 if repeats > 1 and len(recent_calls) >= repeats and len(set(recent_calls[-repeats:])) == 1:
                     name = (calls[-1].get("function") or {}).get("name") or "a tool"

@@ -69,6 +69,11 @@ class Cdp:
         created = self.call("Target.createTarget", {"url": url, "newWindow": False})
         return created.get("targetId") or ""
 
+    def close_tab(self, target_id: str) -> None:
+        """Close one tab this session opened. Other tabs stay."""
+        if target_id:
+            self.call("Target.closeTarget", {"targetId": target_id})
+
     def use_tab(self, target_id: str) -> "Cdp":
         attached = self.call("Target.attachToTarget", {"targetId": target_id, "flatten": True})
         return Cdp(self._call, attached.get("sessionId"))
@@ -149,7 +154,8 @@ def _port_file_url() -> str | None:
                  os.path.join(home, "Library/Application Support/Chromium/DevToolsActivePort"),
                  os.path.join(os.environ.get("LOCALAPPDATA", home), "Google/Chrome/User Data/DevToolsActivePort")):
         try:
-            return websocket_from_port_file(open(path, encoding="utf-8").read())
+            with open(path, encoding="utf-8") as fh:
+                return websocket_from_port_file(fh.read())
         except (OSError, ValueError):
             continue
     return None
@@ -167,10 +173,23 @@ def _listening_urls() -> list:
             for line in out.splitlines() if line.startswith("n127.0.0.1:")]
 
 
-def attach(port: int = 9222) -> Cdp:
-    """The browser socket for the Chrome that is already showing the consent dialog's result."""
+def attach(port: int = 9222, port_file: str | None = None) -> Cdp:
+    """The browser socket for the Chrome that is already showing the consent dialog's result.
+
+    The port file is tried first. Chrome's built-in debugging toggle answers /json/version with 404
+    and puts the real socket path in that file.
+    """
     version = devtools_version(port)
-    urls = [*_shared, *([version["webSocketDebuggerUrl"]] if version else []), *_listening_urls(), _port_file_url()]
+    from_file = None
+    if port_file:
+        try:
+            with open(port_file, encoding="utf-8") as fh:
+                from_file = websocket_from_port_file(fh.read())
+        except (OSError, ValueError):
+            from_file = None
+    else:
+        from_file = _port_file_url()
+    urls = [*_shared, from_file, *([version["webSocketDebuggerUrl"]] if version else []), *_listening_urls()]
     for url in filter(None, urls):
         with _shared_lock:
             try:
@@ -206,7 +225,7 @@ def _shared_call(url: str):
     return call
 
 
-CONSENT_WAIT_S = 60
+CONSENT_WAIT_S = 120
 
 
 class WebSocketCdp:

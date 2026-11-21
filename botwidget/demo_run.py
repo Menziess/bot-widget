@@ -1,7 +1,7 @@
 """One pass of the --dev demo. Outcomes are checked here. The model is not asked to confirm them.
 
-Chrome is only attached when something is already listening. This never starts Chrome, never closes a
-tab, and never navigates a tab it did not open.
+Chrome is only attached when something is already listening. This never starts Chrome. The one tab
+it opens is closed again. Stefan's other tabs stay.
 """
 
 import os
@@ -39,22 +39,27 @@ def _publish(board: Board) -> None:
 
 
 def _browser(board: Board) -> None:
-    from harness.browser_local import attach, devtools_version
-    version = devtools_version()
-    if not version:
-        board.consider("browser", browser_tab(False, "", False, False, "CDP not reachable"))
-        return
+    from harness.browser_local import attach
+    target = ""
+    browser = None
     try:
         browser = attach()
         before = {tab["id"] for tab in browser.list_tabs()}
-        target = browser.open_tab("about:blank")
+        target = browser.open_tab("https://example.com")
         page = browser.use_tab(target)
         page.wait_for_load()
-        url = page._value("location.href") or ""
-        ours = target not in before and bool(target)
-        board.consider("browser", browser_tab(True, str(url), False, ours))
+        url = str(page._value("location.href") or "")
+        ours = bool(target) and target not in before and "example.com" in url
+        board.consider("browser", browser_tab(True, url, False, ours))
     except Exception as error:
-        board.consider("browser", browser_tab(False, "", False, False, type(error).__name__))
+        reason = "waiting for Allow in Chrome" if isinstance(error, (TimeoutError, ConnectionError, OSError)) else type(error).__name__
+        board.consider("browser", browser_tab(False, "", False, False, reason))
+    finally:
+        if browser is not None and target:
+            try:
+                browser.close_tab(target)
+            except Exception:
+                pass
 
 
 def _files(board: Board) -> None:
