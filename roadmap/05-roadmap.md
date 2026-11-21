@@ -145,6 +145,8 @@ Design, for when it is built:
 - Linux under X11, macOS, and Windows. Where the platform cannot move the pointer, the tool says so and does nothing.
 - Off unless the owner turns it on for that bot. It is not in the default tool list.
 
+Linux check, 2026-11-21. The widget probes AT-SPI at startup through PyGObject and the Atspi 2.0 typelib (`gir1.2-atspi-2.0`), which this Ubuntu desktop already has. `python3-pyatspi` is not used. One log line, the same fact in the harness runtime facts, and a read-only `accessibility` tool that can name a top-level application (the widget's own name on the bus is `botwidget`). Windows UI Automation and macOS AX are named and not implemented. Pointer and keyboard actions are still not built.
+
 ## Where to start (historical)
 
 The spike in phase 0 costs the least and answers the largest unknown, which is how well existing agents behave through ACP. Everything after it depends on that answer.
