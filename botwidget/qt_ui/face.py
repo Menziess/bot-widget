@@ -1740,6 +1740,7 @@ class FaceWindow(QWidget):
         if self.faces is not None:
             self.faces.close_bubbles_except(self.agent_id)
         self.bubble.show_command_menu()
+        self.bubble.take_keys()
         # Hidden bots belong to /bots. A right-click, or leaving that page for this list, drops them.
         self._arc_for_page(None)
 
@@ -1773,7 +1774,10 @@ class FaceWindow(QWidget):
             bar.setValue(bar.maximum())
         self._claim_bubble()
         self._activate_here()
-        self.bubble.setFocus()
+        # show() maps on the next turn. setFocus before that is dropped, and the hover that
+        # restored the page never activates the window, so Escape stays in the other app.
+        self.bubble.take_keys()
+        QTimer.singleShot(0, self.bubble.take_keys)
         self._arc_for_page(page)
 
     def _menu_command(self, command: str):

@@ -331,6 +331,46 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertIsNone(self.window._menu_page)
         self.assertIsNone(self.window._page_memory)
 
+    def test_should_leave_the_page_when_escape_is_delivered_to_the_focus_window_after_hover(self):
+        """Should hear Escape the way the window system sends it: only the active window, after a hover."""
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication, QLineEdit, QWidget
+        self.window.open_menu("settings")
+        self._finish()
+        self.bubble._physics.stop()
+        other = QWidget()
+        other.setFocusPolicy(Qt.StrongFocus)
+        other.resize(40, 40)
+        other.show()
+        other.activateWindow()
+        other.setFocus()
+        self.addCleanup(other.close)
+        QApplication.processEvents()
+        self.bubble.enterEvent(QEvent(QEvent.Enter))
+        with mock.patch.object(self.window, "pointer_near", return_value=True):
+            self.bubble._tick()
+        QApplication.processEvents()
+        self.assertIs(QGuiApplication.focusWindow(), self.bubble.windowHandle())
+        target = QApplication.focusWidget()
+        self.assertTrue(self.bubble.isAncestorOf(target) or target is self.bubble)
+        QTest.keyClick(target, Qt.Key_Escape)
+        self._finish()
+        self.assertTrue(self.bubble.isVisible())
+        self.assertIsNone(self.window._menu_page)
+        self.assertIsNone(self.window._page_memory)
+        self.assertIn("Hello from the bot.", self.bubble.full_text)
+        edit = QLineEdit(self.bubble)
+        edit.show()
+        self.window.open_menu("settings")
+        self._finish()
+        edit.setFocus()
+        QTest.keyClick(edit, Qt.Key_Escape)
+        self._finish()
+        self.assertIsNone(self.window._menu_page)
+        self.assertIn("Hello from the bot.", self.bubble.full_text)
+
     def test_should_collapse_when_escape_is_pressed(self):
         """Should return from a menu page to the chat on Escape, and forget the page."""
         from PySide6.QtCore import Qt
@@ -344,6 +384,42 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.assertIsNone(self.window._page_memory)
         self.assertIn("Hello from the bot.", self.bubble.full_text)
         self.assertNotIn("Sound on a new answer", self.bubble.full_text)
+
+    def test_should_return_to_the_chat_when_escape_follows_a_restored_page(self):
+        """Should hand Escape to whatever has the keyboard after a hover brings Settings back."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtTest import QTest
+        self.window.open_menu("settings")
+        self._finish()
+        self._leave_page("left")
+        self._hover()
+        self.assertEqual(self.window._menu_page, "settings")
+        # Offscreen leaves QApplication.focusWidget empty when no window is the app's active one.
+        # The platform delivers the key to the focus window's own focus widget.
+        self.assertIs(QGuiApplication.focusWindow(), self.bubble.windowHandle())
+        focused = self.bubble.focusWidget()
+        self.assertIsNotNone(focused, "a restored page has no keyboard, so Escape never arrives")
+        QTest.keyClick(focused, Qt.Key_Escape)
+        self._finish()
+        self.assertIsNone(self.window._menu_page)
+        self.assertIsNone(self.window._page_memory)
+        self.assertIn("Hello from the bot.", self.bubble.full_text)
+        self.assertNotIn("Sound on a new answer", self.bubble.full_text)
+
+    def test_should_return_to_the_chat_when_escape_lands_in_a_page_field(self):
+        """Should leave a page when Escape is typed into a field on that page."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        self.window.open_menu("widget-json")
+        self._finish()
+        editor = next(widget for widget in self.bubble._control_widgets if hasattr(widget, "text_value")
+                      and widget.__class__.__name__ == "TextEditor")
+        editor.setFocus()
+        QTest.keyClick(editor, Qt.Key_Escape)
+        self._finish()
+        self.assertIsNone(self.window._menu_page)
+        self.assertIn("Hello from the bot.", self.bubble.full_text)
 
     def test_should_reopen_the_same_page_when_the_pointer_comes_back(self):
         """Should show Settings again after the pointer left that page, without writing config."""

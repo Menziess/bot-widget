@@ -34,9 +34,11 @@ from PySide6.QtGui import (
     QFont,
     QGuiApplication,
     QImage,
+    QKeySequence,
     QLinearGradient,
     QPainter,
     QRegion,
+    QShortcut,
     QTextCursor,
     QTextOption,
 )
@@ -763,9 +765,21 @@ class TapWatcher(QObject):
 
     def eventFilter(self, watched, event):
         try:
-            pressed = event.type() == QEvent.MouseButtonPress  # PySide raises on event types it has no name for
+            kind = event.type()  # PySide raises on event types it has no name for
         except (ValueError, SystemError):
             return False
+        if isinstance(watched, QWidget) and kind == QEvent.KeyPress and event.key() == Qt.Key_Escape:
+            window = watched.window()
+            face = getattr(window, "face", None)
+            # A field on a page accepts Escape itself. The page still goes straight back to the chat.
+            entry = getattr(window, "_entry", None)
+            typing_command = getattr(window, "_input", False) and getattr(entry, "commands_open", False)
+            # A slash list in the field closes itself. A page, or the right-click list, goes back to the chat.
+            if face is not None and not typing_command and (
+                    getattr(face, "_menu_page", None) or getattr(window, "_list_only", False)):
+                face.open_input()
+                return True
+        pressed = kind == QEvent.MouseButtonPress
         if not pressed or not isinstance(watched, QWidget):
             return False
         window = watched.window()
@@ -800,6 +814,9 @@ class BubbleWindow(QWidget):
     def __init__(self, face):
         super().__init__()
         self.face = face
+        # ClickFocus, not NoFocus: setFocus is ignored on a window that refuses the keyboard, and a
+        # page opened by a hover would then never see Escape.
+        self.setFocusPolicy(Qt.ClickFocus)
         self._apply_flags()
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
@@ -925,6 +942,10 @@ class BubbleWindow(QWidget):
         self._entry.completed.connect(self._complete_command)
         self._entry.chosen.connect(lambda: self._run_command(self._slash.current()))
         self._entry.closed.connect(self._close_commands)
+        # WindowShortcut: Escape still arrives when a line on the page has the cursor.
+        self._escape = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        self._escape.setContext(Qt.WindowShortcut)
+        self._escape.activated.connect(self._on_escape)
         self._commands_forced = False
         self._attachments = []
         self._attachment_row = QLabel(self._card)
@@ -1170,15 +1191,20 @@ class BubbleWindow(QWidget):
             self._entry.clear()
         self._show_commands([])
 
+    def _on_escape(self):
+        """A page or the command list returns to the chat. The chat closes. A typed command list only closes itself."""
+        if self._input and self._entry.commands_open:
+            self._close_commands()
+            return
+        if getattr(self.face, "_menu_page", None) or self._list_only:
+            self.face.open_input()
+            return
+        self.face._forget_page()
+        self.face.unpin()
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and not self._input:
-            # A typed command list handles its own Escape in the field. Here the bubble itself has the key.
-            # A menu page goes straight back to the chat. The chat still closes.
-            if getattr(self.face, "_menu_page", None) or self._list_only:
-                self.face.open_input()
-            else:
-                self.face._forget_page()
-                self.face.unpin()
+            self._on_escape()
             return
         super().keyPressEvent(event)
 
@@ -1329,6 +1355,24 @@ class BubbleWindow(QWidget):
     def has_draft(self) -> bool:
         return self._input and bool(self._entry.text())
 
+    def take_keys(self):
+        """The window manager only delivers keys to an active window. A page opened by hover asks for that.
+
+        WA_ShowWithoutActivating makes activateWindow a no-op, which is why a restored page never got Escape.
+        """
+        if not self.isVisible():
+            return
+        handle = self.windowHandle()
+        if handle is not None and QGuiApplication.focusWindow() is not handle:
+            # WA_ShowWithoutActivating makes activateWindow a no-op. requestActivate is xdg-activation
+            # on Wayland and an X focus request on XWayland. This focus is not typing.
+            self.setAttribute(Qt.WA_ShowWithoutActivating, False)
+            handle.requestActivate()
+            self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        focus = QApplication.focusWidget()
+        if focus is None or not (focus is self or self.isAncestorOf(focus)):
+            self.setFocus(Qt.OtherFocusReason)
+
     def focus_entry(self):
         """The cursor into the field, asked for by the user. A field that is not there yet (the bubble is still
         growing) gets it as soon as it shows: Qt drops focus given to a hidden widget."""
@@ -1394,9 +1438,11 @@ class BubbleWindow(QWidget):
         self._near_at = time.monotonic()
 
     def enterEvent(self, event):
-        """Mouse over the bubble: it stays."""
+        """Mouse over the bubble: it stays. A page asks for the keyboard, or Escape still goes to the previous window."""
         self._entered_at = time.monotonic()
         self.changed = time.monotonic()
+        if getattr(self.face, "_menu_page", None) or self._list_only:
+            self.take_keys()
 
     def leaveEvent(self, event):
         """Mouse left the bubble: the pointer is away, even when underMouse() stays true.
