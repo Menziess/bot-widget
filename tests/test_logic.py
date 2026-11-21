@@ -4950,10 +4950,11 @@ class BubbleHover(unittest.TestCase):
         self.open_settings()
         self.assertFalse(self.window.pinned, "it goes away by itself like any bubble")
         QTest.keyClick(self.window.bubble, Qt.Key_Escape)
-        self.assertFalse(self.window.bubble.isVisible())
+        self.assertTrue(self.window.bubble.isVisible())
         self.assertIsNone(self.window._menu_page)
         self.assertIsNone(self.window._page_memory)
-        self.assertEqual(self.window.bubble.kind, "")
+        self.assertIn("Ja.", self.window.bubble.full_text)
+        self.assertNotIn("Sound on a new answer", self.window.bubble.full_text)
 
     def test_clicking_a_command_in_the_list_runs_it(self):
         self.hover()
