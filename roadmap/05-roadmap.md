@@ -136,12 +136,12 @@ Still open, except the line marked done. In the order the owner asked.
 
 Not built. Asked on 2026-11-21, the bot said it can only use the tools in the chat, and that is what the code does.
 
-Nothing in the tool list is a computer-use tool: move the pointer, press keys, take a desktop screenshot, then act. Checked the builtins in `harness/agent/tools.py`, the workspace tools, and the MCP tools the agent forwards. `deny-tools` only hides tools a skill already has. `Cdp.screenshot` and `Cdp.click_text` are one Chrome tab, and the model is not offered them (see Browser actions as tools above). The widget screenshot is the user dragging a region; the picture waits as an attachment. `harness/capability.py` scores `computer_use` as zero because a blank session has no display.
+Nothing in the tool list is a computer-use tool: move the pointer, press keys, then see what changed. Checked the builtins in `harness/agent/tools.py`, the workspace tools, and the MCP tools the agent forwards. `deny-tools` only hides tools a skill already has. `Cdp.screenshot` and `Cdp.click_text` are one Chrome tab, and the model is not offered them (see Browser actions as tools above). The widget screenshot is the user dragging a region; the picture waits as an attachment. `harness/capability.py` scores `computer_use` as zero because a blank session has no display.
 
 Design, for when it is built:
 
 - Each action asks in the existing approval bubble, Accept or Decline, one action at a time. Always allow is not offered for pointer or keyboard actions.
-- The model sees one desktop screenshot after it is allowed, and only when that model can see images, plus the title of the focused window. It does not watch the screen between actions.
+- After an action is allowed, see what changed through the operating system's accessibility API: AT-SPI on Linux, UI Automation on Windows, and the AX API on macOS, including the title of the focused window. A screenshot is only the fallback when that API is missing or empty, because a screenshot is slower and creates a file. Any screenshot file is deleted right after it has been used. The picture is shown to the model only when that model can see images. The tool does not watch the screen between actions.
 - Linux under X11, macOS, and Windows. Where the platform cannot move the pointer, the tool says so and does nothing.
 - Off unless the owner turns it on for that bot. It is not in the default tool list.
 
