@@ -24,6 +24,7 @@ from acp.schema import (AgentMessageChunk, AgentThoughtChunk, AvailableCommand, 
 from harness import RESUME_PROMPT, approvals
 from harness.agent import context
 from harness.agent.models import ModelError
+from harness.stream_text import fold_chunk
 from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
 from harness.agent.workspace import (_diff_text, _real_path, compute_edit, outside_workspace,
@@ -303,6 +304,7 @@ class LeanAgent:
         started = time.monotonic()
         first = 0.0
         answer = []
+        shown = ""
         usage = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0}
         cancelled = False
         steps = 0
@@ -338,12 +340,24 @@ class LeanAgent:
                         continue
                     if kind == "thought":
                         thought_chars += len(value)
-                    if kind == "text" and not first:
+                        await self._chunk(session_id, "thought", value)
+                        continue
+                    if kind != "text":
+                        continue
+                    step_text.append(value)
+                    # A later chunk may repeat the whole answer, or grow it. A not_for_me echo
+                    # from a skill nudge is not part of what the user reads.
+                    new = fold_chunk(shown, value)
+                    if new == shown:
+                        continue
+                    extra = new[len(shown):] if new.startswith(shown) else new
+                    shown = new
+                    if not extra:
+                        continue
+                    if not first:
                         first = time.monotonic()  # the first word, not the first event
-                    if kind == "text":
-                        answer.append(value)
-                        step_text.append(value)
-                    await self._chunk(session_id, "agent" if kind == "text" else "thought", value)
+                    answer.append(extra)
+                    await self._chunk(session_id, "agent", extra)
                 # What the last step looked like, so a turn that ends on talk without the call can be explained.
                 last = {"finish": finish, "calls": len(calls), "thought_chars": thought_chars,
                         "text_tail": "".join(step_text)[-200:]}

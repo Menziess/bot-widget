@@ -19,6 +19,7 @@ import time
 from botwidget.config import widget_config
 from harness import RESUME_PROMPT, approvals
 from harness.acp_client import AcpClient, split_command
+from harness.stream_text import fold_chunk
 
 PREFIX = "acp:"
 DEFAULT_TARGET = "hermes-acp"
@@ -131,6 +132,23 @@ def options_for(agent_id: str) -> dict:
         return {}
     return {"face": agent_id, "name": bot["name"], "env": bot["env"],
             "key_file": bot["key_file"], "debug_launch": bot.get("debug_launch", False)}
+
+
+def _append_message(messages: list, role: str, text: str, fold: bool) -> None:
+    """Add one piece to the conversation. Bot text is folded so a repeated final chunk is not shown twice."""
+    if fold:
+        if messages and messages[-1]["role"] == role:
+            messages[-1]["text"] = fold_chunk(messages[-1]["text"], text)
+            if not messages[-1]["text"]:
+                messages.pop()
+            return
+        text = fold_chunk("", text)
+        if not text:
+            return
+    elif messages and messages[-1]["role"] == role:
+        messages[-1]["text"] += text
+        return
+    messages.append({"role": role, "text": text})
 
 
 def _bubble_line(text: str) -> str:
@@ -505,10 +523,7 @@ class AcpLink:
         with self._lock:
             if self._loading and update.kind in ("text", "user") and update.text:
                 role = "user" if update.kind == "user" else "bot"
-                if self._history and self._history[-1]["role"] == role:
-                    self._history[-1]["text"] += update.text
-                else:
-                    self._history.append({"role": role, "text": update.text})
+                _append_message(self._history, role, update.text, fold=role == "bot")
                 return
             if update.kind == "thought" and update.text.strip():
                 self._thought += update.text
@@ -546,10 +561,7 @@ class AcpLink:
                 self._thought = ""
                 self._said = True
                 # shortcut: one answer message per turn; ACP message ids are ignored for now.
-                if self.messages and self.messages[-1]["role"] == "bot":
-                    self.messages[-1]["text"] += update.text
-                else:
-                    self.messages.append({"role": "bot", "text": update.text})
+                _append_message(self.messages, "bot", update.text, fold=True)
                 if self._followup:
                     wake = True
         if tool:
