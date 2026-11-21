@@ -135,6 +135,19 @@ Not built. In the order the owner asked.
 - **Linux and Windows.** Try the port lookup (`lsof -c chrome`, the `%LOCALAPPDATA%` file) on those systems.
 - Tried 2026-11-17: OpenCode 2.1.3 over `opencode acp`, protocol 1, stop reason end_turn. It sends available_commands_update with an empty command list before the answer. The lean agent never sends that update. The client already leaves it off the first-answer clock. A one-word prompt on the local model took about 209 seconds to the first text.
 
+### Desktop computer use, 2026-11-21
+
+Not built. Asked on 2026-11-21, the bot said it can only use the tools in the chat, and that is what the code does.
+
+Nothing in the tool list is a computer-use tool: move the pointer, press keys, take a desktop screenshot, then act. Checked the builtins in `harness/agent/tools.py`, the workspace tools, and the MCP tools the agent forwards. `deny-tools` only hides tools a skill already has. `Cdp.screenshot` and `Cdp.click_text` are one Chrome tab, and the model is not offered them (see Browser actions as tools above). The widget screenshot is the user dragging a region; the picture waits as an attachment. `harness/capability.py` scores `computer_use` as zero because a blank session has no display.
+
+Design, for when it is built:
+
+- Each action asks in the existing approval bubble, Accept or Decline, one action at a time. Always allow is not offered for pointer or keyboard actions.
+- The model sees one desktop screenshot after it is allowed, and only when that model can see images, plus the title of the focused window. It does not watch the screen between actions.
+- Linux under X11, macOS, and Windows. Where the platform cannot move the pointer, the tool says so and does nothing.
+- Off unless the owner turns it on for that bot. It is not in the default tool list.
+
 ## Where to start (historical)
 
 The spike in phase 0 costs the least and answers the largest unknown, which is how well existing agents behave through ACP. Everything after it depends on that answer.
