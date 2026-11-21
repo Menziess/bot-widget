@@ -12,4 +12,6 @@ The judge is not a model. It records tests, health, turn count, and time. A fail
 
 The teacher gives one hint per retry, at most two retries, then fixes the task and logs a harness improvement.
 
+A task that changes a limit passes the window's values through. `leave_open` takes `LEAVE_GRACE_S`, `LEAVE_MOVING_PX_S` and `LEAVE_MAX_S` from the window. A private copy of the leave cap ignores the test, which sets `LEAVE_MAX_S` to 0, and the bubble tests stay open.
+
 Stop when retries are spent, the PC is going off, or the run grows large. Record that stop on the scoreboard.
