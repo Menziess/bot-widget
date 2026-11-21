@@ -181,9 +181,10 @@ The system prompt names `accessibility`, and a reply that skips the call is nudg
 
 Asked as three changes. The page memory and the doctor step are on main. A row ticks only after a verifier checks the outcome. `/demo` (dev only, `ffad165`) sends the tasks through the chat. The old `/tmp/t-demo/enable` file does not start a run. `--demo` still opens the checklist window.
 
-- The next hover after the pointer leaves a menu page opens that same page, for `page_memory_s` seconds (60 when the key is absent). After that the next hover opens the chat. A click away and Escape forget the page at once. Session memory only, no config write. Done 2026-11-21 (`0caa69d`, `6039011`).
+- The next hover after the pointer leaves a menu page opens that same page, for `page_memory_s` seconds (60 when the key is absent). After that the next hover opens the chat. A click away closes the bubble and forgets the page. Escape on a page returns to the chat and forgets the page. Escape on the chat closes the bubble. Session memory only, no config write. Done 2026-11-21 (`0caa69d`, `6039011`).
 - `botwidget doctor` is the step that links the desktop `gi`. The probe no longer fixes a missing `gi` by itself. Done 2026-11-21.
 - The local demo is a checklist of browser (CDP attach, reuse a tab, never a new window, blocked when CDP is down and Chrome is not started), a file written and read back, a script written and run, a background process started, checked and stopped, an accessibility read, and a seeded failing test that is repaired. `/demo` sends those prompts through the visible chat and ticks a row only from the code checkers. Done 2026-11-21 (`ffad165`).
+- The Settings switch "Sample thought, click the face for a sample message" is gone. An old `debug` key in widget.json is left in place and ignored. Done 2026-11-21 (`ffad165`).
 
 ### Open from the teacher rounds, 2026-11-21
 
