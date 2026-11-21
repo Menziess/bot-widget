@@ -161,11 +161,19 @@ Design, for when it is built:
 
 Linux check, 2026-11-21. The widget probes AT-SPI at startup through PyGObject and the Atspi 2.0 typelib (`gir1.2-atspi-2.0`), which this Ubuntu desktop already has. `python3-pyatspi` is not used. One log line, the same fact in the harness runtime facts, and a read-only `accessibility` tool that can name a top-level application (the widget's own name on the bus is `botwidget`). Windows UI Automation and macOS AX are named and not implemented. Pointer and keyboard actions are still not built.
 
-A fresh venv gets that system `gi` by a symlink when `botwidget` is imported (`link_system_gi`). Done 2026-11-21.
+A fresh venv gets that system `gi` by a symlink from `botwidget doctor` (`link_system_gi`). Importing `botwidget` does not link it. When `gi` is missing the probe says to run `botwidget doctor`. Done 2026-11-21.
 
 The in-widget consent dialog is not built. `CONSENT` in `botwidget/system/a11y.py` is the design: title, the two desktop packages, Agree or Not now, and `install_after_agree` as the only install entry. Nothing calls `pkexec` until that dialog exists and the user picks Agree. Add the dialog when a real probe returns available false.
 
 The system prompt names `accessibility`, and a reply that skips the call is nudged once. The tool result lists application names even when query is empty. Self-modify is phase 6.
+
+### Bubble page, demo checklist, and doctor, 2026-11-21
+
+Asked as three changes. The page memory and the doctor step are on main. The demo runs inside the `--dev` widget when `/tmp/t-demo/enable` exists or `--demo` is passed. A row ticks only after a verifier checks the outcome.
+
+- The next hover after the pointer leaves a menu page opens that same page. Session memory only, no config write. A click, Escape, or the line back to the command list forgets it. Done 2026-11-21.
+- `botwidget doctor` is the step that links the desktop `gi`. The probe no longer fixes a missing `gi` by itself. Done 2026-11-21.
+- The local demo is a checklist of browser (CDP attach, reuse a tab, never a new window, blocked when CDP is down and Chrome is not started), a file written and read back, a script written and run, a background process started, checked and stopped, an accessibility read, and a seeded failing test that is repaired. The visible panel is a tool window of the `--dev` instance. Still open: the tasks are run by the demo driver in the widget, not by a turn in the chat, because remote control stays off and `widget.json` is not edited.
 
 ### Open from the teacher rounds, 2026-11-21
 
