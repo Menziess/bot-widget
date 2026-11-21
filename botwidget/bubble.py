@@ -46,6 +46,20 @@ from botwidget.theme import (
 )
 
 
+# Shared bubble leave limits (0.4s grace, 300 px/s threshold, 1.5s cap).
+LEAVE_GRACE_S = 0.4
+LEAVE_MOVING_PX_S = 300
+LEAVE_MAX_S = 1.5
+
+
+def leave_open(away_s: float, speed_px_s: float) -> bool:
+    """Whether the bubble may still stay open after the pointer left.
+
+    True while away_s < LEAVE_MAX_S and (away_s < LEAVE_GRACE_S or speed_px_s > LEAVE_MOVING_PX_S).
+    """
+    return away_s < LEAVE_MAX_S and (away_s < LEAVE_GRACE_S or speed_px_s > LEAVE_MOVING_PX_S)
+
+
 def reading_seconds(text: str) -> float:
     """How long a bubble nobody points at stays: a few seconds, and more for a longer text."""
     return min(BUBBLE_LINGER_MAX, BUBBLE_LINGER + BUBBLE_PER_WORD * len(text.split()))
