@@ -233,6 +233,8 @@ class FaceWindow(QWidget):
                  hue: float | None = None, seed: str = "", avatar: dict | None = None,
                  link=None, guest: bool = False):
         super().__init__()
+        from botwidget.system.control import bind_mover
+        bind_mover(self.move)
         self.agent_id = agent_id
         self.bot_name = name
         self.thread_id = thread_id or ("openbot-thread-" + agent_id)

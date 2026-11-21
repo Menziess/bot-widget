@@ -24,6 +24,7 @@ LABELS = (
     ("process", "Process: start, check, stop"),
     ("accessibility", "Accessibility: read the desktop"),
     ("repair", "Repair: fix a seeded failing test"),
+    ("computer", "Computer: move a window and type into it"),
 )
 
 
@@ -126,6 +127,14 @@ def _repair(board: Board) -> None:
     board.consider("repair", repair_result(fixed.returncode))
 
 
+def _control(board: Board) -> None:
+    from botwidget.system.control import throwaway
+    try:
+        board.consider("computer", throwaway())
+    except Exception as error:
+        board.consider("computer", {"checked": True, "ok": False, "blocked": type(error).__name__})
+
+
 def run() -> Board:
     """Run every demo task once and write the checklist the panel reads."""
     flag = os.path.join(ROOT, "enable")
@@ -133,7 +142,7 @@ def run() -> Board:
         os.remove(flag)
     board = Board()
     _publish(board)
-    for step in (_browser, _files, _script, _process, _a11y, _repair):
+    for step in (_browser, _files, _script, _process, _a11y, _repair, _control):
         step(board)
         _publish(board)
     return board

@@ -38,6 +38,12 @@ def repair_result(returncode: int) -> dict:
     return {"checked": True, "ok": returncode == 0, "detail": f"unittest {returncode}"}
 
 
+def control_outcome(moved: bool, typed: str, expect: str) -> dict:
+    """The window is where it was sent and the field holds the text that was typed."""
+    ok = bool(moved) and typed == expect
+    return {"checked": True, "ok": ok, "detail": "landed" if ok else "mismatch"}
+
+
 def browser_tab(cdp_up: bool, url: str, new_window: bool, ours: bool, reason: str = "") -> dict:
     """A tab this demo opened in the existing window. Down CDP is blocked, not a failed tick to retry."""
     if not cdp_up:

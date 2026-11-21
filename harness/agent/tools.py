@@ -150,6 +150,47 @@ def accessibility_text(query: str = "") -> str:
     return "\n".join(lines)
 
 
+def _computer(action: str):
+    """One computer-control tool. The bubble already approved it, because the tool writes."""
+
+    def run(arguments):
+        from botwidget.system.control import ControlUnavailable, desktop, perform
+        try:
+            perform(desktop, action, arguments, approved=True)
+        except ControlUnavailable as error:
+            raise ToolError(str(error)) from error
+        return "ok"
+
+    return run
+
+
+def _computer_tools() -> list[Tool]:
+    """Pointer, keyboard and moving the widget. Each one asks in the approval bubble."""
+    point = {"x": {"type": "integer"}, "y": {"type": "integer"}}
+    return [
+        Tool("computer_click", "Click at a screen position. Needs Accept. One click only.",
+             {"type": "object", "properties": {**point, "button": {"type": "string"}}, "required": ["x", "y"]},
+             _computer("click"), writes=True),
+        Tool("computer_scroll", "Scroll by a number of steps. Needs Accept.",
+             {"type": "object", "properties": {"dx": {"type": "integer"}, "dy": {"type": "integer"}},
+              "required": ["dx", "dy"]},
+             _computer("scroll"), writes=True),
+        Tool("computer_type", "Type text at the focus. Needs Accept. Does not press Enter.",
+             {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+             _computer("type_text"), writes=True),
+        Tool("computer_key", "Press a key combination such as ctrl+a. Needs Accept.",
+             {"type": "object", "properties": {"combo": {"type": "string"}}, "required": ["combo"]},
+             _computer("key"), writes=True),
+        Tool("computer_drag", "Drag from one point to another. Needs Accept.",
+             {"type": "object", "properties": {**point, "to_x": {"type": "integer"}, "to_y": {"type": "integer"}},
+              "required": ["x", "y", "to_x", "to_y"]},
+             _computer("drag"), writes=True),
+        Tool("computer_move", "Move this widget to a position or a screen edge (left, right, top, bottom). Needs Accept.",
+             {"type": "object", "properties": {**point, "edge": {"type": "string"}}},
+             _computer("move_window"), writes=True),
+    ]
+
+
 def builtins() -> list[Tool]:
     return [
         Tool("read_file", "Read a text file. Read-only.", {
@@ -172,6 +213,7 @@ def builtins() -> list[Tool]:
              "query is an optional substring. Windows and macOS are not implemented yet. Never invent names.",
              {"type": "object", "properties": {"query": {"type": "string"}}},
              lambda arguments: accessibility_text(str(arguments.get("query") or ""))),
+        *_computer_tools(),
         Tool("browser_tabs",
              "List the tabs in the user's already open Chrome. Read-only. Use this to see the browser.",
              {"type": "object", "properties": {}},
