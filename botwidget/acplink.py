@@ -375,6 +375,9 @@ class AcpLink:
         except Exception as error:
             with self._lock:
                 self.stopped = True
+                if isinstance(error, FileNotFoundError):
+                    error = (f"the program {error.filename!r} does not exist. If its path has a space "
+                             f"(like /Applications/Bot Widget.app), put the path in quotes in the bot's command.")
                 self.failed = f"{self.target} did not start: {error}"
                 self._note = self.failed
                 self._activity = ""

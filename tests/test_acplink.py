@@ -317,6 +317,14 @@ class AcpTurns(unittest.TestCase):
         self.assertIn("did not start", link.chat()["failed"])
         self.assertTrue(link.stopped)
 
+    def test_a_command_with_an_unquoted_space_says_which_program_is_missing_and_how_to_fix_it(self):
+        link = AcpLink("/Applications/Bot Widget.app/Contents/MacOS/Bot Widget -m harness.agent")
+        self.addCleanup(link.close)
+        link.send("hello")
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertIn("'/Applications/Bot' does not exist", link.chat()["failed"])
+        self.assertIn("in quotes", link.chat()["failed"])
+
     def test_a_thought_that_arrives_in_pieces_shows_as_one_growing_line_not_as_the_last_piece(self):
         """Should keep what has come in of the thought: the cloud showed "DE" and "." as the thought went by."""
         from harness.acp_client import Update
