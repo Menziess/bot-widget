@@ -16,6 +16,7 @@ from botwidget.config import read_file
 from botwidget.system.current import process_cmdline
 
 PIDFILE = os.path.join(tempfile.gettempdir(), "bot_widget.pid")
+STOPS_LOG = os.path.join(tempfile.gettempdir(), "bot_widget_stops.log")
 # The packaged app is called "Bot Widget"; the other names are the plain start through Python.
 LAUNCHERS = (b"bot_widget.py", b"botwidget", b"Bot Widget")
 
@@ -30,6 +31,15 @@ def _cmdline_text(raw) -> str:
     return raw.replace("\x00", " ")
 
 
+def log_stopper(old: int):
+    """The victim's SIGTERM carries no sender, so the stopper writes who it is and who started it."""
+    me, parent = os.getpid(), os.getppid()
+    line = (f"{time.strftime('%F %T')} stopping {old} ({process_cmdline(old)!r}) "
+            f"from {me} ({process_cmdline(me)!r}), parent {parent} ({process_cmdline(parent)!r})\n")
+    with open(STOPS_LOG, "a") as fh:
+        fh.write(line)
+
+
 def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
     """Stop a previously started widget, so one window remains.
 
@@ -41,6 +51,7 @@ def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
     except ValueError:
         old = None
     if old and old != os.getpid() and is_widget_cmd(_cmdline_text(process_cmdline(old))):
+        log_stopper(old)
         os.kill(old, signal.SIGTERM)
         for _ in range(20):
             time.sleep(0.1)
