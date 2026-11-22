@@ -7,6 +7,7 @@
 - `git config core.hooksPath .githooks` so `.githooks/pre-push` runs that command when main is pushed and rejects the push when it fails.
 - Run live: `botwidget --dev` (restarts on .py changes). Check UI changes by eye.
 - One widget: `python -m botwidget --instances` (a `--dev` supervisor and its child are one). Do not use `pgrep` for that check.
+- Fix a bug only with a general fix: one mechanism that covers the whole class of failure (any tool, any phrasing), never a patch for the one tool, word or case that showed it. A list of words per tool is a patch; when a heuristic is unavoidable, one shared list, not one per case. Example: a bot that ends on "ik ga het doen" without a tool call is nudged for every tool (`PROMISE_NUDGE` in `harness/agent/agent.py`), not only for browser questions.
 - Findings from a bot or from the owner always go on the roadmap (`roadmap/` on main; there are no other long-lived branches), in the phase they belong to.
 - To talk to a running widget's bot from a shell (the widget needs `"remote_control": true` in widget.json, off by default), use `botwidget bots | ask BOT TEXT | read BOT` (`botwidget/remote.py`; README, Talking to a bot from a shell). From a checkout run `.venv/bin/python -m botwidget ...`: the `botwidget` on PATH may be the uv install, which is another copy.
 - `site/` is the static website (no build, deployed by Pages on push to main). `site/face.js` ports `avatar.py` and `animation.py` to canvas; keep them in step.
