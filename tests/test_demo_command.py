@@ -1,6 +1,7 @@
 """The /demo command is dev-only and ticks from checkers, not from the in-process demo."""
 
 import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -26,7 +27,7 @@ class DemoCommand(unittest.TestCase):
     def test_should_see_dev_when_the_parent_is_the_supervisor(self):
         """Should count a child as dev when its parent is the --dev supervisor, even without BOTWIDGET_DEV."""
         from botwidget.demo_chat import dev_running
-        pidfile = "/tmp/bot-widget-dev-test.pid"
+        pidfile = os.path.join(tempfile.gettempdir(), "bot-widget-dev-test.pid")
         with open(pidfile, "w") as fh:
             fh.write(str(os.getppid()))
         self.addCleanup(lambda: os.path.exists(pidfile) and os.remove(pidfile))

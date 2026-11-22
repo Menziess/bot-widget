@@ -164,7 +164,8 @@ def approve_student(title: str, worktree: str) -> bool:
     """True only when every absolute path in the title sits inside the student worktree."""
     text = title or ""
     root = os.path.realpath(worktree)
-    if not root or root not in text:
+    # macOS resolves /tmp to /private/tmp and Windows adds a drive, so the title may name either form.
+    if not root or (root not in text and (not worktree or worktree not in text)):
         return False
     paths = _ABS_PATH.findall(text)
     return bool(paths) and all(_inside(root, path.rstrip(".")) for path in paths)
