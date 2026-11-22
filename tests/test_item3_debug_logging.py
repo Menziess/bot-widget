@@ -5,6 +5,7 @@ The activity shown in the bubble must use the bot name, not the command.
 """
 
 import unittest
+
 from botwidget import acplink
 
 
@@ -25,8 +26,9 @@ class ActivityUsesName(unittest.TestCase):
 
     def test_options_for_includes_name(self):
         import json
-        import tempfile
         import os
+        import tempfile
+
         from botwidget import config
 
         with tempfile.TemporaryDirectory() as folder:
@@ -70,7 +72,10 @@ class DebugLaunchFlag(unittest.TestCase):
         self.assertIn("SECRET=1", self._send(debug_launch=True))
 
     def test_config_flag(self):
-        import json, os, tempfile
+        import json
+        import os
+        import tempfile
+
         from botwidget import config
         with tempfile.TemporaryDirectory() as folder:
             old = config.CONFIG_PATH

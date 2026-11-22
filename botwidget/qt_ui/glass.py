@@ -9,9 +9,17 @@ from PySide6.QtGui import QColor, QGuiApplication, QImage, QLinearGradient, QPai
 from botwidget.config import widget_config
 from botwidget.qt_ui.native import native_id
 from botwidget.system.current import CAN_BLUR, clear_backdrop, set_backdrop
-from botwidget.theme import (FROST_GRAIN, GLASS_ALPHA, GLASS_ALPHA_CLEAR, GLASS_ALPHA_FLAT,
-                             GLASS_ALPHA_FLAT_CLEAR, GLASS_CLEAR_DEFAULT, GLASS_SHEEN, GLASS_TINT_FROM,
-                             GLASS_TINT_TO)
+from botwidget.theme import (
+    FROST_GRAIN,
+    GLASS_ALPHA,
+    GLASS_ALPHA_CLEAR,
+    GLASS_ALPHA_FLAT,
+    GLASS_ALPHA_FLAT_CLEAR,
+    GLASS_CLEAR_DEFAULT,
+    GLASS_SHEEN,
+    GLASS_TINT_FROM,
+    GLASS_TINT_TO,
+)
 
 FROST_TILE = 64  # one tile of grain, in points
 _tiles: dict = {}

@@ -5,11 +5,11 @@ Offscreen Qt, no network.
 """
 
 import json
-from pathlib import Path
 import os
 import tempfile
 import unittest
 from contextlib import ExitStack
+from pathlib import Path
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -21,6 +21,7 @@ class OpenBotSourceToggle(unittest.TestCase):
     def setUpClass(cls):
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui.faces import Faces
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")

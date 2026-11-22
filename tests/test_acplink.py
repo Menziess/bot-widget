@@ -342,6 +342,7 @@ class AcpTurns(unittest.TestCase):
     def test_a_second_send_waits_and_a_silent_turn_says_nothing_came_back(self):
         """Should refuse a send while one is running, and say so when a turn ends with no words."""
         import asyncio
+
         from harness.acp_client import Turn, Update
         link = self.link()
         self.assertTrue(wait_for(lambda: not link.active()))
@@ -456,6 +457,7 @@ class AcpFace(unittest.TestCase):
 
     def test_the_face_picks_the_acp_link_for_an_acp_id_and_none_otherwise(self):
         from unittest import mock
+
         from botwidget.qt_ui import face
         with mock.patch.object(face, "latest_chat", return_value={"messages": [], "activity": ""}), \
                 mock.patch.object(face, "automation_ready", return_value=False):

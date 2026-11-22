@@ -16,7 +16,6 @@ from botwidget import config, menu_pages
 from botwidget.acplink import AcpLink
 from harness.acp_client import AcpClient, Update
 
-
 SKILLS = (
     ("review", "Look at a diff"),
     ("/screenshot", "should not replace the built-in"),

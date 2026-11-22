@@ -184,6 +184,7 @@ def build(store, bot: str, model_window: int = 0, model=None, workspace: str | N
     so nothing vanishes between turns.
     """
     import os
+
     from harness.agent.workspace import load_context_paths, load_workspace_rules, resolve_workspace
 
     global _WORKSPACE_RULES, _WORKSPACE_CACHE_KEY

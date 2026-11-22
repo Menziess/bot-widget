@@ -1,10 +1,9 @@
 """Read the one ntfy channel Grok bots publish on. The widget never writes to it."""
 
 import json
+import secrets
 import urllib.request
 from threading import Event, Thread
-
-import secrets
 
 from botwidget.config import save_widget_config, widget_config
 

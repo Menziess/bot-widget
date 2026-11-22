@@ -15,7 +15,6 @@ from harness.agent.store import SessionStore
 from harness.stream_text import fold_chunk, note_raw, outside_checkout, play, steps_from_log
 from tests.test_h7_diffs import _Conn
 
-
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HERE = os.path.dirname(os.path.abspath(__file__))
 

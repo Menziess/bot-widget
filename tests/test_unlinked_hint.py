@@ -12,6 +12,7 @@ class UnlinkedHint(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui import face
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])

@@ -272,9 +272,10 @@ class Tools:
         self._add_workspace_tools()
         if not self.mcp_command or self._session is not None:
             return
-        from harness.acp_client import split_command
         from mcp import ClientSession, StdioServerParameters
         from mcp.client.stdio import stdio_client
+
+        from harness.acp_client import split_command
 
         try:
             command = split_command(self.mcp_command)

@@ -13,7 +13,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from harness.agent.context import build, estimate, meter, _budget_chars, _build_background
+from harness.agent.context import _budget_chars, _build_background, build, estimate, meter
 from harness.agent.store import SessionStore
 
 

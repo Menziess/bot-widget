@@ -10,8 +10,17 @@ from unittest import mock
 from harness.agent import tools as agent_tools
 from harness.agent.agent import LeanAgent
 from harness.agent.tools import Tools
-from harness.agent.workspace import (ApproveRules, EditStore, check_approvals, check_rules, load_approvals, migrate_approved,
-                                     rule_matches, save_approvals, workspace_builtins)
+from harness.agent.workspace import (
+    ApproveRules,
+    EditStore,
+    check_approvals,
+    check_rules,
+    load_approvals,
+    migrate_approved,
+    rule_matches,
+    save_approvals,
+    workspace_builtins,
+)
 from tests.test_h7_diffs import ScriptModel, _Conn
 
 

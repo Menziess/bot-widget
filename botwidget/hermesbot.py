@@ -11,8 +11,14 @@ import time
 from botwidget.cli_json import (
     Result,
     finish_cli,
+)
+from botwidget.cli_json import (
     first_line_note as _note,
+)
+from botwidget.cli_json import (
     json_object as _data,
+)
+from botwidget.cli_json import (
     stop_group as _stop_group,
 )
 from botwidget.config import named_text, widget_config

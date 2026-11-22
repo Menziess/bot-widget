@@ -10,23 +10,23 @@ import tempfile
 import unittest
 
 from harness.agent.workspace import (
-    EditStore,
     PERMISSION_MODES,
-    load_workspace_rules,
-    resolve_workspace,
-    search_files,
-    shell_run,
-    workspace_builtins,
-    outside_workspace,
+    EditStore,
     _git_run,
-    _is_secret_path,
     _is_secret_dir,
     _is_secret_name,
+    _is_secret_path,
     _safe_walk,
     _ws_diff,
     _ws_list,
     _ws_read,
     _ws_write,
+    load_workspace_rules,
+    outside_workspace,
+    resolve_workspace,
+    search_files,
+    shell_run,
+    workspace_builtins,
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -193,6 +193,7 @@ class Containment_Separators(unittest.TestCase):
     def test_a_windows_path_is_inside_with_backslashes_and_any_case_and_not_beside_it(self):
         import ntpath
         from unittest import mock
+
         from harness.agent import workspace
         with mock.patch.object(workspace.os, "path", ntpath):
             self.assertTrue(workspace._contains("C:\\Users\\Me\\work", "C:\\Users\\Me\\work\\sub\\a.txt"))
@@ -204,6 +205,7 @@ class Containment_Separators(unittest.TestCase):
 class Delete(unittest.TestCase):
     def test_a_file_moves_to_the_trash_and_nothing_else_can_be_deleted(self):
         from unittest import mock
+
         from harness.agent import tools, workspace
         folder, trash = tempfile.mkdtemp(), tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)

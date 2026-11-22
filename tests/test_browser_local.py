@@ -108,6 +108,7 @@ class DirectCdp(unittest.TestCase):
     def test_a_fake_devtools_port_file_is_the_socket(self):
         import tempfile
         from unittest import mock
+
         from harness import browser_local
 
         class Socket:
@@ -137,6 +138,7 @@ class DirectCdp(unittest.TestCase):
 
     def test_one_connection_serves_every_call_and_a_dead_one_is_replaced(self):
         from unittest import mock
+
         from harness import browser_local
 
         class Socket:
@@ -163,6 +165,7 @@ class DirectCdp(unittest.TestCase):
 
     def test_chrome_is_found_from_the_system_when_its_own_folder_is_off_limits(self):
         from unittest import mock
+
         from harness import browser_local
 
         class Socket:

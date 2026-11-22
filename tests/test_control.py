@@ -6,10 +6,10 @@ import shutil
 import tempfile
 import unittest
 
+from botwidget.system import control
 from harness.agent.agent import LeanAgent
 from harness.agent.store import SessionStore
 from harness.agent.tools import ToolError, Tools
-from botwidget.system import control
 
 
 class _Conn:

@@ -11,28 +11,40 @@ the window, or when the chat holds more than SUMMARY_AFTER messages.
 
 import asyncio
 import hashlib
-import json
-import sqlite3
 import inspect
+import json
 import os
 import re
+import sqlite3
 import threading
 import time
 
 from acp import PROTOCOL_VERSION
-from acp.schema import (AgentMessageChunk, AgentThoughtChunk, AvailableCommand, AvailableCommandsUpdate,
-                        InitializeResponse, LoadSessionResponse, NewSessionResponse,
-                        PermissionOption, PromptResponse, TextContentBlock, ToolCallProgress, ToolCallStart,
-                        ToolCallUpdate, UsageUpdate, UserMessageChunk)
+from acp.schema import (
+    AgentMessageChunk,
+    AgentThoughtChunk,
+    AvailableCommand,
+    AvailableCommandsUpdate,
+    InitializeResponse,
+    LoadSessionResponse,
+    NewSessionResponse,
+    PermissionOption,
+    PromptResponse,
+    TextContentBlock,
+    ToolCallProgress,
+    ToolCallStart,
+    ToolCallUpdate,
+    UsageUpdate,
+    UserMessageChunk,
+)
 
 from harness import RESUME_PROMPT, approvals
 from harness.agent import context
 from harness.agent.models import ModelError
-from harness.stream_text import fold_chunk, note_raw
 from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools, accessibility_requested
-from harness.agent.workspace import (_diff_text, _real_path, compute_edit, outside_workspace,
-                                     shell_segments)
+from harness.agent.workspace import _diff_text, _real_path, compute_edit, outside_workspace, shell_segments
+from harness.stream_text import fold_chunk, note_raw
 
 MAX_STEPS = 30  # default for HARNESS_MAX_STEPS: a tool loop that never settles must still end the turn
 LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the same arguments this many times in a row
@@ -45,6 +57,9 @@ SKILL_ENDINGS = {"done": "Call this when the skill is finished and you have said
 SKILL_NUDGES = 2
 A11Y_NUDGE = ("Call the accessibility tool now, before you answer. Leave query empty so the result lists "
              "application names. Do not invent a list.")
+PROMISE_NUDGE = ("You ended on a promise to act. Do it now with a tool call. If no tool can do it, say so plainly "
+                 "and do not invent a result.")
+PROMISE = re.compile(r"\b(ik ga|ik zal|ik probeer|let me|i'll|i will|i'm going to|i am going to)\b")
 BRIEF_PROMPT = ("Write down what a helper needs from this conversation to carry out the user's last request: facts, "
                 "names, dates and decisions that matter. Leave out the rest. At most 120 words, plain text.")
 SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
@@ -58,9 +73,6 @@ def _env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name) or default)
     except ValueError:
-PROMISE_NUDGE = ("You ended on a promise to act. Do it now with a tool call. If no tool can do it, say so plainly "
-                 "and do not invent a result.")
-PROMISE = re.compile(r"\b(ik ga|ik zal|ik probeer|let me|i'll|i will|i'm going to|i am going to)\b")
         return default
 
 
@@ -315,6 +327,7 @@ class LeanAgent:
                 self.tools.tools.pop(name, None)
         nudges = 0
         a11y_nudges = 0
+        promise_nudges = 0
         started = time.monotonic()
         first = 0.0
         answer = []
@@ -328,7 +341,6 @@ class LeanAgent:
         recent_calls: list[str] = []
         called: set[str] = set()
         stopped = ""
-        promise_nudges = 0
         await self._wait_for_summary()
         self._stream_idle.clear()
         self._streaming = True
@@ -414,6 +426,13 @@ class LeanAgent:
                             messages.append({"role": "assistant", "content": "".join(step_text)})
                         messages.append({"role": "user", "content": A11Y_NUDGE})
                         continue
+                    said = "".join(step_text).strip()
+                    if (not cancelled and not skill_on and promise_nudges < 1 and not said.endswith("?")
+                            and PROMISE.search(said[-200:].lower())):
+                        promise_nudges += 1
+                        messages.append({"role": "assistant", "content": said})
+                        messages.append({"role": "user", "content": PROMISE_NUDGE})
+                        continue
                     if cancelled or not skill_on or nudges >= SKILL_NUDGES:
                         break
                     nudges += 1
@@ -427,13 +446,6 @@ class LeanAgent:
                 if repeats > 1 and len(recent_calls) >= repeats and len(set(recent_calls[-repeats:])) == 1:
                     name = (calls[-1].get("function") or {}).get("name") or "a tool"
                     stopped = (f"\n\nI stopped: I called {name} with the same arguments {repeats} times in a row "
-                    said = "".join(step_text).strip()
-                    if (not cancelled and not skill_on and promise_nudges < 1 and not said.endswith("?")
-                            and PROMISE.search(said[-200:].lower())):
-                        promise_nudges += 1
-                        messages.append({"role": "assistant", "content": said})
-                        messages.append({"role": "user", "content": PROMISE_NUDGE})
-                        continue
                                "and that is not getting anywhere. Tell me what to try instead.")
                     last["loop"] = name
                     break

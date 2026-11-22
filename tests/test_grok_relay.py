@@ -8,8 +8,8 @@ import os
 import tempfile
 import time
 import unittest
-from pathlib import Path
 from contextlib import ExitStack
+from pathlib import Path
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -214,6 +214,7 @@ class RelayFaces(unittest.TestCase):
     def setUpClass(cls):
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui.faces import Faces
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")

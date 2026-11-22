@@ -21,6 +21,7 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
     def setUpClass(cls):
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui.faces import Faces
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -269,6 +270,7 @@ class ArcClosesWithoutVisitingBots(unittest.TestCase):
     def test_should_put_an_open_bubble_on_the_top_layer_while_the_arc_is_open(self):
         """On Linux a stay-behind bubble cannot raise above stay-on-top guests; share the top layer."""
         from PySide6.QtCore import Qt
+
         from botwidget.qt_ui.bubble_window import window_layer
         with mock.patch("botwidget.qt_ui.bubble_window.always_on_top", return_value=False), \
                 mock.patch("botwidget.config.always_on_top", return_value=False):

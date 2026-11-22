@@ -1,11 +1,10 @@
 """Acceptance test for how long a bubble stays after the pointer leaves."""
 
+import inspect
 import unittest
 
-import inspect
-
-from botwidget.bubble import LEAVE_GRACE_S, LEAVE_MAX_S, LEAVE_MOVING_PX_S, leave_open
 import botwidget.qt_ui.bubble_window as bubble_window
+from botwidget.bubble import LEAVE_GRACE_S, LEAVE_MAX_S, LEAVE_MOVING_PX_S, leave_open
 
 
 class LeaveOpen(unittest.TestCase):

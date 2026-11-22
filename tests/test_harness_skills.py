@@ -10,8 +10,9 @@ import time
 import unittest
 from unittest import mock
 
-from harness.agent import context
 from acp.schema import PromptResponse
+
+from harness.agent import context
 from harness.agent.agent import LeanAgent
 from harness.agent.store import SessionStore
 from harness.agent.tools import Tool

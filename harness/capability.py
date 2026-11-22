@@ -11,7 +11,6 @@ import subprocess
 import sys
 import time
 
-
 NAMES = ("create_edit_files", "web_browsing", "background_processes", "computer_use", "running_scripts", "fixing_errors")
 
 

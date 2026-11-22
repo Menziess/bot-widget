@@ -6,9 +6,25 @@ import tempfile
 import unittest
 
 from harness.teacher import (
-    GIT_COMMIT, VENV_PYTHON, approve_student, decide_promote, failing_test_name, false_claims, judge, judge_turns,
-    next_action, promote_or_rollback, score_row, self_check, send_when_idle, student_worktree,
-    summary, task_prompt, tokens_estimate, wait_until_idle, write_scoreboard,
+    GIT_COMMIT,
+    VENV_PYTHON,
+    approve_student,
+    decide_promote,
+    failing_test_name,
+    false_claims,
+    judge,
+    judge_turns,
+    next_action,
+    promote_or_rollback,
+    score_row,
+    self_check,
+    send_when_idle,
+    student_worktree,
+    summary,
+    task_prompt,
+    tokens_estimate,
+    wait_until_idle,
+    write_scoreboard,
 )
 
 

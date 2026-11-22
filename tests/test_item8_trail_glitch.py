@@ -6,6 +6,7 @@ WindowStaysOnTopHint and raises only once on first show.
 """
 
 import unittest
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
@@ -22,8 +23,9 @@ class TrailWindowFlags(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_trail_has_stays_on_top(self):
-        from botwidget.qt_ui.bubble_window import Trail
         from unittest import mock
+
+        from botwidget.qt_ui.bubble_window import Trail
 
         bubble = mock.Mock()
         bubble.face = mock.Mock()
@@ -38,10 +40,12 @@ class TrailWindowFlags(unittest.TestCase):
 
     def test_trail_raises_only_once(self):
         """Verify _raised flag prevents repeated raise() calls."""
-        from botwidget.qt_ui.bubble_window import Trail
         from unittest import mock
-        from PySide6.QtCore import QRect, QPointF
+
+        from PySide6.QtCore import QPointF, QRect
         from PySide6.QtGui import QPaintEvent
+
+        from botwidget.qt_ui.bubble_window import Trail
 
         bubble = mock.Mock()
         bubble.face = mock.Mock()

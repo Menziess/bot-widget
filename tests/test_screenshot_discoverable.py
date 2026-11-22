@@ -19,6 +19,7 @@ class Discoverable(unittest.TestCase):
     def test_the_slash_command_enters_screenshot_mode_and_nothing_else(self):
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")

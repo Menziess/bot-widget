@@ -20,6 +20,7 @@ class ThinkingRowUnderWorkingFace(unittest.TestCase):
     def setUpClass(cls):
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui.faces import Faces
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -157,6 +158,7 @@ class ThinkingRowUnderWorkingFace(unittest.TestCase):
 
     def test_should_draw_the_row_in_a_muted_colour(self):
         from PySide6.QtGui import QColor, QImage
+
         from botwidget.theme import SAND_INK
         self._work(self.window, True)
         row = self._rows(self.window)[0]

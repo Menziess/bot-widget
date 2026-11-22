@@ -6,13 +6,12 @@ import shutil
 import tempfile
 import unittest
 
-from acp.schema import AgentMessageChunk
+from acp.schema import AgentMessageChunk, TextContentBlock
 
 from harness.agent import agent as agent_module
 from harness.agent.agent import LeanAgent
 from harness.agent.tools import Tool
 from tests.test_h7_diffs import ScriptModel, _Conn
-from acp.schema import TextContentBlock
 
 
 def _call(i, name="ping", **args):

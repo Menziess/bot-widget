@@ -4,7 +4,6 @@ import ctypes
 import os
 import sys
 
-
 HOTKEY_LABEL = ""
 CAN_PICK_DESKTOPS = False
 # Windows only flashes the taskbar for a window that takes focus without a click.

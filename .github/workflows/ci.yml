@@ -12,6 +12,12 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+
   # test_logic.py holds about half of the tests: it runs next to all the others, so a run takes the time of half.
   test:
     strategy:

@@ -17,10 +17,22 @@ from unittest import mock
 
 from harness.acp_client import AcpClient, Turn, _text_of
 from harness.agent.agent import LeanAgent
-from harness.agent.context import (BUDGET_CHARS, FILL_SUMMARISE, KEEP_TURNS, SUMMARY_AFTER, build,
-                                  fill_ratio, to_summarise)
-from harness.agent.models import (AnthropicMessages, ChatCompletions, ModelError, _anthropic_content,
-                                  from_environment)
+from harness.agent.context import (
+    BUDGET_CHARS,
+    FILL_SUMMARISE,
+    KEEP_TURNS,
+    SUMMARY_AFTER,
+    build,
+    fill_ratio,
+    to_summarise,
+)
+from harness.agent.models import (
+    AnthropicMessages,
+    ChatCompletions,
+    ModelError,
+    _anthropic_content,
+    from_environment,
+)
 from harness.agent.store import SessionStore
 from harness.agent.tools import Tool, ToolError, Tools, list_dir, read_file, write_file
 from tests.fake_anthropic import FakeAnthropic

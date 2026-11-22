@@ -19,8 +19,21 @@ import zipfile
 from types import SimpleNamespace
 from unittest import mock
 
-from botwidget import (attachments, bubble, channel, checkout, cli_json, config, delivery, dev, hermesbot,
-                       instance, power, startup, updates)
+from botwidget import (
+    attachments,
+    bubble,
+    channel,
+    checkout,
+    cli_json,
+    config,
+    delivery,
+    dev,
+    hermesbot,
+    instance,
+    power,
+    startup,
+    updates,
+)
 from botwidget.markdown import block_text
 from botwidget.menu_pages import bots
 from botwidget.qt_ui import app as appmod
@@ -28,7 +41,6 @@ from botwidget.qt_ui import fonts, glass
 from botwidget.qt_ui.controls import ItemRow
 from botwidget.qt_ui.faces import Faces
 from botwidget.system import linux, macos, posix, windows
-
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -1117,6 +1129,7 @@ class WidgetBits(unittest.TestCase):
         from PySide6.QtCore import QEvent, QPointF, Qt
         from PySide6.QtGui import QMouseEvent
         from PySide6.QtWidgets import QApplication as App
+
         from botwidget.qt_ui.controls import SlashList, TextEditor
         row._hits = []
         row.paintEvent(None)
@@ -1171,6 +1184,7 @@ class OpenBotEdges(unittest.TestCase):
     def test_a_missing_store_and_a_bad_answer_come_back_empty(self):
         """Should skip a store that will not open, a blank line, and a token the bubble must not show."""
         import sqlite3
+
         from botwidget import openbot
         self.assertEqual(openbot._chat_text("nope"), "")
         self.assertEqual(openbot._chat_text('{"source": "routine", "text": "x"}'), "")
@@ -1345,6 +1359,7 @@ class MenuAndCatcher(unittest.TestCase):
         from PySide6.QtCore import QEvent, QPointF, Qt
         from PySide6.QtGui import QEnterEvent, QMouseEvent
         from PySide6.QtWidgets import QApplication
+
         from botwidget import acp_bots, acplink
         from botwidget.config import widget_config
         from botwidget.qt_ui.faces import arc_catcher_region, bot_source
@@ -1692,6 +1707,7 @@ class PlainPaths(unittest.TestCase):
         """Should accept a pasted file, refuse a history step that is only a cursor move, and open a link."""
         from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
         from PySide6.QtGui import QDesktopServices, QTextCursor, QWheelEvent
+
         from botwidget.qt_ui.bubble_window import BubbleEntry, BubbleText
 
         entry = BubbleEntry()
@@ -1867,10 +1883,12 @@ class OffscreenCalls(unittest.TestCase):
     def test_bubble_answers_clicks_keys_and_paints(self):
         """Should copy, scroll, open a slash list, and draw the lines the bubble still has."""
         import time
+
         from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, Qt
         from PySide6.QtGui import QKeyEvent, QWheelEvent
+
         from botwidget.markdown import status_block
-        from botwidget.qt_ui.bubble_window import CopyNotice, DOTS_MS
+        from botwidget.qt_ui.bubble_window import DOTS_MS, CopyNotice
         from botwidget.qt_ui.controls import TextEditor
 
         home = self._face("home", "Home", (80, 80))
@@ -2028,8 +2046,10 @@ class OffscreenCalls(unittest.TestCase):
         """Should drag, bounce, poll a stand-in link, and send without leaving this machine."""
         import threading
         import time
+
         from PySide6.QtCore import QEvent, Qt
         from PySide6.QtGui import QKeyEvent
+
         from botwidget.avatar import AVATAR_SIZE
         from botwidget.markdown import status_block
 

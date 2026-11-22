@@ -57,6 +57,7 @@ class PendingDot(unittest.TestCase):
 
     def _dot_lit(self) -> bool:
         from PySide6.QtGui import QColor, QImage
+
         from botwidget.qt_ui.face import DOT_SIZE
         self.window.show()
         self.app.processEvents()

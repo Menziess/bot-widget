@@ -11,8 +11,18 @@ from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QCursor, QDesktopServices, QGuiApplication, QPainter, QRegion
 from PySide6.QtWidgets import QApplication, QWidget
 
-from harness.agent.workspace import check_approvals, load_approvals, migrate_approved, save_approvals, shared_approvals_path
-from botwidget import __version__, acp_bots, acplink, channel, checkout, grok_relay, grokbot, hermesbot, startup, updates
+from botwidget import (
+    __version__,
+    acp_bots,
+    acplink,
+    channel,
+    checkout,
+    grok_relay,
+    grokbot,
+    hermesbot,
+    startup,
+    updates,
+)
 from botwidget.config import (
     APP_DIR,
     GROKBOT_URL,
@@ -26,9 +36,9 @@ from botwidget.config import (
     auto_update,
     automation_ready,
     check_updates,
+    muted_bots,
     replace_widget_config,
     save_battery,
-    muted_bots,
     save_widget_config,
     set_muted,
     set_source_enabled,
@@ -39,9 +49,9 @@ from botwidget.config import (
 from botwidget.openbot import gbot_installed, grok_bot_status, list_bots, openbot_installed
 from botwidget.qt_ui import desktops, glass
 from botwidget.qt_ui.bubble_window import mark_before_show
+from botwidget.qt_ui.face import FaceWindow, global_pointer
 from botwidget.qt_ui.native import native_id, raise_window, set_flags
 from botwidget.qt_ui.prewarm import prewarm
-from botwidget.qt_ui.face import FaceWindow, global_pointer
 from botwidget.system.current import (
     CAN_PICK_DESKTOPS,
     HOTKEY_LABEL,
@@ -49,7 +59,13 @@ from botwidget.system.current import (
     can_install_update,
     send_behind_windows,
 )
-
+from harness.agent.workspace import (
+    check_approvals,
+    load_approvals,
+    migrate_approved,
+    save_approvals,
+    shared_approvals_path,
+)
 
 UPDATE_TICK_MS = 10 * 60 * 1000
 RECHECK_S = 6 * 3600

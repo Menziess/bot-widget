@@ -6,16 +6,17 @@ Offscreen Qt only. A fake grabber stands in for screen grab. No display.
 import json
 import os
 import tempfile
-from pathlib import Path
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from botwidget import config
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
+
+from botwidget import config
 
 
 def _write_config(data: dict):
@@ -55,6 +56,7 @@ class ScreenshotMode(unittest.TestCase):
     def test_the_picture_is_cropped_from_the_whole_screen_of_the_overlay_whatever_its_position(self):
         from PySide6.QtCore import QRect
         from PySide6.QtGui import QColor, QPixmap
+
         from botwidget.qt_ui.screenshot import ScreenshotOverlay
 
         class Screen:
@@ -78,6 +80,7 @@ class ScreenshotMode(unittest.TestCase):
 
     def test_every_screen_gets_an_overlay_and_closing_one_closes_all(self):
         from PySide6.QtGui import QGuiApplication
+
         from botwidget.qt_ui.screenshot import enter_screenshot_mode
         window = self._make_window()
         self.addCleanup(window.close_face)
@@ -307,8 +310,9 @@ class ScreenshotOverlay(unittest.TestCase):
     def test_paint_event_does_not_raise_with_tuple_rect(self):
         """Setting _rect = (10, 20, 30, 40) and paintEvent must not TypeError."""
         from PySide6.QtCore import QRect
-        from botwidget.qt_ui.screenshot import ScreenshotOverlay
         from PySide6.QtGui import QPaintEvent
+
+        from botwidget.qt_ui.screenshot import ScreenshotOverlay
 
         window = self.face.FaceWindow("t1", "Test", spot=(300, 400))
         self.addCleanup(window.close_face)
@@ -322,8 +326,13 @@ class ScreenshotOverlay(unittest.TestCase):
         """Should cancel a tiny drag, ignore a middle click, and stop when the picture will not encode."""
         from PySide6.QtCore import QEvent, QPointF
         from PySide6.QtGui import QImage, QKeyEvent, QMouseEvent, QPixmap
+
         from botwidget.qt_ui.screenshot import (
-            _finalize_screenshot, enter_screenshot_mode, pixmap_png_bytes, screen_grab)
+            _finalize_screenshot,
+            enter_screenshot_mode,
+            pixmap_png_bytes,
+            screen_grab,
+        )
 
         window = self.face.FaceWindow("shot", "Shot", spot=(300, 400))
         self.addCleanup(window.close_face)
@@ -389,8 +398,9 @@ class ScreenshotPngEncoding(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_pixmap_to_png_roundtrip(self):
-        from botwidget.qt_ui.screenshot import pixmap_png_bytes
         from PySide6.QtGui import QPixmap
+
+        from botwidget.qt_ui.screenshot import pixmap_png_bytes
         pixmap = QPixmap(32, 32)
         pixmap.fill(Qt.green)
         data = pixmap_png_bytes(pixmap)
@@ -400,8 +410,9 @@ class ScreenshotPngEncoding(unittest.TestCase):
         self.assertEqual(data[:4], b"\x89PNG")  # PNG magic bytes
 
     def test_null_pixmap_returns_none(self):
-        from botwidget.qt_ui.screenshot import pixmap_png_bytes
         from PySide6.QtGui import QPixmap
+
+        from botwidget.qt_ui.screenshot import pixmap_png_bytes
         # An invalid (null) pixmap should return None
         null_pixmap = QPixmap()
         self.assertIsNone(pixmap_png_bytes(null_pixmap))
@@ -449,6 +460,7 @@ class AttachmentsStore(unittest.TestCase):
 
     def test_store_bytes_and_send(self):
         from pathlib import Path
+
         from botwidget import attachments
 
         with tempfile.TemporaryDirectory() as folder:
@@ -459,6 +471,7 @@ class AttachmentsStore(unittest.TestCase):
 
     def test_message_with_files(self):
         from pathlib import Path
+
         from botwidget import attachments
 
         with tempfile.TemporaryDirectory() as folder:
@@ -482,8 +495,9 @@ class ScreenGrab(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_grab_returns_pixmap(self):
-        from botwidget.qt_ui.screenshot import screen_grab
         from PySide6.QtGui import QScreen
+
+        from botwidget.qt_ui.screenshot import screen_grab
         # On offscreen, we can't really grab, but the function should exist
         self.assertTrue(callable(screen_grab))
 
@@ -516,9 +530,10 @@ class EndToEnd(unittest.TestCase):
 
     def test_full_flow_with_mocked_grab(self):
         """Enter screenshot mode -> hide faces -> grab -> restore -> send."""
-        from botwidget.qt_ui.screenshot import ScreenshotOverlay, screen_grab
-        from PySide6.QtGui import QPixmap, QImage
+        from PySide6.QtGui import QImage, QPixmap
+
         from botwidget import attachments
+        from botwidget.qt_ui.screenshot import ScreenshotOverlay, screen_grab
 
         window = self._make_window()
         self.addCleanup(window.close_face)
@@ -567,10 +582,12 @@ class EndToEnd(unittest.TestCase):
 
     def test_done_hides_faces_before_grab(self):
         """_done must hide the overlay and all faces before grabbing, and restore them after."""
-        from botwidget.qt_ui.screenshot import ScreenshotOverlay, enter_screenshot_mode, _restore_faces
-        from PySide6.QtGui import QPixmap
-        from botwidget import attachments
         from pathlib import Path
+
+        from PySide6.QtGui import QPixmap
+
+        from botwidget import attachments
+        from botwidget.qt_ui.screenshot import ScreenshotOverlay, _restore_faces, enter_screenshot_mode
 
         window = self._make_window()
         self.addCleanup(window.close_face)
@@ -664,10 +681,12 @@ class EndToEnd(unittest.TestCase):
 
     def test_full_flow_with_real_png_encoding(self):
         """End-to-end: enter mode, drag, grab, encode, store_bytes called."""
-        from botwidget.qt_ui.screenshot import enter_screenshot_mode, pixmap_png_bytes
-        from botwidget import attachments
-        from PySide6.QtGui import QPixmap
         from pathlib import Path
+
+        from PySide6.QtGui import QPixmap
+
+        from botwidget import attachments
+        from botwidget.qt_ui.screenshot import enter_screenshot_mode, pixmap_png_bytes
 
         window = self._make_window()
         self.addCleanup(window.close_face)

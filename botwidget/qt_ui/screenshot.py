@@ -7,7 +7,7 @@ region is captured → it waits in the face's field as an attachment, to send wi
 Escape or right-click on the overlay cancels.
 """
 
-from PySide6.QtCore import QPoint, QBuffer, QByteArray, QRect, Qt, QTimer
+from PySide6.QtCore import QBuffer, QByteArray, QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QCursor, QGuiApplication, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QWidget
 

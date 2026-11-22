@@ -9,7 +9,6 @@ from unittest import mock
 
 from botwidget.instance import ensure_single_instance, instances_main, is_widget_cmd, parse_ps, widget_groups
 
-
 DEV = "python -m botwidget --dev"
 CHILD = "python -m botwidget"
 

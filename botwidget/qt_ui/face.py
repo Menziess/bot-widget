@@ -12,10 +12,19 @@ import time
 import uuid
 
 from PySide6.QtCore import QEasingCurve, QPoint, QRectF, Qt, QTimer, QVariantAnimation, Signal
-from PySide6.QtGui import QBrush, QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QLinearGradient, QPainter
+from PySide6.QtGui import (
+    QBrush,
+    QColor,
+    QCursor,
+    QFont,
+    QFontMetrics,
+    QGuiApplication,
+    QLinearGradient,
+    QPainter,
+)
 from PySide6.QtWidgets import QWidget
 
-from botwidget import acplink
+from botwidget import __version__, acplink, attachments, grokbot, hermesbot, menu_pages, power
 from botwidget.animation import IDLE_MS, FaceAnimator, frame_ms
 from botwidget.avatar import (
     AVATAR_SIZE,
@@ -28,21 +37,20 @@ from botwidget.avatar import (
 )
 from botwidget.config import (
     DOT_COLOR,
-    WARN_COLOR,
     GROKBOT_URL,
     OPENBOT_URL,
     POLL_INTERVAL,
+    WARN_COLOR,
     WORK_POLL_INTERVAL,
     always_on_top,
     automation_ready,
-    page_memory_s,
     muted_bots,
+    page_memory_s,
     save_widget_config,
     set_muted,
     widget_config,
 )
 from botwidget.delivery import Outbox
-from botwidget.motion import STILL, Motion, offsets
 from botwidget.markdown import (
     actions_block,
     block_text,
@@ -56,6 +64,7 @@ from botwidget.markdown import (
     text_block,
     thought_blocks,
 )
+from botwidget.motion import STILL, Motion, offsets
 from botwidget.openbot import (
     AUTOMATION_OFF,
     ApiResult,
@@ -65,9 +74,14 @@ from botwidget.openbot import (
     latest_chat,
     openbot_installed,
 )
-from botwidget import attachments, grokbot, hermesbot, menu_pages, power, __version__
 from botwidget.qt_ui import desktops, glass, screens
-from botwidget.qt_ui.bubble_window import BubbleWindow, mark_before_show, pointer_on, pointer_on_no_window, window_layer
+from botwidget.qt_ui.bubble_window import (
+    BubbleWindow,
+    mark_before_show,
+    pointer_on,
+    pointer_on_no_window,
+    window_layer,
+)
 from botwidget.qt_ui.native import drop_hidden, native_id, raise_window, set_flags
 from botwidget.qt_ui.render import hit_region, svg_pixmap
 from botwidget.qt_ui.text_doc import color

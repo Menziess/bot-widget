@@ -27,6 +27,7 @@ class FirstText(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_usage_update_is_not_the_first_text(self):
         from acp.schema import AgentMessageChunk, TextContentBlock, UsageUpdate
+
         from harness.acp_client import AcpClient, Turn
         client = AcpClient("x")
         client._turn = Turn(started=time.monotonic())
@@ -63,6 +64,7 @@ class Defaults(unittest.TestCase):
 
     def test_a_missing_model_server_is_a_sentence_after_seconds_not_a_hang(self):
         import time as clock
+
         from harness.agent.models import ChatCompletions, ModelError
         model = ChatCompletions("http://127.0.0.1:9/v1", "local")
         started = clock.monotonic()
@@ -77,6 +79,7 @@ class Defaults(unittest.TestCase):
         import time as clock
         import urllib.error
         from unittest import mock
+
         from harness.agent.models import ChatCompletions, ModelError
         model = ChatCompletions("http://127.0.0.1:9/v1", "local")
         started = clock.monotonic()
@@ -91,6 +94,7 @@ class Defaults(unittest.TestCase):
         import socket
         import threading
         import time as clock
+
         from harness.agent.models import ChatCompletions
 
         gate = threading.Event()
@@ -345,7 +349,9 @@ class Turns(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_turn_that_ends_closes_its_flag_and_one_cut_off_by_a_vanished_client_leaves_it(self):
         from unittest import mock
+
         from acp.schema import PromptResponse, TextContentBlock
+
         from harness.agent.agent import LeanAgent
         agent = LeanAgent("Test", mock.Mock(model="m"), folder=self.folder)
         store = SessionStore(self.folder)

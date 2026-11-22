@@ -20,6 +20,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
     def setUpClass(cls):
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui.faces import Faces
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -219,6 +220,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
         from PySide6.QtCore import QEvent, QPointF, Qt
         from PySide6.QtGui import QMouseEvent
         from PySide6.QtWidgets import QApplication
+
         from botwidget.bubble import panel_rects
         top, _height = panel_rects(self.bubble._geom[0])[0]
         viewport = self.bubble._doc.viewport()
@@ -502,6 +504,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
     def test_should_take_the_page_memory_limit_from_the_setting(self):
         """Should keep a page for the seconds named in widget.json, and for 60 when that key is absent."""
         import time
+
         from botwidget.config import page_memory_s
         self.assertEqual(page_memory_s(), 60)
         with mock.patch("botwidget.config.widget_config", return_value={"page_memory_s": 12}):

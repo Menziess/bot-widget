@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 from harness.agent.agent import LeanAgent
-from harness.agent.tools import Tools, ToolError
+from harness.agent.tools import ToolError, Tools
 from harness.agent.workspace import EditStore, replace_once, workspace_builtins
 from tests.test_h7_diffs import ScriptModel, _Conn
 

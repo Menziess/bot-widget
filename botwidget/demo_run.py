@@ -11,7 +11,14 @@ import sys
 import threading
 
 from botwidget.demo_check import (
-    Board, a11y_read, browser_tab, file_readback, process_cycle, repair_result, script_exit, write_board,
+    Board,
+    a11y_read,
+    browser_tab,
+    file_readback,
+    process_cycle,
+    repair_result,
+    script_exit,
+    write_board,
 )
 from botwidget.system.a11y import accessibility, application_names
 

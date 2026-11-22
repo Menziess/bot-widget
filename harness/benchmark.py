@@ -33,7 +33,6 @@ from harness.agent.context import build, estimate
 from harness.agent.store import SessionStore
 from harness.agent.tools import Tools
 
-
 # ── Scripted model ─────────────────────────────────────────────────────
 
 class ScriptModel:

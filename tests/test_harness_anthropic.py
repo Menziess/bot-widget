@@ -8,7 +8,6 @@ import tempfile
 import unittest
 
 from harness.acp_client import AcpClient
-
 from harness.agent.models import AnthropicMessages, from_environment
 from tests.fake_anthropic import FakeAnthropic
 

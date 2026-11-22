@@ -151,6 +151,7 @@ class TestCLI(unittest.TestCase):
     def test_live_runner_with_injected_model_records_real_metrics(self):
         """run_all_live accepts an injected model and never needs a key or a server."""
         import asyncio
+
         from harness.benchmark_live import run_all_live
 
         model = benchmark.ScriptModel([

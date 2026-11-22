@@ -20,8 +20,6 @@ import unittest
 import unittest.mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from tests import action_labels, press
-
 from botwidget import (
     animation,
     avatar,
@@ -44,6 +42,7 @@ from botwidget import (
 from botwidget.qt_ui.native import native_id
 from botwidget.system import linux, macos, windows
 from botwidget.system.current import process_cmdline
+from tests import action_labels, press
 
 
 class EyeAim(unittest.TestCase):
@@ -396,6 +395,7 @@ class GrokAvatarFallback(unittest.TestCase):
     def test_the_bots_page_holds_the_arc_until_that_page_closes(self):
         """Should keep the arc up for /bots and hide it when that page closes, not when the pointer merely leaves."""
         from unittest import mock
+
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
         faces._naps = {}
@@ -482,6 +482,7 @@ class GrokAvatarFallback(unittest.TestCase):
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
         from types import SimpleNamespace
+
         from botwidget.qt_ui.faces import ArcCatcher
         from botwidget.qt_ui.render import hit_region
         app = QApplication.instance() or QApplication([])
@@ -533,6 +534,7 @@ class GrokAvatarFallback(unittest.TestCase):
     def test_a_bot_that_joins_the_arc_takes_the_last_slot_and_the_others_glide_up(self):
         """Should move every bot of the arc from where it is to its new slot, the new one from where it was let go."""
         from unittest import mock
+
         from botwidget.qt_ui import faces as faces_module
         from botwidget.qt_ui.faces import ARC_MOVE_S, Faces
 
@@ -572,6 +574,7 @@ class GrokAvatarFallback(unittest.TestCase):
         """Should hand the same agent to the new face, so dragging a bot back needs no start-up."""
         from types import SimpleNamespace
         from unittest import mock
+
         from botwidget.qt_ui import faces as faces_module
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
@@ -594,6 +597,7 @@ class GrokAvatarFallback(unittest.TestCase):
         """Should put the agent to sleep after the nap, and wait while an answer is still on its way."""
         from types import SimpleNamespace
         from unittest import mock
+
         from botwidget.qt_ui import faces as faces_module
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
@@ -612,6 +616,7 @@ class GrokAvatarFallback(unittest.TestCase):
     def test_a_bot_on_the_arc_has_no_agent_of_its_own(self):
         """Should not start an agent for each hidden bot the arc shows."""
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui.face import FaceWindow
         QApplication.instance() or QApplication([])
         guest = FaceWindow("acp:ada", "Ada", None, 0, None, None, None, "s", None, guest=True)
@@ -621,6 +626,7 @@ class GrokAvatarFallback(unittest.TestCase):
     def test_the_arc_stays_up_while_the_bubble_of_one_of_its_bots_is_open(self):
         """Should not hide the arc under a bubble that opened from it: hovering that bubble is not leaving."""
         from types import SimpleNamespace
+
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
         faces._naps = {}
@@ -633,6 +639,7 @@ class GrokAvatarFallback(unittest.TestCase):
     def test_a_bot_of_the_arc_let_go_inside_the_arc_glides_back_to_its_slot(self):
         """Dragging a hidden bot around inside the arc and letting go: it snaps back like a drag-in does."""
         from unittest import mock
+
         from botwidget.qt_ui import faces as faces_module
         from botwidget.qt_ui.faces import ARC_MOVE_S, Faces
 
@@ -742,9 +749,10 @@ class BubbleLayout(unittest.TestCase):
 
     def test_the_blur_leaves_the_margin_clear(self):
         """Should keep the area outside the shadow transparent, not black."""
-        from PySide6.QtGui import QColor, QImage, QPixmap
         from PySide6.QtCore import Qt
+        from PySide6.QtGui import QColor, QImage, QPixmap
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui.render import blurred
         QApplication.instance() or QApplication([])
         image = QImage(24, 24, QImage.Format_ARGB32)
@@ -908,6 +916,7 @@ class RefusedMessages(unittest.TestCase):
     def refused(self, code, body):
         import urllib.error
         from unittest import mock
+
         from botwidget import openbot
         error = urllib.error.HTTPError("http://x/v1", code, "no", {}, io.BytesIO(body))
         with mock.patch.object(openbot.urllib.request, "urlopen", side_effect=error), \
@@ -963,6 +972,7 @@ class Clouds(unittest.TestCase):
 
     def test_the_balls_sit_between_the_cloud_and_the_bot_from_every_side(self):
         from PySide6.QtCore import QPointF, QRectF
+
         from botwidget.qt_ui.bubble_window import Trail
         cloud = QRectF(100, 100, 200, 100)
         trail = Trail.__new__(Trail)
@@ -975,8 +985,10 @@ class Clouds(unittest.TestCase):
 
     def test_the_ball_between_lags_behind_the_ones_next_to_the_cloud_and_the_bot(self):
         from unittest import mock
+
         from PySide6.QtCore import QPointF, QRectF
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui import bubble_window
         QApplication.instance() or QApplication([])
         cloud = QRectF(100, 100, 200, 100)
@@ -1077,6 +1089,7 @@ class Rendering(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -1155,8 +1168,8 @@ class AcpFace(unittest.TestCase):
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
-            from botwidget.qt_ui import faces
             from botwidget import acplink
+            from botwidget.qt_ui import faces
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
         cls.faces = faces
@@ -1223,6 +1236,7 @@ class BubbleScroll(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -1254,6 +1268,7 @@ class BubbleWidth(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -1300,6 +1315,7 @@ class BubbleHover(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -1361,6 +1377,7 @@ class BubbleHover(unittest.TestCase):
     def test_a_bubble_the_pointer_left_waits_a_moment_and_longer_while_the_pointer_moves_fast(self):
         import time
         from unittest import mock
+
         from botwidget.qt_ui import bubble_window
         self.hover()
         bubble = self.window.bubble
@@ -1380,6 +1397,7 @@ class BubbleHover(unittest.TestCase):
     def test_a_pointer_that_slowed_down_away_from_the_bubble_lets_it_go_after_the_grace(self):
         import time
         from unittest import mock
+
         from botwidget.qt_ui import bubble_window
         self.hover()
         bubble = self.window.bubble
@@ -1422,7 +1440,7 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble.kind)
 
     def test_a_form_that_was_typed_in_keeps_the_bubble_until_it_is_back_as_it_was(self):
-        from botwidget.qt_ui.controls import TextField, TextEditor
+        from botwidget.qt_ui.controls import TextEditor, TextField
         bubble = self.window.bubble
         field, editor = TextField("Name", "Ada", bubble), TextEditor("{}", bubble)
         bubble._control_widgets = [field, editor]
@@ -1436,6 +1454,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_bubble_nobody_pointed_at_closes_after_the_time_to_read_it(self):
         import time
+
         from botwidget.bubble import reading_seconds
         self.window._seeded = True
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
@@ -1451,6 +1470,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_an_open_wait_does_not_hide_a_new_message_behind_the_cloud(self):
         import time
+
         from botwidget.bubble import reading_seconds
         self.window._seeded = True
         chat = {"messages": self.MESSAGES, "activity": "", "waiting": "Waiting: build"}
@@ -1543,6 +1563,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_selected_words_keep_the_bubble_open_until_the_selection_goes(self):
         import time
+
         from botwidget.theme import BUBBLE_LINGER
         self.window._seeded = True
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
@@ -1875,6 +1896,7 @@ class BubbleHover(unittest.TestCase):
     def test_asking_shows_dots_at_once_and_hover_brings_the_thought_back(self):
         """Should open a dots cloud before the bot is thinking, close it, and expand it on hover."""
         import time
+
         from botwidget.bubble import reading_seconds
         self.window._pump_outbox = lambda: None
         self.window._seeded = True
@@ -1918,6 +1940,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_bot_that_never_answers_does_not_keep_the_bubble_forever(self):
         import time
+
         from botwidget.theme import BUBBLE_WAIT_MAX
         self.hover()
         bubble = self.window.bubble
@@ -2090,6 +2113,7 @@ class BubbleHover(unittest.TestCase):
     def test_the_arc_does_not_ask_hermes_on_every_drag(self):
         """`hermes --version` costs 0.2 s; asked once, the answer is kept."""
         from unittest import mock
+
         from botwidget import hermesbot
         old = hermesbot._installed_cache
         self.addCleanup(setattr, hermesbot, "_installed_cache", old)
@@ -2428,8 +2452,10 @@ class BubbleHover(unittest.TestCase):
     @unittest.skipIf(sys.platform == "win32", "Cmd+Backspace is a Mac key; Windows Qt deletes a word on Ctrl+Backspace first")
     def test_cmd_backspace_deletes_the_line_before_the_cursor(self):
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
+
         from botwidget.qt_ui import bubble_window
         self.hover()
         entry = self.window.bubble._entry
@@ -2527,9 +2553,11 @@ class BubbleHover(unittest.TestCase):
         """Busy bot, cloud open by itself: point at it, then leave (also straight onto another app)."""
         import time
         from unittest import mock
-        from botwidget.bubble import reading_seconds
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
+
+        from botwidget.bubble import reading_seconds
         active = mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive)
         active.start()
         self.addCleanup(active.stop)
@@ -2699,6 +2727,7 @@ class BubbleHover(unittest.TestCase):
         """Should leave no row for the way back at rest, and bring it in (the page moves down) on a scroll up, the
         pointer at the top or a press there; the line then goes back."""
         from unittest import mock
+
         from PySide6.QtCore import Qt
         bubble = self.open_settings()
         self.assertNotIn("Menu", bubble.full_text)
@@ -2772,6 +2801,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_no_timer_closes_a_bubble_the_pointer_is_on_and_leaving_the_margin_closes_it_at_once(self):
         from unittest import mock as _mock
+
         from PySide6.QtCore import Qt as _Qt
         from PySide6.QtGui import QGuiApplication as _App
         active = _mock.patch.object(_App, "applicationState", return_value=_Qt.ApplicationActive)
@@ -2792,6 +2822,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_right_click_menu_closes_the_moment_the_pointer_leaves_not_seconds_later(self):
         from unittest import mock as _mock
+
         from PySide6.QtCore import Qt as _Qt
         from PySide6.QtGui import QGuiApplication as _App
         active = _mock.patch.object(_App, "applicationState", return_value=_Qt.ApplicationActive)
@@ -2822,6 +2853,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_the_area_of_the_bigger_bubble_stays_hover_area_after_the_back_arrow(self):
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive):
@@ -2840,6 +2872,7 @@ class BubbleHover(unittest.TestCase):
         on macOS: the bubble does not take the focus, and a smaller page would otherwise close after a second."""
         import time
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationInactive):
@@ -2854,6 +2887,7 @@ class BubbleHover(unittest.TestCase):
         """Should keep the page's area until the pointer is on the card it shrinks to. The card is animated: while it
         is still as big as the page, the pointer is on it, and letting go then closed the bubble when it had shrunk."""
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         state = {**self.settings_state(), "bots": [{"id": f"a{i}", "name": f"Bot {i}", "on": True,
@@ -2882,6 +2916,7 @@ class BubbleHover(unittest.TestCase):
         """Should not let go while the card still animates: where it ends up is worked out from the size it still has,
         and it can end up somewhere else, with the pointer beside it."""
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         with mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive):
@@ -2899,6 +2934,7 @@ class BubbleHover(unittest.TestCase):
         """XWayland only knows the pointer over X windows: after the back arrow the bubble's own window keeps
         the area of the page, see-through around the smaller card, so the X server names the bubble there."""
         from unittest import mock
+
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtGui import QGuiApplication
         window = self.window
@@ -2920,9 +2956,10 @@ class BubbleHover(unittest.TestCase):
     def test_nothing_that_happens_by_itself_closes_a_bubble_the_pointer_is_on(self):
         """Focus taken by another window, the time to read it, a poll with an empty chat: none of them may take
         a bubble the pointer is still on. Things the user does (Escape, another face) still close it at once."""
+        from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
-        from unittest import mock
         window = self.window
         window.show()
         bubble = window.bubble
@@ -2957,10 +2994,12 @@ class BubbleHover(unittest.TestCase):
         - the window that holds a bigger bubble's area never covers the bubble;
         - a closed bubble never leaves the face unresponsive: pointing at the face opens it again."""
         import random
+        from unittest import mock
+
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtGui import QGuiApplication
+
         from botwidget.qt_ui import bubble_window as bubble_module
-        from unittest import mock
         from botwidget.qt_ui import face as face_module
         state = dict(self.settings_state())
         state["bots"] = [{"id": f"b{i}", "name": f"Bot {i}", "source": "OpenBot", "on": True} for i in range(3)]
@@ -3143,6 +3182,7 @@ class BubbleHover(unittest.TestCase):
         """XWayland as on Stefan's desktop: X says which of our windows is under the pointer (no hover margin),
         the bubble lies over its face, and a window mask lets the pointer through."""
         from unittest import mock
+
         from PySide6.QtCore import QPoint
         from PySide6.QtGui import QGuiApplication
         window = self.window
@@ -3172,8 +3212,10 @@ class BubbleHover(unittest.TestCase):
         bubble's own window keeps the page's area on every frame while the card shrinks inside it: X names the
         bubble there from the first frame on, and leaving that window still closes it at once."""
         from unittest import mock
+
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtGui import QGuiApplication
+
         from botwidget.qt_ui import bubble_window as bubble_module
         window = self.window
         window.show()
@@ -3235,10 +3277,12 @@ class BubbleHover(unittest.TestCase):
     def test_after_choosing_a_command_or_going_back_only_one_content_shows_on_every_frame(self):
         """/bots from the right-click list drew the page with the list still on top of it: the list was kept to
         keep the bubble's size, and its rows with it. Only the size carries over, never the rows."""
-        from botwidget import menu_pages
+        from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
-        from unittest import mock
+
+        from botwidget import menu_pages
         state = dict(self.settings_state())
         state["bots"] = [{"id": f"b{i}", "name": f"Bot {i}", "source": "OpenBot", "on": True} for i in range(3)]
         state.update({"openbot": True, "automation_ready": True, "gbot": False, "grok": "not found"})
@@ -3291,6 +3335,7 @@ class BubbleHover(unittest.TestCase):
         drop it: on XWayland that reading is not the pointer, and dropping it closed the page. Giving way or
         closing does drop it."""
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         window = self.window
@@ -3352,6 +3397,7 @@ class BubbleHover(unittest.TestCase):
     def test_a_tap_keeps_the_bubble_open_without_a_hover(self):
         """Should keep the bubble while a finger has touched it: a touch screen has no pointer to hover with."""
         from unittest import mock
+
         from PySide6.QtCore import QEvent, Qt
         bubble = self.window.bubble
         bubble.show_blocks(self.window._chat_blocks(self.MESSAGES, greet=True), "say")
@@ -3368,6 +3414,7 @@ class BubbleHover(unittest.TestCase):
         """The window that keeps a page's area must not take the clicks meant for a face under it: the face's
         spot is cut out of the window's shape (and so of its input) for as long as the area is held."""
         from unittest import mock
+
         from PySide6.QtCore import QPoint, QRect, Qt
         from PySide6.QtGui import QGuiApplication
         window = self.window
@@ -3396,9 +3443,10 @@ class BubbleHover(unittest.TestCase):
         """/bots from the right-click list of the top faces closed the bubble at once: the page started its
         growth from a sliver (the list's height was forgotten first), which left the pointer outside. Further down
         a page too tall to fit above the face moves to the side, away from the pointer."""
+        from unittest import mock
+
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtGui import QGuiApplication
-        from unittest import mock
         state = dict(self.settings_state())
         state["bots"] = [{"id": f"b{i}", "name": f"Bot {i}", "source": "OpenBot", "on": True} for i in range(3)]
         window = self.window
@@ -3428,9 +3476,10 @@ class BubbleHover(unittest.TestCase):
         """Hermes with an empty chat: hover (or a click) opened the greeting, and the next poll found no
         conversation and closed it within a tenth of a second. It stays while the pointer is there, like any
         bubble, and goes the moment the pointer leaves. The command list of such a bot stays too."""
+        from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
-        from unittest import mock
         self.face.latest_chat = lambda thread_id, limit=8: {"messages": [], "activity": ""}
         window = self.window
         window.show()
@@ -3459,6 +3508,7 @@ class BubbleHover(unittest.TestCase):
         held the chat's area once lay on top of the list and took every click: the list looked stuck. The
         bubble's own window holds that area now, so a click on a command always reaches the list."""
         from unittest import mock
+
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtGui import QGuiApplication
         long = "Dit is een lang antwoord over van alles en nog wat. " * 40
@@ -3506,6 +3556,7 @@ class BubbleHover(unittest.TestCase):
         """Opened and closed again before the window manager mapped it: Mutter maps it anyway, after Qt's
         unmap. That invisible window sat on the face, took hover and right-click, and the bot looked stuck."""
         from unittest import mock
+
         from PySide6.QtGui import QGuiApplication
         window = self.window
         window.show()
@@ -3608,8 +3659,9 @@ class BubbleHover(unittest.TestCase):
         """The gap between face and bubble is not a leave: the bubble stays when the pointer lands on it."""
         from contextlib import ExitStack
         from unittest import mock
-        from PySide6.QtGui import QGuiApplication
+
         from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
 
         bubble = self.open_settings()
         start = time.monotonic()
@@ -3641,6 +3693,7 @@ class BubbleHover(unittest.TestCase):
     def test_on_wayland_the_bubble_closes_when_the_pointer_is_far_and_the_app_stays_active(self):
         """XWayland keeps the app active and underMouse() stuck true after the pointer has left both windows."""
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
 
@@ -3665,6 +3718,7 @@ class BubbleHover(unittest.TestCase):
         """Straight from the bubble onto a Wayland window: no leave event arrives and underMouse() stays true,
         but X says the pointer is over no X window any more."""
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
 
@@ -3690,6 +3744,7 @@ class BubbleHover(unittest.TestCase):
         window, and no leave comes. A bubble that thought it was pointed at forever stayed up (also behind
         other apps) and every other bubble, a right-click menu too, gave way to it."""
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
 
@@ -3714,6 +3769,7 @@ class BubbleHover(unittest.TestCase):
         """GNOME: the Grok Bot app or a terminal has the focus, so our app is inactive. X still says the pointer
         is on the face: the bubble opens and stays, instead of closing at once (and a click-opened one too)."""
         from unittest import mock
+
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtGui import QGuiApplication
         window, bubble = self.window, self.window.bubble
@@ -4234,6 +4290,7 @@ class BubbleHover(unittest.TestCase):
         """Should keep the skill's row while the first word is the skill, with the arguments in it, and send them."""
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
+
         from botwidget import menu_pages
         self.hover()
         bubble = self.window.bubble
@@ -4298,6 +4355,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_page_opened_on_another_face_replaces_the_one_before_and_escape_returns_to_the_chat(self):
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         other = self.second_face()
@@ -4321,6 +4379,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_turning_on_a_connection_that_is_not_found_opens_its_page_and_stays_on_until_turned_off(self):
         from unittest import mock
+
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
         faces._naps = {}
@@ -4411,6 +4470,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_turning_off_the_bot_whose_bubble_holds_the_page_moves_the_page_to_another_bot(self):
         from unittest import mock
+
         from botwidget.qt_ui.faces import Faces
         other = self.second_face()
         registry = self.window.faces
@@ -4423,7 +4483,7 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(other.bubble.isVisible() or other.bubble._growth is not None)
 
     def test_a_message_sent_from_the_chat_swaps_it_for_the_dots_cloud_that_opens_like_a_new_bubble(self):
-        from botwidget.qt_ui.face import conversation_blocks, role_panel, plain_block
+        from botwidget.qt_ui.face import conversation_blocks, plain_block, role_panel
         bubble = self.window.bubble
         bubble.show_blocks(conversation_blocks([{"role": "bot", "text": "Klaar?"}], "T"), "say", input=True)
         self.finish_growth()
@@ -4433,7 +4493,7 @@ class BubbleHover(unittest.TestCase):
         self.assertLess(bubble.windowOpacity(), 1.0)
 
     def test_a_thought_that_grows_the_cloud_is_read_from_the_top_until_it_has_grown(self):
-        from botwidget.qt_ui.face import role_panel, plain_block, thought_blocks
+        from botwidget.qt_ui.face import plain_block, role_panel, thought_blocks
         bubble = self.window.bubble
         bubble.show_blocks([role_panel("bot"), plain_block("dots")], "think")
         self.finish_growth()
@@ -4447,6 +4507,7 @@ class BubbleHover(unittest.TestCase):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui.face import conversation_blocks
         bubble = self.window.bubble
         bubble.show_blocks(conversation_blocks([{"role": "bot", "text": "Ja"}], "T"), "say", input=True)
@@ -4598,6 +4659,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_the_field_for_a_message_only_shows_while_the_pointer_is_with_the_bubble(self):
         from unittest import mock
+
         from botwidget.qt_ui.face import conversation_blocks
         bubble = self.window.bubble
         blocks = conversation_blocks(self.MESSAGES, "Test")
@@ -4633,6 +4695,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_bubble_that_was_prepared_opens_without_laying_the_text_out_again(self):
         from unittest import mock
+
         from botwidget.qt_ui.face import conversation_blocks
         bubble = self.window.bubble
         blocks = conversation_blocks(self.MESSAGES, "Test")
@@ -4688,6 +4751,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_finger_that_stays_on_the_pad_holds_the_line_where_it_is(self):
         from unittest import mock
+
         from PySide6.QtCore import Qt
         self.hover()
         bubble = self.window.bubble
@@ -4730,6 +4794,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_pointing_at_another_face_that_lies_under_the_border_of_an_open_bubble_opens_its_bubble(self):
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         active = mock.patch.object(QGuiApplication, "applicationState", return_value=Qt.ApplicationActive)
@@ -4784,6 +4849,7 @@ class BubbleHover(unittest.TestCase):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui.face import conversation_blocks
         bubble = self.window.bubble
         bubble.show_blocks(conversation_blocks([{"role": "bot", "text": "Ja"}], "T"), "say", input=True)
@@ -4797,8 +4863,8 @@ class BubbleHover(unittest.TestCase):
                 self.assertEqual(entry.horizontalScrollBar().value(), 0, f"{pattern!r} after {i} letters")
 
     def test_a_bubble_opens_on_the_desktop_you_are_on_and_a_face_stays_where_it_lives(self):
-        from botwidget.system import macos
         from botwidget.qt_ui.faces import ArcCatcher
+        from botwidget.system import macos
         stays = macos.desktop_behavior(False)
         travels = macos.desktop_behavior(False, travels=True)
         self.assertTrue(stays & macos.MANAGED and not stays & macos.MOVE_TO_ACTIVE_SPACE)
@@ -4810,6 +4876,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_apply_tells_the_system_whether_a_window_travels(self):
         from unittest import mock
+
         from botwidget.qt_ui import desktops
         with mock.patch.object(desktops, "_real", return_value=True), \
                 mock.patch.object(desktops, "all_desktops", return_value=False), \
@@ -4820,6 +4887,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_bubble_gets_its_desktop_before_it_shows(self):
         from unittest import mock
+
         from botwidget.qt_ui import bubble_window
         bubble = self.window.bubble
         order = []
@@ -4853,6 +4921,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_the_glass_is_less_paint_where_it_can_blur(self):
         from unittest import mock
+
         from botwidget.qt_ui import glass
         from botwidget.theme import GLASS_ALPHA, GLASS_ALPHA_FLAT
         # Non-blur platform at default: the glass starts more transparent so the gradient and grain show.
@@ -4895,6 +4964,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_the_glass_slider_sets_how_much_paint_the_glass_has(self):
         from unittest import mock
+
         from botwidget.qt_ui import glass
         from botwidget.theme import GLASS_ALPHA
         with mock.patch.object(glass, "blurs", return_value=True), \
@@ -4923,6 +4993,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_moving_the_glass_slider_saves_it_and_draws_the_bubbles_again_without_a_new_page(self):
         from unittest import mock
+
         from botwidget.qt_ui.faces import Faces
         faces = Faces.__new__(Faces)
         faces._naps = {}
@@ -5066,6 +5137,7 @@ class BubbleHover(unittest.TestCase):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui.face import conversation_blocks
         bubble = self.window.bubble
         bubble.show_blocks(conversation_blocks([{"role": "bot", "text": "Ja"}], "T"), "say", input=True)
@@ -5095,6 +5167,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_bubble_that_macos_took_off_the_screen_is_taken_away_so_it_opens_again(self):
         from unittest import mock
+
         from botwidget.qt_ui import desktops
         self.hover()
         bubble = self.window.bubble
@@ -5156,7 +5229,9 @@ class BubbleHover(unittest.TestCase):
 
     def test_the_balls_hang_together_as_a_chain_and_go_with_the_bubble(self):
         from unittest import mock
+
         from PySide6.QtCore import QPointF, QRectF
+
         from botwidget.qt_ui import bubble_window
         cloud = QRectF(100, 100, 200, 100)
         clock = [0.0]
@@ -5177,6 +5252,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_the_thinking_dots_pulse_in_bursts_and_rest_in_between(self):
         from unittest import mock
+
         from botwidget.theme import DOTS_BURST_CYCLES, DOTS_CYCLE_S, DOTS_MS
         self.hover()
         bubble = self.window.bubble
@@ -5223,6 +5299,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_fewer_animations_only_on_battery_and_only_when_the_setting_is_on(self):
         from unittest import mock
+
         from botwidget import config, power
         power._setting[0] = -1e9
         self.assertTrue(config.save_battery(), "on unless switched off")
@@ -5256,15 +5333,17 @@ class BubbleHover(unittest.TestCase):
         self.assertGreater(rests[1], 2 * motion.MOOD_REST_S[0] - 0.001)
 
     def test_the_dots_start_with_none_of_them_at_its_biggest(self):
+        import re
+
         from botwidget import bubble
         from botwidget.theme import DOTS_R, DOTS_START_PHASE
-        import re
         sizes = [float(r) for r in re.findall(r'r="([\d.]+)"', bubble.dots_svg(0, 0, DOTS_START_PHASE, "#000"))]
         self.assertLess(max(sizes), DOTS_R * 0.9, "the first frame has no big dot")
 
     def test_at_rest_all_three_dots_are_small(self):
-        from botwidget import bubble
         import re
+
+        from botwidget import bubble
         sizes = lambda svg: [float(r) for r in re.findall(r'r="([\d.]+)"', svg)]
         rest = sizes(bubble.dots_svg(0, 0, -1.0, "#000"))
         self.assertEqual(len(set(rest)), 1, "all the same")
@@ -5273,6 +5352,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_the_app_is_not_activated_while_its_bubble_sits_on_another_desktop(self):
         from unittest import mock
+
         from botwidget.qt_ui import desktops, face
         self.hover()
         with mock.patch.object(desktops, "shown_here", return_value=False), \
@@ -5288,6 +5368,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_click_on_the_face_never_activates_a_bubble_on_another_desktop(self):
         from unittest import mock
+
         from botwidget.qt_ui import desktops, face
         self.hover()
         bubble = self.window.bubble
@@ -5301,6 +5382,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_a_bubble_that_is_where_you_are_is_left_alone(self):
         from unittest import mock
+
         from botwidget.qt_ui import desktops
         self.hover()
         with mock.patch.object(desktops, "shown_here", return_value=True):
@@ -5347,6 +5429,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_clicking_on_its_own_words_to_select_them_is_not_leaving(self):
         from unittest import mock
+
         from PySide6.QtWidgets import QApplication
         self.window.pin()
         bubble = self.window.bubble
@@ -5390,6 +5473,7 @@ class BubbleHover(unittest.TestCase):
         but the app is inactive — the bubble must close after the cross-gap."""
         import time
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         self.hover()
@@ -5416,6 +5500,7 @@ class BubbleHover(unittest.TestCase):
         """Should keep the bubble that a hover opened from another app: the pointer is still on the face."""
         import time
         from unittest import mock
+
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         self.hover()
@@ -5439,6 +5524,7 @@ class BubbleScrollMemory(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -5576,7 +5662,9 @@ class FrostLook(unittest.TestCase):
     def test_every_platform_that_cannot_blur_gets_the_grain(self):
         """Not just Linux: Windows ignores blur behind a window since Windows 8, so it gets the same frost."""
         from unittest import mock
+
         from PySide6.QtGui import QGuiApplication
+
         from botwidget.qt_ui import glass
         for platform in ("windows", "xcb", "wayland"):
             with mock.patch.object(QGuiApplication, "platformName", return_value=platform), \
@@ -5600,6 +5688,7 @@ class LatestChat(unittest.TestCase):
 
     def chat(self, text):
         import sqlite3
+
         from botwidget import openbot
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)
@@ -5632,6 +5721,7 @@ class FailedTurn(unittest.TestCase):
 
     def store(self, status, active=None, error=None):
         import sqlite3
+
         from botwidget import openbot
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)
@@ -5671,6 +5761,7 @@ class FailedTurn(unittest.TestCase):
     def test_the_face_shows_offline_with_the_reason(self):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui import face
         QApplication.instance() or QApplication([])
         window = face.FaceWindow("t", "Test", spot=(300, 400))
@@ -5691,6 +5782,7 @@ class FailedTurn(unittest.TestCase):
     def failed_face(self):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui import face
         QApplication.instance() or QApplication([])
         window = face.FaceWindow("t", "Test", spot=(300, 400))
@@ -5776,6 +5868,7 @@ class NewFlagsNewWindow(unittest.TestCase):
     def test_new_flags_drop_the_old_native_window(self):
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QWidget
+
         from botwidget.qt_ui.native import set_flags
         widget = QWidget()
         self.addCleanup(widget.deleteLater)
@@ -5837,6 +5930,7 @@ class NoTaskbarButton(unittest.TestCase):
 
     def test_the_windows_helper_turns_tool_window_on_and_app_window_off(self):
         from unittest import mock
+
         from botwidget.system import windows
         user32 = mock.Mock()
         user32.GetWindowLongPtrW.return_value = windows.WS_EX_APPWINDOW | 0x8
@@ -5847,6 +5941,7 @@ class NoTaskbarButton(unittest.TestCase):
 
     def test_the_windows_helper_leaves_a_tool_window_alone_and_does_nothing_elsewhere(self):
         from unittest import mock
+
         from botwidget.system import windows
         user32 = mock.Mock()
         user32.GetWindowLongPtrW.return_value = windows.WS_EX_TOOLWINDOW
@@ -5860,6 +5955,7 @@ class NoTaskbarButton(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui import face, faces
         from botwidget.qt_ui.bubble_window import Trail
         from botwidget.system import linux, macos, windows
@@ -5894,6 +5990,7 @@ class ScreenChanges(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -5944,6 +6041,7 @@ class QuietHours(unittest.TestCase):
 
     def test_the_sound_follows_the_setting_and_the_clock(self):
         from unittest import mock
+
         from botwidget import sound
         cases = [({"sound": True}, 23, 1), ({"sound": True, "quiet_hours": True}, 23, 0),
                  ({"sound": True, "quiet_hours": True}, 12, 1), ({"sound": False}, 12, 0)]
@@ -5964,6 +6062,7 @@ class Hotkey(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import faces
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -5987,6 +6086,7 @@ class Hotkey(unittest.TestCase):
 
     def test_the_bubble_comes_along_with_the_face(self):
         from unittest import mock
+
         from botwidget.qt_ui import face as face_module
         window = face_module.FaceWindow("t", "Test", spot=(300, 400))
         self.addCleanup(window.close_face)
@@ -6004,7 +6104,9 @@ class Hotkey(unittest.TestCase):
 
     def test_a_bubble_waits_out_of_sight_while_its_face_is_on_another_desktop_and_opens_when_you_get_there(self):
         from unittest import mock
-        from botwidget.qt_ui import bubble_window, face as face_module
+
+        from botwidget.qt_ui import bubble_window
+        from botwidget.qt_ui import face as face_module
         window = face_module.FaceWindow("t", "Test", spot=(300, 400))
         self.addCleanup(window.close_face)
         window._poll_timer.stop()
@@ -6064,7 +6166,9 @@ class Desktops(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from unittest import mock
+
             from PySide6.QtWidgets import QApplication, QWidget
+
             from botwidget.qt_ui import desktops
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -6080,7 +6184,9 @@ class Desktops(unittest.TestCase):
 
     def bring(self, everywhere, here, platform="cocoa"):
         from unittest import mock
+
         from PySide6.QtWidgets import QApplication, QWidget
+
         from botwidget.qt_ui import desktops
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         app = QApplication.instance() or QApplication([])
@@ -6312,6 +6418,7 @@ class MenuInBubble(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import face, faces
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
@@ -6492,6 +6599,7 @@ class MenuInBubble(unittest.TestCase):
 
     def test_feedback_says_what_happened_instead_of_an_empty_bubble(self):
         from unittest import mock
+
         from PySide6.QtGui import QDesktopServices
         bubble = self.window.bubble
         for opened, expected in ((True, "Opened in your browser"), (False, "Could not open the browser")):
@@ -7384,6 +7492,7 @@ class SpawnScript(unittest.TestCase):
     def test_the_script_runs_and_removes_its_own_file(self):
         import subprocess
         from unittest import mock
+
         from botwidget.system import posix
         with tempfile.TemporaryDirectory() as folder:
             out = os.path.join(folder, "ran")

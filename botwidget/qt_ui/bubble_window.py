@@ -11,20 +11,20 @@ import sys
 import time
 
 from PySide6.QtCore import (
-    QObject,
-    QPointF,
     QBuffer,
     QByteArray,
     QEasingCurve,
     QEvent,
     QIODevice,
+    QObject,
     QPoint,
+    QPointF,
     QRect,
     QRectF,
+    Qt,
     QTimer,
     QUrl,
     QVariantAnimation,
-    Qt,
     Signal,
 )
 from PySide6.QtGui import (
@@ -57,17 +57,17 @@ from botwidget.avatar import AVATAR_SIZE, CIRCLE_R, avatar_svg
 from botwidget.bubble import (
     bubble_body_svg,
     bubble_deco_svg,
-    dots_patch_svg,
     bubble_height_cap,
-    chat_height_cap,
-    leave_open,
-    menu_height_cap,
     bubble_shadow_svg,
     bubble_width,
+    chat_height_cap,
     cloud_body_svg,
     cloud_shadow_svg,
     content_height,
+    dots_patch_svg,
+    leave_open,
     line_height,
+    menu_height_cap,
     more_svg,
     panel_pad,
     panel_rects,
@@ -88,12 +88,21 @@ def window_layer(face=None):
 from botwidget.bubble_layout import bubble_panels
 from botwidget.markdown import block_text, md_blocks, plain_block, plain_text, role_panel
 from botwidget.qt_ui import desktops, glass, screens
-from botwidget.qt_ui.native import drop_hidden, native_id, raise_window, set_flags
-from botwidget.system.current import before_show, pointer_window, send_behind_windows
-from botwidget.qt_ui.controls import ActionButton, ItemRow, SlashButton, SlashList, Switch, TextEditor, TextField, ValueSlider
+from botwidget.qt_ui.controls import (
+    ActionButton,
+    ItemRow,
+    SlashButton,
+    SlashList,
+    Switch,
+    TextEditor,
+    TextField,
+    ValueSlider,
+)
 from botwidget.qt_ui.measure import measure
+from botwidget.qt_ui.native import drop_hidden, native_id, raise_window, set_flags
 from botwidget.qt_ui.render import blurred, cut_out, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document
+from botwidget.system.current import before_show, pointer_window, send_behind_windows
 from botwidget.theme import (
     BUBBLE_FONT,
     BUBBLE_MAX_SCREEN_SHARE,
@@ -106,19 +115,19 @@ from botwidget.theme import (
     DOTS_MS,
     DOTS_REST_S,
     DOTS_START_PHASE,
+    GLASS_FADE,
     PAD_BODY,
     PAD_PANEL_X,
     PAD_SVG,
     SAND_ACCENT,
+    SAND_GLASS_BOTTOM,
+    SAND_GLASS_TOP,
     SAND_INK,
     SAND_ON_USER,
     SAND_PANEL_USER_BOTTOM,
     SAND_PANEL_USER_TOP,
     SAND_RADIUS_PANEL,
     SAND_SANS,
-    GLASS_FADE,
-    SAND_GLASS_BOTTOM,
-    SAND_GLASS_TOP,
     SHADOW_BLUR,
     TAIL_ROOM,
 )

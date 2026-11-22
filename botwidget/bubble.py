@@ -4,13 +4,14 @@ import math
 
 from botwidget.avatar import AVATAR_SIZE
 from botwidget.theme import (
-    CONTROL_H,
     BUBBLE_LINGER,
     BUBBLE_LINGER_MAX,
     BUBBLE_PER_WORD,
+    CONTROL_H,
     DOTS_GAP,
     DOTS_R,
     GAP_PANEL,
+    GLASS_ALPHA_FLAT,
     LINE_CODE_PAD,
     LINE_DOTS_H,
     LINE_GAP_H,
@@ -25,18 +26,17 @@ from botwidget.theme import (
     PAD_PANEL_X,
     PAD_PANEL_Y,
     PAD_SVG,
-    GLASS_ALPHA_FLAT,
     SAND_ACCENT,
     SAND_GLASS_BOTTOM,
     SAND_GLASS_EDGE,
     SAND_GLASS_TOP,
-    SAND_PANEL_USER_BOTTOM,
-    SAND_PANEL_USER_TOP,
     SAND_HAIRLINE,
     SAND_INK,
     SAND_INK_SOFT,
     SAND_LINE_USER,
     SAND_ON_USER,
+    SAND_PANEL_USER_BOTTOM,
+    SAND_PANEL_USER_TOP,
     SAND_RADIUS,
     SAND_RADIUS_PANEL,
     SHADOW_ALPHA,
@@ -44,7 +44,6 @@ from botwidget.theme import (
     TAIL_ROOM,
     TAIL_TIP_MARGIN,
 )
-
 
 # Shared bubble leave limits (0.4s grace, 300 px/s threshold, 1.5s cap).
 LEAVE_GRACE_S = 0.4

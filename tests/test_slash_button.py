@@ -19,6 +19,7 @@ class SlashButton(unittest.TestCase):
     def setUp(self):
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import face
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")

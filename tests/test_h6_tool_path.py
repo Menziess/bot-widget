@@ -13,8 +13,7 @@ import tempfile
 import time
 import unittest
 
-from harness.acp_client import AcpClient, Update
-from harness.acp_client import Turn
+from harness.acp_client import AcpClient, Turn, Update
 from harness.agent.agent import LeanAgent
 from harness.agent.store import SessionStore
 from harness.agent.tools import Tools
@@ -304,7 +303,7 @@ class DoubledTitle(unittest.TestCase):
             client = AcpClient("x")
             client._turn = Turn(started=time.monotonic())
 
-            from acp.schema import ToolCallStart, ToolCallProgress
+            from acp.schema import ToolCallProgress, ToolCallStart
             tool_call = ToolCallStart(session_update="tool_call", tool_call_id="c1",
                                       title="read_file {'path': '/tmp/x.txt'}",
                                       kind="other", status="in_progress")
@@ -326,7 +325,7 @@ class DoubledTitle(unittest.TestCase):
             client = AcpClient("x")
             client._turn = Turn(started=time.monotonic())
 
-            from acp.schema import ToolCallStart, ToolCallProgress
+            from acp.schema import ToolCallProgress, ToolCallStart
 
             tool_call = ToolCallStart(session_update="tool_call", tool_call_id="c1",
                                       title="read_file {'path': '/tmp/x.txt'}",

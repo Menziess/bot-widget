@@ -8,8 +8,14 @@ import unittest
 
 from harness.agent.agent import LeanAgent
 from harness.agent.tools import Tools
-from harness.agent.workspace import (EditStore, ShellAllow, is_read_only_command, shell_segments,
-                                     suggest_prefixes, workspace_builtins)
+from harness.agent.workspace import (
+    EditStore,
+    ShellAllow,
+    is_read_only_command,
+    shell_segments,
+    suggest_prefixes,
+    workspace_builtins,
+)
 from tests.test_h7_diffs import ScriptModel, _Conn
 
 

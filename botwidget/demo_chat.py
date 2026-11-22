@@ -8,7 +8,13 @@ import subprocess
 import sys
 
 from botwidget.demo_check import (
-    Board, a11y_read, browser_tab, file_readback, repair_result, script_exit, write_board,
+    Board,
+    a11y_read,
+    browser_tab,
+    file_readback,
+    repair_result,
+    script_exit,
+    write_board,
 )
 from botwidget.demo_run import BOARD, LABELS, ROOT
 

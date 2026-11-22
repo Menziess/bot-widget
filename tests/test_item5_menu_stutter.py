@@ -22,7 +22,9 @@ class MenuStutter(unittest.TestCase):
         """Verify _layout_children is called only once during menu open."""
         try:
             from unittest import mock
+
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui import face
 
             with tempfile.TemporaryDirectory() as folder:

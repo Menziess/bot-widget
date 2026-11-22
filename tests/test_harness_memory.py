@@ -16,24 +16,23 @@ import unittest
 
 from harness.agent import context
 from harness.agent.memory import (
-    _tokenise,
     _overlap_score,
-    write_memory,
-    write_memory_list,
+    _tokenise,
+    forget_memory,
+    list_memories,
+    memory_forget_tool,
+    memory_read_tool,
+    memory_tools_for,
+    memory_write_tool,
     retrieve_memories,
     suggest_topic,
     topic_for_message,
-    forget_memory,
     update_memory,
-    list_memories,
-    memory_tools_for,
-    memory_write_tool,
-    memory_read_tool,
-    memory_forget_tool,
+    write_memory,
+    write_memory_list,
 )
 from harness.agent.store import SessionStore
 from tests.fake_model import FakeModel
-
 
 # ── Token helpers ──────────────────────────────────────────────────
 

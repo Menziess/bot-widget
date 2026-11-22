@@ -98,8 +98,8 @@ class BotForm(unittest.TestCase):
         self.assertIn("blue", shown)
         preview = next(block for block in bot_form({}) if block.get("control") == "preview")
         self.assertEqual(preview["value"], "nuage|blue|new")
-        from botwidget.bubble import line_height
         from botwidget.avatar import AVATAR_SIZE
+        from botwidget.bubble import line_height
         self.assertEqual(line_height(preview), AVATAR_SIZE)
         refused = block_text(bot_form({"bot_error": "A bot needs a name."}))
         self.assertLess(refused.index("Connection: none yet"), refused.index("A bot needs a name."))
@@ -495,6 +495,7 @@ class EditPage(unittest.TestCase):
     def setUp(self):
         try:
             from PySide6.QtWidgets import QApplication
+
             from botwidget.qt_ui.face import FaceWindow
             from botwidget.qt_ui.faces import Faces
         except ImportError as error:
@@ -512,6 +513,7 @@ class EditPage(unittest.TestCase):
         """Should mute and open Edit when the click lands on the row that sits over the text."""
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest
+
         from botwidget.qt_ui.controls import ItemRow
 
         box = self.Faces.__new__(self.Faces)
@@ -564,6 +566,7 @@ class EditPage(unittest.TestCase):
         """Should keep a name typed into the field when the click lands on the text, then save it."""
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest
+
         from botwidget.qt_ui.controls import ActionButton, TextField
 
         box = self.Faces.__new__(self.Faces)
@@ -623,7 +626,9 @@ class EditPage(unittest.TestCase):
         frame sees the pointer, leaving still closes at once.
         """
         from unittest import mock
+
         from PySide6.QtGui import QGuiApplication
+
         from botwidget.qt_ui.controls import ItemRow
         from botwidget.qt_ui.native import native_id
 
@@ -692,6 +697,7 @@ class ItemRowPills(unittest.TestCase):
         from PySide6.QtCore import QEvent, QPointF, Qt
         from PySide6.QtGui import QMouseEvent
         from PySide6.QtWidgets import QApplication
+
         from botwidget.qt_ui.controls import ItemRow
 
         app = QApplication.instance() or QApplication([])
