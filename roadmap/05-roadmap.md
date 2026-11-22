@@ -148,7 +148,7 @@ Still open, except the line marked done. In the order the owner asked.
 
 ### Bubble, demo, sample thought, 2026-11-21
 
-Done on main.
+Done on main. Planned for /demo: show the checklist in a normal chat bubble instead of a separate DemoBoard window (which has no close button); add real CDP check for browser row (reuse existing tab); make process row wait until the chat turn finishes before reading the file; add computer-control task with a code verifier on a throwaway window.
 
 - A click outside collapses the bubble and forgets the page. A hover-leave reopens that page for `page_memory_s` seconds (60 when widget.json has no such key), then the next hover is the normal chat. Escape on a page brings the chat back and forgets the page (`6039011`, after `0caa69d`).
 - `/demo` is only there with `--dev`. It sends the six tasks through the chat. Code checks the outcome. The `/tmp/t-demo/enable` file no longer starts a run. `ffad165`.
@@ -185,6 +185,10 @@ Asked as three changes. The page memory and the doctor step are on main. A row t
 - `botwidget doctor` is the step that links the desktop `gi`. The probe no longer fixes a missing `gi` by itself. Done 2026-11-21.
 - The local demo is a checklist of browser (CDP attach, reuse a tab, never a new window, blocked when CDP is down and Chrome is not started), a file written and read back, a script written and run, a background process started, checked and stopped, an accessibility read, and a seeded failing test that is repaired. `/demo` sends those prompts through the visible chat and ticks a row only from the code checkers. Done 2026-11-21 (`ffad165`).
 - The Settings switch "Sample thought, click the face for a sample message" is gone. An old `debug` key in widget.json is left in place and ignored. Done 2026-11-21 (`ffad165`).
+
+### Slash-command inline list, 2026-11-22
+
+Replaced the separate slash-command screen with an inline list under the chat input field. Added a "/" button (SlashButton) at the far right of the field; clicking it, typing "/" in the field, or right-clicking the face all open the same list. While the list is visible, the bubble's chat text is hidden; it returns when the list closes. The old standalone command screen is removed. AGENTS.md and README updated with new bubble rules. Done 2026-11-22 (`f7483fc`).
 
 ### Open from the teacher rounds, 2026-11-21
 
