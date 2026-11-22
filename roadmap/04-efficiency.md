@@ -1,0 +1,270 @@
+# Efficiency: where context and money go
+
+The point of a backend of our own is a lower cost per useful turn. This page lists where a turn's tokens go in an OpenBot session, what a lean backend would do differently, and how to find out whether it really does.
+
+Every figure for OpenBot below is an estimate read off the text the model receives, not a measurement. The plan at the end replaces the estimates with measurements.
+
+## What a turn carries today
+
+A turn in an OpenBot agent starts from a fixed block before the first word of the user.
+
+```text
+developer instructions     ~8,000-10,000 tokens, resent every turn
+tool lists and tool guides  a few thousand more, for browser, search, files
+user instruction files      the global and project files
+saved memories              a short block
+conversation so far         grows, until compaction
+```
+
+Reading the block.
+
+- The instruction block is written for everything a bot can do, teammates, routines, vault, browser, so a turn that only edits a file still carries it
+- Prompt caching makes a repeated prefix cheaper, but only while the prefix stays byte-identical
+- Anything that changes early in the prompt, such as a date or a tool list, moves the cache boundary and makes the whole turn full price again
+- A long-lived bot cannot start a fresh session the way a person does, so it compacts, and compaction loses detail
+
+## What a lean backend does differently
+
+Five levers, in order of effect.
+
+### A small, stable prefix
+
+The system prompt says who the bot is and how to behave in a few hundred tokens. Everything else is loaded when needed.
+
+```text
+[system, fixed]  [pinned facts, rarely change]  [summary, changes at compaction]  [recent turns]  [new message]
+```
+
+Rules for the order.
+
+- Parts that change least come first
+- Nothing in front of the summary is edited in place, only appended to
+- The date and other volatile facts go in the newest message, never in the prefix
+
+### Tools on demand
+
+Tool definitions cost tokens on every turn they are present.
+
+- Show a small core set, and offer the rest through one search tool that returns schemas when asked
+- MCP servers are connected lazily, when a turn names them
+- A tool the user never uses costs nothing
+
+### Compaction in three steps, cheapest first
+
+```python
+def shrink(session):
+    trim_old_tool_results(session)    # keep the call, replace the output with one line
+    if session.tokens() > LIMIT:
+        summarise_oldest(session)     # rolling summary by a small model
+    pin_facts(session)                # decisions and preferences survive every summary
+```
+
+How the steps differ.
+
+- Trimming old tool output is usually the largest saving and loses almost nothing
+- A rolling summary replaces the oldest turns and keeps the newest verbatim
+- Pinned facts, decisions and preferences, are stored apart so that no summary can drop them
+
+### Fresh by default
+
+A person starts a new session per task and writes a short handover. A bot can do the same on purpose.
+
+- A session per topic, closed when the topic ends
+- A handover note carried into the next session, the way the handover and continue skills work in the terminal
+- The widget shows the context meter, from the usage update, so the user sees when a topic is getting heavy
+
+### The right model for the turn
+
+- Routine turns, status, short answers, go to a small model
+- Hard turns go to a large one, chosen by the user or by a simple rule
+- A local model costs nothing per token, and the chat completions adapter reaches one with only a base URL
+
+## Caching in practice
+
+Providers cache differently, and the adapter has to respect each.
+
+| Provider family | How caching is switched on | What the adapter does |
+| - | - | - |
+| Anthropic Messages | Explicit marks on blocks | Marks the end of the stable prefix |
+| OpenAI | Automatic for a repeated prefix, explicit marks on newer models | Keeps the prefix identical, optionally marks |
+| Gemini | Implicit by default, explicit as a separate resource | Keeps the prefix identical |
+| Compatibility layers | Often none | Avoid for Claude, use the native adapter |
+
+The table is a summary of public documentation read in October 2026, and these details change. The adapter's tests should assert that two consecutive turns share a prefix, which does not depend on any provider's current rules.
+
+## How to find out
+
+Measure before believing any of this. Every turn writes one line.
+
+```json
+{"session": "s1", "turn": 7, "model": "x", "input": 5200, "cached": 4800, "output": 310, "tools": 2}
+```
+
+The plan.
+
+- Pick twenty real tasks and the same prompts for each backend
+- Run them on OpenBot and on the lean agent, with the same model where possible
+- Compare input tokens, cached share, output tokens and cost per finished task
+- Count a task as finished only when the result is accepted, so a cheap wrong answer does not win
+
+A result worth acting on is a clear difference in cost per finished task, not in tokens per turn.
+
+## What is not saved
+
+- OpenBot's other features, which have a price of their own and may be worth it
+- The cost of writing and keeping up an agent, which is real and recurring
+- Quality, where a hosted agent with years of tuning may beat a new one on hard tasks
+
+## Sources
+
+- Provider caching differences, https://hidekazu-konishi.com/entry/llm_api_parameter_compatibility_reference.html
+- Anthropic, OpenAI SDK compatibility and caching, https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk
+- ACP, usage and compaction updates, https://agentclientprotocol.com/protocol/prompt-turn
+
+## Measured on 2 November 2026
+
+Two runs on this machine, same local model family where it applies.
+
+**OpenBot, from its own usage records.** `agent_usage_records` in the OpenBot database holds one
+row per turn. The fourteen turns on `llm/local` had a median of 6365 uncached input tokens, 74836
+cached input tokens and 515 output tokens; 95% of their input was a cache read.
+
+**The lean agent, twenty scripted tasks in one session.** The same prompts a short chat would
+send, through `harness.agent` on Ollama `qwen3.8-iq3-32k`, one process, no tools used, twenty
+usage lines, none cancelled or failed:
+
+| | lean agent | OpenBot (`llm/local`) |
+| - | - | - |
+| turns measured | 20 | 14 |
+| median input tokens | 1014 | 81000 (6365 uncached + 75k cached) |
+| cached share of input | 58% | 95% |
+| median output tokens | 64 | 515 |
+| median turn | 2.5 s | not recorded per turn |
+| cost per turn | 0 (local model) | 0 (local model) |
+
+## H2 benchmark
+
+A deterministic, scripted benchmark lives in `harness.benchmark`. It runs five tasks
+without a live model, a network connection, or any API key:
+
+```
+python -m harness.benchmark --json --out /tmp/bw-h2-baseline.json
+```
+
+| Task | What it measures | Expected ok |
+| - | - | - |
+| `short_answer` | Scripted model returns a known string | true |
+| `tool_read` | Model calls `read_file`, answer contains a known token | true |
+| `topic_switch_recall` | Short thread keeps both user facts verbatim | true |
+| `compact_without_summary` | Long thread, no summary — older turns are dropped | **false** |
+| `compact_with_summary` | Same seed but a summary preserves the unique fact | true |
+
+The baseline report (`suite: "h2"`, `mode: "scripted"`) includes per-task metrics
+(`total_ms`, `output_tokens`, `path_steps`) and a run summary
+(`n`, `passed`, `failed`, `median_*`). Task D is expected to fail today so that
+later work (H4) can flip it and measure the improvement.
+
+## H3 workspace and permissions
+
+A bot has no filesystem tools until a workspace folder is set (widget field, or
+`HARNESS_WORKSPACE`). Tools are then scoped to that folder: `read_file`, `list_dir`,
+`search`, `write_file`, `undo_edit`, `undo_last`, `diff`, `git_status`, `git_log`,
+`git_diff`, and `shell`. Paths are realpath'd; `..` and symlink escapes are refused. Secret files
+(`.env*`, keys, `.ssh` and similar) are denied. `git push`, `git reset --hard`,
+`git clean`, `git checkout --` and destructive `rm` are always refused. Project
+rules (`AGENTS.md`, `CLAUDE.md`, `.clinerules`) are loaded into the system prompt.
+
+Permission modes: `ask` (default; writes and shell wait for Accept), `allow`
+(allowlist: reads/search/git-read auto-run, writes and shell still ask), and
+`allow_session` (a granted write is remembered until the process exits). Aliases
+`allowlist` and `allow-for-session` are accepted. Clearing the folder drops the
+env vars; the Permission cycle button on the bot form updates the draft.
+
+H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): same flags as the
+H2 baseline — four tasks pass, `compact_without_summary` still fails with
+"older turns dropped before summary exists".
+
+## H4 context window management
+
+The request is built against the model's own token window (`n_ctx` / `model_window`),
+or `HARNESS_CONTEXT_TOKENS`, or the 32000 default, minus a 2048-token completion
+margin. The character budget is derived from that window (four characters per token).
+Pinned prefix (system prompt, workspace rules, rolling summary, facts) is never
+evicted. Recent turns stay verbatim. If no rolling summary exists yet, older turns
+are kept as a cheap synchronous BACKGROUND extract (no model call, so the reply is
+never blocked). The existing background summarise still runs after the answer and
+later replaces the extract. The context-use note is quieter: it only shows
+"Context N% full." when the window is at least half full, still announces
+"Compacted older turns.", and stays silent for a nearly empty window.
+
+H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): all five tasks pass,
+including `compact_without_summary`.
+
+Read the difference carefully.
+
+- The input gap is about eighty times, and it is structural: OpenBot resends the developer
+  instructions, tool guides and memories on every turn, while the lean prefix is one short system
+  message, the summary and the newest turns.
+- The lean agent's cached share is lower because its prompt is small; a cache read on a small
+  prefix is worth less. On the local model both cost nothing, so these numbers are about latency
+  and context room, not money.
+- Output differs because the tasks differed: OpenBot's turns were real work with tools, the lean
+  run was twenty short questions. This is not a like-for-like quality comparison.
+- Cost per finished task, the figure the plan wants, is 0 on both sides with a local model and
+  cannot be measured for a hosted model without paid credit. The comparison that would settle it
+  needs the same model on both backends and a real task set.
+
+## H5 durable topic-scoped memory
+
+The bot can now store memories that survive compaction and restarts. Three scopes:
+**user** (per bot), **project** (keyed by workspace), and **topic** (scoped to a topic name).
+Storage is a JSON-lines file per scope in `~/.local/share/botwidget/harness/memory/`
+(configurable via `HARNESS_MEMORY_DIR`).
+
+Topic assignment is lexical: token overlap (Jaccard-like) with a 0.15 threshold decides
+whether a message belongs to an existing topic or starts a new one. Retrieval injects
+top-k memories (default 10, ~2k chars) into the system message after facts, using the same
+overlap scoring with a 2× boost for matching topics.
+
+Three tools are registered with the agent: `memory_write` (text, scope, topic),
+`memory_read` (query), and `memory_forget` (id or text match). Writes follow the existing
+permission-asking flow. A Memory page in the bubble menu lets users list, add, and forget
+memories.
+
+H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): all five tasks still pass,
+including `compact_without_summary`. Memory retrieval is silent when the file does not
+exist yet, so it does not affect the benchmark.
+
+## H7 diffs in the bubble (always / ask / never)
+
+`write_file` now shows a unified diff in the permission bubble instead of just a
+title. The agent calls `diff` to produce the text, then hands it to
+`request_permission` with `kind="edit"` and `field_meta={"diff": text}` so the
+widget can render it in-line. Three permission options follow:
+
+- **Apply** — the write goes through (ask mode)
+- **Reject** — the write is dropped (ask mode)
+- **Never** — the diff is shown but the write is never applied, no bubble interaction needed
+- **Always** — the diff is shown and the write is applied automatically; the entry is still
+  recorded on the undo stack
+
+The undo stack is LIFO: `undo_last` pops the most recent edit entry and restores its
+previous bytes. New-file writes (no previous content) are recorded but skipped during
+undo so they do not erase the file.
+
+Hard denies from H3 still hold under `always`: secret paths and writes outside the
+workspace are refused by the write tool itself, regardless of the diff mode.
+
+The diff mode is controlled by the `HARNESS_DIFF_PERMISSIONS` environment variable,
+defaulting to `"ask"`. Valid values: `ask`, `always`, `never`. The existing
+`HARNESS_WORKSPACE_PERMISSIONS` (allow / allow_session) is orthogonal —
+`allow_session` still bypasses the diff entirely when a title was previously
+granted in the same session.
+
+`undo_last` is a new workspace-builtin tool registered alongside the existing
+`undo_edit`. It operates on the stack-based `_EditStore._stack` and restores the
+previous content of the most recent write.
+
+H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): all five tasks still
+pass. The diff path is only entered for `write_file` calls; other tools and the
+scripted benchmark tasks are unaffected.
