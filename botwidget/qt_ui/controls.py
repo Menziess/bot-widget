@@ -207,6 +207,34 @@ class ActionButton(PointerWatch, QPushButton):
             self.style().polish(self)
 
 
+class SlashButton(QWidget):
+    """A / at the far right inside the message field. A click opens the command list under the field."""
+
+    clicked = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("slashButton")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setFixedSize(22, 22)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.clicked.emit()
+        super().mouseReleaseEvent(event)
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        font = QFont(SAND_SANS)
+        font.setPixelSize(BUBBLE_FONT)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(color(SAND_ACCENT))
+        painter.drawText(self.rect(), Qt.AlignCenter, "/")
+
+
 class SlashList(QWidget):
     """The commands that fit what is typed after a slash, as a list below the field."""
 

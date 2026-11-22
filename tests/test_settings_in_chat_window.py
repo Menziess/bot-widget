@@ -256,7 +256,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
                         f"changed={b.changed} state={b.state()} consistent={b.consistent()} closed_by={self.closed_by}")
         self.assertIn("Hello from the bot.", self.bubble.full_text)
         self.assertNotIn("Sound on a new answer", self.bubble.full_text)
-        self.assertFalse(self.bubble._list_only)
+        self.assertFalse(self.bubble.commands_held())
 
     def test_should_open_typed_settings_in_the_chat_bubble(self):
         before, bubble_id = self._type_settings()
@@ -272,11 +272,11 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self.right_click()
         self._reveal_arc()
         self._finish()
-        self.assertTrue(self.bubble._list_only)
+        self.assertTrue(self.bubble.commands_held())
         with mock.patch.object(self.window, "_pump_outbox"):
             self.bubble._run_command("/parking")
         self._finish()
-        self.assertFalse(self.bubble._list_only, "the cloud takes the place of the list")
+        self.assertFalse(self.bubble.commands_held(), "the cloud takes the place of the list")
 
     def test_should_not_put_a_chat_link_on_any_page(self):
         """Should leave every page heading as a title. The way back is the line on top, and it targets the command list."""
@@ -295,7 +295,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self._click_top_line()
         self._finish()
         self.assertIsNone(self.window._menu_page)
-        self.assertTrue(self.bubble._list_only)
+        self.assertTrue(self.bubble.commands_held())
 
     def test_should_return_to_the_command_list_when_scrolled_up_past_the_top(self):
         """Should stay on the page for one notch, and go back to the command list once the line is pulled far enough."""
@@ -309,7 +309,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
         self._wheel_up(3)
         self._finish()
         self.assertIsNone(self.window._menu_page)
-        self.assertTrue(self.bubble._list_only)
+        self.assertTrue(self.bubble.commands_held())
 
     def test_should_collapse_when_the_pointer_clicks_outside_the_bubble(self):
         """Should hide the bubble when a press lands outside it and its face, and forget the page."""
@@ -567,18 +567,20 @@ class SettingsInTheChatWindow(unittest.TestCase):
                 self.assertTrue(self.bubble.isVisible(), "Escape returns to the chat, not one level up")
                 self.assertIsNone(self.window._menu_page)
                 self.assertIsNone(self.window._page_memory)
-                self.assertFalse(self.bubble._list_only)
+                self.assertFalse(self.bubble.commands_held())
                 self.assertIn("Hello from the bot.", self.bubble.full_text)
 
-    def test_should_leave_the_command_list_for_the_chat_when_scrolled_up_past_the_top(self):
-        """Should go back to the chat when a right-click list is pulled far enough, as a page goes back."""
+    def test_should_leave_the_command_list_for_the_chat_when_escape_is_pressed(self):
+        """Should go back to the chat when Escape is pressed on the inline command list."""
         self.right_click()
         self._finish()
-        self.assertTrue(self.bubble._list_only)
-        self.assertEqual(self.bubble._back_command(), "close")
-        self._wheel_up(5)
+        self.assertTrue(self.bubble.commands_held())
+        self.assertNotEqual(self.bubble._back_command(), "close")
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        QTest.keyClick(self.bubble._entry, Qt.Key_Escape)
         self._finish()
-        self.assertFalse(self.bubble._list_only)
+        self.assertFalse(self.bubble.commands_held())
         self.assertIsNone(self.window._menu_page)
 
     def test_should_still_close_the_chat_when_escape_is_pressed_there(self):
@@ -594,7 +596,7 @@ class SettingsInTheChatWindow(unittest.TestCase):
     def test_should_still_open_the_command_list_on_a_right_click(self):
         self.right_click()
         self.assertTrue(self.bubble.isVisible())
-        self.assertTrue(self.bubble._list_only)
+        self.assertTrue(self.bubble.commands_held())
         commands = [command for command, _note in self.bubble._slash.rows]
         self.assertIn("/settings", commands)
         self.assertIsNone(self.window._menu_page)

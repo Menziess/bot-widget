@@ -455,7 +455,7 @@ class FaceWindow(QWidget):
         self.pinned = False
         # A right-click just opened this list and then parked the face on the arc. Closing it here
         # made the menu vanish before the pointer could reach it, and the next faces covered it.
-        if not self.bubble._list_only:
+        if not self.bubble.commands_held():
             self.bubble.close_bubble("semicircle")
         size = int(info["size"])
         if self.width() != size:
@@ -594,7 +594,7 @@ class FaceWindow(QWidget):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_Escape and self.bubble.isVisible():
             # A page, or the command list, goes straight back to the chat. The chat itself still closes.
-            if self._menu_page is not None or self.bubble._list_only:
+            if self._menu_page is not None or self.bubble.commands_held():
                 self.open_input()
             else:
                 self._forget_page()
@@ -761,7 +761,7 @@ class FaceWindow(QWidget):
             if self.pinned:
                 self.unpin(close=False)  # the pointer is on the face: it goes when the pointer or the keyboard leaves
             elif self.bubble.isVisible() and self.bubble.kind == "say" and self._menu_page is None \
-                    and not self.bubble._list_only:
+                    and not self.bubble.commands_held():
                 self.pin()
             elif not self._toggle_answer_view():
                 self.open_input()
@@ -1170,7 +1170,7 @@ class FaceWindow(QWidget):
     def open_input(self):
         """Click on the face: the bubble is there and the cursor is in the field."""
         self._forget_page()
-        menu = self._menu_page is not None or self.bubble._list_only
+        menu = self._menu_page is not None or self.bubble.commands_held()
         if menu or not self.bubble.isVisible():
             # Clicking the face from a page of the menu, or its command list, is asking for the chat again.
             # The field shows even when the pointer is not on the bubble: that is what "back to the chat" asked for.
@@ -1559,7 +1559,7 @@ class FaceWindow(QWidget):
                 if not self._page_memory:
                     self._shown_text = block_text(self._chat_blocks(self._with_local(stored), greet=False))
                 return
-        if self.bubble._list_only and self.bubble.isVisible() and not replace_menu:
+        if self.bubble.commands_held() and self.bubble.isVisible() and not replace_menu:
             return  # the right-click menu is open: a busy bot's thinking cloud must not replace it
         # Only the placeholder bot has no bot behind it, and only the first time is it told so: a bot that has
         # a backend of its own (the harness, say) works without either.
@@ -1598,7 +1598,7 @@ class FaceWindow(QWidget):
         elif self._asked and not self.grok and not self.hermes and not self._working and not self._sending and not self._outbox.items and not self._queue:
             # Do not clear _asked: the dots should stay until an answer arrives.
             pass
-        if pending and not self.pinned and not show_now:
+        if pending and not self.pinned and not show_now and not replace_menu:
             if self._muted and not self._has_attention():
                 # Thinking is silenced: no cloud, until the face is clicked again.
                 self._shown_text = ""
@@ -1658,7 +1658,7 @@ class FaceWindow(QWidget):
             # A reply opens even when those words were already laid out for a later hover.
             self._shown_text = text
             self.bubble.show_blocks(blocks, "say", input=True, older=older, hover_field=hover_field)
-        elif not blocks and self.bubble.kind and not self.bubble._list_only:
+        elif not blocks and self.bubble.kind and not self.bubble.commands_held():
             # The conversation is gone (a new chat): the bubble goes too, unless the pointer is engaged with it.
             self.bubble.close_bubble("empty")
         else:
@@ -1872,7 +1872,7 @@ class FaceWindow(QWidget):
         if self._working:
             self._queue.insert(0 if asking else len(self._queue),
                                {"text": text, "files": files, "id": uuid.uuid4().hex[:8]})
-            self._sync_bubble(self._latest(), force=True, replace_menu=self.bubble._list_only)
+            self._sync_bubble(self._latest(), force=True, replace_menu=self.bubble.commands_held())
             self._poll_timer.start(300)
             return
         if self.link:
@@ -1887,7 +1887,7 @@ class FaceWindow(QWidget):
         self._outbox.add(text, cid)
         self._pump_outbox()
         # The right-click list is all that is open when a skill row was picked: the cloud takes its place.
-        self._sync_bubble(self._latest(), replace_menu=self.bubble._list_only)
+        self._sync_bubble(self._latest(), replace_menu=self.bubble.commands_held())
         self._poll_timer.start(300)
 
     def _start_demo(self):

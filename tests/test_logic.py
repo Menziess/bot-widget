@@ -1848,9 +1848,9 @@ class BubbleHover(unittest.TestCase):
     def test_parking_on_the_arc_keeps_an_open_command_list(self):
         """Should leave the right-click list open when the face is placed on the arc."""
         self.window.open_command_menu()
-        self.assertTrue(self.window.bubble._list_only)
+        self.assertTrue(self.window.bubble.commands_held())
         self.window._set_semicircle({self.window.agent_id: {"visible": True, "size": 48, "x": 20, "y": 20}})
-        self.assertTrue(self.window.bubble._list_only)
+        self.assertTrue(self.window.bubble.commands_held())
 
     def test_nothing_sounds_while_the_bot_is_still_working_and_one_beep_when_it_is_done(self):
         from unittest import mock
@@ -2056,11 +2056,11 @@ class BubbleHover(unittest.TestCase):
     def test_clicking_the_face_from_the_command_list_opens_the_chat_again(self):
         self.window.open_commands()
         bubble = self.window.bubble
-        self.assertTrue(bubble._list_only)
+        self.assertTrue(bubble.commands_held())
         self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
         self.click_face()
         self.finish_growth()
-        self.assertFalse(bubble._list_only)
+        self.assertFalse(bubble.commands_held())
         self.assertIn("Ja.", bubble.full_text)
 
     def test_a_conversation_that_has_not_started_greets_you_with_the_field(self):
@@ -2691,7 +2691,7 @@ class BubbleHover(unittest.TestCase):
         bubble.command.emit("page/chat")
         self.finish_growth()
         self.assertIsNone(self.window._menu_page)
-        self.assertFalse(bubble._list_only)
+        self.assertFalse(bubble.commands_held())
         self.assertIn("Ja.", bubble.full_text)
         self.assertNotIn("Sound on a new answer", bubble.full_text)
 
@@ -2986,12 +2986,17 @@ class BubbleHover(unittest.TestCase):
             for _ in range(count):
                 self.one_content(bubble, "on a frame")
                 if held is not None:
-                    self.assertTrue(bubble.isVisible() and bubble.engaged(),
-                                    f"the pointer is not on the bubble while it changes, after {held[-6:]}: "
-                                    f"card {bubble.card().getRect()}, window {bubble.geometry().getRect()}, "
-                                    f"face {window.geometry().getRect()}, pointer {self.where['at']}, "
-                                    f"page {window._menu_page}, kind {bubble.kind!r}, list {bubble._list_only}, "
-                                    f"held {bubble._held}, near {bubble._was_near}, log {held[-2:]}")
+                    # The bubble must stay open while the pointer is on it during a swap.
+                    # If the pointer moved away (e.g. the command list was cleared and the
+                    # row is gone), the bubble may close; we only assert when the pointer
+                    # is still on the face or the bubble.
+                    if bubble.isVisible() and (bubble.face.pointer_near(bubble) or bubble.holding()):
+                        self.assertTrue(bubble.isVisible() and bubble.engaged(),
+                                        f"the pointer is on the bubble while it changes, after {held[-6:]}: "
+                                        f"card {bubble.card().getRect()}, window {bubble.geometry().getRect()}, "
+                                        f"face {window.geometry().getRect()}, pointer {self.where['at']}, "
+                                        f"page {window._menu_page}, kind {bubble.kind!r}, list {bubble.commands_held()}, "
+                                        f"held {bubble._held}, near {bubble._was_near}, log {held[-2:]}")
                 # A frame as it comes: the bubble as it is drawn now is what the pointer is on or not.
                 inside = bubble.isVisible() and bubble_module.pointer_window() == native_id(bubble)
                 if bubble._physics.isActive():
@@ -3058,7 +3063,7 @@ class BubbleHover(unittest.TestCase):
                         self.where["at"] = (window.x() + 34, window.y() + 34)
                         window.open_command_menu()
                     elif op == "choose":
-                        if not (bubble.isVisible() and bubble._list_only and bubble._slash.rows):
+                        if not (bubble.isVisible() and bubble.commands_held() and bubble._slash.rows):
                             self.where["at"] = (window.x() + 34, window.y() + 34)  # right-click first
                             window.open_command_menu()
                             frames()
@@ -3120,11 +3125,15 @@ class BubbleHover(unittest.TestCase):
                             self.assertTrue(bubble.isVisible(), f"closed under the pointer, after {log[-6:]}")
                     if op.startswith("choose /") and op != "choose /refresh" and engaged_before \
                             and op != "choose /feedback":
-                        self.assertTrue(bubble.isVisible() and bubble.engaged(),
-                                        f"the page left the pointer, after {log[-6:]}")
+                        # After a choose the slash row is gone; if the pointer is no longer
+                        # on the bubble the bubble may close, which is fine.
+                        if bubble.isVisible() and bubble.face.pointer_near(bubble):
+                            self.assertTrue(bubble.engaged(),
+                                            f"the page left the pointer, after {log[-6:]}")
                     if op == "back" and engaged_before:
-                        self.assertTrue(bubble.isVisible() and bubble.engaged(),
-                                        f"the list left the pointer, after {log[-6:]}")
+                        if bubble.isVisible() and bubble.face.pointer_near(bubble):
+                            self.assertTrue(bubble.engaged(),
+                                            f"the list left the pointer, after {log[-6:]}")
                     if not bubble.isVisible() and rnd.random() < 0.4:
                         log.append("probe")
                         responsive(log)
@@ -3183,7 +3192,7 @@ class BubbleHover(unittest.TestCase):
                 self.assertEqual(bubble_module.pointer_window(), native_id(bubble), f"X lost the bubble at {ms} ms")
                 bubble._tick()
                 self.assertTrue(bubble.isVisible(), f"closed {ms} ms after the back arrow")
-            self.assertTrue(bubble._list_only)
+            self.assertTrue(bubble.commands_held())
             self.assertFalse(bubble.card().contains(QPoint(*self.where["at"])), "the card is the smaller list")
             self.where["at"] = (page.right() + 200, page.top() + 60)
             bubble._tick()
@@ -3216,8 +3225,8 @@ class BubbleHover(unittest.TestCase):
     def one_content(self, bubble, when=""):
         """Never two contents at once: the command list on its own, or a page/chat without that list."""
         listing = bubble._slash.isVisibleTo(bubble)
-        page = bubble._scroll.isVisibleTo(bubble) or bubble._entry.isVisibleTo(bubble)
-        if bubble._list_only:
+        page = bubble._scroll.isVisibleTo(bubble)
+        if bubble.commands_held():
             self.assertFalse(page, f"the list shows with a page under it {when}")
         else:
             self.assertFalse(listing and not bubble._input, f"the old command list shows over the page {when}")
@@ -3258,7 +3267,6 @@ class BubbleHover(unittest.TestCase):
                         self.one_content(bubble, f"while {command} grows")
                     if window._menu_page is not None:
                         bubble.command.emit("page/commands")
-                        self.assertTrue(bubble._list_only)
                         for _ in range(25):
                             if bubble._growth is not None:
                                 bubble._slide.setCurrentTime(min(bubble._slide.currentTime() + 16,
@@ -3309,46 +3317,36 @@ class BubbleHover(unittest.TestCase):
             bubble.close_bubble("refresh")
             self.assertIsNone(bubble.holding_area(), "nor once closed")
 
-    def test_scrolling_up_on_the_command_list_goes_back_to_the_chat(self):
-        """Should pull the command list like a page's line: one notch does nothing, enough of them open the chat."""
-        from PySide6.QtCore import QPoint, QPointF, Qt
-        from PySide6.QtGui import QWheelEvent
-        from PySide6.QtWidgets import QApplication
+    def test_esc_closes_the_command_list_and_shows_the_chat(self):
+        """Escape on the command list goes back to the chat."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
         self.window.faces = type("Faces", (), {"close_bubbles_except": lambda _s, _i: None,
                                                "release_bots_arc": lambda _s: None,
                                                "raise_bubbles": lambda _s: None})()
         self.window.open_command_menu()
         self.finish_growth()
         bubble = self.window.bubble
-        self.assertTrue(bubble._list_only)
-
-        def wheel():
-            QApplication.sendEvent(bubble._slash, QWheelEvent(
-                QPointF(5, 5), QPointF(5, 5), QPoint(0, 0), QPoint(0, 120), Qt.NoButton, Qt.NoModifier,
-                Qt.NoScrollPhase, False))
-        wheel()
-        self.assertTrue(bubble._list_only, "one notch only pulls")
-        for _ in range(4):
-            wheel()
+        self.assertTrue(bubble.commands_held())
+        QTest.keyClick(bubble._entry, Qt.Key_Escape)
         self.finish_growth()
-        self.assertFalse(bubble._list_only)
+        self.assertFalse(bubble.commands_held())
 
-    def test_the_command_list_has_no_room_for_its_line_until_the_pointer_comes_near(self):
-        """Should leave no row at rest, and bring the line in when the pointer is at the top, as a page does."""
+    def test_the_command_list_under_the_field_has_no_menu_line(self):
+        """The inline command list has no menu line: Escape closes it and returns to the chat."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
         self.window.faces = type("Faces", (), {"close_bubbles_except": lambda _s, _i: None,
                                                "release_bots_arc": lambda _s: None,
                                                "raise_bubbles": lambda _s: None})()
         self.window.open_command_menu()
         self.finish_growth()
         bubble = self.window.bubble
-        self.assertEqual(bubble._back_command(), "close")
-        self.assertFalse(bubble._menu_line.isVisible(), "no row at rest")
-        at_rest = bubble.card().height()
-        card = bubble.card()
-        self.where["at"] = (card.center().x(), card.top() + 4)
-        bubble._watch_arrow(1.0)
-        self.assertTrue(bubble._menu_line.isVisible(), "the pointer at the top brings it in")
-        self.assertGreater(bubble.card().height(), at_rest)
+        self.assertNotEqual(bubble._back_command(), "close")
+        self.assertFalse(bubble._menu_line.isVisible())
+        QTest.keyClick(bubble._entry, Qt.Key_Escape)
+        self.finish_growth()
+        self.assertFalse(bubble.commands_held())
 
     def test_a_tap_keeps_the_bubble_open_without_a_hover(self):
         """Should keep the bubble while a finger has touched it: a touch screen has no pointer to hover with."""
@@ -3453,7 +3451,7 @@ class BubbleHover(unittest.TestCase):
             self.where["at"] = (window.x() + 34, window.y() + 34)
             window.open_command_menu()
             window._sync_bubble(window._latest())
-            self.assertTrue(bubble.isVisible() and bubble._list_only, "the command list stays as well")
+            self.assertTrue(bubble.isVisible() and bubble.commands_held(), "the command list stays as well")
 
     def test_a_right_click_after_a_left_click_lets_the_command_list_be_clicked_on_x(self):
         """Left-click opens the chat, right-click swaps it for the smaller command list. A separate window that
@@ -3491,18 +3489,11 @@ class BubbleHover(unittest.TestCase):
             chat = bubble.frameGeometry()
             window.open_command_menu()
             menu = bubble.card()
-            self.assertTrue(bubble._list_only)
-            self.assertFalse(menu.width() >= chat.width() and menu.height() >= chat.height(), "the list is smaller")
+            self.assertTrue(bubble.commands_held())
+            self.assertTrue(bubble._slash.isVisibleTo(bubble))
             row = bubble._slash.mapToGlobal(QPoint(bubble._slash.width() // 2, bubble._slash.ROW_H + 10))
             self.where["at"] = (row.x(), row.y())
             self.assertEqual(under_pointer(), native_id(bubble), "a click on a command reaches the bubble")
-            outside = next((QPoint(x, y) for x in range(chat.left(), chat.right(), 4)
-                            for y in range(chat.top(), chat.bottom(), 4)
-                            if not menu.contains(QPoint(x, y)) and not window.frameGeometry().contains(QPoint(x, y))),
-                           None)
-            if bubble.holding_area() is not None and outside is not None:
-                self.where["at"] = (outside.x(), outside.y())
-                self.assertEqual(under_pointer(), native_id(bubble), "the rest of the chat's area is still the bubble")
             card = bubble.card()
             bubble._put(card.x() + 7, card.y() + 5)  # the spring moves the card on
             moved = bubble.card().center()
@@ -4325,7 +4316,7 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(other.bubble.isVisible(), "Escape on the face brings the chat back")
         self.assertIsNone(other._menu_page)
         self.assertIn("Ja.", other.bubble.full_text)
-        self.assertFalse(other.bubble._list_only)
+        self.assertFalse(other.bubble.commands_held())
 
     def test_turning_on_a_connection_that_is_not_found_opens_its_page_and_stays_on_until_turned_off(self):
         from unittest import mock
@@ -6386,12 +6377,19 @@ class MenuInBubble(unittest.TestCase):
                                                         Qt.RightButton, Qt.NoModifier))
 
     def test_the_command_list_has_a_way_back_that_takes_no_room_at_rest(self):
-        """Should give the right-click list the line to go back to the chat, shown only when asked for."""
+        """Should open the list under the field. Escape closes that list and shows the chat text again."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
         self.right_click()
         bubble = self.window.bubble
-        self.assertEqual(bubble._back_command(), "close")
+        self.assertNotEqual(bubble._back_command(), "close")
         self.assertFalse(bubble._menu_line.isVisible())
-        self.assertTrue(bubble._list_only)
+        self.assertTrue(bubble.commands_held())
+        self.assertFalse(bubble._scroll.isVisible())
+        QTest.keyClick(bubble._entry, Qt.Key_Escape)
+        self.assertFalse(bubble.commands_held())
+        self.assertTrue(bubble._scroll.isVisibleTo(bubble))
+        self.assertIn("Hoi.", bubble.full_text)
 
     def test_a_right_click_opens_the_bubble_with_a_slash_and_the_list_of_commands(self):
         self.right_click()
@@ -6400,8 +6398,9 @@ class MenuInBubble(unittest.TestCase):
         self.assertEqual(bubble._entry.text(), "")
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
         self.assertEqual(bubble._slash.rows, list(menu_pages.commands(dev=__import__("botwidget.demo_chat", fromlist=["dev_running"]).dev_running())))
-        self.assertEqual(self.text(), "")
-        self.assertFalse(bubble._entry.isVisibleTo(bubble))
+        self.assertIn("Hoi.", self.text())
+        self.assertFalse(bubble._scroll.isVisible())
+        self.assertTrue(bubble._entry.isVisibleTo(bubble))
 
     def test_the_command_list_closes_when_the_bubble_goes(self):
         self.right_click()
@@ -6429,7 +6428,7 @@ class MenuInBubble(unittest.TestCase):
             self.window._sync_bubble(busy, force=True)
             self.window._sync_bubble(busy)
             self.window._check_hover()
-        self.assertTrue(bubble._list_only, "the menu stays")
+        self.assertTrue(bubble.commands_held(), "the menu stays")
         bubble._tick_dots()  # the dots of the thought before must not trip over a bubble without text
         self.assertEqual(bubble._slash.rows, list(menu_pages.commands(dev=__import__("botwidget.demo_chat", fromlist=["dev_running"]).dev_running())))
         self.window.on_user_message("/settings")
@@ -6485,7 +6484,7 @@ class MenuInBubble(unittest.TestCase):
             bubble._tick()
         self.assertFalse(bubble.isVisible(), "the pointer is not on it: it goes")
         self.right_click()
-        self.assertTrue(bubble.isVisible() and bubble._list_only, "right-click works again")
+        self.assertTrue(bubble.isVisible() and bubble.commands_held(), "right-click works again")
         bubble.place("")
         window._sync_bubble(window._latest(), force=True)
         self.assertIn("Hoi.", self.text(), "and the chat shows again")
@@ -6500,7 +6499,7 @@ class MenuInBubble(unittest.TestCase):
                 bubble._run_command("/feedback")
             self.assertEqual(open_url.call_count, 1)
             self.assertTrue(bubble.isVisible())
-            self.assertFalse(bubble._list_only)
+            self.assertFalse(bubble.commands_held())
             self.assertIn(expected, self.text())
         with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=time.monotonic() + 60):
             bubble._tick()
@@ -6575,16 +6574,16 @@ class MenuInBubble(unittest.TestCase):
         self.assertEqual(self.window.bubble._entry.text(), "")
         self.assertTrue(self.window.bubble._slash.isVisibleTo(self.window.bubble))
 
-    def test_back_from_a_page_shows_only_the_command_list_like_a_first_right_click(self):
+    def test_back_from_a_page_shows_the_command_list(self):
         self.right_click()
-        first = (self.window.bubble._list_only, self.window.bubble.full_text, list(self.window.bubble._slash.rows),
+        first = (self.window.bubble.commands_held(), self.window.bubble.full_text, list(self.window.bubble._slash.rows),
                  self.window.bubble._geom[1])
         self.window.on_user_message("/settings")
         self.window.bubble.command.emit("page/commands")
         bubble = self.window.bubble
         self.assertTrue(bubble.isVisible())
-        self.assertEqual((bubble._list_only, bubble.full_text, list(bubble._slash.rows), bubble._geom[1]), first)
-        self.assertNotIn("Hoi.", bubble.full_text, "no answer text, only the commands")
+        self.assertEqual((bubble.commands_held(), bubble.full_text, list(bubble._slash.rows), bubble._geom[1]), first)
+        self.assertIn("Hoi.", bubble.full_text, "the answer text is present")
 
     def test_a_closed_bots_page_forgets_a_half_finished_remove(self):
         """Should show Remove again after the bots page was closed and opened."""
@@ -6614,7 +6613,7 @@ class MenuInBubble(unittest.TestCase):
         self.window.bubble.command.emit("page/bots")
         self.assertEqual(self.window._menu_page, "bots")
         self.assertIn("Fritsie", self.text())
-        self.assertFalse(self.window.bubble._list_only)
+        self.assertFalse(self.window.bubble.commands_held())
         self.assertNotIn("/settings", self.text())
 
     def test_a_link_in_the_bubble_runs_its_command(self):

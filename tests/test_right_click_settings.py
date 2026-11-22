@@ -128,7 +128,7 @@ class RightClickOnlySettings(unittest.TestCase):
         slash = self.window.bubble._slash
         commands = [command for command, _note in slash.rows]
         self.assertIn("/settings", commands)
-        self.assertTrue(self.window.bubble._list_only)
+        self.assertTrue(self.window.bubble.commands_held())
         index = commands.index("/settings")
         point = QPointF(20, index * slash.ROW_H + slash.ROW_H // 2 + 4)
         QApplication.sendEvent(slash, QMouseEvent(

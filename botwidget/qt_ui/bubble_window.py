@@ -90,7 +90,7 @@ from botwidget.markdown import block_text, md_blocks, plain_block, plain_text, r
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.native import drop_hidden, native_id, raise_window, set_flags
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
-from botwidget.qt_ui.controls import ActionButton, ItemRow, SlashList, Switch, TextEditor, TextField, ValueSlider
+from botwidget.qt_ui.controls import ActionButton, ItemRow, SlashButton, SlashList, Switch, TextEditor, TextField, ValueSlider
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.render import blurred, cut_out, stacked, svg_pixmap
 from botwidget.qt_ui.text_doc import fill_document
@@ -241,10 +241,13 @@ class BubbleEntry(QPlainTextEdit):
     chosen = Signal()  # Return: the command that is selected runs
     closed = Signal()  # Escape: only the list of commands goes away
     used = Signal()  # a click or a key: the user is at the field themselves
+    slash_asked = Signal()  # the / button: the list under the field
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.commands_open = False
+        self.slash_button = SlashButton(self)
+        self.slash_button.clicked.connect(self.slash_asked.emit)
         self.history = lambda: []  # earlier prompts, oldest first
         self._recall = None  # index into the history while Up/Down walk through it
         self._draft = ""
@@ -262,6 +265,13 @@ class BubbleEntry(QPlainTextEdit):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.document().documentLayout().documentSizeChanged.connect(self._document_resized)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        side = self.slash_button.width()
+        self.slash_button.move(self.width() - side - 6, max(0, (self.height() - side) // 2))
+        if self.viewportMargins().right() != side + 8:
+            self.setViewportMargins(0, 0, side + 8, 0)
 
     def mousePressEvent(self, event):
         # A click into the field asks for the keyboard, also where the window manager does not focus on click.
@@ -774,9 +784,8 @@ class TapWatcher(QObject):
             # A field on a page accepts Escape itself. The page still goes straight back to the chat.
             entry = getattr(window, "_entry", None)
             typing_command = getattr(window, "_input", False) and getattr(entry, "commands_open", False)
-            # A slash list in the field closes itself. A page, or the right-click list, goes back to the chat.
-            if face is not None and not typing_command and (
-                    getattr(face, "_menu_page", None) or getattr(window, "_list_only", False)):
+            # A slash list in the field closes itself. A page goes back to the chat.
+            if face is not None and not typing_command and getattr(face, "_menu_page", None):
                 face.open_input()
                 return True
         pressed = kind == QEvent.MouseButtonPress
@@ -836,7 +845,6 @@ class BubbleWindow(QWidget):
         self._blur_mask = b""
         self._keep_draft = False  # opened with words in the field: stays until the field has had the keyboard
         self._input = False
-        self._list_only = False
         self._links = []
         self._geom = None
         self._built = None
@@ -932,7 +940,6 @@ class BubbleWindow(QWidget):
         self._entry.attached.connect(self._attach)
         self._entry.used.connect(lambda: setattr(self, "_focus_from_hover", False))
         self._slash = SlashList(self._card)
-        self._slash.wheeled.connect(lambda *scrolled: self._list_only and self._on_pulled(*scrolled))
         self._menu_line_at = (0, 0, 1, 0)
         self._slash.chosen.connect(self._run_command)
         self._menu_line = MenuHandle(self)
@@ -942,6 +949,7 @@ class BubbleWindow(QWidget):
         self._entry.completed.connect(self._complete_command)
         self._entry.chosen.connect(lambda: self._run_command(self._slash.current()))
         self._entry.closed.connect(self._close_commands)
+        self._entry.slash_asked.connect(self.open_command_list)
         # WindowShortcut: Escape still arrives when a line on the page has the cursor.
         self._escape = QShortcut(QKeySequence(Qt.Key_Escape), self)
         self._escape.setContext(Qt.WindowShortcut)
@@ -1034,10 +1042,23 @@ class BubbleWindow(QWidget):
         self._show_commands(list(self.face.command_rows()))
 
     def show_command_menu(self):
-        """Right-click: the command list on its own, without the conversation."""
+        """Right-click: the same list as the / button, under the field. The chat text waits until it closes."""
         old = self._area_under_pointer()
         self._show_command_menu()
         self._hold_after(old)
+
+    def commands_held(self) -> bool:
+        """The list was asked for and is still open, so a poll must not swap in the thinking cloud."""
+        return self._commands_forced and bool(self._slash.rows)
+
+    def _commands_cover(self) -> bool:
+        """The list under the field is up: the chat text stays in the bubble and is not drawn."""
+        return bool(self._input and self._slash.rows)
+
+    def _shown_inner(self) -> int:
+        if self._geom is None or self._commands_cover():
+            return 0
+        return self._geom[2]
 
     # ── The card and the window around it ──────────────────────────
     #
@@ -1146,44 +1167,33 @@ class BubbleWindow(QWidget):
         return QRect(int(tx), int(ty), width, height).contains(QPoint(int(px), int(py)))
 
     def _show_command_menu(self):
-        self._list_only = True
-        self._input = False
-        self._links = []
-        self.blocks = []
-        self.full_text = ""
-        self.kind = "say"
-        # Armed once the pointer is on the face or the list: after the back arrow it may be elsewhere, and the
-        # list must not vanish before it got there.
-        self._was_near = False
-        self._commands_forced = True
-        # The dots of a thought before belong to text that is gone; ticking them on would draw nothing.
-        self._dots_lines = []
-        self._slash.show_rows(list(self.face.command_rows()))
-        # As wide as the commands and their notes need, so nothing is cut; never wider than a chat bubble.
-        self._more_open = False
-        self._has_older = True
-        self._list_geom()
-        self._built = ("commands",)
+        """The chat, with the field, and the command list under it. One list, the same one a slash types."""
+        face = self.face
+        latest = face._latest() if hasattr(face, "_latest") else {"messages": [], "activity": ""}
+        face._sync_bubble(latest, force=True, show_field=True, replace_menu=True)
+        self._slide.stop()
         self._growth = None
         self.setWindowOpacity(1.0)
-        self.changed = time.monotonic()
-        # place() does _paint_chrome() + _layout_children() + physics; no need to double-lay out.
-        self.place("say")
-
-    def _list_geom(self):
-        """The list is as wide as its commands need. The line to go back to the chat has no room until it shows."""
-        width = max(MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60))
-        panels = (bubble_panels(measure, [role_panel("more", back="close"), plain_block("more")], width)
-                  if self._more_open else [])
-        self._geom = (panels, width, content_height(panels) if panels else 0)
+        if not self._input:
+            self._input = True
+        self.open_command_list()
+        self.focus_entry()
 
     def _show_commands(self, rows: list):
-        """The list sits in the bubble right below the field, which makes room for it."""
+        """The list sits in the bubble right below the field, which makes room for it and hides the chat text."""
         before = len(self._slash.rows)
         self._entry.commands_open = bool(rows) and self._input
         self._slash.show_rows(rows if self._input else [])
-        if len(self._slash.rows) != before:
-            self._entry_resized()
+        if self._geom is not None:
+            if self._slash.rows:
+                panels, box_w, inner = self._geom
+                want = max(box_w, MIN_INTERACTIVE_W, min(self._slash.wanted_width(), BUBBLE_MAX_W + 60))
+                if want != box_w:
+                    self._geom = (panels, want, inner)
+            elif before and self.blocks:
+                self._geom = self._parts()
+        if len(self._slash.rows) != before and self._geom is not None and self.kind:
+            self._layout_children(self._paint_chrome())
 
     def _close_commands(self):
         """Escape: a slash command that was typed goes away with its list; a message that was already there stays."""
@@ -1196,7 +1206,7 @@ class BubbleWindow(QWidget):
         if self._input and self._entry.commands_open:
             self._close_commands()
             return
-        if getattr(self.face, "_menu_page", None) or self._list_only:
+        if getattr(self.face, "_menu_page", None):
             self.face.open_input()
             return
         self.face._forget_page()
@@ -1225,10 +1235,7 @@ class BubbleWindow(QWidget):
                 sent = f"{command} {tail}"
         if not self._commands_forced or (typed.startswith("/") and " " not in typed) or sent != command:
             self._entry.clear()
-        if not self._list_only:
-            # The list above the field goes. The right-click list is the whole bubble: it stays until the page
-            # replaces it, else the bubble shrank to a sliver first and left the pointer outside (and closed).
-            self._show_commands([])
+        self._show_commands([])
         self._commands_forced = False
         self.face.on_user_message(sent)
 
@@ -1441,7 +1448,7 @@ class BubbleWindow(QWidget):
         """Mouse over the bubble: it stays. A page asks for the keyboard, or Escape still goes to the previous window."""
         self._entered_at = time.monotonic()
         self.changed = time.monotonic()
-        if getattr(self.face, "_menu_page", None) or self._list_only:
+        if getattr(self.face, "_menu_page", None) or self.commands_held():
             self.take_keys()
 
     def leaveEvent(self, event):
@@ -1600,8 +1607,6 @@ class BubbleWindow(QWidget):
 
     def _extras(self) -> int:
         """Height below the text for the link row and the input field."""
-        if self._list_only:
-            return self._commands_h()
         attached = ATTACH_H if self._attachments else 0
         return (LINKS_H if self._links else 0) + (
             attached + self._commands_h() + self._entry_h() + ENTRY_GAP if self._input else 0)
@@ -1658,7 +1663,8 @@ class BubbleWindow(QWidget):
     def _paint_chrome(self):
         if self._geom is None:
             self._geom = self._parts()
-        _panels, box_w, inner = self._geom
+        _panels, box_w, _stored = self._geom
+        inner = self._shown_inner()
         tip, side = self._tip or (None, "above")
         args = (self._shown_w(box_w) + 2 * PAD_BODY, self._body_h(inner), tip, side)
         if self.kind == "think":
@@ -1740,23 +1746,16 @@ class BubbleWindow(QWidget):
 
     def _layout_children(self, pix):
         """Chrome, text area, link row and input field in their places."""
-        _panels, full_w, inner = self._geom
+        _panels, full_w, _stored = self._geom
         box_w = self._shown_w(full_w)
+        inner = self._shown_inner()
         size = pix.deviceIndependentSize().toSize()
         self._chrome.setGeometry(0, 0, size.width(), size.height())
         self._card.resize(size)
         self._fit_window()
         x, y = PAD_SVG + PAD_BODY, PAD_SVG + PAD_BODY
-        if self._list_only:
-            self._scroll.hide()
-            self._entry.hide()
-            self._link_row.hide()
-            line = self._geom[2]
-            self._show_menu_line(x, y, box_w, line)
-            self._slash.setGeometry(x, y + line, box_w, max(1, self._commands_h() - COMMANDS_GAP))
-            return
         self._menu_line.hide()
-        view_h = max(1, self._body_h(inner) - 2 * PAD_BODY - self._extras())
+        view_h = 0 if self._commands_cover() else max(1, self._body_h(inner) - 2 * PAD_BODY - self._extras())
         # Resizing the scroll area clamps its bar. That is layout, not the user.
         self._placing_scroll += 1
         try:
@@ -1776,8 +1775,8 @@ class BubbleWindow(QWidget):
             if self._slash.rows:
                 self._slash.setGeometry(x, below + ENTRY_GAP + self._entry_h() + COMMANDS_GAP, box_w,
                                         self._commands_h() - COMMANDS_GAP)
-        self._scroll.show()
-        self._link_row.setVisible(bool(self._links))
+        self._scroll.setVisible(not self._commands_cover())
+        self._link_row.setVisible(bool(self._links) and not self._commands_cover())
         # Not while the bubble is still tiny: a field alone looks odd.
         # Not while the bubble is still tiny, but never taken away from a field that is already there:
         # hiding it would drop the cursor at every new thought.
@@ -1825,9 +1824,6 @@ class BubbleWindow(QWidget):
 
     def _set_text(self):
         """The shapes behind the text; the words themselves are the text document."""
-        if self._list_only:
-            self._redraw_menu_line()
-            return
         # A new picture can resize the text, and the bar then jumps. That is not the user scrolling.
         self._placing_scroll += 1
         try:
@@ -1984,7 +1980,7 @@ class BubbleWindow(QWidget):
     def prepare(self, blocks: list, kind: str = "say", input: bool = True) -> bool:
         """Lay out a closed bubble in advance: the text, the glass and the shadow, for the spot it will open at. Showing
         the same blocks later is then only the opening. False when it was already there, or could not be."""
-        if self.isVisible() or self.kind or self._yielding or self._list_only or not blocks:
+        if self.isVisible() or self.kind or self._yielding or self.commands_held() or not blocks:
             return False
         if any(block.get("kind") == "dots" for block in blocks) or self._content_key(blocks, kind, input, None) \
                 == self._built:
@@ -2045,14 +2041,12 @@ class BubbleWindow(QWidget):
             visible = False
         # The size it has on screen now, the command list included: a new page grows from there. Measured after
         # _list_only went off it was a sliver, which left the pointer outside and closed the bubble at once.
-        start = (self._shown_w(self._geom[1]), self._body_h(self._geom[2])) if self._geom and visible else None
-        if self._list_only:
-            # The new content takes the list's place in this very step: its size carries over (start), its rows
-            # do not. Left visible they were drawn over the page.
+        start = (self._shown_w(self._geom[1]), self._body_h(self._shown_inner())) if self._geom and visible else None
+        if self._commands_forced:
+            # A page or a new cloud takes the list's place. Its rows must not stay drawn over that.
             self._slash.show_rows([])
             self._entry.commands_open = False
             self._commands_forced = False
-        self._list_only = False
         if not self._toggling:
             self._more_open = False  # new content: the arrow for the message before shows again when asked for
         key = self._content_key(blocks, kind, input, links)
@@ -2124,8 +2118,6 @@ class BubbleWindow(QWidget):
 
     def _back_command(self) -> str:
         """The command of the line on top of a page of the menu, which goes back; empty in the chat."""
-        if self._list_only:
-            return "close"
         first = self.blocks[0] if self.blocks else {}
         return first.get("back", "") if first.get("role") == "more" else ""
 
@@ -2134,7 +2126,7 @@ class BubbleWindow(QWidget):
         far enough loads it; on a page of the menu the line is always there, and far enough goes back."""
         now = time.monotonic()
         back = self._back_command()
-        if self.kind != "say" or not self._has_older:
+        if self.kind != "say" or not self._has_older or self._commands_cover():
             return
         if self._pull_spent:
             # The message came in: what is left of this scrolling, coasting included, does nothing. A new scroll
@@ -2217,10 +2209,6 @@ class BubbleWindow(QWidget):
         self._more_open = on
         self._more_hover = False
         self._pull_px = self._pull_last = 0.0
-        if self._list_only:
-            self._list_geom()
-            self._layout_children(self._paint_chrome())
-            return
         self._toggling = True
         try:
             self.show_blocks(self.blocks, self.kind, self._input, self._links, keep_scroll=True)
@@ -2245,9 +2233,6 @@ class BubbleWindow(QWidget):
         if not self.face.pointer_known():
             return False
         px, py = self.face._pointer()
-        if self._list_only:
-            return self._menu_line.isVisible() and self._menu_line.rect().contains(
-                self._menu_line.mapFromGlobal(QPoint(int(px), int(py))))
         spot = self._doc.mapFromGlobal(QPoint(int(px), int(py)))
         panel = self._message_at(spot.x(), spot.y())
         return bool(panel and panel["role"] == "more")
@@ -2270,7 +2255,7 @@ class BubbleWindow(QWidget):
         """The pointer in the top of the bubble brings the line in, or a scroll up does (on the chat for the message
         before, on a page or the command list for the way back). It takes no room until then, and once it is there it
         stays until new content takes it away."""
-        if self.kind != "say" or not self._has_older or self._growth is not None:
+        if self.kind != "say" or not self._has_older or self._growth is not None or self._commands_cover():
             return
         if not self._more_open:
             bar = self._scroll.verticalScrollBar()
@@ -2295,7 +2280,7 @@ class BubbleWindow(QWidget):
         """A bubble that opens has its full size at once: the text does not wrap again at every step and the shadow
         is drawn once. It fades in and slides out from the face."""
         self._growth = None
-        return Growth(self._geom[1], self._body_h(self._geom[2]), opening=True)
+        return Growth(self._geom[1], self._body_h(self._shown_inner()), opening=True)
 
     def _growth_step(self, progress):
         """The bubble grows to its size: upward from the face, the older message sliding in from the top."""
@@ -2305,7 +2290,7 @@ class BubbleWindow(QWidget):
         growth.progress = float(progress)
         # The tail is drawn for the size the window is about to have, so it points at the face all the way.
         size = (self._shown_w(self._geom[1]) + 2 * PAD_BODY + 2 * PAD_SVG,
-                self._body_h(self._geom[2]) + PAD_SVG + TAIL_ROOM)
+                self._body_h(self._shown_inner()) + PAD_SVG + TAIL_ROOM)
         tx, ty, self._tip = self._goal(size)
         if growth.opening:
             toward_x, toward_y = OPEN_TOWARD.get(self._tip[1], (0, 0))
@@ -2644,7 +2629,6 @@ class BubbleWindow(QWidget):
             self._show_commands([])
             self._menu_line.hide()
             self.hide()
-            self._list_only = False
             self._placed()
             return
         self.changed = time.monotonic()
