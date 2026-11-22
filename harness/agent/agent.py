@@ -15,6 +15,7 @@ import json
 import sqlite3
 import inspect
 import os
+import re
 import threading
 import time
 
@@ -57,6 +58,9 @@ def _env_int(name: str, default: int) -> int:
     try:
         return int(os.environ.get(name) or default)
     except ValueError:
+PROMISE_NUDGE = ("You ended on a promise to act. Do it now with a tool call. If no tool can do it, say so plainly "
+                 "and do not invent a result.")
+PROMISE = re.compile(r"\b(ik ga|ik zal|ik probeer|let me|i'll|i will|i'm going to|i am going to)\b")
         return default
 
 
@@ -324,6 +328,7 @@ class LeanAgent:
         recent_calls: list[str] = []
         called: set[str] = set()
         stopped = ""
+        promise_nudges = 0
         await self._wait_for_summary()
         self._stream_idle.clear()
         self._streaming = True
@@ -422,6 +427,13 @@ class LeanAgent:
                 if repeats > 1 and len(recent_calls) >= repeats and len(set(recent_calls[-repeats:])) == 1:
                     name = (calls[-1].get("function") or {}).get("name") or "a tool"
                     stopped = (f"\n\nI stopped: I called {name} with the same arguments {repeats} times in a row "
+                    said = "".join(step_text).strip()
+                    if (not cancelled and not skill_on and promise_nudges < 1 and not said.endswith("?")
+                            and PROMISE.search(said[-200:].lower())):
+                        promise_nudges += 1
+                        messages.append({"role": "assistant", "content": said})
+                        messages.append({"role": "user", "content": PROMISE_NUDGE})
+                        continue
                                "and that is not getting anywhere. Tell me what to try instead.")
                     last["loop"] = name
                     break

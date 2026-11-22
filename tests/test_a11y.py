@@ -193,6 +193,21 @@ class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results[-1]["name"], "accessibility")
         self.assertIn("botwidget", results[-1]["full"])
 
+    async def test_any_reply_that_ends_on_a_promise_is_nudged_into_the_tool(self):
+        promise = [("text", "Ik ga ze nu opvragen."), ("finish", "stop")]
+        call = ("tool_calls", [{"id": "b1", "function": {"name": "accessibility", "arguments": json.dumps({})}}])
+        folder = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder, True))
+        agent = LeanAgent("bot", ScriptModel([promise, [call, ("finish", "tool_calls")],
+                                               [("text", "Klaar."), ("finish", "stop")]]),
+                          folder=os.path.join(folder, "agent"))
+        agent.on_connect(Conn())
+        session = (await agent.new_session(cwd=folder)).session_id
+        with mock.patch("botwidget.system.a11y.accessibility", return_value={"available": True, "reason": "AT-SPI", "platform": "linux"}), \
+                mock.patch("botwidget.system.a11y.application_names", return_value=["botwidget"]):
+            await agent.prompt(session, [Block("Doe iets nuttigs")])
+        self.assertEqual(agent.stores[session].tool_results()[-1]["name"], "accessibility")
+
     async def test_a_correct_accessibility_call_is_one_answer_with_no_nudge(self):
         seen = []
 
