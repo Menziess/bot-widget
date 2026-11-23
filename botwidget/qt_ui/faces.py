@@ -1121,9 +1121,6 @@ class Faces(QObject):
             if _source_name(ident) == name:
                 self.toggle(ident, False)
 
-    def _arc_open(self) -> bool:
-        return self._semicircle_phase != "idle"
-
     def _restack_open_bubbles(self) -> None:
         """While the arc is open, bubbles share the top layer so they sit above guest faces.
 
