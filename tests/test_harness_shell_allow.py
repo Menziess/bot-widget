@@ -82,6 +82,15 @@ class SuggestAndSave(unittest.TestCase):
         for risky in ("sudo apt install x", "bash -c 'x'", "python x.py", "./run.sh"):
             self.assertEqual(suggest_prefixes(risky, self.ws), [], risky)
 
+    def test_nothing_that_runs_other_code_or_other_commands_is_offered_in_any_version_or_spelling(self):
+        for risky in ("python3.12.5 -c 'print(1)'", "python3.12 x.py", "/opt/homebrew/bin/python3.15 x.py", "python3.12.exe x.py",
+                      "node18 x.js", "nodejs x.js", "pypy3 x.py", "php8.3 x.php", "uvx ruff check", "npx prettier .",
+                      "timeout 300 pytest", "nice -n 5 make", "command ls", "kill 1996", "pkill -f x", "killall python"):
+            self.assertEqual(suggest_prefixes(risky, self.ws), [], risky)
+            self.assertFalse(self.allow.add(self.ws, risky.split()[0]), risky)
+        self.assertEqual(suggest_prefixes("npm test"), ["npm test"], "a program that only does its own work still is")
+        self.assertEqual(suggest_prefixes("pythonista --x"), ["pythonista"], "the family is a name, not a prefix of one")
+
     def test_a_chain_offers_one_prefix_per_part_unless_one_part_cannot_be_saved(self):
         self.assertEqual(suggest_prefixes("npm test && npm run build"), ["npm test", "npm run"])
         self.assertEqual(suggest_prefixes("acli jira a && acli jira b | tail -5"), ["acli jira", "tail"])

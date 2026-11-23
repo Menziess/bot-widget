@@ -181,6 +181,7 @@ The bot asks before it writes, edits or deletes a file and before a shell comman
 - A write or delete outside the workspace folder is allowed too, and its question says so
 - The `approve` object is written by hand. Each key is a start of the text `tool target`, such as `shell git status` or `write_file /home/you/notes/a.md`
 - Wrapped in slashes a key is a regular expression searched in that text, and `/i` ignores case
+- Always allow is never offered for a program that runs other code or other commands, in any version: `python3.12`, `node`, `uv`, `timeout`, `kill` and the like. Allow one of those by hand with an anchored regex, for example this key in `approvals.json`, where a backslash is written twice: `"/^shell python3 scripts/parking\\.py book \\d{4}-\\d{2}-\\d{2}( |$)/": true`
 - Value `true` runs without asking. Value `false` always asks, and it wins over `true` and over anything that was remembered
 - A shell command with several parts, such as `a && b`, is approved only when each part is
 - Always allow on such a command saves every part, and is offered only when each part can be saved. A part such as `python` or a redirect takes the offer away. `cd` never needs saving

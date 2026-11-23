@@ -486,8 +486,20 @@ READONLY_GIT = frozenset({
 _FIND_WRITES = frozenset({"-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0",
                           "-fprintf", "-fls"})
 _NEVER_SAVED = frozenset({"sudo", "su", "sh", "bash", "zsh", "env", "xargs", "eval", "exec", "ssh",
-                          "curl", "wget", "rm", "dd", "chmod", "chown", "mv", "cp", "python", "python3",
-                          "node", "perl", "ruby", "nohup", "time", "watch"})
+                          "curl", "wget", "rm", "dd", "chmod", "chown", "mv", "cp", "nohup", "time", "watch"})
+# Whatever runs other code, in any version (python3.12.5, node18), or runs the command it is given: saving one
+# would approve everything behind it. A kill names a process that is gone by the next time.
+_NEVER_SAVED_FAMILIES = re.compile(
+    r"^(python|pypy|ipython|node|nodejs|perl|ruby|php|lua)[\d.]*$"
+    r"|^(deno|bun|npx|uv|uvx|pipx|pwsh|powershell|osascript|ksh|dash|fish|csh|tcsh|setsid|command|builtin|source)$"
+    r"|^(timeout|gtimeout|nice|ionice|stdbuf|caffeinate|kill|pkill|killall)$")
+
+
+def never_saved(head: str) -> bool:
+    """True for a program that an 'always allow' must not save: it runs other code or other commands."""
+    name = os.path.basename(head or "").lower()
+    name = name[:-4] if name.endswith(".exe") else name
+    return name in _NEVER_SAVED or bool(_NEVER_SAVED_FAMILIES.match(name))
 _OPERATORS = frozenset({"&&", "||", ";", "|"})
 
 
@@ -596,7 +608,7 @@ def suggest_prefixes(command: str, workspace: str = "", skip_read_only: bool = F
         if skip_read_only and _segment_read_only(workspace, tokens):
             continue
         head = tokens[0]
-        if os.path.basename(head) in _NEVER_SAVED or ("/" in head and (
+        if never_saved(head) or ("/" in head and (
                 not head.startswith("/") or not workspace or not outside_workspace(workspace, head))):
             return []
         if len(tokens) >= 2 and not tokens[1].startswith("-") and not any(c in tokens[1] for c in "$*?/~"):
@@ -641,7 +653,7 @@ class ShellAllow:
 
     def add(self, workspace: str, prefix: str, everywhere: bool = False) -> bool:
         prefix = " ".join((prefix or "").split())
-        if not prefix or os.path.basename(prefix.split()[0]) in _NEVER_SAVED:
+        if not prefix or never_saved(prefix.split()[0]):
             return False
         data = self._load()
         key = "*" if everywhere else workspace
