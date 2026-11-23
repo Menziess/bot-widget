@@ -1,8 +1,18 @@
 # Ensure tests always run in offscreen mode, even when the desktop session
 # already exports QT_QPA_PLATFORM (setdefault would then be a no-op)
+import atexit
 import os
+import shutil
+import tempfile
 
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
+
+# Nor may a test touch the real home of the person running it: it filled ~/.local/share/botwidget with hundreds of
+# folders and wrote to the real approval log. Set before anything reads "~", so no module keeps the real path.
+_HOME = tempfile.mkdtemp(prefix="botwidget-test-home-")
+atexit.register(shutil.rmtree, _HOME, True)
+os.environ.update(HOME=_HOME, USERPROFILE=_HOME, XDG_CONFIG_HOME=os.path.join(_HOME, ".config"),
+                  XDG_DATA_HOME=os.path.join(_HOME, ".local", "share"))
 
 # Nothing in a test may reach the real desktop of the person running it: bringing the app to the front took the
 # keyboard away from whatever they were typing in, and a notification played a sound.

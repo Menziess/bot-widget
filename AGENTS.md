@@ -19,6 +19,18 @@
 - Releasing: a tag whose release failed or never happened is deleted on origin and locally, and its number is used again. The next version is the patch number after the latest published release
 - Windows SmartScreen: unsigned until `WINDOWS_CERTIFICATE` and `WINDOWS_CERT_PASSWORD` GitHub secrets exist. Buy a standard Authenticode cert, set those secrets, re-tag. Do not spend money from this agent. See README, Windows Authenticode.
 
+## Keep these true
+
+Each of these went wrong once. A test or a rule holds it now; keep both.
+
+- A test run gets a temporary `HOME` (`tests/__init__.py`, checked by `tests/test_isolation.py`). A test never reads or writes the real home, and never assumes OpenBot, Grok Bot or Hermes is installed: a CI runner has none.
+- Code that only works on POSIX (process groups, `sh`, file modes, adopting a job after a restart) has `skipIf(os.name == "nt")` tests, because Windows runs only on GitHub. Check `gh run view` after a push.
+- A key goes only to `https://`, or `http://` to a machine of your own, never after a redirect, never in an error (`harness/agent/netsafe.py`). Every call that carries a key uses `open_url`, not `urlopen`.
+- Stopping a process stops its whole group (`harness/agent/procs.py`). Never `proc.kill()` alone for a command that can start others.
+- The dev supervisor ignores `_version.py`: a wheel build rewrites it, and a restart cuts a bot off in the middle of a turn.
+- A model name is never written in the code: ask the service (`acp_bots.fetch_models`).
+- Ruff checks imports, pyflakes and bugbear (B904 and B905 are left for a sweep of their own). A dead-code scan (`uvx vulture`) must also read `scripts/`: files there have no `.py`.
+
 ## Taskbar
 
 Widget windows never appear in the taskbar, dock or alt-tab; only the tray icon. Do not change these window flags without updating the test.
