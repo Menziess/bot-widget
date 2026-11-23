@@ -268,6 +268,21 @@ def connections(state: dict) -> list:
     return blocks
 
 
+def _model_list(state: dict, form: dict) -> list:
+    """Ask the service for its models, then step through the list; typing a name in Model works as well."""
+    asked = state.get("models") or {}
+    if asked.get("base") != str(form.get("base_url") or "").rstrip("/"):
+        asked = {}
+    if asked.get("loading"):
+        return [_row(("Asking the service for its models…", "dim"))]
+    if asked.get("ids"):
+        return [_button(f"Next model ({len(asked['ids'])} offered)", "cycle/model")]
+    rows = [_button("List models", "action/models")]
+    if asked.get("error"):
+        rows.append(_row((asked["error"], "dim")))
+    return rows
+
+
 def connection_form(state: dict) -> list:
     """One model endpoint: address, model name and the file the key is read from."""
     from botwidget import acp_bots
@@ -279,6 +294,7 @@ def connection_form(state: dict) -> list:
         _field("Name", "field/name", form.get("name") or ""),
         _field("Model address", "field/base_url", form.get("base_url") or ""),
         _field("Model", "field/model", form.get("model") or ""),
+        *_model_list(state, form),
         _field("Key file", "field/key_file", form.get("key_file") or ""),
     ]
     if state.get("connection_error"):

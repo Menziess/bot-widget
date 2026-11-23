@@ -7,6 +7,8 @@ import json
 import os
 import shlex
 import sys
+import urllib.error
+import urllib.request
 
 from botwidget.acplink import PREFIX, _slug
 from botwidget.avatar import SUPPORTED_SHAPES
@@ -190,15 +192,15 @@ def blank_connection() -> dict:
             "key_file": DEFAULT_KEY}
 
 
-# Hosted services that answer the Chat Completions shape, which is all the harness needs: a preset fills the
-# address and a model name, and the key still comes from a file.
+# Addresses of hosted services that answer the Chat Completions shape. No model names: those change every few
+# weeks, so the models come from the service itself (fetch_models) and the one you pick is stored in the connection.
 PROVIDERS = (
-    ("Local server", DEFAULT_BASE, DEFAULT_MODEL),
-    ("xAI", "https://api.x.ai/v1", "grok-4"),
-    ("OpenAI", "https://api.openai.com/v1", "gpt-4.1"),
-    ("OpenRouter", "https://openrouter.ai/api/v1", "openrouter/auto"),
-    ("Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"),
-    ("GitHub Models", "https://models.github.ai/inference", "openai/gpt-4.1"),
+    ("Local server", DEFAULT_BASE),
+    ("xAI", "https://api.x.ai/v1"),
+    ("OpenAI", "https://api.openai.com/v1"),
+    ("OpenRouter", "https://openrouter.ai/api/v1"),
+    ("Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai"),
+    ("GitHub Models", "https://models.github.ai/inference"),
 )
 
 
@@ -209,21 +211,52 @@ def provider_key_file(label: str) -> str:
 def provider_of(form: dict) -> str:
     """The preset this form's address belongs to, or "custom"."""
     base = str(form.get("base_url") or "").rstrip("/")
-    return next((label for label, address, _model in PROVIDERS if address == base), "custom")
+    return next((label for label, address in PROVIDERS if address == base), "custom")
 
 
 def next_provider(form: dict) -> dict:
-    """The form with the next preset filled in. A name or key file you typed yourself stays."""
-    labels = [label for label, _address, _model in PROVIDERS]
+    """The form with the next preset's address filled in; the model is asked of the service, so it starts empty
+    (the local server keeps its usual alias). A name or key file you typed yourself stays."""
+    labels = [label for label, _address in PROVIDERS]
     current = provider_of(form)
     label = labels[(labels.index(current) + 1) % len(labels)] if current in labels else labels[0]
-    _label, address, model = next(row for row in PROVIDERS if row[0] == label)
+    address = next(address for known, address in PROVIDERS if known == label)
     key_file = str(form.get("key_file") or "")
     own_key = key_file and key_file not in {provider_key_file(known) for known in labels}
     typed_name = str(form.get("name") or "")
-    return {**form, "base_url": address, "model": model,
+    return {**form, "base_url": address, "model": DEFAULT_MODEL if label == PROVIDERS[0][0] else "",
             "key_file": key_file if own_key else provider_key_file(label),
             "name": typed_name if typed_name and typed_name not in labels else label}
+
+
+def fetch_models(base_url: str, key_file: str = "", timeout: float = 5.0) -> tuple[list, str]:
+    """The model ids a service offers, from its own GET {address}/models: (sorted ids, "") or ([], what went wrong).
+
+    The same call LibreChat, Goose and the harness itself make. The key is read from its file and sent as a Bearer
+    token; a service that wants none ignores it."""
+    headers = {}
+    if key_file:
+        try:
+            with open(os.path.expanduser(key_file)) as fh:
+                headers["Authorization"] = "Bearer " + fh.read().strip()
+        except OSError:
+            pass  # a local server needs none; a hosted one answers 401, which says so
+    try:
+        with urllib.request.urlopen(urllib.request.Request(base_url.rstrip("/") + "/models", headers=headers),
+                                    timeout=timeout) as reply:
+            payload = json.load(reply)
+    except urllib.error.HTTPError as error:
+        return [], f"HTTP {error.code}" + (": the key was not accepted" if error.code in (401, 403) else "")
+    except (OSError, ValueError) as error:
+        return [], f"could not ask {base_url}: {getattr(error, 'reason', error)}"
+    rows = payload.get("data") or payload.get("models") or [] if isinstance(payload, dict) else []
+    ids = sorted({str(row.get("id") or row.get("name") or "") for row in rows if isinstance(row, dict)} - {""})
+    return ids, "" if ids else "the service listed no models"
+
+
+def next_model(ids: list, current: str) -> str:
+    """The model after this one in the list the service gave, and back around."""
+    return ids[(ids.index(current) + 1) % len(ids)] if current in ids else ids[0]
 
 
 def public_connections(existing) -> list:

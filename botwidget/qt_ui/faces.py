@@ -254,6 +254,7 @@ class ArcCatcher(QWidget):
 class Faces(QObject):
     grok_probed = Signal()  # the roster came back, so the Grok Bot face can take its own avatar
     relay_message = Signal(object)  # a relay message, handled on the Qt thread
+    models_listed = Signal()  # a service answered the question which models it offers
 
     def __init__(self):
         super().__init__()
@@ -323,6 +324,7 @@ class Faces(QObject):
             self._open(bot, slot)
         self._settle_placeholder()
         self.relay_message.connect(self.apply_relay)
+        self.models_listed.connect(self._models_listed)
         self.relay = grok_relay.Relay(self.relay_message.emit)
         self.relay.start()
 
@@ -563,6 +565,7 @@ class Faces(QObject):
             "bot_form": getattr(self, "_bot_draft", None), "bot_error": getattr(self, "_bot_error", ""),
             "connections": acp_bots.public_connections(config.get("connections")),
             "connection_form": getattr(self, "_connection_draft", None),
+            "models": getattr(self, "_models", None),
             "connection_error": getattr(self, "_connection_error", ""),
             "confirm_remove": getattr(self, "_confirm_remove", ""),
             "reset_done": getattr(self, "_reset_done", ""),
@@ -679,11 +682,31 @@ class Faces(QObject):
             self._bot_draft = draft
         self._bot_error = ""
 
+    def _list_models(self):
+        """Ask the service in a thread: the page says so at once and fills in when the answer comes."""
+        draft = self._connection_draft or acp_bots.blank_connection()
+        base = str(draft.get("base_url") or "").rstrip("/")
+        self._models = {"base": base, "loading": True}
+
+        def ask():
+            ids, error = acp_bots.fetch_models(base, str(draft.get("key_file") or ""))
+            self._models = {"base": base, "ids": ids, "error": error}
+            self.models_listed.emit()
+
+        threading.Thread(target=ask, daemon=True).start()
+
+    def _models_listed(self):
+        for face in self.faces.values():
+            page = getattr(face, "_menu_page", None) or ""
+            if page.startswith("connection") and face.bubble.isVisible():
+                face.open_menu(page)
+
     def _open_connection_form(self, conn_id: str):
         rows = {row["id"]: row for row in acp_bots.public_connections(widget_config().get("connections"))}
         self._connection_draft = (acp_bots.fields_of_connection(rows[conn_id]) if conn_id in rows
                                   else acp_bots.blank_connection())
         self._connection_error = ""
+        self._models = None
 
     def _commit_bot(self) -> str:
         previous = acplink.configured_bots()
@@ -779,7 +802,7 @@ class Faces(QObject):
         if kind != "reset":
             self._reset_done = ""
         if command in ("action/save-bot", "action/save-json", "action/save-approvals", "action/save-connection",
-                       "action/memory-save") or kind == "cycle":
+                       "action/memory-save", "action/models") or kind == "cycle":
             self._take(fields, page)
         if kind == "page" and (name == "bot" or name.startswith("bot/")):
             self._open_bot_form(name.split("/", 1)[1] if name.startswith("bot/") else "")
@@ -812,6 +835,15 @@ class Faces(QObject):
             draft["workspace_permissions"] = acp_bots.cycle(
                 "workspace_permission", draft.get("workspace_permissions") or "ask")
             self._bot_draft = draft
+            return page
+        if kind == "action" and name == "models":
+            self._list_models()
+            return page
+        if kind == "cycle" and name == "model":
+            draft = self._connection_draft or acp_bots.blank_connection()
+            ids = (getattr(self, "_models", None) or {}).get("ids") or []
+            if ids:
+                self._connection_draft = {**draft, "model": acp_bots.next_model(ids, draft.get("model") or "")}
             return page
         if kind == "cycle" and name == "provider":
             self._connection_draft = acp_bots.next_provider(self._connection_draft or acp_bots.blank_connection())

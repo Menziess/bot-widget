@@ -743,7 +743,7 @@ class ItemRowPills(unittest.TestCase):
 
 
 class Providers(unittest.TestCase):
-    """A preset fills the address and a model; the key still comes from a file, and what you typed stays."""
+    """A preset fills the address only: models come from the service, the key from a file, typed values stay."""
 
     def test_cycling_walks_every_preset_and_back_to_the_local_server(self):
         form = acp_bots.blank_connection()
@@ -756,13 +756,15 @@ class Providers(unittest.TestCase):
         self.assertEqual(seen[-1], "Local server")
         self.assertEqual(len(set(seen)), len(acp_bots.PROVIDERS))
 
-    def test_a_preset_fills_address_model_name_and_a_key_file_of_its_own(self):
+    def test_no_preset_names_a_model_so_nothing_goes_stale(self):
+        self.assertTrue(all(len(row) == 2 for row in acp_bots.PROVIDERS), "a label and an address, nothing else")
         form = acp_bots.next_provider(acp_bots.blank_connection())
-        self.assertEqual((form["base_url"], form["model"], form["name"]), ("https://api.x.ai/v1", "grok-4", "xAI"))
+        self.assertEqual((form["base_url"], form["model"], form["name"]), ("https://api.x.ai/v1", "", "xAI"))
         self.assertEqual(form["key_file"], "~/.config/llm/xai.key")
-        rows, error = acp_bots.commit_connection(form, [])
-        self.assertEqual(error, "")
-        self.assertEqual(rows[0]["base_url"], "https://api.x.ai/v1")
+        _rows, error = acp_bots.commit_connection(form, [])
+        self.assertEqual(error, "A connection needs a model name.", "the model is picked from what the service offers")
+        rows, error = acp_bots.commit_connection({**form, "model": "whatever-it-offers"}, [])
+        self.assertEqual((error, rows[0]["model"]), ("", "whatever-it-offers"))
 
     def test_a_name_and_a_key_file_you_typed_stay_and_an_unknown_address_starts_the_list(self):
         typed = {**acp_bots.blank_connection(), "name": "Work", "key_file": "~/secrets/mine",
@@ -771,3 +773,44 @@ class Providers(unittest.TestCase):
         form = acp_bots.next_provider(typed)
         self.assertEqual((form["name"], form["key_file"]), ("Work", "~/secrets/mine"))
         self.assertEqual(acp_bots.provider_of(form), "Local server")
+
+    def test_the_models_come_from_the_service_with_the_key_from_its_file(self):
+        import json
+        import tempfile
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+        seen = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+
+            def do_GET(self):
+                seen.append((self.path, self.headers.get("Authorization")))
+                if self.headers.get("Authorization") != "Bearer sk-test":
+                    self.send_response(401)
+                    self.end_headers()
+                    return
+                body = json.dumps({"data": [{"id": "b-model"}, {"id": "a-model"}, {"id": "a-model"}]}).encode()
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(body)
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.shutdown)
+        base = f"http://127.0.0.1:{server.server_address[1]}/v1/"
+        with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+            fh.write("sk-test\n")
+        self.addCleanup(os.remove, fh.name)
+        self.assertEqual(acp_bots.fetch_models(base, fh.name), (["a-model", "b-model"], ""))
+        self.assertEqual(seen[-1], ("/v1/models", "Bearer sk-test"))
+        ids, error = acp_bots.fetch_models(base, "")
+        self.assertEqual((ids, error), ([], "HTTP 401: the key was not accepted"))
+        ids, error = acp_bots.fetch_models("http://127.0.0.1:9/v1", "", timeout=1)
+        self.assertEqual(ids, [])
+        self.assertIn("could not ask", error)
+
+    def test_stepping_through_the_list_wraps_and_starts_when_the_model_is_not_in_it(self):
+        ids = ["a", "b", "c"]
+        self.assertEqual([acp_bots.next_model(ids, m) for m in ("", "a", "c")], ["a", "b", "a"])

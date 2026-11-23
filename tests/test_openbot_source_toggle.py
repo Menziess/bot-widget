@@ -140,13 +140,28 @@ class OpenBotSourceToggle(unittest.TestCase):
         self.faces.menu_command("mute/home", "bots")
         self.assertNotIn("Done", _page_text(bots(self.faces.menu_state())), "any other click takes it away")
 
-    def test_the_provider_button_fills_the_new_connection_form(self):
+    def test_the_provider_button_fills_the_address_and_the_models_come_from_the_service(self):
+        from unittest import mock
+
         from botwidget.menu_pages import connection_form
         self.faces.menu_command("page/connection", "connections")
         self.assertEqual(self.faces.menu_command("cycle/provider", "connection", {"field/name": ""}), "connection")
         state = self.faces.menu_state()
         self.assertEqual(state["connection_form"]["base_url"], "https://api.x.ai/v1")
-        self.assertIn("Provider: xAI", _page_text(connection_form(state)))
+        self.assertEqual(state["connection_form"]["model"], "")
+        self.assertIn("List models", _page_text(connection_form(state)))
+        with mock.patch("botwidget.acp_bots.fetch_models", return_value=(["m1", "m2"], "")), \
+                mock.patch("botwidget.qt_ui.faces.threading.Thread", side_effect=lambda target, **kw: mock.Mock(
+                    start=target)):
+            self.faces.menu_command("action/models", "connection")
+        state = self.faces.menu_state()
+        self.assertIn("Next model (2 offered)", _page_text(connection_form(state)))
+        self.faces.menu_command("cycle/model", "connection")
+        self.assertEqual(self.faces.menu_state()["connection_form"]["model"], "m1")
+        self.faces.menu_command("cycle/model", "connection")
+        self.assertEqual(self.faces.menu_state()["connection_form"]["model"], "m2")
+        self.faces.menu_command("cycle/provider", "connection")
+        self.assertIn("List models", _page_text(connection_form(self.faces.menu_state())), "another address, another list")
 
     def test_does_not_write_the_user_widget_json(self):
         """The test file is the only widget.json this class may touch."""
