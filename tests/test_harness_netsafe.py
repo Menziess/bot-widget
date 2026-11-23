@@ -78,6 +78,7 @@ class Leaks(unittest.TestCase):
 
 
 class Files(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
     def test_a_key_file_other_users_can_read_is_named_and_a_private_one_is_not(self):
         folder = tempfile.mkdtemp()
         path = os.path.join(folder, "key")

@@ -156,6 +156,7 @@ class Jobs(unittest.TestCase):
         self.assertIsNotNone(self.runner.jobs["j1"].proc.poll())
         self.assertTrue(wait_until(lambda: self.done), "a cancelled job is still delivered")
 
+    @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
     def test_a_job_outlives_its_agent_and_the_next_one_reports_it(self):
         """Should keep a running job through a restart, watch it again, and deliver its result."""
         folder = tempfile.mkdtemp()
@@ -179,6 +180,7 @@ class Jobs(unittest.TestCase):
         self.assertEqual(os.listdir(folder), [], "nothing is left behind")
         self.assertEqual(JobRunner(self.folder, lambda *_: None, state_dir=folder)._next, 1)
 
+    @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
     def test_a_job_that_ended_while_the_agent_was_away_is_reported_with_its_exit_code(self):
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)
@@ -346,6 +348,7 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(0.02)
         return False
 
+    @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
     async def test_a_restarted_agent_tells_the_session_about_the_job_that_kept_running(self):
         """Should add one note for the session, so the model carries on instead of starting the job again."""
         self._env()
@@ -362,6 +365,7 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Do not start them again", note)
         self.assertIn("kept running through a restart", agent.jobs.list("s1"))
 
+    @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
     async def test_loading_the_session_adopts_a_job_that_ended_meanwhile_and_reports_it(self):
         """Should not wait for a message from the user: a restart must not lose the result."""
         self._env()

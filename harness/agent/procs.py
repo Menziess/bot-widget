@@ -25,6 +25,15 @@ def stop(target: "subprocess.Popen | int", grace: float = 1.0) -> None:
     command (`a; b`) before its own signal arrives, so the group is frozen first, told to end while frozen, and
     only then let go: each member ends the moment it runs again.
     """
+    if os.name == "nt":
+        # No process groups to signal here: the process itself, then a kill when it does not go.
+        if isinstance(target, subprocess.Popen) and target.poll() is None:
+            target.terminate()
+            try:
+                target.wait(grace)
+            except subprocess.TimeoutExpired:
+                target.kill()
+        return
     proc = target if isinstance(target, subprocess.Popen) else None
     pid = proc.pid if proc else int(target)
 
@@ -47,10 +56,6 @@ def stop(target: "subprocess.Popen | int", grace: float = 1.0) -> None:
                 proc.kill()
 
     if gone():
-        return
-    if os.name == "nt":
-        if proc is not None:
-            proc.terminate()
         return
     send(signal.SIGSTOP)
     send(signal.SIGTERM)

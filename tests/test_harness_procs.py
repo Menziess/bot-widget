@@ -13,6 +13,7 @@ def start(marker: str) -> subprocess.Popen:
     return subprocess.Popen(f"(sleep 2; echo late > {marker}) & sleep 30", shell=True, **group_kwargs())
 
 
+@unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
 class Stop(unittest.TestCase):
     def setUp(self):
         self.marker = tempfile.mktemp(prefix="bw-procs-")

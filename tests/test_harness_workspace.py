@@ -333,6 +333,7 @@ class ShellTools(unittest.TestCase):
         result = shell_run(tempfile.gettempdir(), "echo hello")
         self.assertIn("hello", result)
 
+    @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
     def test_a_timeout_stops_what_the_command_started_and_says_where_long_commands_go(self):
         marker = tempfile.mktemp(prefix="bw-timeout-")
         self.addCleanup(lambda: os.path.exists(marker) and os.remove(marker))

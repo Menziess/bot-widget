@@ -509,6 +509,7 @@ class AcpFace(unittest.TestCase):
 
 
 class KeyFileNote(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
     def test_a_key_file_other_users_can_read_is_said_in_the_note(self):
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)

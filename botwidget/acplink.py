@@ -411,7 +411,9 @@ class AcpLink:
                     return
                 self.stopped = True
                 if isinstance(error, FileNotFoundError):
-                    error = (f"the program {error.filename!r} does not exist. If its path has a space "
+                    # Windows names no file in the error: the first word of the command is the program.
+                    program = error.filename or (split_command(self.target) or [""])[0]
+                    error = (f"the program {program!r} does not exist. If its path has a space "
                              f"(like /Applications/Bot Widget.app), put the path in quotes in the bot's command.")
                 self.failed = f"{self.target} did not start: {error}"
                 self._note = self.failed
