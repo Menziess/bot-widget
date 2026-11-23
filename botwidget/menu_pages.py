@@ -1,26 +1,25 @@
-"""The pages of the menu that opens in the bubble: home, /settings, /bots, /connections, /refresh and /feedback.
+"""The pages of the menu that opens in the bubble: /settings, /bots, /connections, /memory and /approvals.
 
 Pure blocks, no toolkit. A clickable row is a piece with the style "cmd:<command>"; markdown never
 produces that style, so no message from a bot can make a row of its own.
 """
 
-import os
 import time
 import urllib.parse
 
 from botwidget.config import QUIET_FROM, QUIET_TO
 from botwidget.markdown import control_block, plain_block, role_panel, text_block
-from botwidget.theme import BUBBLE_FONT
+from botwidget.theme import BUBBLE_FONT, CONTROL_SWITCH_W
 
 PAGES = ("settings", "bots", "connections", "bot", "connection", "widget-json", "memory", "approvals")
 # What typing it in the field opens.
 SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections", "/memory": "memory", "/approvals": "approvals"}
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
 # No /home: a right-click shows this list on its own. A page steps back to the screen before it.
-COMMANDS = (("/settings", "sound, updates"), ("/bots", "which bots show"),
-            ("/connections", "what was found"), ("/memory", "view/edit memories"), ("/approvals", "what is allowed for good"),
-            ("/refresh", "reload every bot"), ("/screenshot", "drag a region, or double-click a face"),
-            ("/feedback", "open a GitHub issue"))
+COMMANDS = (("/settings", "Sound, updates, startup, look"), ("/bots", "Show, hide, add or edit bots"),
+            ("/connections", "Apps and models the bots use"), ("/memory", "See, add or forget memories"),
+            ("/approvals", "What bots may do without asking"), ("/screenshot", "Capture a region, or double-click a face"),
+            ("/feedback", "Report a problem on GitHub"))
 
 
 def _slash_name(name: str) -> str:
@@ -38,7 +37,7 @@ def commands(available=(), *, dev: bool = False) -> tuple:
     """
     rows = list(COMMANDS)
     if dev:
-        rows.append(("/demo", "run the chat demo"))
+        rows.append(("/demo", "Play the chat demo"))
     if not available:
         return tuple(rows)
     taken = {name.lower() for name, _note in rows}
@@ -142,12 +141,15 @@ def _remove_button(state: dict, command: str, name: str) -> dict:
 
 def bots(state: dict) -> list:
     blocks = _back() + [_heading("Bots"),
-                        _row(("Shift+click a bot's face to mute or unmute its thinking.", "dim")),
+                        _row(("Shift+click a face to mute its thinking. Reset clears a bot's conversation and restarts it.", "dim")),
                         plain_block("gap")]
     for bot in state["bots"]:
         # Where the bot lives: OpenBot, Grok Bot, Hermes or a harness bot.
         label = f"{bot['name']} · {bot['source']}" if bot.get("source") else bot["name"]
         actions = [("Unmute" if bot.get("muted") else "Mute", f"mute/{bot['id']}")]
+        if bot["on"]:
+            reset = f"reset/{bot['id']}"
+            actions.append(("Done" if state.get("reset_done") == reset else "Reset", reset))
         if bot.get("acp"):
             actions.append(("Edit", f"page/bot/{bot['id']}"))
             remove = f"bot-remove/{bot['id']}"
@@ -155,8 +157,7 @@ def bots(state: dict) -> list:
         blocks.append(_item(label, f"bot/{bot['id']}", bot["on"], actions))
     if not state["bots"]:
         blocks.append(_row(("No bots found yet", "dim")))
-    blocks += [plain_block("gap"), _button("New bot", "page/bot"), _button("Edit widget.json", "page/widget-json"),
-               _button("Edit approvals.json", "page/approvals")]
+    blocks += [plain_block("gap"), _button("New bot", "page/bot"), _button("Edit widget.json", "page/widget-json")]
     return blocks
 
 
@@ -220,66 +221,44 @@ def widget_json(state: dict) -> list:
     return blocks
 
 
+def _app(state: dict, label: str, key: str, found: bool, ready: str) -> list:
+    """An app that has bots of its own: its switch, and one grey line on where it stands."""
+    wanted, off = key in state.get("wanted", ()), key in (state.get("sources_off") or ())
+    if found and off:
+        note = "Off"
+    elif found:
+        note = ready
+    else:
+        note = "Waiting for it to be installed" if wanted else "Not installed. Turn on to open its page"
+    return [_toggle(label, f"connect/{key}", not off and (found or wanted)),
+            {**_row((note, "dim")), "indent": CONTROL_SWITCH_W}]
+
+
 def connections(state: dict) -> list:
-    blocks = _back() + [_heading("Connections"),
-                        _row(("Turning one on that was not found opens its page.", "dim")),
-                        plain_block("gap")]
-    wanted = state.get("wanted", ())
-    off = set(state.get("sources_off") or ())
     openbot = state["openbot"]
-    blocks.append(_toggle("OpenBot", "connect/openbot", "openbot" not in off and (openbot or "openbot" in wanted)))
-    if "openbot" in off and openbot:
-        note = "Off. OpenBot is installed, but its bots are not shown."
-    elif openbot and state["automation_ready"]:
-        note = "Detected, local API ready"
-    elif openbot:
-        note = "Detected, but the local API is off: in OpenBot open the bot's settings and turn on \"Local scripts\""
+    blocks = _back() + [_heading("Apps"),
+                        _row(("Programs that bring their own bots. Turn one on to show its bots here.", "dim"))]
+    blocks += _app(state, "OpenBot", "openbot", openbot,
+                   "Ready" if state["automation_ready"]
+                   else "Turn on \"Local scripts\" in the bot's settings in OpenBot")
+    line = state["grok"].removeprefix("Grok Bot").strip()
+    if state.get("grok_target") and "talks to" not in line:
+        line = f"{line} · talks to {state['grok_target']}"
+    blocks += _app(state, "Grok Bot", "grokbot", state["gbot"], line or "Ready")
+    # Under its app, in line with the app's grey note.
+    if state.get("grok_relay"):
+        blocks += [{**_row((f"Linked via ntfy · {state['grok_relay']}", "dim")), "indent": CONTROL_SWITCH_W},
+                   {**_button("Copy chief prompt", "action/copy-grok-prompt"), "indent": CONTROL_SWITCH_W}]
     else:
-        note = "Waiting for OpenBot to be installed" if "openbot" in wanted else "Not found"
-    blocks.append({**_row((note, "dim")), "indent": 44})
-    blocks.append(plain_block("gap"))
-    gbot = state["gbot"]
-    blocks.append(_toggle("Grok Bot", "connect/grokbot", "grokbot" not in off and (gbot or "grokbot" in wanted)))
-    if "grokbot" in off and gbot:
-        line = ""
-        note = "Off. Grok Bot is installed, but its bots are not shown."
-    elif gbot:
-        line = state["grok"]
-        if line.startswith("Grok Bot"):
-            line = line[len("Grok Bot"):].strip()
-        target = state.get("grok_target")
-        if target and "talks to" not in line:
-            line = f"{line} · talks to {target}"
-        note = f"Detected, {line}" if line else "Detected"
-    else:
-        note = "Waiting for Grok Bot to be installed" if "grokbot" in wanted else "Not found"
-    blocks.append({**_row((note, "dim")), "indent": 44})
-    blocks.append(plain_block("gap"))
-    relay = state.get("grok_relay") or ""
-    if relay:
-        blocks.append({**_row((f"Linked via ntfy · {relay}", "dim")), "indent": 0})
-        blocks.append(_button("Copy chief prompt", "action/copy-grok-prompt"))
-    else:
-        blocks.append(_button("Link Grok bots", "action/link-grok"))
-    blocks.append(plain_block("gap"))
-    hermes = state.get("hermes")
-    blocks.append(_toggle("Hermes Bot", "connect/hermesbot", "hermesbot" not in off and (hermes or "hermesbot" in wanted)))
-    if "hermesbot" in off and hermes:
-        note = "Off. Hermes Bot is installed, but its bots are not shown."
-    elif hermes:
-        note = "Detected"
-    else:
-        note = "Waiting for Hermes Bot to be installed" if "hermesbot" in wanted else "Not found"
-    blocks.append({**_row((note, "dim")), "indent": 44})
-    blocks += [plain_block("gap"), _heading("Model connections"),
-               _row(("Each one is on or off, like OpenBot. Off stops the bots that use it. "
-                     "The key stays in its file.", "dim"))]
+        blocks.append({**_button("Link Grok bots", "action/link-grok"), "indent": CONTROL_SWITCH_W})
+    blocks += _app(state, "Hermes Bot", "hermesbot", state.get("hermes"), "Ready")
+    blocks += [plain_block("gap"), _heading("Models"),
+               _row(("The AI services your own bots think with. Add one here (address, model, key file), then pick it "
+                     "when you make a bot. Turn one off to pause every bot that uses it.", "dim"))]
     if state.get("connection_error"):
         blocks.append(_row((state["connection_error"], "b")))
     for conn in state.get("connections") or []:
-        label = conn["name"] if conn.get("on", True) else f"{conn['name']} · off"
-        if conn.get("model"):
-            label = f"{label} · {conn['model']}"
+        label = f"{conn['name']} · {conn['model']}" if conn.get("model") else conn["name"]
         remove = f"connection-remove/{conn['id']}"
         blocks.append(_item(label, f"connection-toggle/{conn['id']}", conn.get("on", True), [
             ("Edit", f"page/connection/{conn['id']}"),
@@ -317,7 +296,7 @@ def memory_page(state: dict) -> list:
     except Exception:
         memories = []
 
-    blocks = _back("page/bots") + [_heading("Memory")]
+    blocks = _back() + [_heading("Memory")]
     if not memories:
         blocks.append(_row(("No memories stored yet", "dim")))
     else:
@@ -338,7 +317,7 @@ def memory_page(state: dict) -> list:
 
 def approvals_page(state: dict) -> list:
     """What may run without a question: "*" for every bot, then one entry per bot."""
-    blocks = _back("page/bots") + [_heading("approvals.json"),
+    blocks = _back() + [_heading("approvals.json"),
                                    _row(("true runs without asking, false always asks and wins. \"*\" counts for every bot. "
                                          "Checked before saving. The previous file is kept as approvals.json.bak.", "dim"))]
     if state.get("approvals_error"):

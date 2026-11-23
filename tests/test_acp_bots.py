@@ -674,7 +674,7 @@ class EditPage(unittest.TestCase):
                 mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer):
             bubble._physics.stop()
             self.assertTrue(window.pointer_near(bubble), "the pointer is on the bots page")
-            row.press_at(edit.center().x())
+            row.press_at(edit.center().x(), edit.center().y())
             self.app.processEvents()
             self.assertTrue(bubble.full_text.startswith("Edit bot"))
             self.assertTrue(bubble.isVisible())
@@ -706,7 +706,7 @@ class ItemRowPills(unittest.TestCase):
             {"label": "Edit", "command": "page/bot/a"},
             {"label": "Again", "command": "bot-remove/a"},
         ])
-        row.resize(420, 36)
+        row.resize(420, 68)
         row.show()
         app.processEvents()
         self.assertTrue(row.hasMouseTracking())

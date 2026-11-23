@@ -5,7 +5,15 @@ from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QAbstractButton, QLineEdit, QPlainTextEdit, QPushButton, QSlider, QWidget
 
 from botwidget.qt_ui.text_doc import color
-from botwidget.theme import BUBBLE_FONT, CONTROL_SWITCH_W, SAND_ACCENT, SAND_INK, SAND_INK_SOFT, SAND_SANS
+from botwidget.theme import (
+    BUBBLE_FONT,
+    CONTROL_H,
+    CONTROL_SWITCH_W,
+    SAND_ACCENT,
+    SAND_INK,
+    SAND_INK_SOFT,
+    SAND_SANS,
+)
 
 TRACK_W, TRACK_H, KNOB_PAD = 34, 20, 2
 
@@ -66,7 +74,8 @@ class Switch(QAbstractButton):
 
 
 class ItemRow(PointerWatch, QWidget):
-    """One bot or one connection: its switch, its name, and only the actions that belong to it."""
+    """One bot or one connection: its switch and name on a line, and the actions that belong to it below, so the
+    name gets the whole width. A row without a name is only its actions."""
 
     chosen = Signal(str)
 
@@ -77,6 +86,7 @@ class ItemRow(PointerWatch, QWidget):
         self._lead = 0 if on is None else CONTROL_SWITCH_W  # no state, no switch: a row of actions only
         self._toggle = toggle
         self._actions = [(str(action["label"]), str(action["command"])) for action in actions]
+        self._stacked = bool(title and actions)
         self._hits: list[tuple[str, str, QRectF]] = []
         self._title_w = 0
         self._hover: str | None = None
@@ -93,6 +103,15 @@ class ItemRow(PointerWatch, QWidget):
         font = QFont(SAND_SANS)
         font.setPixelSize(BUBBLE_FONT)
         metrics = QFontMetrics(font)
+        if self._stacked:
+            x, hits = float(self._lead), []
+            for label, command in self._actions:
+                width = metrics.horizontalAdvance(label) + 28
+                hits.append((label, command, QRectF(x, CONTROL_H, width - 6, 28)))
+                x += width + 4
+            self._hits = hits
+            self._title_w = max(0, self.width() - self._lead - 8)
+            return
         x = float(self.width())
         hits = []
         for label, command in reversed(self._actions):
@@ -112,10 +131,10 @@ class ItemRow(PointerWatch, QWidget):
             event.ignore()
 
     def _pointer_moved(self, point):
-        self._follow(None if point is None else point.x())
+        self._follow(None if point is None else (point.x(), point.y()))
 
     def mouseMoveEvent(self, event):
-        self._follow(event.position().x())
+        self._follow((event.position().x(), event.position().y()))
 
     def leaveEvent(self, event):
         self._follow(None)
@@ -123,25 +142,25 @@ class ItemRow(PointerWatch, QWidget):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
-            self.press_at(event.position().x())
+            self.press_at(event.position().x(), event.position().y())
 
-    def _command_at(self, x: float) -> str | None:
+    def _command_at(self, x: float, y: float) -> str | None:
         if self._actions and not self._hits:
             self._place()
         for _label, command, rect in self._hits:
-            if rect.left() <= x <= rect.right():
+            if rect.left() <= x <= rect.right() and (not self._stacked or rect.top() <= y <= rect.bottom()):
                 return command
         return None
 
-    def _follow(self, x: float | None):
-        hover = None if x is None else self._command_at(x)
+    def _follow(self, at: tuple | None):
+        hover = None if at is None else self._command_at(*at)
         if hover != self._hover:
             self._hover = hover
             self.update()
 
-    def press_at(self, x: float):
-        """x is in this row: its own click, or one the text still forwards."""
-        command = self._command_at(x)
+    def press_at(self, x: float, y: float):
+        """The spot is in this row: its own click, or one the text still forwards."""
+        command = self._command_at(x, y)
         command = self._toggle if command is None else command
         if command:
             self.chosen.emit(command)
@@ -151,7 +170,8 @@ class ItemRow(PointerWatch, QWidget):
             self._place()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        top = (self.height() - TRACK_H) / 2
+        line_h = CONTROL_H if self._stacked else self.height()
+        top = (line_h - TRACK_H) / 2
         track = QRectF(0, top, TRACK_W, TRACK_H)
         painter.setPen(Qt.NoPen)
         if self._on is not None:
@@ -166,11 +186,11 @@ class ItemRow(PointerWatch, QWidget):
         painter.setFont(font)
         painter.setPen(color(SAND_INK))
         title = QFontMetrics(font).elidedText(self._title, Qt.ElideRight, max(1, int(self._title_w)))
-        painter.drawText(QRectF(self._lead, 0, max(1, self._title_w), self.height()),
+        painter.drawText(QRectF(self._lead, 0, max(1, self._title_w), line_h),
                          Qt.AlignVCenter | Qt.AlignLeft, title)
         for label, command, rect in self._hits:
-            # "Again" is the second click that really removes; "Unmute" means the bot is muted.
-            marked = label in ("Again", "Unmute")
+            # "Again" is the second click that really removes; "Unmute" means the bot is muted; "Done" says a reset ran.
+            marked = label in ("Again", "Unmute", "Done")
             # Drawn by hand, so the stylesheet hover of a normal button does not apply here.
             hovered = command == self._hover and not marked
             painter.setPen(Qt.NoPen)
@@ -236,44 +256,63 @@ class SlashButton(QWidget):
 
 
 class SlashList(QWidget):
-    """The commands that fit what is typed after a slash, as a list below the field."""
+    """The commands that fit what is typed after a slash, as a list below the field. Longer than limit, it scrolls."""
 
     ROW_H = 36
     chosen = Signal(str)
-    wheeled = Signal(float, bool, bool)  # pixels scrolled (up is positive), coasting, a finger on the pad
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.rows = []
         self.index = 0
+        self.limit = 10 ** 6  # the most height it may take, in pixels; the bubble sets it from the screen
+        self.offset = 0  # how far the rows are scrolled, in pixels
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
         self.hide()
 
     def height_for(self, count: int) -> int:
-        return count * self.ROW_H + 8
+        return min(count * self.ROW_H, max(self.ROW_H, self.limit - 8)) + 8
+
+    def _overflow(self) -> int:
+        return max(0, len(self.rows) * self.ROW_H + 8 - self.height_for(len(self.rows)))
+
+    def _scroll_to(self, offset: float):
+        offset = min(max(0, round(offset)), self._overflow())
+        if offset != self.offset:
+            self.offset = offset
+            self.update()
+
+    def _reveal(self):
+        """Scroll just far enough that the selected row is in view."""
+        top = self.index * self.ROW_H
+        visible = self.height_for(len(self.rows)) - 8
+        self._scroll_to(min(max(self.offset, top + self.ROW_H - visible), top))
 
     def show_rows(self, rows: list, index: int = 0):
         self.rows, self.index = rows, min(index, max(0, len(rows) - 1))
+        self.offset = 0
+        self._reveal()
         self.setVisible(bool(rows))
         self.update()
 
     def move_selection(self, step: int):
         if self.rows:
             self.index = (self.index + step) % len(self.rows)
+            self._reveal()
             self.update()
 
     def current(self) -> str:
         return self.rows[self.index][0] if self.rows else ""
 
     def _row_at(self, y: float) -> int:
-        return min(max(int((y - 4) // self.ROW_H), 0), max(0, len(self.rows) - 1))
+        return min(max(int((y - 4 + self.offset) // self.ROW_H), 0), max(0, len(self.rows) - 1))
 
     def wheelEvent(self, event):
-        phase = event.phase()
         pixels = event.pixelDelta().y() or event.angleDelta().y() / 120 * 40  # one notch, as in the bubble
-        self.wheeled.emit(float(pixels), phase == Qt.ScrollMomentum, phase in (Qt.ScrollBegin, Qt.ScrollUpdate))
+        self._scroll_to(self.offset - pixels)
+        self.index = self._row_at(event.position().y())
         event.accept()
 
     def mouseMoveEvent(self, event):
@@ -317,8 +356,9 @@ class SlashList(QWidget):
         command_w = self.command_w()
         note_x = self.PAD_X + command_w
         notes = QFontMetrics(note_font)
-        for i, (command, note) in enumerate(self.rows):
-            top = 4 + i * self.ROW_H
+        first = self.offset // self.ROW_H
+        for i, (command, note) in enumerate(self.rows[first:first + self.height() // self.ROW_H + 2], first):
+            top = 4 + i * self.ROW_H - self.offset
             if i == self.index:
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QColor(11, 109, 211, 26))
@@ -328,9 +368,17 @@ class SlashList(QWidget):
             painter.drawText(QRectF(self.PAD_X, top, command_w, self.ROW_H), Qt.AlignVCenter | Qt.AlignLeft, command)
             painter.setFont(note_font)
             painter.setPen(color(SAND_INK_SOFT))
-            room = max(0, self.width() - note_x - self.PAD_X)
+            room = max(0, self.width() - note_x - self.PAD_X - (6 if self._overflow() else 0))
             painter.drawText(QRectF(note_x, top, room, self.ROW_H), Qt.AlignVCenter | Qt.AlignLeft,
                              notes.elidedText(note, Qt.ElideRight, room))
+        if self._overflow():
+            # The same hairline thumb as the bubble's own scroll bar.
+            track = self.height() - 8
+            thumb = max(24, track * track / (track + self._overflow()))
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(28, 28, 28, 115))
+            at = 4 + (track - thumb) * self.offset / self._overflow()
+            painter.drawRoundedRect(QRectF(self.width() - 5, at, 3, thumb), 1.5, 1.5)
 
 
 class ValueSlider(QWidget):

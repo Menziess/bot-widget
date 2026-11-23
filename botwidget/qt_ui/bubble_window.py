@@ -86,7 +86,7 @@ def window_layer(face=None):
     return Qt.WindowStaysOnBottomHint
 
 from botwidget.bubble_layout import bubble_panels
-from botwidget.markdown import block_text, md_blocks, plain_block, plain_text, role_panel
+from botwidget.markdown import block_text, md_blocks, plain_text
 from botwidget.qt_ui import desktops, glass, screens
 from botwidget.qt_ui.controls import (
     ActionButton,
@@ -111,7 +111,6 @@ from botwidget.theme import (
     BUBBLE_WIDER,
     DOTS_BURST_CYCLES,
     DOTS_CYCLE_S,
-    DOTS_GAP,
     DOTS_MS,
     DOTS_REST_S,
     DOTS_START_PHASE,
@@ -1192,6 +1191,7 @@ class BubbleWindow(QWidget):
         """The list sits in the bubble right below the field, which makes room for it and hides the chat text."""
         before = len(self._slash.rows)
         self._entry.commands_open = bool(rows) and self._input
+        self._entry.slash_button.setVisible(not self._entry.commands_open)
         self._slash.show_rows(rows if self._input else [])
         if self._geom is not None:
             if self._slash.rows:
@@ -1228,7 +1228,10 @@ class BubbleWindow(QWidget):
         super().keyPressEvent(event)
 
     def _commands_h(self) -> int:
-        return self._slash.height_for(len(self._slash.rows)) + COMMANDS_GAP if self._slash.rows else 0
+        if not self._slash.rows:
+            return 0
+        self._slash.limit = self._height_cap()  # a longer list scrolls inside this
+        return self._slash.height_for(len(self._slash.rows)) + COMMANDS_GAP
 
     def _run_command(self, command: str):
         self.changed = time.monotonic()
@@ -1295,7 +1298,7 @@ class BubbleWindow(QWidget):
             # The text sits over the form. A button has click(); a field only needs the cursor.
             press = getattr(widget, "press_at", None)
             if press is not None:
-                press(self._doc.x() + x - widget.geometry().x())
+                press(self._doc.x() + x - widget.geometry().x(), self._doc.y() + y - widget.geometry().y())
             elif getattr(widget, "click", None) is not None:
                 widget.click()
             else:
@@ -1343,7 +1346,7 @@ class BubbleWindow(QWidget):
         """Copy, and say so over the message: its words fade out behind the notice, which fades away too."""
         QApplication.clipboard().setText(text)
         self.changed = time.monotonic()
-        content_y, scrolled = y + self._doc.y(), self._scroll.verticalScrollBar().value()
+        content_y = y + self._doc.y()
         rects = panel_rects(self._geom[0])
         for index, ((top, height), panel) in enumerate(zip(rects, self._geom[0])):
             if top <= content_y < top + height:
@@ -2055,6 +2058,7 @@ class BubbleWindow(QWidget):
             # A page or a new cloud takes the list's place. Its rows must not stay drawn over that.
             self._slash.show_rows([])
             self._entry.commands_open = False
+            self._entry.slash_button.show()
             self._commands_forced = False
         if not self._toggling:
             self._more_open = False  # new content: the arrow for the message before shows again when asked for
@@ -2073,7 +2077,7 @@ class BubbleWindow(QWidget):
         self._slide.stop()
         self._growth = None
         self.setWindowOpacity(1.0)
-        content_changed, self._built = key != self._built, key
+        self._built = key
         self._was_near = False
         self._links = links or []
         self._input = input
@@ -2134,7 +2138,6 @@ class BubbleWindow(QWidget):
         """Scrolling at the top. In the chat it shows the line for the message before, pulls it by the distance, and
         far enough loads it; on a page of the menu the line is always there, and far enough goes back."""
         now = time.monotonic()
-        back = self._back_command()
         if self.kind != "say" or not self._has_older or self._commands_cover():
             return
         if self._pull_spent:
@@ -2320,7 +2323,6 @@ class BubbleWindow(QWidget):
     def _growth_done(self):
         if self._growth is None:
             return
-        older = getattr(self._growth, "older", False)
         self._growth = None
         self.setWindowOpacity(1.0)
         if self.kind:

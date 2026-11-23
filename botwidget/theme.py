@@ -71,6 +71,7 @@ MORE_H = 18
 MORE_OVAL_HALF_W = 40  # how far the swell in the middle of the line reaches to each side, at rest
 # A form element in the bubble: its row, and what it needs next to its label (switch, or button padding).
 CONTROL_H = 36
+ITEM_ACTIONS_H = 32  # the line of buttons under a named element
 CONTROL_SWITCH_W = 46
 CONTROL_SLIDER_W = 130  # the track of a slider, next to its label
 CONTROL_BUTTON_PAD = 28

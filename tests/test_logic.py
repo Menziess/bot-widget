@@ -956,7 +956,7 @@ class MutedFace(unittest.TestCase):
         self.assertEqual(len(eye_paths(face_svg(seed="x"))), 2, "others keep two eyes")
 
     def test_the_cross_stays_inside_even_the_flattest_head(self):
-        from botwidget.avatar import AVATAR_SIZE, CIRCLE_R, MOUTH_DROP, MOUTH_SIZE, SILHOUETTES
+        from botwidget.avatar import CIRCLE_R, MOUTH_DROP, MOUTH_SIZE, SILHOUETTES
         for name, radii in SILHOUETTES.items():
             drop = min(MOUTH_DROP, 0.6 * radii[16]) * CIRCLE_R
             self.assertLess(drop + MOUTH_SIZE + 1.3, radii[16] * CIRCLE_R, name)
@@ -1789,7 +1789,6 @@ class BubbleHover(unittest.TestCase):
         self.assertLessEqual(bubble._notice.y() + bubble._notice.height(), view)
 
     def test_a_selection_over_wrapped_lines_copies_as_one_line(self):
-        from PySide6.QtCore import Qt
         text = "Een lange regel met woorden die vanzelf over meerdere regels loopt in de bubbel, " * 2
         self.MESSAGES = [{"role": "bot", "text": text}]
         self.hover()
@@ -2682,7 +2681,6 @@ class BubbleHover(unittest.TestCase):
                 "update": "", "staged_update": "", "bots": []}
 
     def open_settings(self):
-        from botwidget import menu_pages
         self.window.faces = type("Faces", (), {"menu_state": lambda _self: self.settings_state(),
                                                "menu_command": lambda _self, command, page, fields=None: page,
                                                "close_bubbles_except": lambda _self, _id: None,
@@ -2774,7 +2772,6 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(sent, ["page/commands"])
 
     def test_scrolling_down_a_page_does_not_bring_the_line_in(self):
-        from unittest import mock
         bubble = self.open_settings()
         bubble._height_cap = lambda: 160
         self.window.open_menu("settings")
@@ -2935,7 +2932,7 @@ class BubbleHover(unittest.TestCase):
         the area of the page, see-through around the smaller card, so the X server names the bubble there."""
         from unittest import mock
 
-        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         window = self.window
         window.show()
@@ -2986,7 +2983,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_random_use_never_breaks_the_rules_of_opening_and_closing(self):
         """Random sequences of what Stefan does (hover, leave, clicks, every menu command, the back arrow, a
-        refresh, a new answer, focus elsewhere, the face in every corner and edge), with the pointer as X reports it.
+        a new answer, focus elsewhere, the face in every corner and edge), with the pointer as X reports it.
         After every step:
         - the bubble's state matches its window (closed, open, yielding);
         - a bubble the pointer is engaged with is still open after anything that happens by itself;
@@ -3067,7 +3064,7 @@ class BubbleHover(unittest.TestCase):
         patch = mock.patch.object(menu_pages, "commands", lambda *_args, **_kwargs: menu_pages.COMMANDS)
         patch.start()
         self.addCleanup(patch.stop)
-        ops = ["hover", "on_bubble", "edge", "leave", "left_click", "right_click", "choose", "back", "refresh",
+        ops = ["hover", "on_bubble", "edge", "leave", "left_click", "right_click", "choose", "back",
                "answer", "poll", "new_chat", "focus_elsewhere", "move_face", "wait", "escape"]
         automatic = {"poll", "answer", "new_chat", "wait", "focus_elsewhere"}
         with self.x_pointer(), mock.patch("time.monotonic", side_effect=lambda: clock[0]), \
@@ -3127,8 +3124,6 @@ class BubbleHover(unittest.TestCase):
                         engaged_before = bubble.isVisible() and bubble.engaged()
                         log[-1] = f"back from {window._menu_page} {bubble.card().getRect()} held {bubble.holding_area()}"
                         bubble.command.emit("page/commands")
-                    elif op == "refresh":
-                        window.on_user_message("/refresh")
                     elif op == "answer":
                         chat = {"messages": [{"role": "user", "text": "Vraag?"},
                                              {"role": "bot", "text": rnd.choice(answers) + f" ({step})"}],
@@ -3153,7 +3148,7 @@ class BubbleHover(unittest.TestCase):
                     elif op == "escape":
                         window.unpin()
                     op = log[-1]
-                    swap = (op.startswith("choose /") and op not in ("choose /refresh", "choose /feedback")
+                    swap = (op.startswith("choose /") and op != "choose /feedback"
                             or op == "back")
                     frames(held=log if swap and engaged_before else None)
                     check(step, log)
@@ -3162,8 +3157,7 @@ class BubbleHover(unittest.TestCase):
                             or window.geometry().contains(pointer())
                         if here:
                             self.assertTrue(bubble.isVisible(), f"closed under the pointer, after {log[-6:]}")
-                    if op.startswith("choose /") and op != "choose /refresh" and engaged_before \
-                            and op != "choose /feedback":
+                    if op.startswith("choose /") and engaged_before and op != "choose /feedback":
                         # After a choose the slash row is gone; if the pointer is no longer
                         # on the bubble the bubble may close, which is fine.
                         if bubble.isVisible() and bubble.face.pointer_near(bubble):
@@ -3415,7 +3409,7 @@ class BubbleHover(unittest.TestCase):
         spot is cut out of the window's shape (and so of its input) for as long as the area is held."""
         from unittest import mock
 
-        from PySide6.QtCore import QPoint, QRect, Qt
+        from PySide6.QtCore import Qt
         from PySide6.QtGui import QGuiApplication
         window = self.window
         window.show()
@@ -3806,25 +3800,6 @@ class BubbleHover(unittest.TestCase):
                 bubble._tick()
                 self.finish_growth()
             self.assertTrue(bubble.isVisible(), "and hovering opens it again")
-
-    def test_refresh_reloads_every_bot_and_unsticks_them(self):
-        from unittest import mock
-        other = self.second_face()
-        other.pinned = True
-        other._think_quiet = True
-        other._hover_blocked_until = time.monotonic() + 100
-        with mock.patch.object(type(self.window.faces), "_probe_grok") as probe:
-            self.window.on_user_message("/refresh")
-            for _ in range(20):
-                if probe.called:
-                    break
-                time.sleep(0.01)
-        self.assertTrue(probe.called, "Grok Bot is asked again")
-        self.assertTrue(other._poll_timer.isActive(), "the other bot reloads too")
-        self.assertEqual((other.pinned, other._think_quiet, other._hover_blocked_until), (False, False, 0.0))
-        self.assertFalse(other.bubble.isVisible(), "quietly: only the bot it was typed into talks")
-        self.assertTrue(self.window.bubble.isVisible())
-        self.assertIn("Refreshing", self.window.bubble.full_text)
 
     def test_a_see_through_bubble_does_not_push_the_others_aside(self):
         other = self.second_face()
@@ -4354,7 +4329,6 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(bubble._entry.text(), "een bericht")
 
     def test_a_page_opened_on_another_face_replaces_the_one_before_and_escape_returns_to_the_chat(self):
-        from unittest import mock
 
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
@@ -4504,7 +4478,6 @@ class BubbleHover(unittest.TestCase):
         self.assertEqual(bubble._scroll.verticalScrollBar().value(), 0, "no flying past the text while it grows")
 
     def test_the_field_keeps_the_cursor_in_view_when_a_wrapped_paragraph_passes_the_fifth_line(self):
-        from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         from PySide6.QtWidgets import QApplication
 
@@ -4658,7 +4631,6 @@ class BubbleHover(unittest.TestCase):
         self.assertGreater(bar.value(), bar.maximum() // 2, "at the end of the message that came in, not its top")
 
     def test_the_field_for_a_message_only_shows_while_the_pointer_is_with_the_bubble(self):
-        from unittest import mock
 
         from botwidget.qt_ui.face import conversation_blocks
         bubble = self.window.bubble
@@ -4846,7 +4818,6 @@ class BubbleHover(unittest.TestCase):
         self.assertFalse(self.window._think_held)
 
     def test_spaces_at_the_end_of_a_line_do_not_push_the_text_sideways(self):
-        from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         from PySide6.QtWidgets import QApplication
 
@@ -5031,12 +5002,11 @@ class BubbleHover(unittest.TestCase):
     def test_every_command_in_the_list_opens_a_page(self):
         from botwidget import menu_pages
         for command, _note in menu_pages.commands():
-            if command in ("/refresh", "/feedback", "/debug", "/screenshot"):
+            if command in ("/feedback", "/debug", "/screenshot"):
                 continue
             self.assertIn(command, menu_pages.SLASH)
         self.assertNotIn("/home", [command for command, _note in menu_pages.commands()],
                          "gone: the back arrow and a right-click show the list")
-        self.assertNotIn("/refresh", menu_pages.SLASH, "reload, not a menu page")
         self.assertNotIn("/screenshot", menu_pages.SLASH, "a mode with an overlay, not a menu page")
         self.assertNotIn("/feedback", menu_pages.SLASH, "a browser page, not a menu page")
 
@@ -6284,7 +6254,7 @@ class MenuPages(unittest.TestCase):
     def test_the_bots_page_has_a_switch_per_bot(self):
         blocks = menu_pages.bots(self.STATE)
         self.assertEqual(self.commands(blocks),
-                         ["page/commands", "bot/a", "mute/a", "bot/b", "mute/b", "page/bot", "page/widget-json", "page/approvals"])
+                         ["page/commands", "bot/a", "mute/a", "reset/a", "bot/b", "mute/b", "page/bot", "page/widget-json"])
         self.assertNotIn("‹ Chat", self.text(blocks))
         self.assertIn("☑ Fritsie", self.text(blocks))
         self.assertIn("☐ Robo", self.text(blocks))
@@ -6297,13 +6267,13 @@ class MenuPages(unittest.TestCase):
             "page/commands", "connect/openbot", "connect/grokbot", "action/link-grok",
             "connect/hermesbot", "page/connection"])
         self.assertIn("☑ OpenBot", text)
-        self.assertIn("local API is off", text)
+        self.assertIn("Local scripts", text)
         self.assertIn("☐ Grok Bot", text)
         self.assertIn("☐ Hermes Bot", text)
-        self.assertIn("Not found", text)
+        self.assertIn("Not installed", text)
         self.assertIn("Link Grok bots", text)
         ready = self.text(menu_pages.connections({**self.STATE, "automation_ready": True, "gbot": True}))
-        self.assertIn("local API ready", ready)
+        self.assertIn("Ready", ready)
         self.assertIn("☑ Grok Bot", ready)
         linked = menu_pages.connections({**self.STATE, "grok_relay": "bw-x"})
         self.assertEqual(
@@ -6317,16 +6287,16 @@ class MenuPages(unittest.TestCase):
         """Should follow the persisted sources_off list, not treat installed as on."""
         text = self.text(menu_pages.connections({**self.STATE, "openbot": True, "sources_off": ["openbot"]}))
         self.assertIn("☐ OpenBot", text)
-        self.assertIn("Off. OpenBot is installed, but its bots are not shown.", text)
+        self.assertIn("Off", text.split("OpenBot", 1)[1])
         self.assertNotIn("☑ OpenBot", text)
 
     def test_a_connection_that_was_turned_on_but_not_found_stays_on_and_says_it_waits(self):
         text = self.text(menu_pages.connections({**self.STATE, "wanted": ["grokbot"]}))
         self.assertIn("☑ Grok Bot", text)
-        self.assertIn("Waiting for Grok Bot", text)
+        self.assertIn("Waiting for it to be installed", text)
         found = self.text(menu_pages.connections({**self.STATE, "hermes": True}))
         self.assertIn("☑ Hermes Bot", found)
-        self.assertIn("Detected", found)
+        self.assertIn("Ready", found.split("Hermes Bot", 1)[1])
 
     def test_a_saved_connection_is_its_own_switch_with_edit_and_remove(self):
         """Should put the switch, edit and remove on that connection, not on a button at the bottom."""
@@ -6341,7 +6311,7 @@ class MenuPages(unittest.TestCase):
             "connection-toggle/there", "page/connection/there", "connection-remove/there",
             "page/connection"])
         self.assertIn("☑ Local · qwen", self.text(blocks))
-        self.assertIn("☐ Other · off · other", self.text(blocks))
+        self.assertIn("☐ Other · other", self.text(blocks))
 
     def test_a_grok_status_drops_the_repeated_name_and_names_who_it_talks_to(self):
         """Should not say Grok Bot twice, and should name the bot it reached."""
@@ -6368,7 +6338,7 @@ class MenuPages(unittest.TestCase):
         """Should step up one screen: chat, the command list, a page of it, then a form."""
         back = {"settings": "page/commands", "bots": "page/commands", "connections": "page/commands",
                 "bot": "page/bots", "connection": "page/connections", "widget-json": "page/bots",
-                "memory": "page/bots", "approvals": "page/bots"}
+                "memory": "page/commands", "approvals": "page/commands"}
         for page in menu_pages.PAGES:
             self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], back[page])
         self.assertEqual(self.commands(menu_pages.page_blocks("nonsense", self.STATE)),
@@ -6550,32 +6520,8 @@ class MenuInBubble(unittest.TestCase):
             self.assertIn(expected, self.text(), typed)
         self.assertEqual(self.window._outbox.items, [], "a slash command is not a message to the bot")
 
-    def test_refresh_reloads_this_bot_and_sends_nothing(self):
-        calls = []
-        self.window._poll_timer.timeout.disconnect()
-        self.window._poll_timer.timeout.connect(lambda: calls.append("polled"))
-        self.window.on_user_message("/refresh")
-        self.app.processEvents()
-        self.assertEqual(calls, ["polled"])
-        self.assertEqual(self.window._outbox.items, [])
-
-    def test_refresh_says_it_is_busy_and_then_how_it_went(self):
-        """Never an empty white bubble: 'Refreshing…' at once, then the chat with one line on the result."""
-        from unittest import mock
-        self.window._poll_timer.timeout.disconnect()
-        self.right_click()
-        self.window.bubble._run_command("/refresh")
-        self.assertIn("Refreshing", self.text())
-        self.assertTrue(self.window.bubble.isVisible())
-        with mock.patch.object(self.face, "api_get", return_value={"prompts": [], "approvals": []}):
-            self.window._poll_pending()
-        self.assertIn("Refreshed.", self.text())
-        self.assertIn("Hoi.", self.text())
-        self.right_click()
-        self.window.bubble._run_command("/refresh")
-        with mock.patch.object(self.face, "api_get", side_effect=OSError("down")):
-            self.window._poll_pending()
-        self.assertIn("Could not reach OpenBot.", self.text())
+    def test_refresh_is_no_command_any_more(self):
+        self.assertNotIn("/refresh", [name for name, _note in menu_pages.COMMANDS])
 
     def test_back_from_a_page_shows_the_commands_and_leaves_nothing_stuck(self):
         """Settings, then the arrow back: the list shows, it closes once the pointer is gone, and right-click
@@ -6656,7 +6602,6 @@ class MenuInBubble(unittest.TestCase):
         self.assertTrue(bubble._slash.isVisibleTo(bubble))
 
     def test_typing_on_after_a_right_click_closes_the_list_and_enter_sends_as_ever(self):
-        from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
         self.window.pin()
         bubble = self.window.bubble

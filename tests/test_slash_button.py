@@ -54,7 +54,7 @@ class SlashButton(unittest.TestCase):
     def test_should_keep_the_field_in_front_of_the_only_command_list(self):
         """Should not leave a typeable field behind a command screen. Right-click uses the field's own list."""
         from PySide6.QtCore import QEvent, QPointF, Qt
-        from PySide6.QtGui import QKeyEvent, QMouseEvent
+        from PySide6.QtGui import QMouseEvent
         from PySide6.QtWidgets import QApplication
         self._open_chat()
         self.assertIn("Hello from the bot.", self.bubble.full_text)
@@ -114,3 +114,39 @@ class SlashButton(unittest.TestCase):
         self.app.processEvents()
         self.assertFalse(self.bubble._slash.rows)
         self.assertTrue(self.bubble._scroll.isVisibleTo(self.bubble))
+
+
+class SlashListScroll(unittest.TestCase):
+    """A list longer than its limit scrolls, keeps the chosen row in view, and never grows past the limit."""
+
+    def setUp(self):
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            from botwidget.qt_ui.controls import SlashList
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        self.app = QApplication.instance() or QApplication([])
+        self.list = SlashList()
+        self.list.limit = 5 * SlashList.ROW_H
+        self.list.show_rows([(f"/skill{i}", "note") for i in range(30)])
+        self.list.resize(300, self.list.height_for(30))
+
+    def test_the_height_stops_at_the_limit(self):
+        self.assertLessEqual(self.list.height_for(30), self.list.limit)
+        self.assertEqual(self.list.height_for(2), 2 * self.list.ROW_H + 8, "a short list is as tall as its rows")
+
+    def test_the_arrows_keep_the_selected_row_in_view_all_the_way_round(self):
+        for _ in range(29):
+            self.list.move_selection(1)
+        top, shown = self.list.offset, self.list.height_for(30) - 8
+        row = self.list.index * self.list.ROW_H
+        self.assertTrue(top <= row and row + self.list.ROW_H <= top + shown)
+        self.list.move_selection(1)
+        self.assertEqual((self.list.index, self.list.offset), (0, 0), "past the last row it starts again")
+
+    def test_the_offset_never_leaves_the_rows(self):
+        self.list._scroll_to(10 ** 6)
+        self.assertEqual(self.list.offset, self.list._overflow())
+        self.list._scroll_to(-10)
+        self.assertEqual(self.list.offset, 0)

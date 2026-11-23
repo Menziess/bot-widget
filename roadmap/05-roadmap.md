@@ -190,6 +190,15 @@ Asked as three changes. The page memory and the doctor step are on main. A row t
 
 Replaced the separate slash-command screen with an inline list under the chat input field. Added a "/" button (SlashButton) at the far right of the field; clicking it, typing "/" in the field, or right-clicking the face all open the same list. While the list is visible, the bubble's chat text is hidden; it returns when the list closes. The old standalone command screen is removed. AGENTS.md and README updated with new bubble rules. Done 2026-11-22 (`f7483fc`).
 
+### Menu, reset and /demo, 2026-11-23
+
+Done: /refresh is gone, Reset is a button per bot on /bots (AcpLink.reset starts a fresh session); the slash list scrolls; /bots and /connections show a named element's buttons under its name; Memory and Approvals lead back to the command list; /demo plants the repair seed and clears old files, so a leftover no longer ticks a task; the stage drops a glued `done` while a skill runs; ruff checks F and I.
+
+Open:
+- Model providers. The harness speaks the Chat Completions shape on a base URL, so xAI, OpenAI, OpenRouter, Gemini and GitHub Models need only a preset (address and model) in the New connection form. A subscription login (Copilot, Claude) needs a token exchange; LiteLLM covers that but is a large dependency for an agent that is stdlib only on purpose.
+- /demo cannot tick Browser (always blocked from the chat) or Computer (no prompt); give each a checkable outcome or drop the row.
+- Animations not in use yet: the clips Done_B and Blocked_C, and eyes for a wink, love or dizzy. No distinct mood for a running tool, a finished background job, a reset or a long idle.
+
 ### Open from the teacher rounds, 2026-11-21
 
 Skip what is already done (idle send, named python and unsigned commit, student-worktree approvals, the `gi` link, the instance check that ignores a prompt, false file and commit claims).

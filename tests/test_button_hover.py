@@ -28,9 +28,9 @@ class ButtonHover(unittest.TestCase):
     def test_an_action_of_a_row_is_hovered_by_the_pointer_position_alone(self):
         app = QApplication.instance() or QApplication([])
         window = QWidget()
-        window.resize(300, 60)
+        window.resize(300, 80)
         row = ItemRow("Bot", True, "toggle", [{"label": "Edit", "command": "edit"}], window)
-        row.setGeometry(0, 0, 300, 40)
+        row.setGeometry(0, 0, 300, 68)  # the name on a line, the actions below it
         window.show()
         self.addCleanup(window.close)
         row._place()

@@ -12,6 +12,7 @@ from botwidget.theme import (
     DOTS_R,
     GAP_PANEL,
     GLASS_ALPHA_FLAT,
+    ITEM_ACTIONS_H,
     LINE_CODE_PAD,
     LINE_DOTS_H,
     LINE_GAP_H,
@@ -32,7 +33,6 @@ from botwidget.theme import (
     SAND_GLASS_TOP,
     SAND_HAIRLINE,
     SAND_INK,
-    SAND_INK_SOFT,
     SAND_LINE_USER,
     SAND_ON_USER,
     SAND_PANEL_USER_BOTTOM,
@@ -84,7 +84,11 @@ def line_height(block: dict) -> int:
         if block.get("control") == "editor":
             return 220
         # The face preview is the avatar itself, not a one-line button.
-        return AVATAR_SIZE if block.get("control") == "preview" else CONTROL_H
+        if block.get("control") == "preview":
+            return AVATAR_SIZE
+        # A named element has its actions on a line of their own below.
+        named = block.get("control") == "item" and block["label"] and block.get("actions")
+        return CONTROL_H + ITEM_ACTIONS_H if named else CONTROL_H
     if block["kind"] == "gap":
         return LINE_GAP_H
     if block["kind"] == "rule":
