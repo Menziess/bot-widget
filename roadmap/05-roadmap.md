@@ -195,9 +195,9 @@ Replaced the separate slash-command screen with an inline list under the chat in
 Done: /refresh is gone, Reset is a button per bot on /bots (AcpLink.reset starts a fresh session); the slash list scrolls; /bots and /connections show a named element's buttons under its name; Memory and Approvals lead back to the command list; /demo plants the repair seed and clears old files, so a leftover no longer ticks a task; the stage drops a glued `done` while a skill runs; ruff checks F and I.
 
 Open:
-- Model providers. The harness speaks the Chat Completions shape on a base URL, so xAI, OpenAI, OpenRouter, Gemini and GitHub Models need only a preset (address and model) in the New connection form. A subscription login (Copilot, Claude) needs a token exchange; LiteLLM covers that but is a large dependency for an agent that is stdlib only on purpose.
+- Model providers. A Provider button on New connection fills xAI, OpenAI, OpenRouter, Google Gemini and GitHub Models. Still open: a subscription login (Copilot, Claude) needs a token exchange; LiteLLM covers that but is a large dependency for an agent that is stdlib only on purpose. Anthropic has its own adapter in `harness/agent/models.py` that the connection form does not offer yet.
 - /demo cannot tick Browser (always blocked from the chat) or Computer (no prompt); give each a checkable outcome or drop the row.
-- Animations not in use yet: the clips Done_B and Blocked_C, and eyes for a wink, love or dizzy. No distinct mood for a running tool, a finished background job, a reset or a long idle.
+- Animations: a finished background job (Done_B) and a reset (Blocked_C) have their own clip now. Not yet: eyes for a wink, love or dizzy, a mood for a running tool, a long idle that falls asleep.
 
 ### Open from the teacher rounds, 2026-11-21
 

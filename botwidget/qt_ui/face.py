@@ -259,6 +259,7 @@ class FaceWindow(QWidget):
         self.acp = None if guest else link or (acplink.AcpLink(acplink.target_for(agent_id),
                                                                **acplink.options_for(agent_id))
                                                if acplink.is_acp(agent_id) else None)
+        self._jobs_seen = self.acp.jobs_finished if self.acp else 0
         if self.acp:
             self.acp.on_change = self.wake.emit
         self.faces = faces
@@ -1395,6 +1396,9 @@ class FaceWindow(QWidget):
             # the timer alive only while a turn runs.
             changed = self._set_attention(self.acp.attention())
             self._sync_pending_dot()
+            if self.acp.jobs_finished != self._jobs_seen:
+                self._jobs_seen = self.acp.jobs_finished
+                self.react("job_done")
             chat = self._latest()
             self._sync_bubble(chat, force=changed)
             if self.acp.active():
@@ -1688,6 +1692,7 @@ class FaceWindow(QWidget):
         self._hover_retry = 0.0
         self._queue.clear()
         self._depth = 1
+        self.react("reset")
         if self.acp:
             self.acp.reset()
         if self.grok:

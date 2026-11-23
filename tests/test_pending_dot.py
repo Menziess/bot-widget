@@ -206,6 +206,7 @@ class PendingDot(unittest.TestCase):
 
         class Link:
             stopped = False
+            jobs_finished = 0
 
             def attention(self):
                 return {"prompts": [], "approvals": [], "browserTakeovers": []}

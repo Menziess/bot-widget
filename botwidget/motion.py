@@ -40,6 +40,8 @@ EVENTS = {
     "error": ("Blocked_B", "sad", "sad", 2.0),            # refused: Grok Bot's failed
     "no_route": ("Blocked_A", "confused", None, 0.0),     # nothing to send to: Grok Bot's blocked
     "click": ("bounce", "happy", None, 0.0),              # a click on the face: Grok Bot's bounce
+    "job_done": ("Done_B", "happy", None, 0.0),           # a background job ended: Grok Bot's second finish
+    "reset": ("Blocked_C", None, None, 0.0),              # its conversation was cleared: Grok Bot's head shake
 }
 # mood: (clip played over and over, face; None holds the still pose)
 MOODS = {

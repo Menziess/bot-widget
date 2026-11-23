@@ -6886,7 +6886,8 @@ class Moods(unittest.TestCase):
 
     def test_every_event_maps_to_its_grok_clip_and_face(self):
         expected = {"reply": ("Done_A", "happy"), "new_message": ("Idle_B", "surprised"), "sent": ("nod", None),
-                    "error": ("Blocked_B", "sad"), "no_route": ("Blocked_A", "confused"), "click": ("bounce", "happy")}
+                    "error": ("Blocked_B", "sad"), "no_route": ("Blocked_A", "confused"), "click": ("bounce", "happy"),
+                    "job_done": ("Done_B", "happy"), "reset": ("Blocked_C", None)}
         self.assertEqual({name: event[:2] for name, event in self.motion.EVENTS.items()}, expected)
         self.assertEqual(self.motion.MOODS["thinking"], ("Working_B", "inspecting"))
         self.assertEqual(self.motion.MOODS["ask"], ("Idle_D", "neutral"))

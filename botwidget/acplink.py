@@ -182,6 +182,7 @@ class AcpLink:
         self._sending = False
         self._followup = False  # a background job finished and the bot is reading the result
         self._jobs = 0
+        self.jobs_finished = 0  # counts up when a background job ends, so the face can react to the change
         self._said = False  # did this turn put any text in the bubble
         self._loading = False  # replaying a stored session: that text goes in front of the new message
         self._history: list[dict] = []
@@ -579,7 +580,9 @@ class AcpLink:
                 if update.extra.get("jobs_only"):
                     # A job count must not wipe the context meter.
                     if update.extra.get("jobs") is not None:
-                        self._jobs = int(update.extra.get("jobs") or 0)
+                        running = int(update.extra.get("jobs") or 0)
+                        self.jobs_finished += max(0, self._jobs - running)
+                        self._jobs = running
                     if update.extra.get("followup") is not None:
                         self._followup = bool(update.extra.get("followup"))
                     wake = True

@@ -353,6 +353,14 @@ class AcpTurns(unittest.TestCase):
         link._updated(Update("thought", "Klaar"))
         self.assertEqual(link.chat()["activity"], "Klaar", "a thought after a tool starts over")
 
+    def test_a_job_that_ends_is_counted_so_the_face_can_react(self):
+        from harness.acp_client import Update
+        link = self.link()
+        self.assertTrue(wait_for(lambda: not link.active()))
+        for running in (1, 2, 1, 1, 0):
+            link._updated(Update("usage", "", extra={"jobs_only": True, "jobs": running}))
+        self.assertEqual(link.jobs_finished, 2, "two went away; a job that starts is not one that ended")
+
     def test_a_space_that_arrives_on_its_own_stays_in_the_thought(self):
         """Should keep a piece that is only a space: the thought read "November26" without it."""
         from harness.acp_client import Update

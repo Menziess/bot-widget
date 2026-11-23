@@ -1803,6 +1803,7 @@ class PlainPaths(unittest.TestCase):
                 return None
 
             stopped = False
+            jobs_finished = 0
 
         link = Link()
         home.grok = link
