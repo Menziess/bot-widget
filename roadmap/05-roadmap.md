@@ -207,8 +207,7 @@ Skip what is already done (idle send, named python and unsigned commit, student-
 - Pointer and keyboard actions. The tools and the approval gate are in. Global input on Wayland still waits on `ydotool` (see Desktop computer use above). The widget moving itself does not.
 - The consent dialog above. Design and `install_after_agree` only.
 - A write outside the home workspace still raises the approval bubble. The supervisor may accept it when the title stays inside the student tree. A person should not see that bubble for a path the loop already allowed.
-- The local model sometimes answers from history after a failed tool call and never calls the tool again. The one accessibility nudge does not cover that later turn. See "A bot that repeats its last failure" above.
-- A live accessibility answer can still start with a made-up line ("No applications matched") and then show the tool's list. The tool itself did run (2026-11-21, one chat turn, result included `botwidget`).
+- Done 2026-11-23: after a tool call that failed, a closing message that does not own up to it is held back and nudged once (`FAILED_NUDGE`), whichever tool it was; and a line written before the accessibility call is never shown, because it guesses the result.
 
 ## Where to start (historical)
 

@@ -59,6 +59,11 @@ A11Y_NUDGE = ("Call the accessibility tool now, before you answer. Leave query e
              "application names. Do not invent a list.")
 PROMISE_NUDGE = ("You ended on a promise to act. Do it now with a tool call. If no tool can do it, say so plainly "
                  "and do not invent a result.")
+FAILED_NUDGE = ("A tool call just failed and your last message does not say so. Either call it again with a fix, or "
+                "say plainly that it failed. Do not answer from earlier messages as if it had worked.")
+# Words that own up to a failure: a final message with one of them needs no second round.
+FAILURE_WORDS = re.compile(r"\b(fail|failed|error|unable|cannot|can't|could not|couldn't|not found|mislukt|"
+                           r"niet gelukt|niet gevonden|kon niet|lukt niet|fout|bestaat niet)\b", re.IGNORECASE)
 PROMISE = re.compile(r"\b(ik ga|ik zal|ik probeer|let me|i'll|i will|i'm going to|i am going to)\b")
 BRIEF_PROMPT = ("Write down what a helper needs from this conversation to carry out the user's last request: facts, "
                 "names, dates and decisions that matter. Leave out the rest. At most 120 words, plain text.")
@@ -334,6 +339,13 @@ class LeanAgent:
         nudges = 0
         a11y_nudges = 0
         promise_nudges = 0
+        failed_nudges = 0
+        tool_failed = False  # the step before this one called a tool that failed
+        # A line the model writes before the accessibility call is a guess at its result: it is not shown.
+        asked_a11y = False
+        if self.tools.find("accessibility") is not None:
+            last_user = next((m["text"] for m in reversed(store.messages()) if m["role"] == "user"), "")
+            asked_a11y = accessibility_requested(last_user)
         started = time.monotonic()
         first = 0.0
         answer = []
@@ -378,7 +390,9 @@ class LeanAgent:
                 step_text, thought_chars, finish = [], 0, ""
                 # Held until this step's tool calls arrive. fold_chunk drops the reply when the
                 # only tool is not_for_me, and keeps it when the step did real work.
-                held: list[str] | None = [] if nudges else None
+                hold_for_tool = asked_a11y and "accessibility" not in called
+                # After a failed tool the closing words wait too: a claim it worked is not shown, it is nudged.
+                held: list[str] | None = [] if nudges or hold_for_tool or tool_failed else None
                 note_raw({"source": "model", "kind": "nudge" if nudges else "step"})
                 async for kind, value in self._events(session_id, messages):
                     if kind == "cancelled":
@@ -410,8 +424,13 @@ class LeanAgent:
                         held.append(value)
                         continue
                     await show_text(value, None, len(step_text) == 1)
+                said_now = "".join(step_text).strip()
+                retry_failed = (not cancelled and not calls and tool_failed and failed_nudges < 1 and bool(said_now)
+                                and not FAILURE_WORDS.search(said_now))
                 if held:
                     names = {(call.get("function") or {}).get("name") for call in calls}
+                    if (hold_for_tool and "accessibility" in names) or retry_failed:
+                        held = []
                     for index, value in enumerate(held):
                         await show_text(value, names, index == 0)
                 # What the last step looked like, so a turn that ends on talk without the call can be explained.
@@ -433,6 +452,11 @@ class LeanAgent:
                         messages.append({"role": "user", "content": A11Y_NUDGE})
                         continue
                     said = "".join(step_text).strip()
+                    if retry_failed:
+                        failed_nudges += 1
+                        messages.append({"role": "assistant", "content": said})
+                        messages.append({"role": "user", "content": FAILED_NUDGE})
+                        continue
                     if (not cancelled and not skill_on and promise_nudges < 1 and not said.endswith("?")
                             and PROMISE.search(said[-200:].lower())):
                         promise_nudges += 1
@@ -461,6 +485,7 @@ class LeanAgent:
                 for call, result in zip(calls, results, strict=False):
                     messages.append({"role": "tool", "tool_call_id": call["id"],
                                      "content": TOOL_OUTPUT + "\n" + result})
+                tool_failed = bool(results) and all(str(result).startswith("The tool failed") for result in results)
                 ending = [(call.get("function") or {}).get("name") for call in calls
                           if (call.get("function") or {}).get("name") in SKILL_ENDINGS]
                 if skill_on and ending:

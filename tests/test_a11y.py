@@ -208,6 +208,25 @@ class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
             await agent.prompt(session, [Block("Doe iets nuttigs")])
         self.assertEqual(agent.stores[session].tool_results()[-1]["name"], "accessibility")
 
+    async def test_a_line_written_before_the_accessibility_call_is_never_shown(self):
+        """The model guesses the result before it has it ("No applications matched"); only the tool's list counts."""
+        guess = [("text", "Geen applicaties gevonden."),
+                 ("tool_calls", [{"id": "a1", "function": {"name": "accessibility", "arguments": json.dumps({})}}]),
+                 ("finish", "tool_calls")]
+        folder = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder, True))
+        conn = Conn()
+        agent = LeanAgent("bot", ScriptModel([guess, [("text", "Open: botwidget."), ("finish", "stop")]]),
+                          folder=os.path.join(folder, "agent"))
+        agent.on_connect(conn)
+        session = (await agent.new_session(cwd=folder)).session_id
+        with mock.patch("botwidget.system.a11y.accessibility", return_value={"available": True, "reason": "AT-SPI", "platform": "linux"}), \
+                mock.patch("botwidget.system.a11y.application_names", return_value=["botwidget"]):
+            await agent.prompt(session, [Block("Which applications are open on my desktop?")])
+        shown = "".join(u.content.text for _s, u in conn.updates
+                        if getattr(u, "session_update", "") == "agent_message_chunk")
+        self.assertEqual(shown, "Open: botwidget.")
+
     async def test_a_correct_accessibility_call_is_one_answer_with_no_nudge(self):
         seen = []
 
