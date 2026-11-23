@@ -5,7 +5,7 @@ import re
 import unittest
 
 from harness import stream_text
-from harness.stream_text import _LEAK, _strip_leak, _tail_cut, fold_chunk
+from harness.stream_text import _LEAK, _strip_leak, _tail_cut, collapse_repeats, fold_chunk
 
 
 def reference(text: str, endings) -> str:
@@ -51,3 +51,22 @@ class Cost(unittest.TestCase):
         for end in range(0, len(answer) + 7, 7):
             shown = fold_chunk(shown, answer[:end])
         self.assertEqual(shown, answer)
+
+
+class Repeats(unittest.TestCase):
+    def test_a_paragraph_the_one_before_says_again_goes_and_the_later_copy_stays(self):
+        said = "Het script loopt nog, ik wacht op het resultaat.\n\nHet script loopt nog, ik wacht op het resultaat!"
+        self.assertEqual(collapse_repeats(said), "Het script loopt nog, ik wacht op het resultaat!")
+        thrice = "Waiting for the job to end now.\n\n" * 2 + "Waiting for the job to end now."
+        self.assertEqual(collapse_repeats(thrice), "Waiting for the job to end now.")
+
+    def test_a_paraphrase_a_short_line_and_a_code_block_stay(self):
+        paraphrase = ("De achtergrondtaak voor woensdag 25 november 2026 draait nog. Ik wacht op het resultaat.\n\n"
+                      "De boekingsopdracht voor woensdag 25 november 2026 is nog bezig. Ik wacht af.")
+        self.assertEqual(collapse_repeats(paraphrase), paraphrase)
+        self.assertEqual(collapse_repeats("Ok.\n\nOk."), "Ok.\n\nOk.")
+        code = "Run this:\n\n```sh\nmake test\n```\n\n```sh\nmake test\n```"
+        self.assertEqual(collapse_repeats(code), code)
+        self.assertEqual(collapse_repeats("One.\n\nTwo is different here.\n\nThree is not like it."),
+                         "One.\n\nTwo is different here.\n\nThree is not like it.")
+        self.assertEqual(collapse_repeats(""), "")

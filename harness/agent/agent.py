@@ -44,7 +44,7 @@ from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools, accessibility_requested
 from harness.agent.workspace import _diff_text, _real_path, compute_edit, outside_workspace, shell_segments
-from harness.stream_text import fold_chunk, note_raw
+from harness.stream_text import collapse_repeats, fold_chunk, note_raw
 
 MAX_STEPS = 30  # default for HARNESS_MAX_STEPS: a tool loop that never settles must still end the turn
 LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the same arguments this many times in a row
@@ -485,7 +485,7 @@ class LeanAgent:
             self._stream_idle.set()
         cancelled = cancelled or session_id in self._cancelled
         self._cancelled.discard(session_id)
-        said = "".join(answer)
+        said = collapse_repeats("".join(answer))
         if said:
             store.add("bot", said)
         counted = bool(usage["prompt_tokens"])

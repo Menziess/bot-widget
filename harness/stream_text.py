@@ -9,6 +9,7 @@ and it drops a trailing internal tool name. A skill nudge whose only tool is
 `scripts/replay_capture` turns that log into a fixture.
 """
 
+import difflib
 import functools
 import json
 import os
@@ -51,6 +52,24 @@ def _strip_leak(text: str, endings) -> str:
     before them, and only while a skill runs."""
     text = _tail_cut(_LEAK, text)
     return _tail_cut(_glued(tuple(sorted(endings))), text) if endings else text
+
+
+def collapse_repeats(text: str, similar: float = 0.85) -> str:
+    """The text without a paragraph that the one before it says again (near word for word).
+
+    A small model that calls a tool, then talks, then calls it again, says the same sentence each time; the steps are
+    paragraphs of one answer. Only a near copy goes: a paraphrase may be a different step, and a code block is never
+    touched."""
+    kept: list[str] = []
+    for paragraph in text.split("\n\n"):
+        words = re.findall(r"\w+", paragraph.lower())
+        if kept and len(words) >= 4 and "```" not in paragraph and "```" not in kept[-1]:
+            before = re.findall(r"\w+", kept[-1].lower())
+            if difflib.SequenceMatcher(None, before, words, autojunk=False).ratio() >= similar:
+                kept[-1] = paragraph  # the later one: it may have corrected a word
+                continue
+        kept.append(paragraph)
+    return "\n\n".join(kept)
 
 
 def silent_nudge(tool_names: set[str] | None) -> bool:

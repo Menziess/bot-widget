@@ -20,7 +20,7 @@ from botwidget.config import widget_config
 from harness import RESUME_PROMPT, approvals
 from harness.acp_client import AcpClient, split_command
 from harness.agent.netsafe import key_file_problem
-from harness.stream_text import fold_chunk, note_raw
+from harness.stream_text import collapse_repeats, fold_chunk, note_raw
 
 PREFIX = "acp:"
 DEFAULT_TARGET = "hermes-acp"
@@ -432,6 +432,8 @@ class AcpLink:
             self._activity = ""
             self._thought = ""
             self._sending = False
+            if self.messages and self.messages[-1]["role"] == "bot":
+                self.messages[-1]["text"] = collapse_repeats(self.messages[-1]["text"])
             if turn.error:
                 self.stopped = True
                 self.failed = turn.error
