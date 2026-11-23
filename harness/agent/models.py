@@ -16,6 +16,18 @@ class ModelError(Exception):
     """The provider said no, or answered with something that is not a stream."""
 
 
+def http_error(error: urllib.error.HTTPError) -> ModelError:
+    """The provider's refusal, with what it said (cut short). A chat template that cannot take tools or this message
+    order comes back as a 400 about the template: that is a choice of model or server, so the message says so."""
+    detail = error.read().decode(errors="replace")[:300]
+    hint = ""
+    if error.code == 400 and "template" in detail.lower():
+        hint = ("\nThis model's chat template does not fit the request (tool calls, or the order of the messages). "
+                "Use a model whose template supports tools, or start the server with one that does "
+                "(llama.cpp: --jinja --chat-template-file).")
+    return ModelError(f"HTTP {error.code}: {detail}{hint}")
+
+
 class ChatCompletions:
     def __init__(self, base_url: str, model: str, api_key: str = "", timeout: float = 300):
         self.base_url = base_url.rstrip("/")
@@ -186,8 +198,7 @@ class ChatCompletions:
                 if calls:
                     yield "tool_calls", [calls[index] for index in sorted(calls)]
         except urllib.error.HTTPError as error:
-            detail = error.read().decode(errors="replace")[:300]
-            raise ModelError(f"HTTP {error.code}: {detail}") from error
+            raise http_error(error) from error
         except urllib.error.URLError as error:
             raise ModelError(f"cannot reach {self.base_url}: {error.reason}") from error
 
@@ -198,7 +209,7 @@ class ChatCompletions:
             with urllib.request.urlopen(request, timeout=self.timeout) as reply:
                 body = json.loads(reply.read())
         except urllib.error.HTTPError as error:
-            raise ModelError(f"HTTP {error.code}: {error.read().decode(errors='replace')[:300]}") from error
+            raise http_error(error) from error
         except urllib.error.URLError as error:
             raise ModelError(f"cannot reach {self.base_url}: {error.reason}") from error
         choices = body.get("choices") or []
@@ -318,8 +329,7 @@ class AnthropicMessages:
                 if calls:
                     yield "tool_calls", [calls[index] for index in sorted(calls)]
         except urllib.error.HTTPError as error:
-            detail = error.read().decode(errors="replace")[:300]
-            raise ModelError(f"HTTP {error.code}: {detail}") from error
+            raise http_error(error) from error
         except urllib.error.URLError as error:
             raise ModelError(f"cannot reach {self.base_url}: {error.reason}") from error
 
@@ -329,7 +339,7 @@ class AnthropicMessages:
             with urllib.request.urlopen(request, timeout=self.timeout) as reply:
                 body = json.loads(reply.read())
         except urllib.error.HTTPError as error:
-            raise ModelError(f"HTTP {error.code}: {error.read().decode(errors='replace')[:300]}") from error
+            raise http_error(error) from error
         except urllib.error.URLError as error:
             raise ModelError(f"cannot reach {self.base_url}: {error.reason}") from error
         return "".join(block.get("text", "") for block in body.get("content") or []
