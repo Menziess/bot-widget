@@ -13,10 +13,8 @@ import tempfile
 import time
 import unittest
 
-from harness.acp_client import AcpClient, Turn, Update
+from harness.acp_client import AcpClient, Turn
 from harness.agent.agent import LeanAgent
-from harness.agent.store import SessionStore
-from harness.agent.tools import Tools
 from tests.fake_model import FakeModel
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -200,7 +198,6 @@ class Dedup(unittest.TestCase):
     """A repeated read_file with the same args is not executed twice."""
 
     def test_cache_key_follows_the_tool_and_its_arguments(self):
-        from harness.agent.agent import LeanAgent
 
         def key(name, path):
             call = {"id": "c", "function": {"name": name, "arguments": json.dumps({"path": path})}}

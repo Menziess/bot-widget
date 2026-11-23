@@ -231,7 +231,6 @@ def build(store, bot: str, model_window: int = 0, model=None, workspace: str | N
     recent_text = []
     for message in recent:
         recent_text.append(message["text"])
-    recent_bytes = "\n".join(recent_text)
 
     # ── Background extract for older turns (no summary → keep them) ─
     all_messages = store.messages()

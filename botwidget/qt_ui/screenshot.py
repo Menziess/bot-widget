@@ -7,11 +7,9 @@ region is captured → it waits in the face's field as an attachment, to send wi
 Escape or right-click on the overlay cancels.
 """
 
-from PySide6.QtCore import QBuffer, QByteArray, QPoint, QRect, Qt, QTimer
-from PySide6.QtGui import QBrush, QColor, QCursor, QGuiApplication, QPainter, QPen, QPixmap
+from PySide6.QtCore import QBuffer, QByteArray, QRect, Qt, QTimer
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QApplication, QWidget
-
-from botwidget.avatar import AVATAR_SIZE, eye_aim
 
 
 def pixmap_png_bytes(pixmap: QPixmap) -> bytes | None:
@@ -74,7 +72,7 @@ class ScreenshotOverlay(QWidget):
             self.setGeometry(self._screen.geometry())
         self.raise_()
 
-    def grab_region(self) -> "QtGui.QPixmap | None":
+    def grab_region(self) -> "QPixmap | None":
         """Grab the selected rectangle from the screen. Returns None on cancel."""
         if self._rect is None or self._screen is None:
             return None

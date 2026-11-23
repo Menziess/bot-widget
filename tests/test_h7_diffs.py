@@ -15,9 +15,8 @@ import tempfile
 import unittest
 
 from harness.agent.agent import LeanAgent
-from harness.agent.tools import Tool, Tools
+from harness.agent.tools import Tools
 from harness.agent.workspace import EditStore, workspace_builtins
-from tests.fake_model import FakeModel
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 

@@ -49,13 +49,11 @@ from __future__ import annotations
 
 import fnmatch
 import glob
-import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
-import tempfile
 from difflib import unified_diff
 
 from harness.agent.tools import Tool, ToolError, trash_file
@@ -462,7 +460,7 @@ def shell_run(workspace: str, command: str, timeout: int = 30) -> str:
             timeout=timeout,
         )
     except FileNotFoundError:
-        raise ToolError(f"shell not found")
+        raise ToolError("shell not found")
     except subprocess.TimeoutExpired:
         raise ToolError("shell timed out")
     if proc.returncode != 0:
@@ -980,7 +978,7 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
     return [
         # ── read ──
         Tool("list_dir",
-             f"List directory contents inside the workspace (scoped). Read-only.",
+             "List directory contents inside the workspace (scoped). Read-only.",
              {"type": "object",
               "properties": {"path": {"type": "string"}},
               "required": ["path"]},

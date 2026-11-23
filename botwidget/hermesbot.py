@@ -13,12 +13,6 @@ from botwidget.cli_json import (
     finish_cli,
 )
 from botwidget.cli_json import (
-    first_line_note as _note,
-)
-from botwidget.cli_json import (
-    json_object as _data,
-)
-from botwidget.cli_json import (
     stop_group as _stop_group,
 )
 from botwidget.config import named_text, widget_config
@@ -202,7 +196,7 @@ class HermesLink(PolledLink):
                 self.stopped = True
                 self.waiting_since = None
                 self.want_fetch = False
-                self.status = f"Hermes Bot: hermes is not installed or not found"
+                self.status = "Hermes Bot: hermes is not installed or not found"
                 return False
             if result.rc != 0:
                 self.status = f"Hermes Bot did not answer: {result.note or 'no answer'}"

@@ -32,4 +32,8 @@ packages = ["botwidget", "harness"]
 line-length = 110
 
 [tool.ruff.lint]
-select = ["I"]
+select = ["I", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Scaffolding that names what it ignores, and a loop variable that shadows an import on purpose.
+"tests/*" = ["F841", "F402"]

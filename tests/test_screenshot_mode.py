@@ -6,7 +6,6 @@ Offscreen Qt only. A fake grabber stands in for screen grab. No display.
 import json
 import os
 import tempfile
-import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -154,7 +153,6 @@ class ScreenshotMode(unittest.TestCase):
         self.assertTrue(bubble.holding())
 
     def test_double_click_enters_screenshot_mode(self):
-        from botwidget.qt_ui.screenshot import ScreenshotOverlay
         window = self._make_window()
         self.addCleanup(window.close_face)
         window.faces = mock.Mock()
@@ -392,7 +390,7 @@ class ScreenshotPngEncoding(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from botwidget.qt_ui import face
+            from botwidget.qt_ui import face  # noqa: F401  (availability probe)
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
         cls.app = QApplication.instance() or QApplication([])
@@ -495,7 +493,6 @@ class ScreenGrab(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def test_grab_returns_pixmap(self):
-        from PySide6.QtGui import QScreen
 
         from botwidget.qt_ui.screenshot import screen_grab
         # On offscreen, we can't really grab, but the function should exist
@@ -530,10 +527,9 @@ class EndToEnd(unittest.TestCase):
 
     def test_full_flow_with_mocked_grab(self):
         """Enter screenshot mode -> hide faces -> grab -> restore -> send."""
-        from PySide6.QtGui import QImage, QPixmap
+        from PySide6.QtGui import QPixmap
 
-        from botwidget import attachments
-        from botwidget.qt_ui.screenshot import ScreenshotOverlay, screen_grab
+        from botwidget.qt_ui.screenshot import ScreenshotOverlay
 
         window = self._make_window()
         self.addCleanup(window.close_face)
@@ -587,7 +583,7 @@ class EndToEnd(unittest.TestCase):
         from PySide6.QtGui import QPixmap
 
         from botwidget import attachments
-        from botwidget.qt_ui.screenshot import ScreenshotOverlay, _restore_faces, enter_screenshot_mode
+        from botwidget.qt_ui.screenshot import ScreenshotOverlay, enter_screenshot_mode
 
         window = self._make_window()
         self.addCleanup(window.close_face)
@@ -655,7 +651,7 @@ class EndToEnd(unittest.TestCase):
 
     def test_done_with_no_pixmap_calls_cancel(self):
         """If grab returns None, _done calls the cancel callback."""
-        from botwidget.qt_ui.screenshot import ScreenshotOverlay, enter_screenshot_mode
+        from botwidget.qt_ui.screenshot import enter_screenshot_mode
 
         window = self._make_window()
         self.addCleanup(window.close_face)
@@ -686,7 +682,7 @@ class EndToEnd(unittest.TestCase):
         from PySide6.QtGui import QPixmap
 
         from botwidget import attachments
-        from botwidget.qt_ui.screenshot import enter_screenshot_mode, pixmap_png_bytes
+        from botwidget.qt_ui.screenshot import enter_screenshot_mode
 
         window = self._make_window()
         self.addCleanup(window.close_face)

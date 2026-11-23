@@ -4,7 +4,6 @@ Async, with no opinion about the widget: the spike prints what comes in, the wid
 turns it into the dictionary the bubble draws from.
 """
 
-import asyncio
 import inspect
 import os
 import shlex

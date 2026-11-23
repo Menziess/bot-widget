@@ -9,7 +9,7 @@ import shlex
 import sys
 
 from botwidget.acplink import PREFIX, _slug
-from botwidget.avatar import GROK_HEX, SUPPORTED_SHAPES
+from botwidget.avatar import SUPPORTED_SHAPES
 from harness.agent.workspace import check_rules
 
 FACES = SUPPORTED_SHAPES

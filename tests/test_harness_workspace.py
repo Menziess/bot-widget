@@ -1,11 +1,9 @@
 """H3 workspace-scoped tools: containment, secrets, search, git, shell, edit/undo, context rules."""
 
-import json
 import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 

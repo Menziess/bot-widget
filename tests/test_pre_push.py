@@ -35,7 +35,7 @@ class PrePush(unittest.TestCase):
         return done.returncode
 
     def test_a_failing_test_command_rejects_a_push_of_main(self):
-        code = self._run_copy(f"refs/heads/main abc refs/heads/main def\n")
+        code = self._run_copy("refs/heads/main abc refs/heads/main def\n")
         self.assertNotEqual(code, 0)
 
     def test_another_branch_and_a_delete_are_not_gated(self):

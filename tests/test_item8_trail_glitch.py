@@ -17,7 +17,7 @@ class TrailWindowFlags(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from botwidget.qt_ui import face
+            from botwidget.qt_ui import face  # noqa: F401  (availability probe)
         except ImportError as error:
             raise unittest.SkipTest(f"no Qt: {error}")
         cls.app = QApplication.instance() or QApplication([])
@@ -42,8 +42,7 @@ class TrailWindowFlags(unittest.TestCase):
         """Verify _raised flag prevents repeated raise() calls."""
         from unittest import mock
 
-        from PySide6.QtCore import QPointF, QRect
-        from PySide6.QtGui import QPaintEvent
+        from PySide6.QtCore import QPointF
 
         from botwidget.qt_ui.bubble_window import Trail
 

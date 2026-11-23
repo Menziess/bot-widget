@@ -11,12 +11,6 @@ from botwidget.cli_json import (
     finish_cli,
 )
 from botwidget.cli_json import (
-    first_line_note as _note,
-)
-from botwidget.cli_json import (
-    json_object as _data,
-)
-from botwidget.cli_json import (
     stop_group as _stop_group,
 )
 from botwidget.config import named_text, widget_config
@@ -164,7 +158,6 @@ def _in_thread_order(entries: list, shown: list, kept: list) -> list:
     not hold yet goes last.
     """
     ids = {m.get("id") for m in shown if m.get("id")}
-    texts = {m["text"]: m for m in shown}
     waiting = list(kept)
     ordered = []
     for entry in entries or []:

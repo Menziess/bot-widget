@@ -8,7 +8,6 @@ import os
 import tempfile
 import unittest
 from contextlib import ExitStack
-from pathlib import Path
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

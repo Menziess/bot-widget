@@ -6,7 +6,6 @@ and the integration into context.build() and the lean agent.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import sys
@@ -425,7 +424,7 @@ class AgentMemoryTools(unittest.IsolatedAsyncioTestCase):
         self.model = FakeModel("I stored that.")
         self.addCleanup(self.model.close)
 
-    def client(self) -> AcpClient:
+    def client(self):
         from harness.acp_client import AcpClient
         env = {"HARNESS_BOT": "TestMem", "HARNESS_MODEL_BASE_URL": self.model.base_url,
                "HARNESS_MODEL": "fake-model", "HARNESS_AGENT_DIR": self.folder,

@@ -18,7 +18,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from harness.agent.agent import LeanAgent
 from harness.agent.jobs import JobRunner, config_from_env
-from harness.agent.store import SessionStore
 from harness.agent.tools import ToolError
 from tests.test_harness_direct import ScriptModel
 

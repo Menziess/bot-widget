@@ -84,7 +84,7 @@ class _Block:
 
 async def _run_turn(agent, session_id, text):
     """Ask the agent one prompt and return (answer_text, path_steps)."""
-    result = await agent.prompt(session_id, [_Block(text)])
+    await agent.prompt(session_id, [_Block(text)])
     store = agent.stores[session_id]
     bot_messages = [m for m in store.messages() if m["role"] == "bot"]
     answer = bot_messages[-1]["text"] if bot_messages else ""
