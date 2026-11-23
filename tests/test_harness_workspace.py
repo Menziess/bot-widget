@@ -333,6 +333,17 @@ class ShellTools(unittest.TestCase):
         result = shell_run(tempfile.gettempdir(), "echo hello")
         self.assertIn("hello", result)
 
+    def test_a_timeout_stops_what_the_command_started_and_says_where_long_commands_go(self):
+        marker = tempfile.mktemp(prefix="bw-timeout-")
+        self.addCleanup(lambda: os.path.exists(marker) and os.remove(marker))
+        command = f"(sleep 2; echo late > {marker}) & sleep 30"
+        with self.assertRaises(Exception) as caught:
+            shell_run(tempfile.gettempdir(), command, timeout=1)
+        self.assertIn("shell_background", str(caught.exception))
+        import time
+        time.sleep(2.5)
+        self.assertFalse(os.path.exists(marker), "the child of the shell was stopped as well")
+
     def test_shell_git_push_is_refused(self):
         with self.assertRaises(Exception):
             shell_run("/tmp", "git push origin main")

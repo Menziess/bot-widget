@@ -56,6 +56,7 @@ import shutil
 import subprocess
 from difflib import unified_diff
 
+from harness.agent.procs import group_kwargs, stop
 from harness.agent.tools import Tool, ToolError, trash_file
 
 # ── Defaults ──────────────────────────────────────────────────────────
@@ -450,23 +451,24 @@ def shell_run(workspace: str, command: str, timeout: int = 30) -> str:
     """Run a shell command inside the workspace.  Write-heavy patterns are refused."""
     if shell_refused(command):
         raise ToolError("shell command refused: " + command[:120])
+    # Its own session, so a timeout can stop the command and everything it started. subprocess.run only killed the
+    # shell and left the rest running, which is how a second booking process came to run beside the first.
     try:
-        proc = subprocess.run(
-            command,
-            shell=True,
-            cwd=workspace,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
+        proc = subprocess.Popen(command, shell=True, cwd=workspace, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True, **group_kwargs())
     except FileNotFoundError:
         raise ToolError("shell not found")
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        raise ToolError("shell timed out")
+        stop(proc)
+        proc.communicate()
+        raise ToolError(f"shell timed out after {timeout} seconds and was stopped. A command that takes longer "
+                        "belongs in shell_background.")
     if proc.returncode != 0:
-        msg = proc.stderr.strip() or proc.stdout.strip()
+        msg = stderr.strip() or stdout.strip()
         raise ToolError(f"shell failed ({proc.returncode}): {msg[:300]}")
-    return (proc.stdout or "").strip()[:MAX_READ_CHARS]  # a long answer is spilled to a file by the agent
+    return (stdout or "").strip()[:MAX_READ_CHARS]  # a long answer is spilled to a file by the agent
 
 
 # ── Read-only shell commands and saved prefixes ───────────────────────
