@@ -567,7 +567,8 @@ class AcpLink:
                 role = "user" if update.kind == "user" else "bot"
                 _append_message(self._history, role, update.text, fold=role == "bot")
                 return
-            if update.kind == "thought" and update.text.strip():
+            # A lone space is a piece of the thought: without it "November 26" read "November26".
+            if update.kind == "thought" and (update.text.strip() or (self._thought and update.text)):
                 self._thought += update.text
                 self._activity = _bubble_line(self._thought)
             elif update.kind == "tool":

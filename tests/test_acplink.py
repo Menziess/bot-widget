@@ -353,6 +353,18 @@ class AcpTurns(unittest.TestCase):
         link._updated(Update("thought", "Klaar"))
         self.assertEqual(link.chat()["activity"], "Klaar", "a thought after a tool starts over")
 
+    def test_a_space_that_arrives_on_its_own_stays_in_the_thought(self):
+        """Should keep a piece that is only a space: the thought read "November26" without it."""
+        from harness.acp_client import Update
+        link = self.link()
+        self.assertTrue(wait_for(lambda: not link.active()))
+        for piece in ("Op", " ", "November", " ", "26"):
+            link._updated(Update("thought", piece))
+        self.assertEqual(link.chat()["activity"], "Op November 26")
+        link._updated(Update("tool", "shell ls"))
+        link._updated(Update("thought", " "))
+        self.assertEqual(link.chat()["activity"], "shell ls", "a space alone never starts a thought")
+
     def test_a_second_send_waits_and_a_silent_turn_says_nothing_came_back(self):
         """Should refuse a send while one is running, and say so when a turn ends with no words."""
         import asyncio
