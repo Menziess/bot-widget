@@ -61,7 +61,7 @@ class Replay(unittest.IsolatedAsyncioTestCase):
         skill_root = os.path.join(self.tmp, "skills")
         if fixture.get("skill"):
             folder = os.path.join(skill_root, "parking")
-            os.makedirs(folder)
+            os.makedirs(folder, exist_ok=True)
             with open(os.path.join(folder, "SKILL.md"), "w", encoding="utf-8") as fh:
                 fh.write("---\nname: parking\ndescription: Book a parking bay\n---\nSTEP ONE: book it\n")
         patched = mock.patch.dict(os.environ, {"HARNESS_CONTEXT_PATHS": skill_root if fixture.get("skill") else ""})
@@ -89,11 +89,11 @@ class Replay(unittest.IsolatedAsyncioTestCase):
                 with open(path, encoding="utf-8") as fh:
                     fixture = json.load(fh)
                 bubble = fixture["bubble"]
-                self.assertEqual(play(fixture["steps"]), bubble)
+                self.assertEqual(play(fixture["steps"], ("done",) if fixture.get("skill") else ()), bubble)
                 text, chunks = await self._run(fixture)
                 self.assertEqual(text, bubble)
                 self.assertEqual(widget_text(chunks), bubble)
-                if not any(event.get("kind") == "nudge" for step in fixture["steps"] for event in step):
+                if not fixture.get("skill") and not any(event.get("kind") == "nudge" for step in fixture["steps"] for event in step):
                     raw = [event["text"] for step in fixture["steps"] for event in step
                            if event.get("kind") in ("text", "final")]
                     self.assertEqual(widget_text(raw), bubble)

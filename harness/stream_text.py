@@ -15,9 +15,20 @@ import re
 
 # A skill ending the model wrote as words. The bubble's italic markdown eats `_for_`, so
 # not_for_me twice, glued, reads as notformenotforme. wait_for_user is the same kind of leak.
+# A name cut short (not_for) is the same leak.
 _LEAK = re.compile(
-    r"(?:not_for_me|NOT_FOR_ME|notforme|wait_for_user|WAIT_FOR_USER|waitforuser)+$"
+    r"(?:not_for(?:_me)?|NOT_FOR(?:_ME)?|notforme|wait_for(?:_user)?|WAIT_FOR(?:_USER)?|waitforuser)+$"
 )
+
+
+def _strip_leak(text: str, endings) -> str:
+    """The names a running skill ends with (done, ...) are plain words, so they only count as a leak glued to the text
+    before them, and only while a skill runs."""
+    text = _LEAK.sub("", text)
+    if endings:
+        names = "|".join(re.escape(name) for name in sorted(endings, key=len, reverse=True))
+        text = re.sub(rf"(?<=\S)(?:{names}|{_LEAK.pattern[:-1]})+$", "", text)
+    return text
 
 
 def silent_nudge(tool_names: set[str] | None) -> bool:
@@ -25,12 +36,12 @@ def silent_nudge(tool_names: set[str] | None) -> bool:
     return tool_names == {"not_for_me"}
 
 
-def fold_chunk(current: str, chunk: str, tool_names: set[str] | None = None) -> str:
+def fold_chunk(current: str, chunk: str, tool_names: set[str] | None = None, endings=()) -> str:
     """The bubble text after one more piece.
 
     A piece that already starts with the answer is a longer copy and replaces it.
     A piece equal to the answer was sent again and is ignored.
-    A trailing tool-name echo is not part of the answer.
+    A trailing tool-name echo is not part of the answer; `endings` are the tools a running skill ends with.
     A silent skill nudge (`tool_names` is exactly not_for_me) leaves the answer as it was.
     """
     if silent_nudge(tool_names) or not chunk:
@@ -39,10 +50,10 @@ def fold_chunk(current: str, chunk: str, tool_names: set[str] | None = None) -> 
         merged = chunk
     else:
         merged = current + chunk
-    return _LEAK.sub("", merged)
+    return _strip_leak(merged, endings)
 
 
-def play(steps: list) -> str:
+def play(steps: list, endings=()) -> str:
     """Bubble text for one captured turn. `steps` is the raw events each model call emitted.
 
     A step that contains a `nudge` event is a skill nudge. Its text is kept only when
@@ -56,7 +67,7 @@ def play(steps: list) -> str:
         for event in step:
             if event.get("kind") not in ("text", "final"):
                 continue
-            shown = fold_chunk(shown, event.get("text") or "", names if nudge else None)
+            shown = fold_chunk(shown, event.get("text") or "", names if nudge else None, endings)
     return shown
 
 

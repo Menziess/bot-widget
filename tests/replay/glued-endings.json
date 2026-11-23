@@ -1,0 +1,12 @@
+{
+  "user": "/parking tomorrow",
+  "skill": true,
+  "bubble": "browser noted",
+  "steps": [
+    [
+      {"kind": "text", "text": "browser notednot_for"},
+      {"kind": "text", "text": "browser noteddone"},
+      {"kind": "finish", "reason": "stop"}
+    ]
+  ]
+}

@@ -199,7 +199,8 @@ def builtins() -> list[Tool]:
         Tool("list_dir", "List the names in a directory. Read-only.", {
             "type": "object", "properties": {"path": {"type": "string"}}},
             lambda arguments: list_dir(arguments.get("path", "."))),
-        Tool("write_file", "Write a text file. Needs the user's permission.", {
+        Tool("write_file", "Write a text file exactly as given: end content with a newline if the file should end with one. "
+        "Needs the user's permission.", {
             "type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}},
             "required": ["path", "content"]},
             lambda arguments: write_file(arguments["path"], arguments["content"]), writes=True),

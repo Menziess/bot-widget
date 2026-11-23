@@ -348,7 +348,7 @@ class LeanAgent:
         async def show_text(value: str, tool_names: set[str] | None = None) -> None:
             nonlocal shown, first
             # Every piece the bubble will show, including a nudge reply, goes through one stage.
-            new = fold_chunk(shown, value, tool_names)
+            new = fold_chunk(shown, value, tool_names, SKILL_ENDINGS if skill_on else ())
             if new == shown:
                 return
             extra = new[len(shown):] if new.startswith(shown) else new
