@@ -208,7 +208,7 @@ Extra instructions and skills come from folders and files of your choice, set in
 ```
 
 - Paths are separated like `PATH`: a colon on macOS and Linux, a semicolon on Windows
-- A bot added from the widget starts with `~/.agents/skills` and `~/.agents/AGENTS.md`. A bot that already exists keeps what it has. A path that is not there is skipped
+- A bot added from the widget starts with none: skills and instructions cost context in every request, so add the paths you want. A bot that already exists keeps what it has. A path that is not there is skipped
 - A file is read as instructions and goes into every request
 - A folder gives its `AGENTS.md`, `CLAUDE.md` or `.clinerules` as instructions
 - A folder that holds a `SKILL.md`, or folders that each hold one, gives skills
