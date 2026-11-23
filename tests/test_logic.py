@@ -7465,6 +7465,15 @@ class DevRunner(unittest.TestCase):
             open(os.path.join(folder, "b.py"), "w").write("y = 2")
             self.assertNotEqual(dev.snapshot(folder), before)
 
+    def test_snapshot_ignores_the_generated_version_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "_version.py")
+            open(path, "w").write("version = '1'")
+            before = dev.snapshot(folder)
+            self.assertEqual(before, {})
+            open(path, "w").write("version = '2'")
+            self.assertEqual(dev.snapshot(folder), before, "a wheel build rewrites it and must not restart the bot")
+
     def test_snapshot_ignores_other_files_and_bytecode(self):
         with tempfile.TemporaryDirectory() as folder:
             before = dev.snapshot(folder)

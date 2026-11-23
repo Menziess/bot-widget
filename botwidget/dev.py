@@ -42,12 +42,13 @@ def publish_busy() -> bool:
 
 
 def snapshot(folder: str = PACKAGE) -> dict:
-    """Path and modification time of every .py file under folder."""
+    """Path and modification time of every .py file under folder. _version.py is generated: a wheel build (the test
+    suite makes one) rewrites it, and that restarted the widget, and the agent with it, in the middle of a turn."""
     seen = {}
     for root, dirs, files in os.walk(folder):
         dirs[:] = [d for d in dirs if d != "__pycache__"]
         for name in files:
-            if name.endswith(".py"):
+            if name.endswith(".py") and name != "_version.py":
                 path = os.path.join(root, name)
                 seen[path] = os.stat(path).st_mtime_ns
     return seen
