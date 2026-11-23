@@ -140,7 +140,7 @@ class Jobs(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.folder, True)
         self.done = []
         self.runner = JobRunner(self.folder, lambda sid, text: self.done.append((sid, text)))
-        self.addCleanup(self.runner.shutdown)
+        self.addCleanup(self.runner.kill_all)
 
     def test_start_list_and_cancel(self):
         """Should show a running job and then stop it."""
@@ -156,12 +156,51 @@ class Jobs(unittest.TestCase):
         self.assertIsNotNone(self.runner.jobs["j1"].proc.poll())
         self.assertTrue(wait_until(lambda: self.done), "a cancelled job is still delivered")
 
-    def test_shutdown_kills_a_running_job(self):
-        """Should kill jobs when the agent process stops."""
+    def test_a_job_outlives_its_agent_and_the_next_one_reports_it(self):
+        """Should keep a running job through a restart, watch it again, and deliver its result."""
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        first = JobRunner(self.folder, lambda *_: None, state_dir=folder)
+        self.addCleanup(first.kill_all)
+        command = py("import time; time.sleep(1.5); print('late')")
+        first.start("s1", command)
+        first.shutdown()
+        proc = first.jobs["j1"].proc
+        self.assertIsNone(proc.poll(), "the job goes on when its agent stops")
+        done = []
+        second = JobRunner(self.folder, lambda sid, text: done.append((sid, text)), state_dir=folder)
+        self.addCleanup(second.kill_all)
+        second.adopt()
+        self.assertEqual(second.running_notes("s1"), [f"j1: {command}"])
+        self.assertIn("kept running through a restart", second.list("s1"))
+        self.assertTrue(wait_until(lambda: done, 10))
+        self.assertIn("exit_code: 0", done[0][1])
+        self.assertIn("late", done[0][1])
+        self.assertEqual(os.listdir(folder), [], "nothing is left behind")
+        self.assertEqual(JobRunner(self.folder, lambda *_: None, state_dir=folder)._next, 1)
+
+    def test_a_job_that_ended_while_the_agent_was_away_is_reported_with_its_exit_code(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        first = JobRunner(self.folder, lambda *_: None, state_dir=folder)
+        first.start("s1", py("import sys; print('bye'); sys.exit(3)"))
+        first.shutdown()
+        first.jobs["j1"].proc.wait(10)
+        done = []
+        second = JobRunner(self.folder, lambda sid, text: done.append((sid, text)), state_dir=folder)
+        self.addCleanup(second.kill_all)
+        second.adopt()
+        self.assertEqual(second.running_notes("s1"), [], "a job that is gone is not told as running")
+        self.assertTrue(wait_until(lambda: done, 10))
+        self.assertIn("exit_code: 3", done[0][1])
+        self.assertIn("bye", done[0][1])
+
+    def test_the_list_tells_a_waiting_bot_to_end_its_turn(self):
         self.runner.start("s1", py("import time; time.sleep(30)"))
-        proc = self.runner.jobs["j1"].proc
-        self.runner.shutdown()
-        self.assertTrue(wait_until(lambda: proc.poll() is not None))
+        self.assertIn("End your turn", self.runner.list("s1"))
+        self.runner.cancel("s1", "j1")
+        self.assertTrue(wait_until(lambda: self.runner.jobs["j1"].status != "running"))
+        self.assertNotIn("End your turn", self.runner.list("s1"))
 
     def test_a_refused_command_does_not_start(self):
         """Should use the same refusal list as shell."""
@@ -226,7 +265,7 @@ class Hooks(unittest.TestCase):
         self.runner = JobRunner(
             self.folder, lambda sid, text: self.done.append((sid, text)),
             hook_command=self.hook_command, hook_url=self.server.url, hook_key_file=self.key)
-        self.addCleanup(self.runner.shutdown)
+        self.addCleanup(self.runner.kill_all)
 
     def test_webhook_and_shell_hook_get_the_payload_and_the_key_is_not_logged(self):
         """Should send job id, command, exit code, duration and a tail, and not log the token."""
@@ -296,6 +335,7 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
         agent = LeanAgent("JobBot", model, folder=self.state)
         agent.conn = AskConn(allow=allow)
         self.addCleanup(agent.shutdown)
+        self.addCleanup(lambda: agent.jobs and agent.jobs.kill_all())
         return agent
 
     async def _until(self, predicate, timeout=2.0):
@@ -305,6 +345,39 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
                 return True
             await asyncio.sleep(0.02)
         return False
+
+    async def test_a_restarted_agent_tells_the_session_about_the_job_that_kept_running(self):
+        """Should add one note for the session, so the model carries on instead of starting the job again."""
+        self._env()
+        command = py("import time; time.sleep(30)")
+        before = JobRunner(self.folder, lambda *_: None, state_dir=os.path.join(self.state, "jobs"))
+        self.addCleanup(before.kill_all)
+        before.start("s1", command)
+        before.shutdown()
+        model = RecordingModel([[("text", "Ok, I wait for it.")]])
+        agent = self.agent(model)
+        await agent.prompt("s1", [Block("[resume]")])
+        note = next(m["text"] for m in agent.stores["s1"].messages() if m["role"] == "tool")
+        self.assertIn("j1", note)
+        self.assertIn("Do not start them again", note)
+        self.assertIn("kept running through a restart", agent.jobs.list("s1"))
+
+    async def test_loading_the_session_adopts_a_job_that_ended_meanwhile_and_reports_it(self):
+        """Should not wait for a message from the user: a restart must not lose the result."""
+        self._env()
+        before = JobRunner(self.folder, lambda *_: None, state_dir=os.path.join(self.state, "jobs"))
+        self.addCleanup(before.kill_all)
+        before.start("s1", py("print('booked')"))
+        before.shutdown()
+        before.jobs["j1"].proc.wait(10)
+        model = RecordingModel([[("text", "Gelukt.")]])
+        agent = self.agent(model)
+        await agent.load_session(self.folder, "s1")
+        for _ in range(100):
+            if any("booked" in seen for seen in model.seen):
+                break
+            await asyncio.sleep(0.1)
+        self.assertTrue(any("booked" in seen for seen in model.seen), "the model got the job's result")
 
     async def test_a_denied_ask_does_not_start_the_job(self):
         """Should refuse a background command when shell permission is denied."""

@@ -160,6 +160,12 @@ class LeanAgent:
         store = self.stores.setdefault(session_id, SessionStore(self.folder))
         self._cwds[session_id] = cwd or ""
         self._advertise_skills(session_id)
+        # Jobs left by the agent before this one are picked up now, not at the next message: one that ends in the
+        # meantime must still be reported to this session.
+        self._aio = asyncio.get_running_loop()
+        self._tool_session = session_id
+        self._workspace = self._workspace_for(session_id)
+        self._ensure_job_tools()
         for message in store.messages(limit=context.KEEP_TURNS * 2):
             if message["role"] == "tool":
                 # An ordinary tool line stays out of the bubble. A decline must still be said,
@@ -565,7 +571,9 @@ class LeanAgent:
         from harness.agent.jobs import JobRunner, config_from_env
 
         settings = config_from_env()
-        self.jobs = JobRunner(workspace, self._job_finished, **settings)
+        self.jobs = JobRunner(workspace, self._job_finished, state_dir=os.path.join(self.folder, "jobs"), **settings)
+        self.jobs.adopt()
+        self._note_adopted_jobs()
         command = {
             "type": "object",
             "properties": {
@@ -587,11 +595,14 @@ class LeanAgent:
             "Same permission, workspace scope and refusal rules as shell. The job keeps running after "
             "this turn and after the bubble closes. When it exits, this session gets the exit code and "
             "a short tail of the output as a new message. Optional hook_command and hook_url run then; "
-            "hook_key_file is a path to the webhook bearer token, never the token.",
+            "hook_key_file is a path to the webhook bearer token, never the token. Use it for anything that can take "
+            "longer than half a minute, with a timeout in seconds. Once it has started, say so in one sentence and end "
+            "your turn: the result arrives as a new message, so do not poll jobs.",
             command, self._start_job, writes=True))
         self.tools.add(Tool(
             "jobs",
-            "List background shell jobs for this session: id, status and command.",
+            "List background shell jobs for this session: id, status and command. Not for waiting: a running job "
+            "reports itself when it ends.",
             {"type": "object", "properties": {}}, self._list_jobs))
         self.tools.add(Tool(
             "job_cancel",
@@ -599,6 +610,20 @@ class LeanAgent:
             {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]},
             self._cancel_job))
         self._job_tools_ready = True
+
+    def _note_adopted_jobs(self) -> None:
+        """A job that kept running through a restart is told to the session it belongs to, so the model carries on
+        instead of starting it again. One that already ended reports itself like any finished job."""
+        for session_id in {job.session_id for job in self.jobs.jobs.values()}:
+            lines = self.jobs.running_notes(session_id)
+            if not lines:
+                continue
+            note = ("The agent restarted. Background jobs still running: " + "; ".join(lines)
+                    + ". Their result arrives here when they end. Do not start them again.")
+            main = self.stores.setdefault(session_id, SessionStore(self.folder))
+            main.add("tool", note)
+            if self._skill_waiting(main):
+                self._skill_store().add("tool", note)
 
     def _start_job(self, arguments: dict) -> str:
         if self.jobs is None:

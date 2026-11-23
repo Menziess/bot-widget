@@ -1,6 +1,8 @@
-"""Background shell jobs for one agent process.
+"""Background shell jobs for one agent.
 
-A job outlives the bubble: it belongs to the agent, not the window. The same permission check as
+A job outlives the bubble, and it outlives the agent process: its output goes to files and a record of it is kept in
+the agent's folder, so an agent that starts again finds the jobs that were running (adopt), tells the session what
+became of them, and keeps watching the ones still going. The same permission check as
 shell happens before start (the tool is marked as a write). A hook command written in config is
 trusted, the same way the agent's own start command is, and still cannot run a command shell
 always refuses. A hook the model adds is part of that job's permission question.
@@ -14,13 +16,14 @@ import json
 import logging
 import os
 import re
-import signal
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
 
+from harness.agent.procs import group_kwargs, stop
 from harness.agent.tools import ToolError
 from harness.agent.workspace import shell_refused
 
@@ -76,61 +79,33 @@ def redact(text: str, secrets: set[str] | None = None) -> str:
     return text
 
 
-def _tail_read(stream, limit: int) -> tuple[str, bool]:
-    buf: list[str] = []
-    total = 0
-    cut = False
-    while True:
-        chunk = stream.read(4096)
-        if not chunk:
-            break
-        buf.append(chunk)
-        total += len(chunk)
-        while total > limit and buf:
-            cut = True
-            extra = total - limit
-            if extra >= len(buf[0]):
-                total -= len(buf.pop(0))
-            else:
-                buf[0] = buf[0][extra:]
-                total = limit
-    return "".join(buf), cut
-
-
-def _popen(command: str, workspace: str) -> subprocess.Popen:
-    kwargs = dict(shell=True, cwd=workspace, stdin=subprocess.DEVNULL,
-                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace")
-    if os.name == "nt":
-        kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-    else:
-        kwargs["start_new_session"] = True
-    return subprocess.Popen(command, **kwargs)
-
-
-def _kill(proc: subprocess.Popen | None) -> None:
-    if proc is None or proc.poll() is not None:
-        return
-    if os.name != "nt":
-        try:
-            os.killpg(proc.pid, signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            proc.terminate()
-    else:
-        proc.terminate()
+def _tail_file(path: str, limit: int) -> tuple[str, bool]:
+    """The last `limit` characters of a job's output file, and whether something was cut."""
     try:
-        proc.wait(timeout=1)
-    except subprocess.TimeoutExpired:
-        if os.name != "nt":
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError, OSError):
-                proc.kill()
-        else:
-            proc.kill()
-        try:
-            proc.wait(timeout=1)
-        except subprocess.TimeoutExpired:
-            pass
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+    except OSError:
+        return "", False
+    return text[-limit:], len(text) > limit
+
+
+def _popen(command: str, workspace: str, out, err, exit_file: str) -> subprocess.Popen:
+    """The command writes to files, in a process group of its own. Its exit code goes to exit_file, because a process
+    the agent did not start itself has no return code to ask for."""
+    kwargs = dict(cwd=workspace, stdin=subprocess.DEVNULL, stdout=out, stderr=err, **group_kwargs())
+    if os.name == "nt":
+        return subprocess.Popen(command, shell=True, **kwargs)
+    return subprocess.Popen(["/bin/sh", "-c", '(eval "$1"); echo $? > "$2"', "sh", command, exit_file], **kwargs)
+
+
+def _alive(pid: int, command: str) -> bool:
+    """Is this pid still that job? A reused pid runs another command, and its argv does not hold ours."""
+    try:
+        shown = subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True,
+                               timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return command[:80] in shown
 
 
 def _summary(stdout: str, stderr: str, cut_out: bool, cut_err: bool) -> str:
@@ -170,10 +145,13 @@ class Job:
         self.hook_url = hook_url
         self.hook_key_file = hook_key_file
         self.proc: subprocess.Popen | None = None
+        self.pid = 0
         self.status = "running"
         self.exit_code: int | None = None
         self.cancelled = False
         self.started = time.monotonic()
+        self.wall = time.time()  # the clock that survives a restart
+        self.adopted = False
 
 
 class JobRunner:
@@ -181,8 +159,10 @@ class JobRunner:
 
     def __init__(self, workspace: str, on_done, *, hook_command: str = "", hook_url: str = "",
                  hook_key_file: str = "", tail: int = TAIL, max_jobs: int = MAX_JOBS,
-                 timeout: float | None = None):
+                 timeout: float | None = None, state_dir: str | None = None):
         self.workspace = workspace
+        self.dir = state_dir or tempfile.mkdtemp(prefix="harness-jobs-")
+        os.makedirs(self.dir, exist_ok=True)
         self.on_done = on_done  # (session_id, text) from the watcher thread
         self.hook_command = hook_command
         self.hook_url = hook_url
@@ -192,13 +172,32 @@ class JobRunner:
         self.timeout = timeout
         self.jobs: dict[str, Job] = {}
         self.secrets: set[str] = set()
-        self._next = 1
+        self._next = 1 + max((int(name[1:-5]) for name in os.listdir(self.dir)
+                              if name.startswith("j") and name.endswith(".json") and name[1:-5].isdigit()), default=0)
         self._closed = False
         self._lock = threading.Lock()
 
     def running_count(self) -> int:
         with self._lock:
             return sum(1 for job in self.jobs.values() if job.status == "running")
+
+    def _path(self, job_id: str, kind: str) -> str:
+        return os.path.join(self.dir, f"{job_id}.{kind}")
+
+    def _record(self, job: Job) -> None:
+        """What a later agent needs to adopt this job."""
+        record = {"id": job.id, "session_id": job.session_id, "command": job.command, "timeout": job.timeout,
+                  "hook_command": job.hook_command, "hook_url": job.hook_url, "hook_key_file": job.hook_key_file,
+                  "pid": job.pid, "wall": job.wall}
+        with open(self._path(job.id, "json"), "w") as fh:
+            json.dump(record, fh)
+
+    def _forget(self, job_id: str) -> None:
+        for kind in ("json", "out", "err", "exit"):
+            try:
+                os.remove(self._path(job_id, kind))
+            except OSError:
+                pass
 
     def start(self, session_id: str, command: str, *, timeout: float | None = None,
               hook_command: str = "", hook_url: str = "", hook_key_file: str = "") -> str:
@@ -222,19 +221,37 @@ class JobRunner:
                       hook_key_file.strip())
             self.jobs[job_id] = job
         try:
-            job.proc = _popen(command, self.workspace)
+            with open(self._path(job_id, "out"), "w") as out, open(self._path(job_id, "err"), "w") as err:
+                job.proc = _popen(command, self.workspace, out, err, self._path(job_id, "exit"))
         except OSError as error:
             with self._lock:
                 self.jobs.pop(job.id, None)
             raise ToolError(f"shell not found: {error.strerror}") from error
+        job.pid = job.proc.pid
+        self._record(job)
         threading.Thread(target=self._watch, args=(job,), daemon=True, name=f"job-{job.id}").start()
         return f"Started background job {job.id}."
 
     def list(self, session_id: str) -> str:
         with self._lock:
-            rows = [f"{job.id} {job.status} {job.command}"
-                    for job in self.jobs.values() if job.session_id == session_id]
+            mine = [job for job in self.jobs.values() if job.session_id == session_id]
+            rows = [f"{job.id} {job.status}{' (kept running through a restart)' if job.adopted else ''} {job.command}"
+                    for job in mine]
+        if any(job.status == "running" for job in mine):
+            rows.append("Still running. End your turn: the result arrives here as a new message.")
         return "\n".join(rows) or "(no background jobs)"
+
+    def running_notes(self, session_id: str) -> list[str]:
+        """One line per job that was adopted and is still going, for the turn that picks the session up again."""
+        with self._lock:
+            return [f"{job.id}: {job.command}" for job in self.jobs.values()
+                    if job.session_id == session_id and job.adopted and job.status == "running"]
+
+    def _stop(self, job: Job) -> None:
+        if job.proc is not None:
+            stop(job.proc)
+        elif job.pid:
+            stop(job.pid)
 
     def cancel(self, session_id: str, job_id: str) -> str:
         job_id = str(job_id or "").strip()
@@ -245,33 +262,70 @@ class JobRunner:
         if job.status != "running":
             return f"{job_id} already {job.status}."
         job.cancelled = True
-        _kill(job.proc)
+        self._stop(job)
         return f"Cancelled {job_id}."
 
     def shutdown(self) -> None:
+        """Stop watching. The jobs go on, and the next agent to start adopts them."""
+        with self._lock:
+            self._closed = True
+
+    def kill_all(self) -> None:
         with self._lock:
             self._closed = True
             jobs = list(self.jobs.values())
         for job in jobs:
             job.cancelled = True
-            _kill(job.proc)
+            self._stop(job)
+            self._forget(job.id)
+
+    def adopt(self) -> None:
+        """Take over the jobs a previous agent left: a job that finished meanwhile reports itself, one that still runs
+        is watched again with what is left of its timeout."""
+        if os.name == "nt":
+            return
+        for name in sorted(os.listdir(self.dir)):
+            if not (name.startswith("j") and name.endswith(".json")):
+                continue
+            job_id = name[:-5]
+            with self._lock:
+                if job_id in self.jobs:
+                    continue
+            try:
+                with open(os.path.join(self.dir, name)) as fh:
+                    record = json.load(fh)
+                job = Job(record["id"], record["session_id"], record["command"], record["timeout"],
+                          record["hook_command"], record["hook_url"], record["hook_key_file"])
+            except (OSError, ValueError, KeyError):
+                self._forget(job_id)
+                continue
+            job.pid, job.wall, job.adopted = int(record["pid"]), float(record["wall"]), True
+            job.started = time.monotonic() - (time.time() - job.wall)
+            if not _alive(job.pid, job.command):
+                job.status = "exited"  # settled now, so the note for the session does not call it running
+            with self._lock:
+                self.jobs[job.id] = job
+            threading.Thread(target=self._follow, args=(job,), daemon=True, name=f"job-{job.id}").start()
+
+    def _follow(self, job: Job) -> None:
+        """Watch a job this agent did not start, until it is gone or out of time."""
+        timed_out = False
+        while _alive(job.pid, job.command) and not self._closed:
+            if job.timeout and time.time() - job.wall > job.timeout:
+                timed_out = True
+                stop(job.pid)
+                break
+            time.sleep(1)
+        if self._closed and _alive(job.pid, job.command):
+            return
+        try:
+            with open(self._path(job.id, "exit")) as fh:
+                code = int(fh.read().strip())
+        except (OSError, ValueError):
+            code = None  # killed, or gone before it could say
+        self._finish(job, code, timed_out)
 
     def _watch(self, job: Job) -> None:
-        boxes: dict[str, tuple[str, bool]] = {}
-
-        def grab(stream, key: str) -> None:
-            try:
-                boxes[key] = _tail_read(stream, self.tail) if stream is not None else ("", False)
-            except Exception:
-                boxes[key] = ("", False)
-            finally:
-                if stream is not None:
-                    stream.close()
-
-        threads = [threading.Thread(target=grab, args=(job.proc.stdout, "out"), daemon=True),
-                   threading.Thread(target=grab, args=(job.proc.stderr, "err"), daemon=True)]
-        for thread in threads:
-            thread.start()
         timed_out = False
         try:
             if job.timeout:
@@ -279,17 +333,16 @@ class JobRunner:
                     job.proc.wait(timeout=job.timeout)
                 except subprocess.TimeoutExpired:
                     timed_out = True
-                    _kill(job.proc)
+                    stop(job.proc)
             else:
                 job.proc.wait()
         except Exception:
-            _kill(job.proc)
-        for thread in threads:
-            thread.join(timeout=2)
+            stop(job.proc)
         if self._closed:
-            job.status = "cancelled" if job.cancelled else job.status
-            return
-        code = job.proc.returncode if job.proc is not None else None
+            return  # a restart: the record stays, and the next agent reports it
+        self._finish(job, job.proc.returncode, timed_out)
+
+    def _finish(self, job: Job, code: int | None, timed_out: bool) -> None:
         if timed_out:
             code = 124
             job.status = "timeout"
@@ -299,8 +352,9 @@ class JobRunner:
             job.status = "exited"
         job.exit_code = code
         self._trim()
-        stdout, cut_out = boxes.get("out", ("", False))
-        stderr, cut_err = boxes.get("err", ("", False))
+        stdout, cut_out = _tail_file(self._path(job.id, "out"), self.tail)
+        stderr, cut_err = _tail_file(self._path(job.id, "err"), self.tail)
+        self._forget(job.id)
         global_secret = self._remember_key(self.hook_key_file)
         job_secret = self._remember_key(job.hook_key_file)
         secret = job_secret or global_secret
