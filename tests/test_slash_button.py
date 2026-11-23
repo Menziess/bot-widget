@@ -7,6 +7,7 @@ is open the chat text is hidden, and it comes back when the list closes.
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -35,6 +36,11 @@ class SlashButton(unittest.TestCase):
         self.addCleanup(setattr, face, "latest_chat", old)
         face.latest_chat = lambda thread_id, limit=20: {
             "messages": [{"role": "bot", "text": "Hello from the bot."}], "activity": ""}
+        # Without OpenBot or Grok Bot (a CI runner) the placeholder face shows its hint instead of the chat.
+        for name in ("openbot_installed", "gbot_installed"):
+            patch = mock.patch.object(face, name, return_value=True)
+            patch.start()
+            self.addCleanup(patch.stop)
         self.window = face.FaceWindow("t", "Test", spot=(300, 400))
         self.window._poll_timer.stop()
         self.window._anim_timer.stop()
@@ -116,6 +122,29 @@ class SlashButton(unittest.TestCase):
         self.assertTrue(self.bubble._scroll.isVisibleTo(self.bubble))
 
 
+    def test_a_click_on_the_face_brings_the_chat_back_in_place_of_the_list(self):
+        """Should not leave an empty bubble: the text was hidden under the list and has to show again."""
+        from PySide6.QtCore import QEvent, QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
+        from PySide6.QtWidgets import QApplication
+        self._open_chat()
+        point = QPointF(24, 24)
+
+        def send(kind, button):
+            QApplication.sendEvent(self.window, QMouseEvent(
+                kind, point, point, button, button if kind != QEvent.MouseButtonRelease else Qt.NoButton,
+                Qt.NoModifier))
+
+        send(QEvent.MouseButtonPress, Qt.RightButton)
+        self.assertTrue(self.bubble._slash.rows)
+        send(QEvent.MouseButtonPress, Qt.LeftButton)
+        send(QEvent.MouseButtonRelease, Qt.LeftButton)
+        self.app.processEvents()
+        self.assertFalse(self.bubble._slash.rows)
+        self.assertTrue(self.bubble._scroll.isVisibleTo(self.bubble), "the chat text is back")
+        self.assertIn("Hello from the bot.", self.bubble.full_text)
+
+
 class SlashListScroll(unittest.TestCase):
     """A list longer than its limit scrolls, keeps the chosen row in view, and never grows past the limit."""
 
@@ -150,3 +179,44 @@ class SlashListScroll(unittest.TestCase):
         self.assertEqual(self.list.offset, self.list._overflow())
         self.list._scroll_to(-10)
         self.assertEqual(self.list.offset, 0)
+
+
+class SlashHover(unittest.TestCase):
+    """The rows follow the pointer from its position alone, as the widget is rarely the app in front."""
+
+    def setUp(self):
+        try:
+            from PySide6.QtWidgets import QApplication, QWidget
+
+            from botwidget.qt_ui.controls import SlashList
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}")
+        self.app = QApplication.instance() or QApplication([])
+        self.window = QWidget()
+        self.window.resize(320, 400)
+        self.list = SlashList(self.window)
+        self.list.show_rows([(f"/c{i}", "note") for i in range(6)])
+        self.list.setGeometry(0, 0, 320, self.list.height_for(6))
+        self.window.show()
+        self.addCleanup(self.window.close)
+
+    def point_at_row(self, row):
+        from PySide6.QtCore import QPoint
+        return self.list.mapToGlobal(QPoint(40, 4 + row * self.list.ROW_H + self.list.ROW_H // 2))
+
+    def test_the_row_under_the_pointer_lights_up_without_a_mouse_move_event(self):
+        from PySide6.QtGui import QCursor
+        QCursor.setPos(self.point_at_row(4))
+        self.list._follow_pointer()
+        self.assertEqual(self.list.index, 4)
+        QCursor.setPos(self.point_at_row(1))
+        self.list._follow_pointer()
+        self.assertEqual(self.list.index, 1)
+
+    def test_a_pointer_that_stands_still_leaves_the_arrow_keys_alone(self):
+        from PySide6.QtGui import QCursor
+        QCursor.setPos(self.point_at_row(2))
+        self.list._follow_pointer()
+        self.list.move_selection(1)
+        self.list._follow_pointer()
+        self.assertEqual(self.list.index, 3, "the pointer did not move, so it does not pull the row back")

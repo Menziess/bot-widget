@@ -2060,6 +2060,8 @@ class BubbleWindow(QWidget):
             self._entry.commands_open = False
             self._entry.slash_button.show()
             self._commands_forced = False
+            # The list hid the text, and the same text is built again: without a new layout the text stays hidden.
+            self._built = None
         if not self._toggling:
             self._more_open = False  # new content: the arrow for the message before shows again when asked for
         key = self._content_key(blocks, kind, input, links)

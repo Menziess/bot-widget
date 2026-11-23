@@ -255,7 +255,7 @@ class SlashButton(QWidget):
         painter.drawText(self.rect(), Qt.AlignCenter, "/")
 
 
-class SlashList(QWidget):
+class SlashList(PointerWatch, QWidget):
     """The commands that fit what is typed after a slash, as a list below the field. Longer than limit, it scrolls."""
 
     ROW_H = 36
@@ -267,6 +267,8 @@ class SlashList(QWidget):
         self.index = 0
         self.limit = 10 ** 6  # the most height it may take, in pixels; the bubble sets it from the screen
         self.offset = 0  # how far the rows are scrolled, in pixels
+        self._pointer_at = None  # where the pointer was at the last look: only a move picks a row
+        self._watch_pointer()
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
@@ -315,9 +317,22 @@ class SlashList(QWidget):
         self.index = self._row_at(event.position().y())
         event.accept()
 
+    def _hover(self, y: float):
+        index = self._row_at(y)
+        if index != self.index:
+            self.index = index
+            self.update()
+
+    def _pointer_moved(self, point):
+        """The widget is rarely the app in front, so Qt sends it no mouse moves: the row under the pointer is looked
+        up like the buttons do. A pointer that stands still leaves the arrow keys alone."""
+        at = None if point is None else (point.x(), point.y())
+        if at is not None and at != self._pointer_at:
+            self._hover(point.y())
+        self._pointer_at = at
+
     def mouseMoveEvent(self, event):
-        self.index = self._row_at(event.position().y())
-        self.update()
+        self._hover(event.position().y())
 
     def mouseReleaseEvent(self, event):
         if self.rows:
