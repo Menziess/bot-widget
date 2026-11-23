@@ -9,6 +9,7 @@ and it drops a trailing internal tool name. A skill nudge whose only tool is
 `scripts/replay_capture` turns that log into a fixture.
 """
 
+import functools
 import json
 import os
 import re
@@ -21,14 +22,35 @@ _LEAK = re.compile(
 )
 
 
+# A run of leaked names is a few dozen characters at most; only the end of a text is ever looked at.
+_WINDOW = 256
+_EDGE = 32  # longer than any one leaked name
+
+
+@functools.lru_cache(maxsize=8)
+def _glued(endings: tuple) -> re.Pattern:
+    names = "|".join(re.escape(name) for name in sorted(endings, key=len, reverse=True))
+    return re.compile(rf"(?<=\S)(?:{names}|{_LEAK.pattern[:-1]})+$")
+
+
+def _tail_cut(pattern: re.Pattern, text: str) -> str:
+    """The text without the run that `pattern` (anchored at the end) finds. Only the end can match, so only the end
+    is looked at: the whole text on every piece of a streamed answer made a long answer quadratic."""
+    while True:
+        start = max(0, len(text) - _WINDOW - 1)  # one character more, for a pattern that looks behind
+        found = pattern.search(text[start:])
+        if not found:
+            return text
+        text = text[:start + found.start()] + text[start + found.end():]  # `$` also matches before a final newline
+        if found.start() > _EDGE or start == 0:
+            return text  # the run began well inside the window; one that began at its edge goes on in the next round
+
+
 def _strip_leak(text: str, endings) -> str:
     """The names a running skill ends with (done, ...) are plain words, so they only count as a leak glued to the text
     before them, and only while a skill runs."""
-    text = _LEAK.sub("", text)
-    if endings:
-        names = "|".join(re.escape(name) for name in sorted(endings, key=len, reverse=True))
-        text = re.sub(rf"(?<=\S)(?:{names}|{_LEAK.pattern[:-1]})+$", "", text)
-    return text
+    text = _tail_cut(_LEAK, text)
+    return _tail_cut(_glued(tuple(sorted(endings))), text) if endings else text
 
 
 def silent_nudge(tool_names: set[str] | None) -> bool:

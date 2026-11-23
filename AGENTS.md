@@ -28,6 +28,7 @@ Each of these went wrong once. A test or a rule holds it now; keep both.
 - A key goes only to `https://`, or `http://` to a machine of your own, never after a redirect, never in an error (`harness/agent/netsafe.py`). Every call that carries a key uses `open_url`, not `urlopen`.
 - Stopping a process stops its whole group (`harness/agent/procs.py`). Never `proc.kill()` alone for a command that can start others.
 - The dev supervisor ignores `_version.py`: a wheel build rewrites it, and a restart cuts a bot off in the middle of a turn.
+- The stream stage (`harness/stream_text.py`) looks only at the end of the text: it runs on every piece of an answer, and a pattern over the whole text made a long answer quadratic (`tests/test_stream_text.py` holds the window).
 - A model name is never written in the code: ask the service (`acp_bots.fetch_models`).
 - Ruff checks imports, pyflakes and bugbear (B904 and B905 are left for a sweep of their own). A dead-code scan (`uvx vulture`) must also read `scripts/`: files there have no `.py`.
 
