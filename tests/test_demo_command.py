@@ -63,21 +63,22 @@ class DemoCommand(unittest.TestCase):
         self.assertEqual(len(sent), 1, "a busy chat does not take the next task")
 
     def test_the_checklist_is_text_for_the_bubble_with_one_line_per_chat_task(self):
-        from botwidget.demo_chat import PROMPTS, Session
+        from botwidget.demo_chat import LABELS, Session
         session = Session()
         session.board.consider("files", {"checked": True, "ok": True, "detail": "match"})
         session.board.consider("browser", {"checked": True, "ok": False, "blocked": "not checked from the chat"})
         text = session.summary()
-        self.assertIn("1 of %d ticked" % len(PROMPTS), text)
+        self.assertIn("1 of %d ticked" % len(LABELS), text)
         self.assertIn("✔ Files: write, then read back: match", text)
         self.assertIn("✘ Browser: reuse a tab over CDP: not checked from the chat", text)
         self.assertIn("✘ Script: write it and run it: not run", text)
-        self.assertEqual(text.count("\n- "), len(PROMPTS))
+        self.assertEqual(text.count("\n- "), len(LABELS))
 
     def test_the_checklist_opens_in_the_bubble_only_after_the_last_task(self):
         from botwidget import demo_chat
         face = mock.Mock(_working=False, _sending=False)
         face._outbox.items = []
+        face._latest.return_value = {"messages": []}
         with mock.patch("PySide6.QtCore.QTimer.singleShot", side_effect=lambda _ms, call: call()), \
                 mock.patch.object(demo_chat, "check", return_value={"checked": True, "ok": True, "detail": "ok"}):
             demo_chat.begin(face)
@@ -85,3 +86,26 @@ class DemoCommand(unittest.TestCase):
         face.bubble.show_blocks.assert_called_once()
         self.assertEqual(face.bubble.show_blocks.call_args.args[1], "say")
         face.pin.assert_called_once()
+
+    def test_the_browser_row_ticks_on_the_number_only_chrome_can_tell(self):
+        from botwidget import demo_chat
+        chrome = mock.Mock()
+        chrome.list_tabs.return_value = [{}, {}, {}]
+        with mock.patch("harness.browser_local.attach", return_value=chrome):
+            self.assertTrue(demo_chat.check("browser", "3")["ok"])
+            self.assertTrue(demo_chat.check("browser", "There are 3 tabs.")["ok"])
+            self.assertFalse(demo_chat.check("browser", "5")["ok"])
+            self.assertFalse(demo_chat.check("browser", "no idea")["ok"])
+        with mock.patch("harness.browser_local.attach", side_effect=ConnectionError("down")):
+            self.assertEqual(demo_chat.check("browser", "3")["blocked"], "Chrome is not listening")
+
+    def test_the_computer_row_is_checked_by_code_after_the_chat_tasks_without_a_prompt(self):
+        from botwidget import demo_chat
+        sent = []
+        session = demo_chat.Session()
+        with mock.patch.object(demo_chat, "check", return_value={"checked": True, "ok": True, "detail": "ok"}):
+            while not session.done():
+                session.tick(True, sent.append)
+        self.assertEqual(len(sent), len(demo_chat.PROMPTS))
+        self.assertTrue(session.board.ticked("computer"))
+        self.assertNotIn("computer", " ".join(sent).lower().split("demo task")[-1][:20])

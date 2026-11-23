@@ -26,8 +26,7 @@ class DemoTicks(unittest.TestCase):
             self.assertTrue(board.ticked("files"))
 
     def test_a_missing_browser_is_blocked_and_unticked(self):
-        from botwidget.demo_check import browser_tab
         board = Board()
-        board.consider("browser", browser_tab(False, "", False, False, "CDP not reachable"))
+        board.consider("browser", {"checked": True, "ok": False, "blocked": "CDP not reachable"})
         self.assertFalse(board.ticked("browser"))
         self.assertIn("CDP", board.rows["browser"]["blocked"])

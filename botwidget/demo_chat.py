@@ -3,6 +3,7 @@
 """
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -10,7 +11,6 @@ import sys
 from botwidget.demo_check import (
     Board,
     a11y_read,
-    browser_tab,
     file_readback,
     plant_seed,
     repair_result,
@@ -25,12 +25,15 @@ LABELS = (
     ("process", "Process: start, check, stop"),
     ("accessibility", "Accessibility: read the desktop"),
     ("repair", "Repair: fix a seeded failing test"),
+    ("computer", "Computer: move a window and type into it"),
 )
+# Checked by code alone, once the chat tasks are done: nothing to ask the bot.
+LOCAL = ("computer",)
 
 PROMPTS = {
     "browser": (
-        "Demo task browser. Do not open, close, or switch any Chrome tab. "
-        "Reply with exactly: browser noted"
+        "Demo task browser. Use your browser_tabs tool. "
+        "Reply with the number of open tabs as digits and nothing else."
     ),
     "files": (
         "Demo task files. Write the file /tmp/t-demo/work/note.txt so its exact bytes are "
@@ -82,8 +85,8 @@ def dev_running() -> bool:
     return os.environ.get("BOTWIDGET_DEV") == "1" or "--dev" in sys.argv[1:] or _parent_runs_dev()
 
 
-def check(key: str) -> dict:
-    """Read the outcome. Does not perform the task."""
+def check(key: str, reply: str = "") -> dict:
+    """Read the outcome. Does not perform the task. `reply` is what the bot said last."""
     if key == "files":
         return file_readback(os.path.join(ROOT, "work", "note.txt"), "demo-note\n")
     if key == "script":
@@ -110,7 +113,20 @@ def check(key: str) -> dict:
     if key == "process":
         return file_readback(os.path.join(ROOT, "work", "process.txt"), "stopped\n")
     if key == "browser":
-        return browser_tab(False, "", False, False, "not checked from the chat")
+        # The number of tabs is a fact the bot can only know by asking Chrome, so the right number is the evidence.
+        from harness.browser_local import attach
+        try:
+            tabs = len(attach().list_tabs())
+        except (OSError, ConnectionError, TimeoutError, RuntimeError, ValueError):
+            return {"checked": True, "ok": False, "blocked": "Chrome is not listening"}
+        said = re.findall(r"\d+", reply)
+        return {"checked": True, "ok": bool(said) and int(said[-1]) == tabs, "detail": f"{tabs} tabs open"}
+    if key == "computer":
+        from botwidget.system.control import throwaway
+        try:
+            return throwaway()
+        except Exception as error:  # a desktop that cannot do it says so; it is not a failed tick to retry
+            return {"checked": True, "ok": False, "blocked": type(error).__name__}
     return {"checked": True, "ok": False, "detail": "not seen from here"}
 
 
@@ -121,16 +137,19 @@ class Session:
         # What an earlier run left behind must not tick this one.
         shutil.rmtree(os.path.join(ROOT, "work"), ignore_errors=True)
         plant_seed(os.path.join(ROOT, "repair"), False)
-        self.queue = list(PROMPTS)
+        self.queue = [*PROMPTS, *LOCAL]
         self.waiting = ""
         self.board = Board()
 
-    def tick(self, idle: bool, send) -> None:
+    def tick(self, idle: bool, send, reply: str = "") -> None:
         if not idle:
             return
         if self.waiting:
-            self.board.consider(self.waiting, check(self.waiting))
+            self.board.consider(self.waiting, check(self.waiting, reply))
             self.waiting = ""
+        while self.queue and self.queue[0] in LOCAL:
+            key = self.queue.pop(0)
+            self.board.consider(key, check(key))
         if not self.queue:
             return
         key = self.queue.pop(0)
@@ -141,15 +160,14 @@ class Session:
         return not self.queue and not self.waiting
 
     def summary(self) -> str:
-        """The checklist as markdown: one line per task that went through the chat."""
-        labels = dict(LABELS)
+        """The checklist as markdown: one line per task."""
         lines = []
-        for key in PROMPTS:
+        for key, label in LABELS:
             row = self.board.rows.get(key, {})
             detail = row.get("blocked") or row.get("detail") or "not run"
-            lines.append(f"- {'✔' if row.get('ticked') else '✘'} {labels[key]}: {detail}")
-        ticked = sum(bool(self.board.ticked(key)) for key in PROMPTS)
-        return f"**Demo checklist: {ticked} of {len(PROMPTS)} ticked**\n\n" + "\n".join(lines)
+            lines.append(f"- {'✔' if row.get('ticked') else '✘'} {label}: {detail}")
+        ticked = sum(bool(self.board.ticked(key)) for key, _label in LABELS)
+        return f"**Demo checklist: {ticked} of {len(LABELS)} ticked**\n\n" + "\n".join(lines)
 
 
 def begin(face) -> None:
@@ -161,8 +179,13 @@ def begin(face) -> None:
     session = Session()
     face._demo_session = session
 
+    def last_reply() -> str:
+        bots = [m["text"] for m in face._latest().get("messages") or [] if m.get("role") == "bot"]
+        return bots[-1] if bots else ""
+
     def step():
-        session.tick(not (face._working or face._sending or face._outbox.items), face.on_user_message)
+        session.tick(not (face._working or face._sending or face._outbox.items), face.on_user_message,
+                     last_reply() if session.waiting else "")
         if not session.done():
             QTimer.singleShot(500, step)
             return

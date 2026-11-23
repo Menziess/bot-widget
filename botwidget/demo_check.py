@@ -39,14 +39,6 @@ def control_outcome(moved: bool, typed: str, expect: str) -> dict:
     return {"checked": True, "ok": ok, "detail": "landed" if ok else "mismatch"}
 
 
-def browser_tab(cdp_up: bool, url: str, new_window: bool, ours: bool, reason: str = "") -> dict:
-    """A tab this demo opened in the existing window. Down CDP is blocked, not a failed tick to retry."""
-    if not cdp_up:
-        return {"checked": True, "ok": False, "blocked": reason or "CDP not reachable"}
-    ok = ours and not new_window and bool(url)
-    return {"checked": True, "ok": ok, "detail": url, "blocked": ""}
-
-
 class Board:
     def __init__(self):
         self.rows = {}
