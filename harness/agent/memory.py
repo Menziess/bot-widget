@@ -317,25 +317,21 @@ def forget_memory(id_or_text: str, workspace: str | None = None) -> str:
     if re.match(r"^[0-9a-f]+$", id_or_text) and len(id_or_text) >= 6:
         return _forget_by_id(id_or_text, workspace)
 
-    # Otherwise treat as text and find the best match.
-    best = None
-    best_path = None
+    # Otherwise it is a piece of text. The same files an ID search looks in: without a workspace the project scope is
+    # every workspace's file, which is why a project memory the bot had just read could not be forgotten by its text.
+    found = []
     for scope in ("user", "project", "topic"):
-        path = _memory_path(scope, workspace)
-        if path is None:
-            continue
-        for entry in _read_lines(path):
-            if id_or_text.lower() in entry.get("text", "").lower():
-                best = entry
-                best_path = path
-                break
-        if best:
-            break
-
-    if best:
-        _forget_by_id(best["id"], workspace, path=best_path)
+        for path in _scope_paths(scope, workspace):
+            found += [(entry, path) for entry in _read_lines(path)
+                      if id_or_text.lower() in entry.get("text", "").lower()]
+    if len(found) > 1:
+        # Guessing which one was meant deleted the wrong memory once.
+        shown = "; ".join(f"{entry['id']}: {entry.get('text', '')[:50]}" for entry, _path in found[:5])
+        return f"{len(found)} memories match. Forget one by its ID: {shown}"
+    if found:
+        entry, path = found[0]
+        _forget_by_id(entry["id"], workspace, path=path)
         return f"Removed: {id_or_text[:60]}…"
-
     return f"Not found: {id_or_text[:60]}"
 
 
@@ -441,7 +437,7 @@ def memory_read_tool(workspace: str | None = None):
         for r in results:
             scope = r.get("scope", "?")
             topic = f" [{r['topic']}]" if r.get("topic") else ""
-            lines.append(f"[{scope}{topic}] {r['text']}")
+            lines.append(f"[{scope}{topic}] ({r['id']}) {r['text']}")
         return "\n".join(lines)
 
     return Tool(
@@ -457,7 +453,7 @@ def memory_read_tool(workspace: str | None = None):
     )
 
 
-def memory_forget_tool():
+def memory_forget_tool(workspace: str | None = None):
     """Return a Tool for memory_forget."""
     from harness.agent.tools import Tool
 
@@ -465,11 +461,11 @@ def memory_forget_tool():
         target = str(arguments.get("target") or arguments.get("id") or arguments.get("text") or "").strip()
         if not target:
             return "Nothing to forget."
-        return forget_memory(target)
+        return forget_memory(target, workspace)
 
     return Tool(
         "memory_forget",
-        "Forget (delete) a memory by ID or by exact text match. Requires permission.",
+        "Forget (delete) a memory by ID or by a piece of its text. Requires permission.",
         {
             "type": "object",
             "properties": {
@@ -489,5 +485,5 @@ def memory_tools_for(workspace: str | None = None) -> list:
     return [
         memory_write_tool(workspace),
         memory_read_tool(workspace),
-        memory_forget_tool(),
+        memory_forget_tool(workspace),
     ]

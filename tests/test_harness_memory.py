@@ -261,6 +261,21 @@ class Forget(unittest.TestCase):
         self.assertEqual(len(list_memories()), 1)
         self.assertEqual(list_memories()[0]["text"], "Keep this one")
 
+    def test_a_piece_of_text_that_matches_several_memories_forgets_none_and_names_them(self):
+        first = write_memory("Parking: use shell_background", "project", workspace="/work/a")
+        write_memory("Parking: old script p12.py", "project", workspace="/work/a")
+        result = forget_memory("Parking")
+        self.assertIn("2 memories match", result)
+        self.assertIn(first, result)
+        self.assertEqual(len(list_memories("/work/a")), 2)
+
+    def test_a_project_memory_is_forgotten_by_a_piece_of_its_text(self):
+        """The tool has no workspace, but it read the memory with one: the text must find it all the same."""
+        write_memory("Parking: use shell_background for book", "project", workspace="/work/a")
+        result = forget_memory("shell_background for book")
+        self.assertIn("Removed", result)
+        self.assertEqual(list_memories("/work/a"), [])
+
     def test_update_changes_text_and_topic_and_keeps_the_rest(self):
         eid = write_memory("Old text", "user", topic="a")
         other = write_memory("Other", "user")
