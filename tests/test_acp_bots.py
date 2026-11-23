@@ -814,3 +814,21 @@ class Providers(unittest.TestCase):
     def test_stepping_through_the_list_wraps_and_starts_when_the_model_is_not_in_it(self):
         ids = ["a", "b", "c"]
         self.assertEqual([acp_bots.next_model(ids, m) for m in ("", "a", "c")], ["a", "b", "a"])
+
+
+class Addresses(unittest.TestCase):
+    """The key goes with every request, so an address it must not travel to is refused when it is saved."""
+
+    def test_a_service_on_the_internet_needs_https_and_no_credentials_in_the_address(self):
+        form = {**acp_bots.blank_connection(), "name": "X", "model": "m"}
+        for base in ("http://api.example.com/v1", "https://user:pw@api.example.com/v1"):
+            rows, error = acp_bots.commit_connection({**form, "base_url": base}, [])
+            self.assertIsNone(rows)
+            self.assertIn("https://", error, base)
+        for base in ("https://api.example.com/v1", "http://127.0.0.1:8081/v1", "http://gpu-box:8000/v1"):
+            rows, error = acp_bots.commit_connection({**form, "base_url": base}, [])
+            self.assertEqual(error, "", base)
+
+    def test_listing_models_never_sends_a_key_to_such_an_address(self):
+        self.assertEqual(acp_bots.fetch_models("http://api.example.com/v1", "~/nowhere")[0], [])
+        self.assertIn("https://", acp_bots.fetch_models("http://api.example.com/v1", "")[1])

@@ -23,6 +23,7 @@ import time
 import urllib.error
 import urllib.request
 
+from harness.agent.netsafe import open_url
 from harness.agent.procs import group_kwargs, stop
 from harness.agent.tools import ToolError
 from harness.agent.workspace import shell_refused
@@ -436,7 +437,7 @@ class JobRunner:
         if secret:
             request.add_header("Authorization", "Bearer " + secret)
         try:
-            with urllib.request.urlopen(request, timeout=5) as response:
+            with open_url(request, timeout=5) as response:
                 response.read(256)
                 code = getattr(response, "status", 200)
         except urllib.error.HTTPError as error:

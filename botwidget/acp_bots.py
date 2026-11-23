@@ -12,6 +12,7 @@ import urllib.request
 
 from botwidget.acplink import PREFIX, _slug
 from botwidget.avatar import SUPPORTED_SHAPES
+from harness.agent.netsafe import key_may_travel, open_url
 from harness.agent.workspace import check_rules
 
 FACES = SUPPORTED_SHAPES
@@ -92,14 +93,24 @@ def _unique(name: str, taken: set) -> str:
     return ident
 
 
+def address_error(base: str) -> str:
+    """Why this model address may not hold a key, or "". The key goes along with every request."""
+    if not base.startswith(("http://", "https://")):
+        return "The model address has to start with http:// or https://."
+    if not key_may_travel(base):
+        return ("A service on the internet needs https:// (the key would travel in clear text), "
+                "and the address holds no user name or password.")
+    return ""
+
+
 def _entry(fields: dict, previous: dict | None, taken: set) -> tuple:
     """One acp_bots object, or an error the page can show."""
     name = str(fields.get("name") or "").strip()
     if not name or any(ch in name for ch in "\n\r"):
         return None, "A bot needs a name."
     base = str(fields.get("base_url") or "").strip()
-    if not base.startswith(("http://", "https://")):
-        return None, "The model address has to start with http:// or https://."
+    if error := address_error(base):
+        return None, error
     model = str(fields.get("model") or "").strip()
     if not model:
         return None, "A bot needs a model name."
@@ -234,19 +245,25 @@ def fetch_models(base_url: str, key_file: str = "", timeout: float = 5.0) -> tup
 
     The same call LibreChat, Goose and the harness itself make. The key is read from its file and sent as a Bearer
     token; a service that wants none ignores it."""
+    if error := address_error(base_url):
+        return [], error
     headers = {}
     if key_file:
         try:
             with open(os.path.expanduser(key_file)) as fh:
-                headers["Authorization"] = "Bearer " + fh.read().strip()
+                key = fh.read().strip()
+            if key:
+                headers["Authorization"] = "Bearer " + key
         except OSError:
             pass  # a local server needs none; a hosted one answers 401, which says so
     try:
-        with urllib.request.urlopen(urllib.request.Request(base_url.rstrip("/") + "/models", headers=headers),
-                                    timeout=timeout) as reply:
+        with open_url(urllib.request.Request(base_url.rstrip("/") + "/models", headers=headers), timeout) as reply:
             payload = json.load(reply)
     except urllib.error.HTTPError as error:
-        return [], f"HTTP {error.code}" + (": the key was not accepted" if error.code in (401, 403) else "")
+        said = (": the key was not accepted" if error.code in (401, 403)
+                else ": the address redirects, and a key is never sent on to another address" if 300 <= error.code < 400
+                else "")
+        return [], f"HTTP {error.code}{said}"
     except (OSError, ValueError) as error:
         return [], f"could not ask {base_url}: {getattr(error, 'reason', error)}"
     rows = payload.get("data") or payload.get("models") or [] if isinstance(payload, dict) else []
@@ -299,8 +316,8 @@ def commit_connection(fields: dict, existing) -> tuple:
     if not name or any(ch in name for ch in "\n\r"):
         return None, "A connection needs a name."
     base = str(fields.get("base_url") or "").strip()
-    if not base.startswith(("http://", "https://")):
-        return None, "The model address has to start with http:// or https://."
+    if error := address_error(base):
+        return None, error
     model = str(fields.get("model") or "").strip()
     if not model:
         return None, "A connection needs a model name."

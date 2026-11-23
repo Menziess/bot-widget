@@ -506,3 +506,19 @@ class AcpFace(unittest.TestCase):
             self.assertIsNone(window.grok)
             self.assertIsNone(window.hermes)
             self.assertEqual(window._latest(), {"messages": [], "activity": "", "failed": "", "approvals": []})
+
+
+class KeyFileNote(unittest.TestCase):
+    def test_a_key_file_other_users_can_read_is_said_in_the_note(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        path = os.path.join(folder, "key")
+        with open(path, "w") as fh:
+            fh.write("sk-secret-123456")
+        os.chmod(path, 0o644)
+        link = AcpLink("python -m harness.agent", key_file=path)
+        self.addCleanup(link.close)
+        self.addCleanup(shutil.rmtree, link.room(), True)
+        self.assertEqual(link._environment()["HARNESS_MODEL_API_KEY"], "sk-secret-123456")
+        self.assertIn("chmod 600", link.note())
+        self.assertNotIn("sk-secret-123456", link.note())

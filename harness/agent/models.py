@@ -11,15 +11,23 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from harness.agent.netsafe import key_may_travel, open_url, redact
+
 
 class ModelError(Exception):
     """The provider said no, or answered with something that is not a stream."""
 
 
-def http_error(error: urllib.error.HTTPError) -> ModelError:
+def _guard_key(base_url: str) -> None:
+    if not key_may_travel(base_url):
+        raise ModelError(f"The key is not sent to {base_url}: over the internet that needs https://, and the "
+                         "address may not hold a user name or password.")
+
+
+def http_error(error: urllib.error.HTTPError, key: str = "") -> ModelError:
     """The provider's refusal, with what it said (cut short). A chat template that cannot take tools or this message
     order comes back as a 400 about the template: that is a choice of model or server, so the message says so."""
-    detail = error.read().decode(errors="replace")[:300]
+    detail = redact(error.read().decode(errors="replace"), key)[:300]
     hint = ""
     if error.code == 400 and "template" in detail.lower():
         hint = ("\nThis model's chat template does not fit the request (tool calls, or the order of the messages). "
@@ -54,6 +62,7 @@ class ChatCompletions:
         meter then falls back to a made-up window."""
         headers = dict(headers or {})
         if self.api_key:
+            _guard_key(self.base_url)
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
@@ -125,7 +134,7 @@ class ChatCompletions:
     def _probe(self, timeout: float) -> None:
         request = urllib.request.Request(f"{self.base_url}/models", headers=self._headers())
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as reply:
+            with open_url(request, timeout=timeout) as reply:
                 body = reply.read()
         except urllib.error.HTTPError:
             return self._read_props(timeout)
@@ -139,7 +148,7 @@ class ChatCompletions:
         """The model's own window, so the context meter is not a made-up 32000."""
         root = self.base_url[:-3] if self.base_url.endswith("/v1") else self.base_url
         try:
-            with urllib.request.urlopen(urllib.request.Request(f"{root}/props", headers=self._headers()),
+            with open_url(urllib.request.Request(f"{root}/props", headers=self._headers()),
                                          timeout=timeout) as reply:
                 props = json.loads(reply.read())
         except Exception:
@@ -163,7 +172,7 @@ class ChatCompletions:
         request = self._request(messages, stream=True, tools=tools)
         calls: dict[int, dict] = {}
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as reply:
+            with open_url(request, timeout=self.timeout) as reply:
                 if opened is not None:
                     opened(reply)
                 for raw in reply:
@@ -198,7 +207,7 @@ class ChatCompletions:
                 if calls:
                     yield "tool_calls", [calls[index] for index in sorted(calls)]
         except urllib.error.HTTPError as error:
-            raise http_error(error) from error
+            raise http_error(error, self.api_key) from error
         except urllib.error.URLError as error:
             raise ModelError(f"cannot reach {self.base_url}: {error.reason}") from error
 
@@ -206,10 +215,10 @@ class ChatCompletions:
         """The whole answer at once; for a background summary, where streaming buys nothing."""
         request = self._request(messages, stream=False)
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as reply:
+            with open_url(request, timeout=self.timeout) as reply:
                 body = json.loads(reply.read())
         except urllib.error.HTTPError as error:
-            raise http_error(error) from error
+            raise http_error(error, self.api_key) from error
         except urllib.error.URLError as error:
             raise ModelError(f"cannot reach {self.base_url}: {error.reason}") from error
         choices = body.get("choices") or []
@@ -277,6 +286,7 @@ class AnthropicMessages:
     def _request(self, body: dict) -> urllib.request.Request:
         headers = {"Content-Type": "application/json", "anthropic-version": self.version}
         if self.api_key:
+            _guard_key(self.base_url)
             headers["x-api-key"] = self.api_key
         return urllib.request.Request(f"{self.base_url}/v1/messages", data=json.dumps(body).encode(),
                                       headers=headers)
@@ -294,7 +304,7 @@ class AnthropicMessages:
         request = self._request(self._body(messages, True, tools))
         calls: dict[int, dict] = {}
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as reply:
+            with open_url(request, timeout=self.timeout) as reply:
                 if opened is not None:
                     opened(reply)
                 for raw in reply:
@@ -329,17 +339,17 @@ class AnthropicMessages:
                 if calls:
                     yield "tool_calls", [calls[index] for index in sorted(calls)]
         except urllib.error.HTTPError as error:
-            raise http_error(error) from error
+            raise http_error(error, self.api_key) from error
         except urllib.error.URLError as error:
             raise ModelError(f"cannot reach {self.base_url}: {error.reason}") from error
 
     def complete(self, messages: list[dict]) -> str:
         request = self._request(self._body(messages, False, None))
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as reply:
+            with open_url(request, timeout=self.timeout) as reply:
                 body = json.loads(reply.read())
         except urllib.error.HTTPError as error:
-            raise http_error(error) from error
+            raise http_error(error, self.api_key) from error
         except urllib.error.URLError as error:
             raise ModelError(f"cannot reach {self.base_url}: {error.reason}") from error
         return "".join(block.get("text", "") for block in body.get("content") or []

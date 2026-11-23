@@ -19,6 +19,7 @@ import time
 from botwidget.config import widget_config
 from harness import RESUME_PROMPT, approvals
 from harness.acp_client import AcpClient, split_command
+from harness.agent.netsafe import key_file_problem
 from harness.stream_text import fold_chunk, note_raw
 
 PREFIX = "acp:"
@@ -471,6 +472,9 @@ class AcpLink:
             try:
                 with open(os.path.expanduser(self.key_file)) as fh:
                     env["HARNESS_MODEL_API_KEY"] = fh.read().strip()
+                if problem := key_file_problem(self.key_file):
+                    with self._lock:
+                        self._note = problem
             except OSError as error:
                 raise RuntimeError(f"cannot read the key file {self.key_file}: {error.strerror}") from error
         return env

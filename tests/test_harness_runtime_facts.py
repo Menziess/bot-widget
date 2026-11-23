@@ -34,7 +34,7 @@ class RuntimeFacts(unittest.TestCase):
         reply = mock.MagicMock()
         reply.__enter__.return_value.read.return_value = json.dumps(
             {"default_generation_settings": {"n_ctx": 4096}, "modalities": {"vision": False}}).encode()
-        with mock.patch("urllib.request.urlopen", return_value=reply):
+        with mock.patch("harness.agent.models.open_url", return_value=reply):
             model._read_props(1.0)
         self.assertIs(model.vision, False)
         self.assertEqual(model.context_size, 4096)
