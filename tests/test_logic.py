@@ -6842,9 +6842,9 @@ class IdleLook(unittest.TestCase):
 
     def test_after_the_wait_it_blinks_or_looks_around_with_a_grok_idle_clip(self):
         motion, m = self.motion()
-        self.run_for(m, 10 * 60)
-        self.assertGreater(len(m.history), 10 * 60 / motion.IDLE_GAP_S[1])
-        self.assertLess(len(m.history), 10 * 60 / motion.IDLE_GAP_S[0] + 1)
+        self.run_for(m, 4 * 60)  # shorter than the doze
+        self.assertGreater(len(m.history), 4 * 60 / motion.IDLE_GAP_S[1])
+        self.assertLess(len(m.history), 4 * 60 / motion.IDLE_GAP_S[0] + 1)
         self.assertIn("blink", m.history)
         self.assertTrue(set(m.history) - {"blink"} <= set(motion.IDLE_LOOKS))
         self.assertGreater(m.history.count("blink"), len(m.history) / 3, "mostly blinks")
@@ -6888,7 +6888,8 @@ class Moods(unittest.TestCase):
     def test_every_event_maps_to_its_grok_clip_and_face(self):
         expected = {"reply": ("Done_A", "happy"), "new_message": ("Idle_B", "surprised"), "sent": ("nod", None),
                     "error": ("Blocked_B", "sad"), "no_route": ("Blocked_A", "confused"), "click": ("bounce", "happy"),
-                    "job_done": ("Done_B", "happy"), "reset": ("Blocked_C", None)}
+                    "job_done": ("Done_B", "happy"), "reset": ("Blocked_C", None),
+                    "approved": ("nod", "wink"), "thrown": ("bounce", "dizzy")}
         self.assertEqual({name: event[:2] for name, event in self.motion.EVENTS.items()}, expected)
         self.assertEqual(self.motion.MOODS["thinking"], ("Working_B", "inspecting"))
         self.assertEqual(self.motion.MOODS["ask"], ("Idle_D", "neutral"))
@@ -8166,3 +8167,48 @@ class Body3D(unittest.TestCase):
         self.assertGreater(side, 0.5, "with its own thickness")
         pebble = [width(avatar.grok_body_points("pebble", 0, yaw)) for yaw in (0, 90)]
         self.assertAlmostEqual(pebble[0], pebble[1], places=2, msg="a pebble is turned on a lathe")
+
+
+class MoreLife(unittest.TestCase):
+    """A wink for an approval, dazed eyes after a throw, narrowed eyes while a tool runs, and a doze when nobody is near."""
+
+    def setUp(self):
+        from botwidget import motion
+        self.motion = motion
+
+    def test_the_new_events_and_the_working_mood_have_their_clip_and_face(self):
+        self.assertEqual(self.motion.EVENTS["approved"][:2], ("nod", "wink"))
+        self.assertEqual(self.motion.EVENTS["thrown"][:2], ("bounce", "dizzy"))
+        self.assertEqual(self.motion.MOODS["working"], ("Working_B", "squinted"))
+
+    def test_every_face_a_clip_names_is_one_that_can_be_drawn(self):
+        from botwidget import avatar
+        names = {face for _clip, face, *_rest in self.motion.EVENTS.values() if face}
+        names |= {face for _clip, face in self.motion.MOODS.values()} | {"sleepy"}
+        self.assertEqual(names - set(avatar.GROK_FACES), set())
+        for face in ("wink", "dizzy"):
+            self.assertEqual(len(avatar.GROK_FACES[face]), 2, "one spec per eye")
+
+    def test_after_five_quiet_minutes_the_face_dozes_and_anything_wakes_it(self):
+        m = self.motion.Motion(random.Random(1))
+        for _ in range(int(self.motion.SLEEP_AFTER_S / 0.5) + 4):
+            pose = m.step(0.5)
+        self.assertEqual(pose["face"], "sleepy")
+        m.wake()
+        self.assertNotEqual(m.step(0.5)["face"], "sleepy")
+        for _ in range(int(self.motion.SLEEP_AFTER_S / 0.5) + 4):
+            pose = m.step(0.5)
+        m.event("click")
+        self.assertEqual(m.quiet, 0.0)
+
+    def test_a_tool_that_runs_is_work_and_a_word_after_it_is_thinking_again(self):
+        from botwidget.acplink import AcpLink
+        from harness.acp_client import Update
+        link = AcpLink("python -m harness.agent")
+        self.addCleanup(link.close)
+        link._sending = True
+        self.assertFalse(link.tool_running())
+        link._updated(Update("tool", "shell ls"))
+        self.assertTrue(link.tool_running())
+        link._updated(Update("thought", "Even kijken"))
+        self.assertFalse(link.tool_running())

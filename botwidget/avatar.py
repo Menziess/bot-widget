@@ -331,6 +331,9 @@ GROK_FACES = {
     "squinted": (("pill", 0.01, 0.0, 0.26, 0.5, 90.0),) * 2,
     "sleepy": (("stroke", 0.01, 0.0, 0.13, ((-0.11, 0.025), (0.0, -0.05), (0.11, 0.025))),) * 2,
     "confused": (("stroke", -0.1, 0.0, 0.1305, ((0.01, 0.16), (-0.17, 0.0), (0.01, -0.16))),) * 2,
+    # One eye open, the other an arc: a wink. One eye wide and round, the other small and low: dazed.
+    "wink": (("pill", 0.0, 0.0, 0.26, 0.57, 0.0), ("happy", 0.0, 0.0)),
+    "dizzy": (("pill", 0.0, 0.05, 0.5, 0.5, 0.0), ("pill", 0.06, -0.08, 0.24, 0.24, 0.0)),
 }
 # A blink presses a curved eye no flatter than this.
 CURVE_SHUT = 0.25

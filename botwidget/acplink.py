@@ -183,6 +183,7 @@ class AcpLink:
         self._sending = False
         self._followup = False  # a background job finished and the bot is reading the result
         self._jobs = 0
+        self._tool = False  # a tool is running: the last thing the agent said was a tool, not a thought
         self.jobs_finished = 0  # counts up when a background job ends, so the face can react to the change
         self._said = False  # did this turn put any text in the bubble
         self._loading = False  # replaying a stored session: that text goes in front of the new message
@@ -292,6 +293,11 @@ class AcpLink:
         approvals.record(title, decision, source, by or getpass.getuser())
         self._loop.call_soon_threadsafe(lambda: future.done() or future.set_result(result))
         return True
+
+    def tool_running(self) -> bool:
+        """The agent last reported a tool, and has said nothing since: the face works rather than thinks."""
+        with self._lock:
+            return self._tool and self._sending
 
     def active(self) -> bool:
         """Is a turn running? The face then keeps looking, so a pushed answer is drawn at once."""
@@ -432,6 +438,7 @@ class AcpLink:
             self._activity = ""
             self._thought = ""
             self._sending = False
+            self._tool = False
             if self.messages and self.messages[-1]["role"] == "bot":
                 self.messages[-1]["text"] = collapse_repeats(self.messages[-1]["text"])
             if turn.error:
@@ -581,9 +588,11 @@ class AcpLink:
                 return
             # A lone space is a piece of the thought: without it "November 26" read "November26".
             if update.kind == "thought" and (update.text.strip() or (self._thought and update.text)):
+                self._tool = False
                 self._thought += update.text
                 self._activity = _bubble_line(self._thought)
             elif update.kind == "tool":
+                self._tool = True
                 self._thought = ""
                 self._activity = _bubble_line(update.text) or self._activity
                 tool = True
@@ -615,6 +624,7 @@ class AcpLink:
                 self.messages.append({"role": "user", "text": update.text})
                 wake = True
             elif update.kind == "text" and update.text:
+                self._tool = False
                 self._thought = ""
                 self._said = True
                 note_raw({"source": "acp", "kind": "text", "text": update.text})

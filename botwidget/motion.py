@@ -23,6 +23,7 @@ STANDARD_EASE = (0.42, 0.0, 0.58, 1.0)
 # The calm idle: a random wait, then a blink or, less often, a look around.
 IDLE_GAP_S = (8.0, 30.0)
 IDLE_BLINK_SHARE = 0.6
+SLEEP_AFTER_S = 300.0  # nothing happened and nobody was near for this long: the face dozes, drawing nothing new
 IDLE_LOOKS = ("Idle_B", "Idle_D", "Idle_A")
 # No two faces move in step: the first wait is anywhere up to a full gap, every face plays its clips a
 # little faster or slower, a looping mood starts anywhere in its clip, and an event starts up to a
@@ -40,6 +41,8 @@ EVENTS = {
     "error": ("Blocked_B", "sad", "sad", 2.0),            # refused: Grok Bot's failed
     "no_route": ("Blocked_A", "confused", None, 0.0),     # nothing to send to: Grok Bot's blocked
     "click": ("bounce", "happy", None, 0.0),              # a click on the face: Grok Bot's bounce
+    "approved": ("nod", "wink", None, 0.0),               # you accepted what it asked: a nod and a wink
+    "thrown": ("bounce", "dizzy", None, 0.0),             # it was thrown across the screen
     "job_done": ("Done_B", "happy", None, 0.0),           # a background job ended: Grok Bot's second finish
     "reset": ("Blocked_C", None, None, 0.0),              # its conversation was cleared: Grok Bot's head shake
 }
@@ -48,6 +51,7 @@ MOODS = {
     "idle": (None, "neutral"),
     "thinking": ("Working_B", "inspecting"),   # waiting for the answer: Grok Bot's curious
     "ask": ("Idle_D", "neutral"),              # a question waits for you: Grok Bot's listening
+    "working": ("Working_B", "squinted"),      # a tool runs: the same clip as thinking, with narrowed eyes
     "offline": (None, "sleepy"),               # no route: Grok Bot's drowsy, held still
 }
 # Grok Bot's pokes, in seconds.
@@ -150,6 +154,7 @@ class Motion:
         self.blink = None        # seconds since an idle blink began
         self.wait = self.rng.uniform(*FIRST_WAIT_S)  # seconds to the next idle blink or look
         self.history = []        # what the idle did, for the curious
+        self.quiet = 0.0         # seconds of calm idle since anything happened
 
     def _gap(self) -> float:
         return self.rng.uniform(*IDLE_GAP_S) * (2 if self.calm else 1)
@@ -159,7 +164,12 @@ class Motion:
         """True while something plays: the face must draw every frame."""
         return self.playing is not None or self.blink is not None
 
+    def wake(self):
+        """Someone is here: the face stops dozing."""
+        self.quiet = 0.0
+
     def event(self, name: str):
+        self.wake()
         what, face, after, hold = EVENTS[name]
         self.playing = (what, -self.rng.uniform(0.0, EVENT_DELAY_S), False, face)
         self.after = (after, hold) if after else None
@@ -169,6 +179,7 @@ class Motion:
         if mood == self.mood:
             return
         self.mood = mood
+        self.wake()
         self.rest = 0.0
         if self.playing is None or self.playing[2]:
             self.playing = None   # the loop of the mood before ends; an event plays on
@@ -207,8 +218,13 @@ class Motion:
             self.rest -= dt
             if self.rest <= 0:
                 self._loop_mood()
+        if self.mood == "idle":
+            self.quiet += dt  # an idle look is not company: only an event, a mood or a pointer wakes it
         if self.playing is None and self.mood == "idle" and self.after is None:
-            self._idle(dt)
+            if self.quiet >= SLEEP_AFTER_S:
+                pose["face"] = "sleepy"  # asleep it neither blinks nor looks around
+            else:
+                self._idle(dt)
         if self.blink is not None:
             pose["lids"] = blink_at(self.blink)
             self.blink = self.blink + dt if self.blink + dt < BLINK_OPEN else None

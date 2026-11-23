@@ -791,6 +791,7 @@ class FaceWindow(QWidget):
             self._dvx, self._dvy = self._wall_kick
         if abs(self._dvx) > 500 or abs(self._dvy) > 500:
             self._coasting = True
+            self.react("thrown")
             self.bubble.close_bubble("throw")  # it cannot keep up with a throw
             self._coast_timer.start()
         else:
@@ -1064,6 +1065,8 @@ class FaceWindow(QWidget):
         """Where the face wants to go: dragging, happy, looking at the mouse, or what motion plays."""
         a = self.anim
         self.motion.set_mood(self._motion_mood())
+        if self._pointer_on_head():
+            self.motion.wake()
         self.motion.calm = power.reduced()
         pose = self.motion.step(dt_ms / 1000)
         lift, shift = offsets(pose, CIRCLE_R)
@@ -1149,6 +1152,8 @@ class FaceWindow(QWidget):
         """What the face shows while it lasts: a question waits, the bot thinks, there is no route."""
         if self.has_pending:
             return "ask"
+        if self.acp and self.acp.tool_running():
+            return "working"
         if self._working or self._waiting:
             return "thinking"
         if self._send_status or self._send_status_or_note():
@@ -1453,6 +1458,8 @@ class FaceWindow(QWidget):
             request_id, _, decision = rest.rpartition("/")
             choice = {"accept": True, "always": "allow_always"}.get(decision, False)
             self.acp.decide(request_id, choice)
+            if choice:
+                self.react("approved")
             self._attention = {"prompts": [], "approvals": [], "browserTakeovers": []}
             self._sync_bubble(self._latest(), force=True)
             return
