@@ -270,11 +270,12 @@ def connections(state: dict) -> list:
 
 def connection_form(state: dict) -> list:
     """One model endpoint: address, model name and the file the key is read from."""
-    from botwidget.acp_bots import blank_connection
-    form = state.get("connection_form") or blank_connection()
+    from botwidget import acp_bots
+    form = state.get("connection_form") or acp_bots.blank_connection()
     editing = bool(form.get("stored_id"))
     blocks = _back("page/connections") + [_heading("Edit connection" if editing else "New connection")]
     blocks += [
+        _button(f"Provider: {acp_bots.provider_of(form)}", "cycle/provider"),
         _field("Name", "field/name", form.get("name") or ""),
         _field("Model address", "field/base_url", form.get("base_url") or ""),
         _field("Model", "field/model", form.get("model") or ""),

@@ -740,3 +740,34 @@ class ItemRowPills(unittest.TestCase):
         app.sendEvent(row, QEvent(QEvent.Type.Leave))
         self.assertIsNone(row._hover)
         self.assertEqual(fill(edit).rgba(), idle.rgba())
+
+
+class Providers(unittest.TestCase):
+    """A preset fills the address and a model; the key still comes from a file, and what you typed stays."""
+
+    def test_cycling_walks_every_preset_and_back_to_the_local_server(self):
+        form = acp_bots.blank_connection()
+        seen = [acp_bots.provider_of(form)]
+        for _ in range(len(acp_bots.PROVIDERS)):
+            form = acp_bots.next_provider(form)
+            seen.append(acp_bots.provider_of(form))
+        self.assertEqual(seen[0], "Local server")
+        self.assertEqual(seen[1], "xAI")
+        self.assertEqual(seen[-1], "Local server")
+        self.assertEqual(len(set(seen)), len(acp_bots.PROVIDERS))
+
+    def test_a_preset_fills_address_model_name_and_a_key_file_of_its_own(self):
+        form = acp_bots.next_provider(acp_bots.blank_connection())
+        self.assertEqual((form["base_url"], form["model"], form["name"]), ("https://api.x.ai/v1", "grok-4", "xAI"))
+        self.assertEqual(form["key_file"], "~/.config/llm/xai.key")
+        rows, error = acp_bots.commit_connection(form, [])
+        self.assertEqual(error, "")
+        self.assertEqual(rows[0]["base_url"], "https://api.x.ai/v1")
+
+    def test_a_name_and_a_key_file_you_typed_stay_and_an_unknown_address_starts_the_list(self):
+        typed = {**acp_bots.blank_connection(), "name": "Work", "key_file": "~/secrets/mine",
+                 "base_url": "http://gpu-box:8000/v1"}
+        self.assertEqual(acp_bots.provider_of(typed), "custom")
+        form = acp_bots.next_provider(typed)
+        self.assertEqual((form["name"], form["key_file"]), ("Work", "~/secrets/mine"))
+        self.assertEqual(acp_bots.provider_of(form), "Local server")

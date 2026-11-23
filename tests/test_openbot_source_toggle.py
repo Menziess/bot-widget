@@ -139,6 +139,14 @@ class OpenBotSourceToggle(unittest.TestCase):
         self.faces.menu_command("mute/home", "bots")
         self.assertNotIn("Done", _page_text(bots(self.faces.menu_state())), "any other click takes it away")
 
+    def test_the_provider_button_fills_the_new_connection_form(self):
+        from botwidget.menu_pages import connection_form
+        self.faces.menu_command("page/connection", "connections")
+        self.assertEqual(self.faces.menu_command("cycle/provider", "connection", {"field/name": ""}), "connection")
+        state = self.faces.menu_state()
+        self.assertEqual(state["connection_form"]["base_url"], "https://api.x.ai/v1")
+        self.assertIn("Provider: xAI", _page_text(connection_form(state)))
+
     def test_does_not_write_the_user_widget_json(self):
         """The test file is the only widget.json this class may touch."""
         self.assertTrue(self._config.startswith(self._folder.name))

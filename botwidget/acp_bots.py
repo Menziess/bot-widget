@@ -190,6 +190,42 @@ def blank_connection() -> dict:
             "key_file": DEFAULT_KEY}
 
 
+# Hosted services that answer the Chat Completions shape, which is all the harness needs: a preset fills the
+# address and a model name, and the key still comes from a file.
+PROVIDERS = (
+    ("Local server", DEFAULT_BASE, DEFAULT_MODEL),
+    ("xAI", "https://api.x.ai/v1", "grok-4"),
+    ("OpenAI", "https://api.openai.com/v1", "gpt-4.1"),
+    ("OpenRouter", "https://openrouter.ai/api/v1", "openrouter/auto"),
+    ("Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash"),
+    ("GitHub Models", "https://models.github.ai/inference", "openai/gpt-4.1"),
+)
+
+
+def provider_key_file(label: str) -> str:
+    return DEFAULT_KEY if label == PROVIDERS[0][0] else f"~/.config/llm/{_slug(label)}.key"
+
+
+def provider_of(form: dict) -> str:
+    """The preset this form's address belongs to, or "custom"."""
+    base = str(form.get("base_url") or "").rstrip("/")
+    return next((label for label, address, _model in PROVIDERS if address == base), "custom")
+
+
+def next_provider(form: dict) -> dict:
+    """The form with the next preset filled in. A name or key file you typed yourself stays."""
+    labels = [label for label, _address, _model in PROVIDERS]
+    current = provider_of(form)
+    label = labels[(labels.index(current) + 1) % len(labels)] if current in labels else labels[0]
+    _label, address, model = next(row for row in PROVIDERS if row[0] == label)
+    key_file = str(form.get("key_file") or "")
+    own_key = key_file and key_file not in {provider_key_file(known) for known in labels}
+    typed_name = str(form.get("name") or "")
+    return {**form, "base_url": address, "model": model,
+            "key_file": key_file if own_key else provider_key_file(label),
+            "name": typed_name if typed_name and typed_name not in labels else label}
+
+
 def public_connections(existing) -> list:
     """Connections the pages can show. A row without an id or a name is skipped."""
     rows = []

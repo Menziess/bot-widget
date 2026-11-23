@@ -813,6 +813,9 @@ class Faces(QObject):
                 "workspace_permission", draft.get("workspace_permissions") or "ask")
             self._bot_draft = draft
             return page
+        if kind == "cycle" and name == "provider":
+            self._connection_draft = acp_bots.next_provider(self._connection_draft or acp_bots.blank_connection())
+            return page
         if kind == "cycle" and name == "connection":
             draft = self._bot_draft or acp_bots.blank()
             draft["connection"] = acp_bots.cycle_connection(draft.get("connection") or "",
