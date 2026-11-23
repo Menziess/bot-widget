@@ -34,6 +34,7 @@ from botwidget import (
     startup,
     updates,
 )
+from botwidget.cli_json import first_line_note, json_object
 from botwidget.markdown import block_text
 from botwidget.menu_pages import bots
 from botwidget.qt_ui import app as appmod
@@ -179,12 +180,12 @@ class Hermes(unittest.TestCase):
             self.assertEqual(hermesbot.target(), "Ada")
         with mock.patch.object(hermesbot, "widget_config", return_value={"hermesbot_target": 3}):
             self.assertEqual(hermesbot.target(), hermesbot.DEFAULT_TARGET)
-        self.assertIsNone(hermesbot._data("not json\n[1]\n{nope}"))
-        self.assertEqual(hermesbot._data('{"a": 1}'), {"a": 1})
+        self.assertIsNone(json_object("not json\n[1]\n{nope}"))
+        self.assertEqual(json_object('{"a": 1}'), {"a": 1})
         done = subprocess.CompletedProcess(["h"], 1, "", "boom")
-        self.assertEqual(hermesbot._note(done), "boom")
-        self.assertEqual(hermesbot._note(subprocess.CompletedProcess(["h"], 0, "", "")), "")
-        self.assertEqual(hermesbot._note(subprocess.CompletedProcess(["h"], 1, "", "")), "")
+        self.assertEqual(first_line_note(done), "boom")
+        self.assertEqual(first_line_note(subprocess.CompletedProcess(["h"], 0, "", "")), "")
+        self.assertEqual(first_line_note(subprocess.CompletedProcess(["h"], 1, "", "")), "")
         self.assertEqual(hermesbot.parse_message('{"content": "  hoi  "}'), "hoi")
         self.assertEqual(hermesbot.parse_message('{"data": {"text": "diep"}}'), "diep")
         self.assertEqual(hermesbot.parse_message("{nope"), "")
@@ -228,7 +229,7 @@ class Hermes(unittest.TestCase):
         with mock.patch.object(hermesbot.subprocess, "Popen", return_value=popped):
             result = hermesbot.run("hoi", 1)
         self.assertEqual(result.data["content"] if False else hermesbot.parse_message(result.note or ""), "")
-        self.assertEqual(hermesbot._data(popped.communicate.return_value[0])["content"], "antwoord")
+        self.assertEqual(json_object(popped.communicate.return_value[0])["content"], "antwoord")
 
         clock = {"t": 0.0}
         link = hermesbot.HermesLink("Ada", now=lambda: clock["t"])
@@ -1123,8 +1124,8 @@ class WidgetBits(unittest.TestCase):
         row = ItemRow("Ada", True, "bot/a", [{"label": "Again", "command": "go"},
                                              {"label": "Mute", "command": "mute"}])
         row.resize(420, 36)
-        row.press_at(400)
-        row.press_at(10)
+        row.press_at(400, 18)
+        row.press_at(10, 18)
         row.show()
         from PySide6.QtCore import QEvent, QPointF, Qt
         from PySide6.QtGui import QMouseEvent
@@ -1282,8 +1283,8 @@ class GrokEdges(unittest.TestCase):
     def test_a_broken_line_and_a_busy_poll_do_not_invent_an_answer(self):
         """Should ignore a line that is not an object, and skip a look that is already running."""
         from botwidget import grokbot
-        self.assertIsNone(grokbot._data("nope\n{nope"))
-        self.assertEqual(grokbot._note(subprocess.CompletedProcess(["g"], 1, "", "")), "")
+        self.assertIsNone(json_object("nope\n{nope"))
+        self.assertEqual(first_line_note(subprocess.CompletedProcess(["g"], 1, "", "")), "")
         self.assertFalse(grokbot.accepted("x"))
         self.assertFalse(grokbot.accepted({"result": {}}))
         self.assertEqual(grokbot._error({"error": {"message": "nee"}}, "", 1), "nee")
@@ -1811,9 +1812,7 @@ class PlainPaths(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(link.polled, 1)
         link._due = False
-        home._refreshing = True
         home._poll_pending()
-        self.assertEqual(home._refresh_note, "noted")
         link._active = True
         home._poll_timer.stop()
         home._poll_pending()
@@ -1823,26 +1822,19 @@ class PlainPaths(unittest.TestCase):
         home.hermes = link
         link._active = False
         home._poll_timer.stop()
-        home._refreshing = True
         home._poll_pending()
-        self.assertEqual(home._refresh_note, "noted")
-        home._refreshing = False
         home._poll_pending()
 
         home.hermes = None
         home.acp = link
         link._active = False
-        home._refreshing = True
         home._poll_pending()
-        self.assertEqual(home._refresh_note, "noted")
         link._active = True
-        home._refreshing = True
         home._poll_timer.stop()
         home._poll_pending()
         self.assertTrue(home._poll_timer.isActive())
         link._active = False
         link.chat = lambda: {"messages": [], "activity": "working"}
-        home._refreshing = False
         home._poll_timer.stop()
         home._poll_pending()
         self.assertTrue(home._poll_timer.isActive())
@@ -1850,7 +1842,6 @@ class PlainPaths(unittest.TestCase):
         home.acp = None
         home._asked = False
         home.has_pending = False
-        home._refreshing = False
         home._poll_timer.stop()
         pending = {"prompts": [{"requestId": "p"}], "approvals": [], "browserTakeovers": []}
         with mock.patch("botwidget.qt_ui.face.api_get", return_value=pending), \
@@ -2196,13 +2187,8 @@ class OffscreenCalls(unittest.TestCase):
         home._drag_origin = None
         self.assertTrue(home.idle())
 
-        home._refreshing = False
-        home._refreshed("nope")
-        self.assertFalse(home._refreshing)
         home.grok = link
-        home._refreshing = True
         home._on_grok_polled()
-        self.assertEqual(home._refresh_note, "from grok")
         link._active = True
         home._poll_timer.stop()
         home._on_grok_polled()
@@ -2262,13 +2248,7 @@ class OffscreenCalls(unittest.TestCase):
         home.faces = None
         link.fetched.clear()
         hermes.fetched.clear()
-        home.refresh()
-        self.assertEqual(link.fetched, ["fetch"])
-        self.assertEqual(hermes.fetched, ["h"])
-        home._poll_timer.stop()
-        link.fetched.clear()
-        hermes.fetched.clear()
-        home.reload_quietly()
+        home.reset()
         self.assertEqual(link.fetched, ["fetch"])
         self.assertEqual(hermes.fetched, ["h"])
         home._poll_timer.stop()

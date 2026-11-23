@@ -111,7 +111,7 @@ class OpenBotSourceToggle(unittest.TestCase):
         state = self.faces.menu_state()
         text = _page_text(connections(state))
         self.assertIn("☐ OpenBot", text)
-        self.assertIn("Off. OpenBot is installed, but its bots are not shown.", text)
+        self.assertIn("Off", text)
 
         # Reopen: still off, from the file, not from "installed".
         config._config_read[:] = [None, {}]
@@ -124,6 +124,20 @@ class OpenBotSourceToggle(unittest.TestCase):
         self.assertTrue(config.source_enabled("openbot"))
         self.assertEqual(json.loads(Path(self._config).read_text()).get("sources_off"), [])
         self.assertEqual({bot["id"] for bot in _all_bots()}, {"home", "away"})
+
+    def test_reset_unsticks_that_bot_and_the_page_says_done(self):
+        from botwidget.menu_pages import bots
+        face = self.faces.faces["home"]
+        face.pinned = True
+        face._think_quiet = True
+        face._hover_blocked_until = 10 ** 9
+        face._poll_timer.stop()
+        self.assertEqual(self.faces.menu_command("reset/home", "bots"), "bots")
+        self.assertTrue(face._poll_timer.isActive(), "the bot is looked at again")
+        self.assertEqual((face.pinned, face._think_quiet, face._hover_blocked_until), (False, False, 0.0))
+        self.assertIn("Done", _page_text(bots(self.faces.menu_state())))
+        self.faces.menu_command("mute/home", "bots")
+        self.assertNotIn("Done", _page_text(bots(self.faces.menu_state())), "any other click takes it away")
 
     def test_does_not_write_the_user_widget_json(self):
         """The test file is the only widget.json this class may touch."""

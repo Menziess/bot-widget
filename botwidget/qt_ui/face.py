@@ -6,7 +6,6 @@ import math
 import os
 import platform
 import random
-import sys
 import threading
 import time
 import uuid
@@ -121,7 +120,7 @@ REOPEN_AFTER_S = 3.0
 DRAG_RESIZE_MS = 160
 # Stacking the bubbles costs X round trips: during a drag at most this often.
 DRAG_RESTACK_S = 0.25
-# How long the line on how a /refresh went stays under the chat.
+# How long a warning line stays under the chat.
 REFRESH_NOTE_S = 8.0
 THINKING_TEXT = "Thinking"
 WATCHING_TEXT = "Watching"  # while you select what to screenshot
@@ -334,7 +333,6 @@ class FaceWindow(QWidget):
         self._page_memory_until = 0.0
         self._depth = 1  # how many of the latest messages the bubble shows
         self._loading_older = False
-        self._refreshing = False  # /refresh asked; the next poll says how it went
         self._refresh_note, self._refresh_note_until = "", 0.0
         self._conversation = None
         self._messages = []
@@ -1384,19 +1382,12 @@ class FaceWindow(QWidget):
                 if self._poll_thread is None or not self._poll_thread.is_alive():
                     self._poll_thread = threading.Thread(target=self._poll_grok, daemon=True)
                     self._poll_thread.start()
-            if self._refreshing and not self.grok.is_polling and (
-                    self._poll_thread is None or not self._poll_thread.is_alive()):
-                # Nothing went out to Grok Bot after all: say so rather than wait for an answer that never comes.
-                self._refreshed(self.grok.note() or "Refreshed.")
             self._sync_bubble(self._latest())
             if self.grok.active():
                 self._poll_timer.start(1000)
             return
         if self.hermes:
             # Hermes Bot uses --oneshot mode, no polling needed after send.
-            if self._refreshing:
-                self._refreshed(self.hermes.note() or "Refreshed.")
-                return
             self._sync_bubble(self._latest())
             return
         if self.acp:
@@ -1406,8 +1397,6 @@ class FaceWindow(QWidget):
             self._sync_pending_dot()
             chat = self._latest()
             self._sync_bubble(chat, force=changed)
-            if self._refreshing and not self.acp.active():
-                self._refreshed(self.acp.note() or "Refreshed.")
             if self.acp.active():
                 self._poll_timer.start(1000)
             elif chat.get("activity") or self._asked or self._answer_pending:
@@ -1422,10 +1411,7 @@ class FaceWindow(QWidget):
         if isinstance(data, dict):
             changed = self._set_attention(data)
             self._sync_pending_dot()
-        if self._refreshing:
-            self._refreshed("Refreshed." if data is not None else "Could not reach OpenBot.")
-        else:
-            self._sync_bubble(self._latest(), force=changed)
+        self._sync_bubble(self._latest(), force=changed)
         self._poll_timer.start((WORK_POLL_INTERVAL if self._working else POLL_INTERVAL) * 1000)
 
     def _poll_grok(self):
@@ -1439,19 +1425,7 @@ class FaceWindow(QWidget):
         self._refresh_note, self._refresh_note_until = note, time.monotonic() + REFRESH_NOTE_S
         self._sync_bubble(self._latest(), force=True)
 
-    def _refreshed(self, note: str):
-        """The refresh is done: the chat comes back with one line on how it went."""
-        if not self._refreshing:
-            return
-        self._refreshing = False
-        self._refresh_note, self._refresh_note_until = note, time.monotonic() + REFRESH_NOTE_S
-        self._depth = max(self._depth, 1)
-        self._sync_bubble(self._latest(), force=True)
-
     def _on_grok_polled(self):
-        if self._alive and self._refreshing:
-            self._refreshed(self.grok.note() or "Refreshed.")
-            return
         if self._alive:
             self._sync_bubble(self._latest())
             if self.grok.active() and not self._poll_timer.isActive():
@@ -1704,35 +1678,18 @@ class FaceWindow(QWidget):
         self.bubble.show_blocks([status_block(note)], "say")
         self.bubble.shown_by_pointer()
 
-    def refresh(self):
-        """Reload every bot now: this one says it is busy at once and how it went once the chat is in (never an
-        empty bubble); the others reload quietly. A bot that got stuck is reset along the way."""
-        if self.faces is not None and hasattr(self.faces, "refresh_others"):
-            self.faces.refresh_others(self.agent_id)
-        self._reset_state()
-        self._menu_page = None
-        self._arc_for_page(None)
-        self._refreshing = True
-        self._refresh_note = ""
-        self.bubble.show_blocks([status_block("Refreshing…"), role_panel("bot"), plain_block("dots")], "say")
-        if self.grok:
-            self.grok.request_fetch()
-        if self.hermes:
-            self.hermes.request_fetch()
-        self._poll_timer.start(0)
-
-    def _reset_state(self):
-        """What can keep a bubble from opening: a pin nobody can take off, a quiet thought, a hover pause."""
+    def reset(self):
+        """Forget this bot's conversation and set it going again: a stuck pin, thought or hover pause is cleared,
+        an agent of its own starts a fresh session, and the others are asked again."""
         self.pinned = False
         self._think_quiet = False
         self._think_held = False
         self._hover_blocked_until = 0.0
         self._hover_retry = 0.0
-
-    def reload_quietly(self):
-        """/refresh typed into another bot: reset and reload this one without opening its bubble."""
-        self._reset_state()
-        self.bubble.close_bubble("refresh")
+        self._queue.clear()
+        self._depth = 1
+        if self.acp:
+            self.acp.reset()
         if self.grok:
             self.grok.request_fetch()
         if self.hermes:
@@ -1776,6 +1733,7 @@ class FaceWindow(QWidget):
         if not again:
             # Remove stays on Again only while this page is still open.
             self.faces._confirm_remove = ""
+            self.faces._reset_done = ""
         self._menu_page = page
         # A page goes away by itself like any bubble. Escape collapses it.
         self.pinned = False
@@ -1858,9 +1816,6 @@ class FaceWindow(QWidget):
         page = None if files else menu_pages.SLASH.get(text.strip().lower())
         if page:
             self.open_menu(page)
-            return
-        if not files and text.strip().lower() == "/refresh":
-            self.refresh()
             return
         if not files and text.strip().lower() == "/screenshot":
             self.start_screenshot()

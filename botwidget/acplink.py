@@ -194,6 +194,7 @@ class AcpLink:
         self._interrupted = False
         self.on_change = None  # the face sets it: a new message or question must wake it, even when it sleeps
         self._closed = False
+        self._epoch = 0  # a reset bumps it: a turn of an older one must not write into the new chat
         self._booting = True  # history loads at start, before the first message
         self._gate = None
         self._loop = asyncio.new_event_loop()
@@ -338,6 +339,35 @@ class AcpLink:
             self.decide(request_id, False)
         self.cancel()
 
+    def reset(self) -> None:
+        """Forget the conversation: the turn stops, the agent and its saved session go, and the next message starts a
+        fresh one. Also what gets a stuck agent going again."""
+        self.interrupt()
+        with self._lock:
+            self._epoch += 1
+            self._booting = True  # the face keeps looking until the old agent is gone
+        asyncio.run_coroutine_threadsafe(self._restart(), self._loop)
+
+    async def _restart(self) -> None:
+        async with self._gate:
+            client, self._client = self._client, None
+            if client is not None:
+                try:
+                    await client.__aexit__(None, None, None)
+                except Exception:
+                    pass
+            try:
+                os.remove(os.path.join(self.room(), "session.json"))
+            except OSError:
+                pass
+            with self._lock:
+                self.messages, self._history = [], []
+                self._activity = self._thought = self._note = self._context = self.failed = ""
+                self._sending = self._said = self._followup = self._interrupted = self.stopped = False
+                self._jobs = 0
+                self._booting = False
+        self._changed()
+
     def close(self, wait: float = 0) -> None:
         """Stop the agent process and the loop behind it. A widget that is quitting waits a moment for it, or the agent
         outlives the widget."""
@@ -369,11 +399,14 @@ class AcpLink:
     # ── the agent, in the background ────────────────────────────
 
     async def _turn(self, text: str) -> None:
+        epoch = self._epoch
         try:
             client = await self._ensure()
             turn = await client.prompt(text)
         except Exception as error:
             with self._lock:
+                if epoch != self._epoch:
+                    return
                 self.stopped = True
                 if isinstance(error, FileNotFoundError):
                     error = (f"the program {error.filename!r} does not exist. If its path has a space "
@@ -387,6 +420,8 @@ class AcpLink:
             note_tool(False)
             return
         with self._lock:
+            if epoch != self._epoch:
+                return
             self._activity = ""
             self._thought = ""
             self._sending = False

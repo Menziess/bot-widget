@@ -535,13 +535,6 @@ class Faces(QObject):
         elif UNLINKED_ID in self.faces:
             self.faces.pop(UNLINKED_ID).close_face()
 
-    def refresh_others(self, agent_id: str):
-        """/refresh reloads every bot, not only the one it was typed into; Grok Bot is asked again too."""
-        for other_id, face in self.faces.items():
-            if other_id != agent_id:
-                face.reload_quietly()
-        threading.Thread(target=self._probe_grok, daemon=True).start()
-
     def close_bubbles_except(self, agent_id: str):
         """The bubble of one face is open: the others close, so that only one is up at a time."""
         for other_id, face in self.faces.items():
@@ -572,6 +565,7 @@ class Faces(QObject):
             "connection_form": getattr(self, "_connection_draft", None),
             "connection_error": getattr(self, "_connection_error", ""),
             "confirm_remove": getattr(self, "_confirm_remove", ""),
+            "reset_done": getattr(self, "_reset_done", ""),
             "json_text": getattr(self, "_json_text", ""), "json_error": getattr(self, "_json_error", ""),
             "approvals_text": self._approvals_view(), "approvals_error": getattr(self, "_approvals_error", ""),
             "openbot": openbot_installed(), "automation_ready": automation_ready(),
@@ -782,6 +776,8 @@ class Faces(QObject):
         kind, _, name = command.partition("/")
         if kind not in ("bot-remove", "connection-remove"):
             self._confirm_remove = ""
+        if kind != "reset":
+            self._reset_done = ""
         if command in ("action/save-bot", "action/save-json", "action/save-approvals", "action/save-connection",
                        "action/memory-save") or kind == "cycle":
             self._take(fields, page)
@@ -856,6 +852,11 @@ class Faces(QObject):
             self._set_glass(min(100, int(name[6:])))
         elif kind == "bot":
             self.toggle(name, name not in self.faces)
+        elif kind == "reset":
+            if name in self.faces:
+                self.faces[name].reset()
+            self._reset_done = command
+            return page
         elif kind == "mute":
             if name in self.faces:
                 self.faces[name].toggle_muted()

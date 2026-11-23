@@ -1,5 +1,6 @@
 """Phase 1: an ACP agent behind the calls the face already makes, driven by the fake agent."""
 
+import asyncio
 import os
 import shutil
 import sys
@@ -111,6 +112,19 @@ class AcpTurns(unittest.TestCase):
         self.assertEqual(chat["activity"], "")
         self.assertEqual([message["role"] for message in chat["messages"]], ["user", "bot"])
         self.assertIn("part 0", chat["messages"][-1]["text"])
+
+    def test_a_reset_forgets_the_conversation_and_the_next_message_starts_a_fresh_session(self):
+        link = self.link()
+        link.send("hello")
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertTrue(os.path.exists(os.path.join(link.room(), "session.json")))
+        link.reset()
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertEqual(link.chat()["messages"], [])
+        self.assertFalse(os.path.exists(os.path.join(link.room(), "session.json")), "no session to load again")
+        link.send("again")
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertEqual([message["role"] for message in link.chat()["messages"]], ["user", "bot"])
 
     def test_a_restart_loads_the_saved_session(self):
         face = "acp:restart-" + next(tempfile._get_candidate_names())
