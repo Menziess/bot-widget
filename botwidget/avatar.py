@@ -305,7 +305,7 @@ def _eye_shape(w: float, h: float, tilt: float, happy: float, scale: float, arc:
     size = ew * arc
     top, foot = -HAPPY_TOP * size, HAPPY_FOOT * size
     caret = ((-HAPPY_SPAN * size, foot), (0.0, 2 * top - foot), (HAPPY_SPAN * size, foot))
-    p0, ctrl, p1 = (tuple(_lerp(a, b, happy) for a, b in zip(u, v)) for u, v in zip(pill, caret))
+    p0, ctrl, p1 = (tuple(_lerp(a, b, happy) for a, b in zip(u, v, strict=False)) for u, v in zip(pill, caret, strict=False))
     width = _lerp(thick, size, happy)
     turn_by = math.radians(tilt * (1 - happy))
     c, s_ = math.cos(turn_by), math.sin(turn_by)
@@ -355,12 +355,12 @@ def expressed_eye(face: str, side: int, eye: tuple, happy: float, scale: float, 
     half, (a, b, c) = rest
     flat = max(CURVE_SHUT, min(1.0, scale))
     points = [(mirror * x * size, -y * size * flat) for x, y in (a, b, c)]
-    line = [tuple((1 - t) ** 2 * p0 + 2 * (1 - t) * t * p1 + t * t * p2 for p0, p1, p2 in zip(*points))
+    line = [tuple((1 - t) ** 2 * p0 + 2 * (1 - t) * t * p1 + t * t * p2 for p0, p1, p2 in zip(*points, strict=False))
             for t in (k / 8 for k in range(9))]
     curve = body3d._stroke(line, half * size)
     if happy > 0:
         arc_eye = _eye_shape(w, length, tilt, 1.0, scale, arc)
-        curve = [(_lerp(x, ax, happy), _lerp(y, ay, happy)) for (x, y), (ax, ay) in zip(curve, arc_eye)]
+        curve = [(_lerp(x, ax, happy), _lerp(y, ay, happy)) for (x, y), (ax, ay) in zip(curve, arc_eye, strict=False)]
     return curve, shift
 
 
@@ -597,7 +597,7 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
         shape, (du, dv) = expressed_eye(end, i, eye, happy, scale, arc)
         if t < 1:
             before, (bu, bv) = expressed_eye(start, i, eye, happy, scale, arc)
-            shape = [(_lerp(a, c, t), _lerp(b, d, t)) for (a, b), (c, d) in zip(before, shape)]
+            shape = [(_lerp(a, c, t), _lerp(b, d, t)) for (a, b), (c, d) in zip(before, shape, strict=False)]
             du, dv = _lerp(bu, du, t), _lerp(bv, dv, t)
         x += du + (converge if i == 0 else -converge) / CIRCLE_R
         y += dv

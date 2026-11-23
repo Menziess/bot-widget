@@ -728,7 +728,7 @@ class Trail(QWidget):
         if not self._balls:
             self._balls = [[x, y, 0.0, 0.0] for x, y in goals]
         before = [(b[0], b[1]) for b in self._balls]
-        for ball, (gx, gy), k, z in zip(self._balls, goals, self.STIFFNESS, self.DAMPING):
+        for ball, (gx, gy), k, z in zip(self._balls, goals, self.STIFFNESS, self.DAMPING, strict=False):
             for _ in range(4):
                 h = dt / 4
                 ball[2] += (k * (gx - ball[0]) - 2 * z * math.sqrt(k) * ball[2]) * h
@@ -737,7 +737,7 @@ class Trail(QWidget):
                 ball[1] += ball[3] * h
         self._hold(self._balls, ends)
         if dt:
-            for ball, (x, y) in zip(self._balls, before):
+            for ball, (x, y) in zip(self._balls, before, strict=False):
                 ball[2], ball[3] = (ball[0] - x) / dt, (ball[1] - y) / dt  # what the chain forced is speed, too
         edge = max(self.RADII) + self.PAD
         left = min(b[0] for b in self._balls) - edge
@@ -763,7 +763,7 @@ class Trail(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.translate(-self.x(), -self.y())
         alpha = round(255 * glass.alpha())
-        for (x, y, _vx, _vy), r in zip(self._balls, self.RADII):
+        for (x, y, _vx, _vy), r in zip(self._balls, self.RADII, strict=False):
             painter.setPen(Qt.NoPen)
             painter.setBrush(QColor(0, 0, 0, 38))
             painter.drawEllipse(QPointF(x, y + 1.5), r + 1, r + 1)
@@ -1268,7 +1268,7 @@ class BubbleWindow(QWidget):
         if self.kind not in ("say", "think") or not self._geom:
             return None
         content_y = y + self._doc.y()
-        for (top, height), panel in zip(panel_rects(self._geom[0]), self._geom[0]):
+        for (top, height), panel in zip(panel_rects(self._geom[0]), self._geom[0], strict=False):
             if not top <= content_y < top + height:
                 continue
             if panel["role"] == "more":
@@ -1317,7 +1317,7 @@ class BubbleWindow(QWidget):
         self.changed = time.monotonic()
         content_y = y + self._doc.y()
         rects = panel_rects(self._geom[0])
-        for index, ((top, height), panel) in enumerate(zip(rects, self._geom[0])):
+        for index, ((top, height), panel) in enumerate(zip(rects, self._geom[0], strict=False)):
             if top <= content_y < top + height:
                 # Counted from the end: an older message loaded above does not move it.
                 self._notice_from_end = len(rects) - index
@@ -1858,7 +1858,7 @@ class BubbleWindow(QWidget):
         panels, box_w, _inner = self._geom
         shown_w = self._shown_w(box_w)
         wanted = []
-        for (top, _height), panel in zip(panel_rects(panels), panels):
+        for (top, _height), panel in zip(panel_rects(panels), panels, strict=False):
             y = top + panel_pad(panel)
             for line in panel["lines"]:
                 if line["kind"] == "control":
@@ -1874,7 +1874,7 @@ class BubbleWindow(QWidget):
                 widget.deleteLater()
             self._control_widgets = [self._make_control(line) for line, _rect in wanted]
             self._controls_key = key
-        for widget, (line, rect) in zip(self._control_widgets, wanted):
+        for widget, (line, rect) in zip(self._control_widgets, wanted, strict=False):
             if line["control"] == "button":
                 rect.setWidth(min(rect.width(), widget.sizeHint().width()))
                 rect.setHeight(BUTTON_H)

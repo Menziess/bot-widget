@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from harness.agent import tools as agent_tools
@@ -100,7 +101,7 @@ class Decide(unittest.TestCase):
         self.assertIn("a:", check_approvals({"a": {"x": "yes"}}))
         self.assertEqual(save_approvals(self.path, {"a": {"x": True}}), "")
         self.assertEqual(save_approvals(self.path, {"a": {"y": True}}), "")
-        self.assertEqual(json.load(open(self.path + ".bak")), {"a": {"x": True}})
+        self.assertEqual(json.loads(Path(self.path + ".bak").read_text()), {"a": {"x": True}})
 
 
 class ThroughAgent(unittest.IsolatedAsyncioTestCase):

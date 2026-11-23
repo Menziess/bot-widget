@@ -23,6 +23,11 @@ def parse_low_power(text: str) -> bool:
     return re.search(r"lowpowermode\s+1\b", text) is not None
 
 
+def _read(folder: str, name: str) -> str:
+    with open(os.path.join(folder, name)) as fh:
+        return fh.read().strip()
+
+
 def _probe() -> bool:
     """Is this computer on its battery or in a low power mode? False when it cannot tell: no saving is better than a
     face that stays sluggish on the mains."""
@@ -52,10 +57,10 @@ def _probe() -> bool:
         discharging = False
         for name in os.listdir(root):
             folder = os.path.join(root, name)
-            kind = open(os.path.join(folder, "type")).read().strip()
-            if kind == "Mains" and open(os.path.join(folder, "online")).read().strip() == "1":
+            kind = _read(folder, "type")
+            if kind == "Mains" and _read(folder, "online") == "1":
                 return False
-            if kind == "Battery" and open(os.path.join(folder, "status")).read().strip() == "Discharging":
+            if kind == "Battery" and _read(folder, "status") == "Discharging":
                 discharging = True
         return discharging
     except (OSError, ValueError, subprocess.SubprocessError, AttributeError):

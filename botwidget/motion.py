@@ -86,7 +86,7 @@ def at(keys, t: float):
         i += 1
     (t0, v0, curve), (t1, v1, _c) = keys[i], keys[i + 1]
     k = ease((t - t0) / max(t1 - t0, 1e-9), curve)
-    return tuple(a + (b - a) * k for a, b in zip(v0, v1))
+    return tuple(a + (b - a) * k for a, b in zip(v0, v1, strict=False))
 
 
 def blink_at(since: float) -> float:

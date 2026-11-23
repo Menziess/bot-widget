@@ -19,7 +19,7 @@ class TrailWindowFlags(unittest.TestCase):
         try:
             from botwidget.qt_ui import face  # noqa: F401  (availability probe)
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.app = QApplication.instance() or QApplication([])
 
     def test_trail_has_stays_on_top(self):

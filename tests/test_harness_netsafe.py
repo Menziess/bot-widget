@@ -56,6 +56,7 @@ class Redirects(unittest.TestCase):
         origin = HTTPServer(("127.0.0.1", 0), Origin)
         for server in (target, origin):
             threading.Thread(target=server.serve_forever, daemon=True).start()
+            self.addCleanup(server.server_close)
             self.addCleanup(server.shutdown)
         import urllib.request
         request = urllib.request.Request(f"http://127.0.0.1:{origin.server_address[1]}/v1/models",

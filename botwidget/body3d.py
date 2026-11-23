@@ -54,7 +54,7 @@ def turn(pitch: float, yaw: float, roll: float = 0.0):
 
 def turn_from(rest: tuple, pitch: float, yaw: float, roll: float = 0.0):
     """Turn a body seen in the rest turn (pitch, yaw[, roll]) on to pitch, yaw and roll."""
-    back = tuple(zip(*_matrix(*rest)))  # a turn's inverse is its transpose
+    back = tuple(zip(*_matrix(*rest), strict=False))  # a turn's inverse is its transpose
     return _apply(_mul(_matrix(pitch, yaw, roll), back))
 
 
@@ -152,8 +152,8 @@ def _stroke(line: list, half: float, caps: int = 7) -> list:
         tx, ty = bx - ax, by - ay
         n = math.hypot(tx, ty) or 1.0
         normals.append((-ty / n, tx / n))
-    left = [(x + nx * half, y + ny * half) for (x, y), (nx, ny) in zip(line, normals)]
-    right = [(x - nx * half, y - ny * half) for (x, y), (nx, ny) in zip(line, normals)]
+    left = [(x + nx * half, y + ny * half) for (x, y), (nx, ny) in zip(line, normals, strict=False)]
+    right = [(x - nx * half, y - ny * half) for (x, y), (nx, ny) in zip(line, normals, strict=False)]
 
     def cap(centre, normal, sign):
         cx, cy = centre
@@ -375,7 +375,7 @@ def body_outline(body: tuple, pitch: float, yaw: float) -> tuple:
     for i, ring in enumerate(turned):
         segments += [(ring[j - 1], ring[j]) for j in range(len(ring))]
         if i:
-            segments += list(zip(turned[i - 1], ring))
+            segments += list(zip(turned[i - 1], ring, strict=False))
     return tuple((round(x, 4), round(y, 4)) for x, y in _cast(segments))
 
 

@@ -458,7 +458,7 @@ class LeanAgent:
                 messages.append({"role": "assistant", "content": "", "tool_calls": calls})
                 # H6: execute tool calls with parallel reads, cheap-first, dedup, and guard-rails.
                 results = await self._execute_calls(session_id, store, calls)
-                for call, result in zip(calls, results):
+                for call, result in zip(calls, results, strict=False):
                     messages.append({"role": "tool", "tool_call_id": call["id"],
                                      "content": TOOL_OUTPUT + "\n" + result})
                 ending = [(call.get("function") or {}).get("name") for call in calls

@@ -130,6 +130,7 @@ class HookServer:
     def close(self):
         self.httpd.shutdown()
         self.httpd.server_close()
+        self.httpd.server_close()
 
 
 class Jobs(unittest.TestCase):

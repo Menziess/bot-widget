@@ -13,6 +13,8 @@ import unittest
 # Make sure the benchmark module is importable.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from pathlib import Path
+
 from harness import benchmark
 
 
@@ -143,7 +145,7 @@ class TestCLI(unittest.TestCase):
 
     def test_default_cli_stays_scripted(self):
         """--live is opt-in; the default path never leaves scripted mode."""
-        source = open(benchmark.__file__).read()
+        source = Path(benchmark.__file__).read_text()
         self.assertIn("--live", source)
         self.assertIn("run_all_live", source)
         self.assertNotIn("8080", source)

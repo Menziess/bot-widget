@@ -134,3 +134,4 @@ class FakeModel:
     def close(self) -> None:
         self.server.shutdown()
         self.server.server_close()
+        self.server.server_close()

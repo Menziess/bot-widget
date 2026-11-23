@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -30,7 +31,7 @@ class FastForward(unittest.TestCase):
         subprocess.check_call(["git", "push", "-u", "origin", "HEAD:main"], cwd=self.dir, stdout=subprocess.DEVNULL)
 
     def test_a_dirty_tree_is_not_fast_forwarded(self):
-        open(os.path.join(self.dir, "a.txt"), "w").write("dirty")
+        Path(os.path.join(self.dir, "a.txt")).write_text("dirty")
         before = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.dir, text=True)
         self.assertEqual(pc_update.fast_forward(self.dir), "dirty")
         after = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=self.dir, text=True)
@@ -120,7 +121,7 @@ class LockAndTakeover(unittest.TestCase):
         sleeper = subprocess.Popen(["sleep", "30"])
         self.addCleanup(lambda: sleeper.poll() is None and sleeper.kill())
         pidfile = os.path.join(folder, "dev.pid")
-        open(pidfile, "w").write(str(sleeper.pid))
+        Path(pidfile).write_text(str(sleeper.pid))
         marker = os.path.join(folder, "ran")
         config.save_widget_config(variant="dev", local_command=[sys.executable, "-c", "pass"])
         env = {"BOTWIDGET_DEV_PID": pidfile, "TMPDIR": folder}
@@ -153,7 +154,7 @@ class LockAndTakeover(unittest.TestCase):
                 sys.executable, "-c", check, str(sleeper.pid), marker,
             ])
         self.assertEqual(code, 0)
-        self.assertEqual(open(marker).read(), "dead")
+        self.assertEqual(Path(marker).read_text(), "dead")
 
 
 class CrashRetry(unittest.TestCase):
@@ -191,7 +192,7 @@ class CrashRetry(unittest.TestCase):
         pulled, delay = dev.prepare_retry(folder, 0)
         self.assertEqual(pulled, "updated")
         self.assertEqual(delay, 1.0)
-        open(os.path.join(folder, "a.txt"), "w").write("x")
+        Path(os.path.join(folder, "a.txt")).write_text("x")
         self.assertEqual(dev.prepare_retry(folder, 1)[0], "dirty")
 
 
@@ -200,12 +201,12 @@ class LaunchScript(unittest.TestCase):
 
     def test_install_script_and_launcher_read_the_variant(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        install = open(os.path.join(root, "packaging", "install.sh")).read()
-        launch = open(os.path.join(root, "packaging", "botwidget-launch")).read()
+        install = Path(os.path.join(root, "packaging", "install.sh")).read_text()
+        launch = Path(os.path.join(root, "packaging", "botwidget-launch")).read_text()
         self.assertIn("botwidget-launch", install)
         self.assertIn("botwidget.supervisor launch", launch)
-        unit = open(os.path.join(root, "packaging", "systemd", "botwidget-update.service")).read()
-        timer = open(os.path.join(root, "packaging", "systemd", "botwidget-update.timer")).read()
+        unit = Path(os.path.join(root, "packaging", "systemd", "botwidget-update.service")).read_text()
+        timer = Path(os.path.join(root, "packaging", "systemd", "botwidget-update.timer")).read_text()
         self.assertIn("botwidget-pc-update", unit)
         self.assertIn("OnUnitActiveSec", timer)
 
@@ -260,7 +261,7 @@ class BusyDev(unittest.TestCase):
         subprocess.check_call(["git", "push", "-u", "origin", "HEAD:main"], cwd=checkout, stdout=subprocess.DEVNULL)
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         script = os.path.join(root, "scripts", "botwidget-pc-update")
-        source = open(script).read()
+        source = Path(script).read_text()
         self.assertIn("BOTWIDGET_DEV_BUSY", source)
         self.assertIn("plan == \"restart\"", source)
         # The shebang is not a Win32 program, and Git bash cannot cd to a Windows temp path.
@@ -269,7 +270,7 @@ class BusyDev(unittest.TestCase):
         idle = subprocess.Popen(["sleep", "30"])
         self.addCleanup(lambda: idle.poll() is None and idle.kill())
         pidfile = os.path.join(folder, "pid")
-        open(pidfile, "w").write(str(idle.pid))
+        Path(pidfile).write_text(str(idle.pid))
         open(busy, "w").close()
         run_env = os.environ.copy()
         run_env.update({

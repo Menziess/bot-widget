@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+from pathlib import Path
 
 from harness.acp_client import AcpClient
 from harness.agent import context
@@ -196,7 +197,7 @@ class Store(unittest.TestCase):
         self.addCleanup(store.close)
         store.usage({"bot": "Test", "ms": 12})
         store.usage({"bot": "Test", "ms": 34})
-        lines = [json.loads(line) for line in open(os.path.join(folder, "usage.jsonl"))]
+        lines = [json.loads(line) for line in Path(os.path.join(folder, "usage.jsonl")).read_text().splitlines()]
         self.assertEqual([line["ms"] for line in lines], [12, 34])
 
 
@@ -267,7 +268,7 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(turn.stop_reason, "end_turn")
         self.assertEqual("".join(update.text for update in turn.updates if update.kind == "text"),
                          "Antwoord in twee woorden. ")
-        usage = [json.loads(line) for line in open(os.path.join(self.folder, "usage.jsonl"))]
+        usage = [json.loads(line) for line in Path(os.path.join(self.folder, "usage.jsonl")).read_text().splitlines()]
         self.assertEqual(len(usage), 1)
         self.assertEqual(usage[0]["model"], "fake-model")
         self.assertEqual(usage[0]["bot"], "Test")
@@ -343,7 +344,7 @@ class Turns(unittest.IsolatedAsyncioTestCase):
             took = time.monotonic() - started
         self.assertEqual(result.stop_reason, "cancelled")
         self.assertLess(took, 1.0, "a cancel is read while the model stream is still open")
-        usage = [json.loads(line) for line in open(os.path.join(self.folder, "usage.jsonl"))]
+        usage = [json.loads(line) for line in Path(os.path.join(self.folder, "usage.jsonl")).read_text().splitlines()]
         self.assertTrue(usage[-1]["estimated"], "a cancel before any usage chunk is an estimate, not a measured 0")
         self.assertGreater(usage[-1]["input_tokens"], 0)
 
@@ -397,7 +398,7 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         async with self.client() as client:
             await client.start()
             await client.prompt("Hallo")
-        usage = [json.loads(line) for line in open(os.path.join(self.folder, "usage.jsonl"))]
+        usage = [json.loads(line) for line in Path(os.path.join(self.folder, "usage.jsonl")).read_text().splitlines()]
         self.assertGreaterEqual(usage[-1]["first_ms"], 250,
                                 "the first word's delay is measured, not an earlier event")
 
@@ -407,7 +408,7 @@ class Turns(unittest.IsolatedAsyncioTestCase):
             await client.cancel()  # nothing runs yet; this used to land on the next turn
             turn = await client.prompt("Hallo")
         self.assertEqual(turn.stop_reason, "end_turn")
-        usage = [json.loads(line) for line in open(os.path.join(self.folder, "usage.jsonl"))]
+        usage = [json.loads(line) for line in Path(os.path.join(self.folder, "usage.jsonl")).read_text().splitlines()]
         self.assertFalse(usage[-1]["cancelled"], "the turn was not cancelled and its summary is not skipped")
 
     async def test_a_model_server_that_is_not_there_ends_the_turn_in_seconds(self):

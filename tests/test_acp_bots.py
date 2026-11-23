@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from botwidget import acp_bots, acplink, config
@@ -63,9 +64,9 @@ class ConfigFile(unittest.TestCase):
     def test_a_file_that_cannot_be_read_is_not_replaced(self):
         with open(config.CONFIG_PATH, "w") as fh:
             fh.write("{not json")
-        before = open(config.CONFIG_PATH).read()
+        before = Path(config.CONFIG_PATH).read_text()
         config.save_widget_config(sound=True)
-        self.assertEqual(open(config.CONFIG_PATH).read(), before)
+        self.assertEqual(Path(config.CONFIG_PATH).read_text(), before)
 
     def test_the_editor_refuses_a_key_keeps_a_backup_and_saves_the_rest(self):
         config.save_widget_config(sound=True)
@@ -78,8 +79,8 @@ class ConfigFile(unittest.TestCase):
         data, error = acp_bots.parse_editor(text)
         self.assertEqual(error, "")
         self.assertEqual(config.replace_widget_config(data), "")
-        self.assertEqual(json.load(open(config.CONFIG_PATH + ".bak"))["sound"], True)
-        saved = json.load(open(config.CONFIG_PATH))
+        self.assertEqual(json.loads(Path(config.CONFIG_PATH + ".bak").read_text())["sound"], True)
+        saved = json.loads(Path(config.CONFIG_PATH).read_text())
         self.assertEqual(saved["note"], "keep")
         self.assertNotIn("HARNESS_MODEL_API_KEY", json.dumps(saved))
 
@@ -350,7 +351,7 @@ class WidgetSave(unittest.TestCase):
     def test_add_chat_rename_recolour_and_remove_on_a_fresh_config(self):
         self.assertIsNone(self.save("Harness Check"), "the bubble is closed, not shown again")
         self.assertIsNone(self.save("Second Check", color="green"))
-        saved = json.load(open(config.CONFIG_PATH))
+        saved = json.loads(Path(config.CONFIG_PATH).read_text())
         self.assertNotIn(SENTINEL, json.dumps(saved), "the key file's contents stay out of widget.json")
         bots_saved = saved["acp_bots"]
         self.assertEqual([row["env"]["HARNESS_MODEL"] for row in bots_saved], ["local", "local"])
@@ -392,13 +393,13 @@ class WidgetSave(unittest.TestCase):
         self.assertEqual([call[:2] for call in self.calls], [("toggle", "acp:harness-check"),
                                                              ("toggle", "acp:harness-check")])
         self.assertNotIn("acp:second-check", [call[1] for call in self.calls])
-        self.assertEqual(json.load(open(config.CONFIG_PATH))["acp_bots"][0]["id"], "harness-check")
+        self.assertEqual(json.loads(Path(config.CONFIG_PATH).read_text())["acp_bots"][0]["id"], "harness-check")
 
         self.assertEqual(self.box.menu_command("bot-remove/acp:harness-check", "bots"), "bots")
-        still = json.load(open(config.CONFIG_PATH))["acp_bots"]
+        still = json.loads(Path(config.CONFIG_PATH).read_text())["acp_bots"]
         self.assertEqual([row["id"] for row in still], ["harness-check", "second-check"])
         self.box.menu_command("bot-remove/acp:harness-check", "bots")
-        left = json.load(open(config.CONFIG_PATH))["acp_bots"]
+        left = json.loads(Path(config.CONFIG_PATH).read_text())["acp_bots"]
         self.assertEqual([row["id"] for row in left], ["second-check"])
         self.assertTrue(os.path.isdir(room), "removing the bot from the widget leaves its session folder")
 
@@ -429,8 +430,8 @@ class ApprovalsPage(WidgetSave):
         self.box._close_bubbles = lambda: self.calls.append("closed")
         self.assertIsNone(self.box.menu_command("action/save-approvals", "approvals", {"editor": text}))
         self.assertIn("closed", self.calls, "a save closes the bubble, as on the other pages")
-        self.assertEqual(json.load(open(self.path)), json.loads(text))
-        self.assertEqual(json.load(open(self.path + ".bak")), {"*": {"shell git status": True}})
+        self.assertEqual(json.loads(Path(self.path).read_text()), json.loads(text))
+        self.assertEqual(json.loads(Path(self.path + ".bak").read_text()), {"*": {"shell git status": True}})
 
     def test_a_bad_edit_is_refused_and_stays_in_the_editor(self):
         with open(self.path, "w") as fh:
@@ -441,7 +442,7 @@ class ApprovalsPage(WidgetSave):
             self.assertEqual(self.box.menu_command("action/save-approvals", "approvals", {"editor": text}), "approvals")
             self.assertIn(reason, self.page())
             self.assertIn(text.replace('"', '\\"'), self.page())
-        self.assertEqual(json.load(open(self.path)), {"*": {}})
+        self.assertEqual(json.loads(Path(self.path).read_text()), {"*": {}})
         self.assertNotIn("closed", self.calls, "a refused edit stays open")
 
 
@@ -798,6 +799,7 @@ class Providers(unittest.TestCase):
 
         server = HTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         base = f"http://127.0.0.1:{server.server_address[1]}/v1/"
         with tempfile.NamedTemporaryFile("w", delete=False) as fh:

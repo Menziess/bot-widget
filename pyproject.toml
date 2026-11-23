@@ -32,9 +32,7 @@ packages = ["botwidget", "harness"]
 line-length = 110
 
 [tool.ruff.lint]
-select = ["I", "F", "B", "E9"]
-# Left for later, each a sweep of its own: raise ... from in every except (B904), zip(strict=) (B905).
-ignore = ["B904", "B905"]
+select = ["I", "F", "B", "E9", "SIM115"]
 
 [tool.ruff.lint.per-file-ignores]
 # Scaffolding that names what it ignores, and a loop variable that shadows an import on purpose.

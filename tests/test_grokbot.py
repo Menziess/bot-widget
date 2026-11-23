@@ -509,7 +509,7 @@ class GrokFaceBubble(unittest.TestCase):
 
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 

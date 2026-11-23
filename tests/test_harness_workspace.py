@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 
 from harness.agent.tools import ToolError
 from harness.agent.workspace import (
@@ -247,7 +248,7 @@ class EditWrite(unittest.TestCase):
         self.addCleanup(shutil.rmtree, folder, True)
         self.addCleanup(shutil.rmtree, other, True)
         _ws_write(folder, os.path.join(other, "x.txt"), "x")
-        self.assertEqual(open(os.path.join(other, "x.txt")).read(), "x")
+        self.assertEqual(Path(os.path.join(other, "x.txt")).read_text(), "x")
 
     def test_write_secret_is_refused(self):
         folder = tempfile.mkdtemp()
@@ -451,16 +452,16 @@ class WorkspaceBuiltins(unittest.TestCase):
 
 class NoUserPaths(unittest.TestCase):
     def test_source_has_no_home_stefan(self):
-        src = open(os.path.join(os.path.dirname(__file__),
-                                "..", "harness", "agent", "workspace.py")).read()
+        src = Path(os.path.join(os.path.dirname(__file__),
+                                "..", "harness", "agent", "workspace.py")).read_text()
         self.assertNotIn("/home/stefan", src, "no home/stefan path in source")
         self.assertNotIn("~/Projects", src, "no ~/Projects path in source")
         self.assertNotIn("~/dotfiles", src, "no ~/dotfiles path in source")
         self.assertNotIn("~/.config/botwidget/widget.json", src, "no widget.json path in source")
 
     def test_source_has_no_hardcoded_default_workspace(self):
-        src = open(os.path.join(os.path.dirname(__file__),
-                                "..", "harness", "agent", "workspace.py")).read()
+        src = Path(os.path.join(os.path.dirname(__file__),
+                                "..", "harness", "agent", "workspace.py")).read_text()
         # No DEFAULT_WORKSPACE constant.
         self.assertFalse(
             any("DEFAULT_WORKSPACE" in line for line in src.splitlines()))

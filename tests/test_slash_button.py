@@ -23,7 +23,7 @@ class SlashButton(unittest.TestCase):
 
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         self.face = face
         self.app = QApplication.instance() or QApplication([])
         folder = tempfile.TemporaryDirectory()
@@ -154,7 +154,7 @@ class SlashListScroll(unittest.TestCase):
 
             from botwidget.qt_ui.controls import SlashList
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         self.app = QApplication.instance() or QApplication([])
         self.list = SlashList()
         self.list.limit = 5 * SlashList.ROW_H
@@ -190,7 +190,7 @@ class SlashHover(unittest.TestCase):
 
             from botwidget.qt_ui.controls import SlashList
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         self.app = QApplication.instance() or QApplication([])
         self.window = QWidget()
         self.window.resize(320, 400)

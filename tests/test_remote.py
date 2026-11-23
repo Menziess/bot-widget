@@ -45,6 +45,7 @@ class RemoteTest(unittest.TestCase):
                 self.assertFalse(remote._call("decide", {"bot": "acp:x", "id": "r2", "accept": True, "by": "c"})["ok"])
             finally:
                 server.shutdown()
+                server.server_close()
 
     def test_remote_control_is_off_until_the_user_turns_it_on(self):
         with tempfile.TemporaryDirectory() as folder:

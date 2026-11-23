@@ -22,7 +22,7 @@ class PlaceholderFace(unittest.TestCase):
 
             from botwidget.qt_ui.faces import Faces
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.Faces = Faces
         cls.app = QApplication.instance() or QApplication([])
 

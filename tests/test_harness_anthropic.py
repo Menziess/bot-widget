@@ -6,6 +6,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 from harness.acp_client import AcpClient
 from harness.agent.models import AnthropicMessages, from_environment
@@ -96,7 +97,7 @@ class AgentTurn(unittest.IsolatedAsyncioTestCase):
             await client.prompt("Hallo")
             turn = await client.prompt("En nog eens, met wat meer woorden erbij")
         self.assertEqual(turn.stop_reason, "end_turn")
-        usage = [json.loads(line) for line in open(os.path.join(folder, "usage.jsonl"))]
+        usage = [json.loads(line) for line in Path(os.path.join(folder, "usage.jsonl")).read_text().splitlines()]
         self.assertEqual(len(usage), 2)
         self.assertGreater(usage[-1]["cached_tokens"], 0, "the second turn reads the cached prefix")
         self.assertGreater(usage[-1]["input_tokens"], usage[-1]["cached_tokens"])

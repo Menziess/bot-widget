@@ -45,7 +45,7 @@ def login_command() -> list:
 
 def try_lock(path: str):
     """Exclusive lock. None when another supervisor already holds it."""
-    fh = open(path, "a+")
+    fh = open(path, "a+")  # noqa: SIM115  (the open file is the lock; the caller keeps it)
     try:
         if os.name == "nt":
             import msvcrt

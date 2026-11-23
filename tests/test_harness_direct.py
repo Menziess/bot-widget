@@ -13,6 +13,7 @@ import threading
 import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from unittest import mock
 
 from harness.acp_client import AcpClient, Turn, _text_of
@@ -557,7 +558,7 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
         session = (await agent.new_session(".")).session_id
         result = await agent.prompt(session, [Block("hoi")])
         self.assertEqual(result.stop_reason, "end_turn")
-        usage = [json.loads(line) for line in open(os.path.join(self.folder, "usage.jsonl"))]
+        usage = [json.loads(line) for line in Path(os.path.join(self.folder, "usage.jsonl")).read_text().splitlines()]
         self.assertTrue(usage[-1]["estimated"])
 
     async def test_a_step_limit_stops_the_loop(self):
@@ -634,6 +635,7 @@ class DirectModels(unittest.TestCase):
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         self.addCleanup(server.server_close)
         return f"http://127.0.0.1:{server.server_port}", seen

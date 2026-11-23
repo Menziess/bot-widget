@@ -18,6 +18,7 @@ import tempfile
 import time
 import unittest
 import unittest.mock
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from botwidget import (
@@ -454,7 +455,7 @@ class GrokAvatarFallback(unittest.TestCase):
         try:
             from PySide6.QtWidgets import QApplication, QWidget
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         from botwidget.qt_ui.faces import ARC_CATCH_X, ARC_CATCH_Y, Faces
         self.assertEqual((ARC_CATCH_X, ARC_CATCH_Y), (100, 70), "plain constants, not derived from the radius")
         app = QApplication.instance() or QApplication([])
@@ -480,7 +481,7 @@ class GrokAvatarFallback(unittest.TestCase):
             from PySide6.QtGui import QColor, QImage, QPainter, QPixmap, QRegion
             from PySide6.QtWidgets import QApplication
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         from types import SimpleNamespace
 
         from botwidget.qt_ui.faces import ArcCatcher
@@ -1008,7 +1009,7 @@ class Clouds(unittest.TestCase):
             goals = trail.targets(moved, bot)
         seconds = 10 / 60
         behind = []  # how long ago each ball's goal was where the ball is now
-        for ball, goal, old in zip(trail._balls, goals, earlier):
+        for ball, goal, old in zip(trail._balls, goals, earlier, strict=False):
             speed = (((goal[0] - old[0]) ** 2 + (goal[1] - old[1]) ** 2) ** 0.5) / seconds
             behind.append((((ball[0] - goal[0]) ** 2 + (ball[1] - goal[1]) ** 2) ** 0.5) / (speed or 1))
         self.assertGreater(behind[1], behind[2], "the smallest follows the bot more closely than the one between")
@@ -1092,7 +1093,7 @@ class Rendering(unittest.TestCase):
 
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
@@ -1171,7 +1172,7 @@ class AcpFace(unittest.TestCase):
             from botwidget import acplink
             from botwidget.qt_ui import faces
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.faces = faces
         cls.acplink = acplink
 
@@ -1197,7 +1198,7 @@ class UpdateTick(unittest.TestCase):
         try:
             from botwidget.qt_ui import faces
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.faces = faces
 
     def stub(self, staged, idle, probed=0.0):
@@ -1239,7 +1240,7 @@ class BubbleScroll(unittest.TestCase):
 
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
@@ -1271,7 +1272,7 @@ class BubbleWidth(unittest.TestCase):
 
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
@@ -1318,7 +1319,7 @@ class BubbleHover(unittest.TestCase):
 
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
@@ -3612,7 +3613,7 @@ class BubbleHover(unittest.TestCase):
         for button in buttons:
             self.assertLessEqual(button.height(), CONTROL_H)
         rows = sorted((w.y(), w.y() + w.height()) for w in bubble._control_widgets)
-        for (_top, bottom), (next_top, _b) in zip(rows, rows[1:]):
+        for (_top, bottom), (next_top, _b) in zip(rows, rows[1:], strict=False):
             self.assertLessEqual(bottom, next_top, "no control overlaps the next one")
 
     def test_a_menu_page_grows_to_its_content_before_it_scrolls(self):
@@ -5497,7 +5498,7 @@ class BubbleScrollMemory(unittest.TestCase):
 
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
@@ -5607,7 +5608,7 @@ class FrostLook(unittest.TestCase):
         try:
             from PySide6.QtWidgets import QApplication
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.app = QApplication.instance() or QApplication([])
 
     def parts(self):
@@ -5963,7 +5964,7 @@ class ScreenChanges(unittest.TestCase):
 
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
@@ -6035,7 +6036,7 @@ class Hotkey(unittest.TestCase):
 
             from botwidget.qt_ui import faces
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.faces = faces
         cls.app = QApplication.instance() or QApplication([])
 
@@ -6141,7 +6142,7 @@ class Desktops(unittest.TestCase):
 
             from botwidget.qt_ui import desktops
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         app = QApplication.instance() or QApplication([])
         widget = QWidget()
         with mock.patch.object(desktops, "set_desktops") as call:
@@ -6175,7 +6176,7 @@ class Desktops(unittest.TestCase):
         try:
             self.assertEqual(self.bring(everywhere=False, here=False), (True, 1, 1, 0))
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
 
     def test_nothing_moves_when_the_window_is_here_or_the_system_has_no_desktops(self):
         try:
@@ -6183,13 +6184,13 @@ class Desktops(unittest.TestCase):
             self.assertEqual(self.bring(everywhere=True, here=True)[0], False)
             self.assertEqual(self.bring(everywhere=False, here=False, platform="offscreen")[0], False)
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
 
     def test_a_window_on_no_desktop_you_are_on_comes_here_also_with_all_desktops(self):
         try:
             self.assertEqual(self.bring(everywhere=True, here=False)[0], True)
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
 
     def test_windows_has_nothing_to_choose_and_linux_does(self):
         from unittest import mock
@@ -6370,7 +6371,7 @@ class BotSources(unittest.TestCase):
         try:
             from botwidget.qt_ui.faces import bot_source
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         grok, hermes = grokbot.face_id("General"), hermesbot.face_id()
         self.assertEqual([bot_source(i) for i in ("agent-1", grok, hermes)], ["OpenBot", "Grok Bot", "Hermes"])
         state = {"bots": [{"id": "agent-1", "name": "Grumpy", "on": True, "source": "OpenBot"},
@@ -6391,7 +6392,7 @@ class MenuInBubble(unittest.TestCase):
 
             from botwidget.qt_ui import face, faces
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face, cls.faces = face, faces
         cls.app = QApplication.instance() or QApplication([])
 
@@ -6975,13 +6976,13 @@ def _outside_by(point, polygon) -> float:
     """0 for a point inside the polygon, else how far it is from it."""
     x, y = point
     inside = False
-    for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1]):
+    for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1], strict=False):
         if (y0 > y) != (y1 > y) and x < x0 + (y - y0) * (x1 - x0) / (y1 - y0):
             inside = not inside
     if inside:
         return 0.0
     best = math.inf
-    for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1]):
+    for (x0, y0), (x1, y1) in zip(polygon, polygon[1:] + polygon[:1], strict=False):
         dx, dy = x1 - x0, y1 - y0
         t = max(0.0, min(1.0, ((x - x0) * dx + (y - y0) * dy) / ((dx * dx + dy * dy) or 1.0)))
         best = min(best, math.hypot(x - x0 - t * dx, y - y0 - t * dy))
@@ -7169,7 +7170,7 @@ class GrokEyes(unittest.TestCase):
                                   pitch=pitch, yaw=yaw, roll=roll)
             drawn = sorted(eye_paths(svg), key=lambda eye: min(x for x, _ in eye))
             self.assertEqual(len(drawn), 2, shape)
-            for eye, (x, y, _w, _length, _tilt) in zip(drawn, marks):
+            for eye, (x, y, _w, _length, _tilt) in zip(drawn, marks, strict=False):
                 mx = (min(p[0] for p in eye) + max(p[0] for p in eye)) / 2
                 my = (min(p[1] for p in eye) + max(p[1] for p in eye)) / 2
                 self.assertAlmostEqual(mx, centre + x * avatar.CIRCLE_R, delta=1.0, msg=shape)
@@ -7183,7 +7184,7 @@ class GrokEyes(unittest.TestCase):
             if shape == "blob":
                 continue
             drawn = box(avatar.grok_body_points(shape, *avatar.GROK_STILL))
-            for got, art in zip(drawn, box(outline)):
+            for got, art in zip(drawn, box(outline), strict=False):
                 self.assertAlmostEqual(got, art, delta=0.04, msg=shape)
 
 
@@ -7360,7 +7361,7 @@ class AutoUpdate(unittest.TestCase):
         import hashlib
         self.serve(self.PAYLOAD, hashlib.sha256(self.PAYLOAD).hexdigest())
         path = updates.stage(self.release)
-        self.assertEqual(open(path, "rb").read(), self.PAYLOAD)
+        self.assertEqual(Path(path).read_bytes(), self.PAYLOAD)
         self.assertEqual(updates.staged_update("0.1.0"), ("0.2.0", path))
 
     def test_a_download_with_the_wrong_checksum_is_thrown_away(self):
@@ -7404,10 +7405,10 @@ class MacBundleSwap(unittest.TestCase):
         with tempfile.TemporaryDirectory() as home:
             old_app = os.path.join(home, "Apps", "Bot Widget.app")
             os.makedirs(old_app)
-            open(os.path.join(old_app, "version.txt"), "w").write("old")
+            Path(os.path.join(old_app, "version.txt")).write_text("old")
             build = os.path.join(home, "build", "Bot Widget.app")
             os.makedirs(build)
-            open(os.path.join(build, "version.txt"), "w").write("new")
+            Path(os.path.join(build, "version.txt")).write_text("new")
             archive = os.path.join(home, "BotWidget-macOS.zip")
             subprocess.run(["ditto", "-c", "-k", "--keepParent", build, archive], check=True)
             os.environ["BOTWIDGET_NO_RELAUNCH"] = "1"
@@ -7419,11 +7420,11 @@ class MacBundleSwap(unittest.TestCase):
                 time.sleep(0.1)
                 running.poll()  # a closed child process otherwise stays a zombie that still "lives"
                 try:
-                    if open(marker).read() == "new":
+                    if Path(marker).read_text() == "new":
                         break
                 except FileNotFoundError:
                     pass  # the folder is between the old app and the new one
-            self.assertEqual(open(marker).read(), "new")
+            self.assertEqual(Path(marker).read_text(), "new")
             for _ in range(30):  # the cleanup follows right after the swap
                 if os.listdir(os.path.join(home, "Apps")) == ["Bot Widget.app"]:
                     break
@@ -7458,29 +7459,29 @@ class DevRunner(unittest.TestCase):
     def test_snapshot_changes_when_a_python_file_changes_or_appears(self):
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, "a.py")
-            open(path, "w").write("x = 1")
+            Path(path).write_text("x = 1")
             before = dev.snapshot(folder)
             os.utime(path, ns=(1, 1))
             self.assertNotEqual(dev.snapshot(folder), before)
             before = dev.snapshot(folder)
-            open(os.path.join(folder, "b.py"), "w").write("y = 2")
+            Path(os.path.join(folder, "b.py")).write_text("y = 2")
             self.assertNotEqual(dev.snapshot(folder), before)
 
     def test_snapshot_ignores_the_generated_version_file(self):
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, "_version.py")
-            open(path, "w").write("version = '1'")
+            Path(path).write_text("version = '1'")
             before = dev.snapshot(folder)
             self.assertEqual(before, {})
-            open(path, "w").write("version = '2'")
+            Path(path).write_text("version = '2'")
             self.assertEqual(dev.snapshot(folder), before, "a wheel build rewrites it and must not restart the bot")
 
     def test_snapshot_ignores_other_files_and_bytecode(self):
         with tempfile.TemporaryDirectory() as folder:
             before = dev.snapshot(folder)
-            open(os.path.join(folder, "notes.txt"), "w").write("hi")
+            Path(os.path.join(folder, "notes.txt")).write_text("hi")
             os.makedirs(os.path.join(folder, "__pycache__"))
-            open(os.path.join(folder, "__pycache__", "a.py"), "w").write("")
+            Path(os.path.join(folder, "__pycache__", "a.py")).write_text("")
             self.assertEqual(dev.snapshot(folder), before)
 
     def test_stopping_nothing_is_fine(self):
@@ -7662,12 +7663,12 @@ class BubbleTextDocument(unittest.TestCase):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         try:
             from PySide6.QtWidgets import QApplication
-        except ImportError:  # no toolkit at all: nothing to test here
-            raise unittest.SkipTest("PySide6 is not available")
+        except ImportError as error:  # no toolkit at all: nothing to test here
+            raise unittest.SkipTest("PySide6 is not available") from error
         try:
             cls.app = QApplication.instance() or QApplication([])
         except Exception as err:  # no screen and no offscreen platform
-            raise unittest.SkipTest(str(err))
+            raise unittest.SkipTest(str(err)) from err
 
     @staticmethod
     def measure(text, style, size):
@@ -7964,6 +7965,7 @@ class _FlakyApi:
         openbot.HEADERS_FILE, openbot.api_url = self._old
         self.server.shutdown()
         self.server.server_close()
+        self.server.server_close()
         self._tmp.cleanup()
         return False
 
@@ -8095,7 +8097,7 @@ class Body3D(unittest.TestCase):
     def test_turn_from_undoes_the_rest_turn(self):
         rot = body3d.turn_from((-15.9, 33.3), -15.9, 33.3)
         for p in ((0.3, -0.2, 0.9), (0.0, 0.0, 1.0)):
-            for a, b in zip(rot(*p), p):
+            for a, b in zip(rot(*p), p, strict=False):
                 self.assertAlmostEqual(a, b, places=9)
 
     def eye_size(self, svg):
@@ -8144,7 +8146,7 @@ class Body3D(unittest.TestCase):
         yawed = body3d.turn(0, 30)(0.0, 0.0, 1.0)
         pitched = body3d.turn(20, 0)(*yawed)
         rolled = body3d.turn(0, 0, 10)(*pitched)
-        for got, want in zip(both, rolled):
+        for got, want in zip(both, rolled, strict=False):
             self.assertAlmostEqual(got, want)
 
     def test_every_grok_body_turns_in_3d_and_stays_on_the_canvas(self):

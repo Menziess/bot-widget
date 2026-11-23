@@ -71,4 +71,4 @@ class MenuStutter(unittest.TestCase):
                     config.CONFIG_PATH = old_path
                     config._config_read[:] = [None, {}]
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error

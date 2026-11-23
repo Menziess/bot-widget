@@ -16,6 +16,7 @@ import sys
 import tempfile
 import unittest
 import zipfile
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -337,7 +338,7 @@ class SmallModules(unittest.TestCase):
         version_dir = os.path.join(folder, "9.9.9")
         os.makedirs(version_dir)
         path = os.path.join(version_dir, asset)
-        open(path, "wb").write(b"pkg")
+        Path(path).write_bytes(b"pkg")
         open(path + updates.VERIFIED, "w").close()
         release = updates.Release("9.9.9", {asset: "http://files/pkg", updates.SUMS_ASSET: "http://files/sums"})
         with mock.patch.object(updates, "STAGING", folder):
@@ -375,7 +376,7 @@ class SmallModules(unittest.TestCase):
             digest = __import__("hashlib").sha256(blob).hexdigest()
 
             def download(url, dest, timeout):
-                open(dest, "wb").write(blob)
+                Path(dest).write_bytes(blob)
 
             with mock.patch.object(updates, "_open", return_value=Body(f"{digest} *{asset}\n".encode())), \
                     mock.patch.object(updates, "_download", download):
@@ -402,11 +403,11 @@ class SmallModules(unittest.TestCase):
             config._remember({"a": 1})
         with mock.patch.object(config.os, "replace", side_effect=OSError("full")):
             self.assertFalse(config._store({"a": 1}))
-        open(config.CONFIG_PATH, "w").write("{")
+        Path(config.CONFIG_PATH).write_text("{")
         config._config_read[:] = [None, None]
         self.assertIsNone(config._read_config())
         self.assertEqual(config.save_widget_config(sound=False), config.widget_config())
-        open(config.CONFIG_PATH, "w").write("{}\n")
+        Path(config.CONFIG_PATH).write_text("{}\n")
         config._config_read[:] = [None, None]
         with mock.patch.object(config.shutil, "copy2", side_effect=OSError("ro")):
             self.assertIn("backup", config.replace_widget_config({"sound": False}))
@@ -445,10 +446,10 @@ class SmallModules(unittest.TestCase):
         self.assertTrue(posix.self_removing("echo hi").startswith("rm -f"))
         pid = os.path.join(tempfile.mkdtemp(), "pid")
         self.addCleanup(shutil.rmtree, os.path.dirname(pid), True)
-        open(pid, "w").write("not-a-pid")
+        Path(pid).write_text("not-a-pid")
         with mock.patch.object(instance, "process_cmdline", return_value=b""):
             instance.ensure_single_instance(pid)
-        open(pid, "w").write("424242")
+        Path(pid).write_text("424242")
         seen = {"n": 0}
 
         def cmdline(pid_):
@@ -460,7 +461,7 @@ class SmallModules(unittest.TestCase):
                 mock.patch.object(instance.time, "sleep"):
             instance.ensure_single_instance(pid)
         # The previous process never dies: the second signal is KILL.
-        open(pid, "w").write("424242")
+        Path(pid).write_text("424242")
         with mock.patch.object(instance, "process_cmdline", return_value=b"botwidget"), \
                 mock.patch.object(instance.os, "kill") as kill, \
                 mock.patch.object(instance.time, "sleep"):
@@ -600,7 +601,7 @@ class Entry(unittest.TestCase):
 
         icon = os.path.join(tempfile.mkdtemp(), "icon.png")
         self.addCleanup(shutil.rmtree, os.path.dirname(icon), True)
-        open(icon, "wb").write(b"png")
+        Path(icon).write_bytes(b"png")
         faces = mock.Mock()
         faces.faces = {"a": mock.Mock()}
         with mock.patch.object(sys, "argv", ["botwidget", "--keep-login"]), \
@@ -666,7 +667,7 @@ class Entry(unittest.TestCase):
         with mock.patch("botwidget.qt_ui.app.main") as main:
             runpy.run_path(os.path.join(ROOT, "botwidget", "__main__.py"), run_name="__main__")
             main.assert_called_once()
-        source = open(os.path.join(ROOT, "botwidget", "__init__.py")).read()
+        source = Path(os.path.join(ROOT, "botwidget", "__init__.py")).read_text()
         code = compile(source, os.path.join(ROOT, "botwidget", "__init__.py"), "exec")
         real_import = __import__
 
@@ -680,7 +681,7 @@ class Entry(unittest.TestCase):
             exec(code, ns)
         self.assertEqual(ns["__version__"], "0.0.0+unknown")
 
-        current = open(os.path.join(ROOT, "botwidget", "system", "current.py")).read()
+        current = Path(os.path.join(ROOT, "botwidget", "system", "current.py")).read_text()
         compiled = compile(current, os.path.join(ROOT, "botwidget", "system", "current.py"), "exec")
         for platform in ("win32", "darwin"):
             with mock.patch.object(sys, "platform", platform):

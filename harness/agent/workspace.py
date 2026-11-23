@@ -76,8 +76,8 @@ def _resolve(path: str) -> str:
     """Expanduser + realpath on *path*. Raises ToolError on a cycle."""
     try:
         return os.path.realpath(os.path.expanduser(str(path or ".")))
-    except (OSError, ValueError):
-        raise ToolError("path cannot be resolved")
+    except (OSError, ValueError) as error:
+        raise ToolError("path cannot be resolved") from error
 
 
 # ── Containment ───────────────────────────────────────────────────────
@@ -419,10 +419,10 @@ def _git_run(workspace: str, args: list[str]) -> str:
             text=True,
             timeout=30,
         )
-    except FileNotFoundError:
-        raise ToolError("git is not installed")
-    except subprocess.TimeoutExpired:
-        raise ToolError("git timed out")
+    except FileNotFoundError as error:
+        raise ToolError("git is not installed") from error
+    except subprocess.TimeoutExpired as error:
+        raise ToolError("git timed out") from error
     if proc.returncode != 0:
         msg = proc.stderr.strip() or proc.stdout.strip()
         raise ToolError(f"git failed ({proc.returncode}): {msg[:300]}")
@@ -456,15 +456,15 @@ def shell_run(workspace: str, command: str, timeout: int = 30) -> str:
     try:
         proc = subprocess.Popen(command, shell=True, cwd=workspace, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, **group_kwargs())
-    except FileNotFoundError:
-        raise ToolError("shell not found")
+    except FileNotFoundError as error:
+        raise ToolError("shell not found") from error
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as error:
         stop(proc)
         proc.communicate()
         raise ToolError(f"shell timed out after {timeout} seconds and was stopped. A command that takes longer "
-                        "belongs in shell_background.")
+                        "belongs in shell_background.") from error
     if proc.returncode != 0:
         msg = stderr.strip() or stdout.strip()
         raise ToolError(f"shell failed ({proc.returncode}): {msg[:300]}")

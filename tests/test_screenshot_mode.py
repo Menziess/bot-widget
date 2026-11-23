@@ -34,7 +34,7 @@ class ScreenshotMode(unittest.TestCase):
         try:
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
@@ -269,7 +269,7 @@ class ScreenshotOverlay(unittest.TestCase):
         try:
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
@@ -392,7 +392,7 @@ class ScreenshotPngEncoding(unittest.TestCase):
         try:
             from botwidget.qt_ui import face  # noqa: F401  (availability probe)
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.app = QApplication.instance() or QApplication([])
 
     def test_pixmap_to_png_roundtrip(self):
@@ -424,7 +424,7 @@ class FaceHideShow(unittest.TestCase):
         try:
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
@@ -488,7 +488,7 @@ class ScreenGrab(unittest.TestCase):
         try:
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 
@@ -507,7 +507,7 @@ class EndToEnd(unittest.TestCase):
         try:
             from botwidget.qt_ui import face
         except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}")
+            raise unittest.SkipTest(f"no Qt: {error}") from error
         cls.face = face
         cls.app = QApplication.instance() or QApplication([])
 

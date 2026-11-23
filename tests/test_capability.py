@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 
 from harness.capability import NAMES, record
 
@@ -21,7 +22,7 @@ class Capability(unittest.TestCase):
         self.assertEqual(set(first["scores"]), set(NAMES))
         for name, value in first["scores"].items():
             self.assertIsInstance(value, float, name)
-        lines = open(history).read().strip().splitlines()
+        lines = Path(history).read_text().strip().splitlines()
         self.assertEqual(len(lines), 2)
         self.assertEqual(json.loads(lines[0])["commit"], first["commit"])
         self.assertNotEqual(json.loads(lines[1])["at"], "")

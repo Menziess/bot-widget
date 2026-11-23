@@ -102,7 +102,7 @@ def line_height(block: dict) -> int:
 
 def bubble_height(panels: list) -> int:
     """Height of the whole bubble window, including the margin for shadow and tail."""
-    total = 2 * PAD_BODY + PAD_SVG + TAIL_ROOM + sum(panel_gap(panel, nxt) for panel, nxt in zip(panels, panels[1:]))
+    total = 2 * PAD_BODY + PAD_SVG + TAIL_ROOM + sum(panel_gap(panel, nxt) for panel, nxt in zip(panels, panels[1:], strict=False))
     for panel in panels:
         total += 2 * panel_pad(panel)
         for line in panel["lines"]:

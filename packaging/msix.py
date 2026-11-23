@@ -134,8 +134,8 @@ def msix_version(version: str) -> str:
     for part in parts[:4]:
         try:
             val = int(part)
-        except ValueError:
-            raise ValueError(f"version part {part!r} is not an integer")
+        except ValueError as error:
+            raise ValueError(f"version part {part!r} is not an integer") from error
         if val < 0 or val > 65535:
             raise ValueError(
                 f"version part {val} out of range 0..65535"
