@@ -3164,6 +3164,7 @@ class BubbleHover(unittest.TestCase):
         stack.enter_context(mock.patch("botwidget.qt_ui.bubble_window.pointer_window", side_effect=under_pointer))
         return stack
 
+    @unittest.skipIf(sys.platform == "darwin", "X11-specific: the x_pointer mock relies on xcb platformName")
     def test_the_back_arrow_keeps_the_page_area_in_the_bubbles_own_window_on_every_frame(self):
         """Stefan, after the back arrow with the pointer low on the page: the bubble just disappears. A second,
         see-through window that held the page's area had to be mapped and stacked by the window manager on its own

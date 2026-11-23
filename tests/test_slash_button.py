@@ -42,6 +42,7 @@ class SlashButton(unittest.TestCase):
         self.bubble = self.window.bubble
 
     def _open_chat(self):
+        self.window.show()
         self.window._sync_bubble(self.window._latest(), force=True, show_field=True)
         self.app.processEvents()
         self.bubble._entry.setFocus()
