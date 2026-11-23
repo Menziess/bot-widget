@@ -36,12 +36,14 @@ def silent_nudge(tool_names: set[str] | None) -> bool:
     return tool_names == {"not_for_me"}
 
 
-def fold_chunk(current: str, chunk: str, tool_names: set[str] | None = None, endings=()) -> str:
+def fold_chunk(current: str, chunk: str, tool_names: set[str] | None = None, endings=(),
+               new_step: bool = False) -> str:
     """The bubble text after one more piece.
 
     A piece that already starts with the answer is a longer copy and replaces it.
     A piece equal to the answer was sent again and is ignored.
     A trailing tool-name echo is not part of the answer; `endings` are the tools a running skill ends with.
+    `new_step` marks the first piece of another model call, which starts a new paragraph.
     A silent skill nudge (`tool_names` is exactly not_for_me) leaves the answer as it was.
     """
     if silent_nudge(tool_names) or not chunk:
@@ -49,8 +51,12 @@ def fold_chunk(current: str, chunk: str, tool_names: set[str] | None = None, end
     if not current or chunk.startswith(current):
         merged = chunk
     else:
-        merged = current + chunk
-    return _strip_leak(merged, endings)
+        # The first words of another model call are another paragraph: "Ok.Next" is two sentences glued.
+        glue = "\n\n" if new_step and not current[-1].isspace() and not chunk[0].isspace() else ""
+        merged = current + glue + chunk
+    cleaned = _strip_leak(merged, endings)
+    # A step that was only a leaked name leaves no paragraph break behind.
+    return cleaned.rstrip() if cleaned != merged else cleaned
 
 
 def play(steps: list, endings=()) -> str:
@@ -64,10 +70,13 @@ def play(steps: list, endings=()) -> str:
     for step in steps:
         names = {event["name"] for event in step if event.get("kind") == "tool" and event.get("name")}
         nudge = any(event.get("kind") == "nudge" for event in step)
+        opened = False
         for event in step:
             if event.get("kind") not in ("text", "final"):
                 continue
-            shown = fold_chunk(shown, event.get("text") or "", names if nudge else None, endings)
+            shown = fold_chunk(shown, event.get("text") or "", names if nudge else None, endings,
+                               new_step=not opened and event.get("kind") == "text")
+            opened = opened or event.get("kind") == "text"
     return shown
 
 

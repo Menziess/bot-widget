@@ -345,10 +345,10 @@ class LeanAgent:
         self._stream_idle.clear()
         self._streaming = True
 
-        async def show_text(value: str, tool_names: set[str] | None = None) -> None:
+        async def show_text(value: str, tool_names: set[str] | None = None, new_step: bool = False) -> None:
             nonlocal shown, first
             # Every piece the bubble will show, including a nudge reply, goes through one stage.
-            new = fold_chunk(shown, value, tool_names, SKILL_ENDINGS if skill_on else ())
+            new = fold_chunk(shown, value, tool_names, SKILL_ENDINGS if skill_on else (), new_step)
             if new == shown:
                 return
             extra = new[len(shown):] if new.startswith(shown) else new
@@ -403,11 +403,11 @@ class LeanAgent:
                     if held is not None:
                         held.append(value)
                         continue
-                    await show_text(value)
+                    await show_text(value, None, len(step_text) == 1)
                 if held:
                     names = {(call.get("function") or {}).get("name") for call in calls}
-                    for value in held:
-                        await show_text(value, names)
+                    for index, value in enumerate(held):
+                        await show_text(value, names, index == 0)
                 # What the last step looked like, so a turn that ends on talk without the call can be explained.
                 last = {"finish": finish, "calls": len(calls), "thought_chars": thought_chars,
                         "text_tail": "".join(step_text)[-200:]}

@@ -1,0 +1,16 @@
+{
+  "user": "Is bay 4 free?",
+  "skill": false,
+  "bubble": "Let me check.\n\nBay 4 is free.",
+  "steps": [
+    [
+      {"kind": "text", "text": "Let me check."},
+      {"kind": "tool", "name": "list_dir"},
+      {"kind": "finish", "reason": "tool_calls"}
+    ],
+    [
+      {"kind": "text", "text": "Bay 4 is free."},
+      {"kind": "finish", "reason": "stop"}
+    ]
+  ]
+}

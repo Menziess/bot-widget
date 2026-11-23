@@ -93,7 +93,7 @@ class Replay(unittest.IsolatedAsyncioTestCase):
                 text, chunks = await self._run(fixture)
                 self.assertEqual(text, bubble)
                 self.assertEqual(widget_text(chunks), bubble)
-                if not fixture.get("skill") and not any(event.get("kind") == "nudge" for step in fixture["steps"] for event in step):
+                if len(fixture["steps"]) == 1 and not fixture.get("skill") and not any(event.get("kind") == "nudge" for step in fixture["steps"] for event in step):
                     raw = [event["text"] for step in fixture["steps"] for event in step
                            if event.get("kind") in ("text", "final")]
                     self.assertEqual(widget_text(raw), bubble)
