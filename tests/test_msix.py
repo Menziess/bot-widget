@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -354,18 +355,11 @@ class TestManifestXml(unittest.TestCase):
         self.assertIsNotNone(cap)
         self.assertEqual(cap.get("Name"), "runFullTrust")
 
-    def test_asset_keys_covered_in_manifest(self):
-        """Every asset referenced in the manifest is a key in ASSETS."""
-        for filename in msix.ASSETS:
-            # Only check the ones that are actually referenced in the manifest
-            pass
-        # The ones we use: Square150x150Logo, Square44x44Logo, Wide310x150Logo, StoreLogo
-        for key in ("Square150x150Logo.png", "Square44x44Logo.png",
-                     "Wide310x150Logo.png", "StoreLogo.png"):
-            self.assertIn(key, self.xml, f"{key} referenced in manifest")
-        # And every asset key in ASSETS is valid
-        for key in msix.ASSETS:
-            self.assertIn(key, msix.ASSETS)
+    def test_every_picture_the_manifest_names_is_one_that_gets_made(self):
+        """A name in the manifest without a picture behind it fails the install, so the two lists must agree."""
+        named = set(re.findall(r"Assets\\([A-Za-z0-9_.]+\.png)", self.xml))
+        self.assertTrue(named, "the manifest names its pictures")
+        self.assertEqual(named - set(msix.ASSETS), set())
 
     def test_xml_escapes_the_display_name(self):
         cases = (

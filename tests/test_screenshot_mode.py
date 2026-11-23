@@ -250,7 +250,7 @@ class ScreenshotMode(unittest.TestCase):
                 overlay._mouse_down = False
                 overlay._done_callback = None
                 overlay.close = mock.Mock()
-                overlay._cancel_callback = lambda: cancel_called.append(True)
+                overlay._cancel_callback = lambda called=cancel_called: called.append(True)
                 event = mock.Mock()
                 if how == "right":
                     event.button.return_value = Qt.RightButton

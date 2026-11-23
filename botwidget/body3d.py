@@ -146,7 +146,7 @@ def _stroke(line: list, half: float, caps: int = 7) -> list:
         return [(cx + math.cos(a) * half, cy + math.sin(a) * half)
                 for a in (i / (4 * caps) * math.tau for i in range(4 * caps))]
     normals = []
-    for i, (x, y) in enumerate(line):
+    for i in range(len(line)):
         ax, ay = line[max(0, i - 1)]
         bx, by = line[min(len(line) - 1, i + 1)]
         tx, ty = bx - ax, by - ay

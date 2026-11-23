@@ -4714,7 +4714,7 @@ class BubbleHover(unittest.TestCase):
             bubble._watch_arrow(100.15)
         self.assertGreater(bubble._pull_px, 0, "the wheel has only just stopped")
         now = 100.3
-        for step in range(30):
+        for _ in range(30):
             now += 0.016
             with mock.patch("botwidget.qt_ui.bubble_window.time.monotonic", return_value=now):
                 bubble._watch_arrow(now)

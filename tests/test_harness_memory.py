@@ -173,7 +173,7 @@ class Retrieve(unittest.TestCase):
         self.assertEqual(results[0]["text"], "The bot uses Python for all scripts")
 
     def test_retrieve_caps_at_max_chars(self):
-        for i in range(10):
+        for _ in range(10):
             write_memory("x" * 300, "user")
         results = retrieve_memories("x", max_chars=500)
         total_chars = sum(len(r["text"]) for r in results)

@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 import unittest
 
+from harness.agent.tools import ToolError
 from harness.agent.workspace import (
     PERMISSION_MODES,
     EditStore,
@@ -137,7 +138,7 @@ class Secrets(unittest.TestCase):
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)
         _write(os.path.join(folder, ".env"), "SECRET=abc")
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             _ws_read(folder, ".env")
 
 
@@ -217,7 +218,7 @@ class Delete(unittest.TestCase):
             with open(os.path.join(trash, os.listdir(trash)[0])) as fh:
                 self.assertEqual(fh.read(), "keep me")
             for bad in ("sub", "missing.txt"):
-                with self.assertRaises(Exception):
+                with self.assertRaises(ToolError):
                     workspace._ws_delete(folder, bad)
 
 
@@ -238,7 +239,7 @@ class EditWrite(unittest.TestCase):
         os.mkdir(os.path.join(other, ".ssh"))
         self.assertEqual(_ws_read(folder, os.path.join(other, "a.txt")), "hoi")
         self.assertIn("a.txt", _ws_list(folder, other))
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             _ws_list(folder, os.path.join(other, ".ssh"))
 
     def test_write_outside_works_the_agent_asks_first(self):
@@ -251,7 +252,7 @@ class EditWrite(unittest.TestCase):
     def test_write_secret_is_refused(self):
         folder = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, folder, True)
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             _ws_write(folder, ".env", "SECRET=abc")
 
     def test_edit_store_before_and_undo(self):
@@ -271,7 +272,7 @@ class EditWrite(unittest.TestCase):
 
     def test_undo_missing_path_raises(self):
         edit = EditStore()
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             edit.undo("/tmp/nope")
 
     def test_diff_shows_changes(self):
@@ -310,19 +311,19 @@ class GitTools(unittest.TestCase):
         self.assertIn("(clean)", result)
 
     def test_git_push_is_refused(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             _git_run(self.folder, ["push"])
 
     def test_git_reset_hard_is_refused(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             _git_run(self.folder, ["reset", "--hard"])
 
     def test_git_clean_is_refused(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             _git_run(self.folder, ["clean"])
 
     def test_git_checkout_dash_dash_is_refused(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             _git_run(self.folder, ["checkout", "--", "README.md"])
 
 
@@ -338,7 +339,7 @@ class ShellTools(unittest.TestCase):
         marker = tempfile.mktemp(prefix="bw-timeout-")
         self.addCleanup(lambda: os.path.exists(marker) and os.remove(marker))
         command = f"(sleep 2; echo late > {marker}) & sleep 30"
-        with self.assertRaises(Exception) as caught:
+        with self.assertRaises(ToolError) as caught:
             shell_run(tempfile.gettempdir(), command, timeout=1)
         self.assertIn("shell_background", str(caught.exception))
         import time
@@ -346,15 +347,15 @@ class ShellTools(unittest.TestCase):
         self.assertFalse(os.path.exists(marker), "the child of the shell was stopped as well")
 
     def test_shell_git_push_is_refused(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             shell_run("/tmp", "git push origin main")
 
     def test_shell_git_reset_is_refused(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             shell_run("/tmp", "git reset --hard HEAD")
 
     def test_shell_rm_rf_is_refused(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(ToolError):
             shell_run("/tmp", "rm -rf /tmp")
 
 

@@ -229,7 +229,7 @@ def retrieve_memories(query: str, top_k: int = RETRIEVE_TOP_K,
     # Cap total characters.
     result: list[dict] = []
     used = 0
-    for score, entry in top:
+    for _score, entry in top:
         text = entry.get("text", "")
         if used + len(text) > max_chars and result:
             break
