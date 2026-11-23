@@ -1,5 +1,6 @@
 """Harness bots are added from the widget. The key stays in its file, and a save does not restart the others."""
 
+import io
 import json
 import os
 import shutil
@@ -834,3 +835,45 @@ class Addresses(unittest.TestCase):
     def test_listing_models_never_sends_a_key_to_such_an_address(self):
         self.assertEqual(acp_bots.fetch_models("http://api.example.com/v1", "~/nowhere")[0], [])
         self.assertIn("https://", acp_bots.fetch_models("http://api.example.com/v1", "")[1])
+
+
+class AnthropicConnection(unittest.TestCase):
+    def test_the_address_tells_which_api_a_bot_speaks_and_no_model_name_is_built_in(self):
+        from harness.agent.models import AnthropicMessages, ChatCompletions, from_environment
+        base = {"HARNESS_MODEL": "m", "HARNESS_MODEL_API_KEY": "k"}
+        self.assertIsInstance(from_environment({**base, "HARNESS_MODEL_BASE_URL": "https://api.anthropic.com"}),
+                              AnthropicMessages)
+        self.assertIsInstance(from_environment({**base, "HARNESS_MODEL_BASE_URL": "https://api.x.ai/v1"}),
+                              ChatCompletions)
+        self.assertIsInstance(from_environment({**base, "HARNESS_MODEL_BASE_URL": "http://gw/v1",
+                                                "HARNESS_MODEL_PROVIDER": "anthropic"}), AnthropicMessages)
+        self.assertEqual(from_environment({"HARNESS_MODEL_BASE_URL": "https://api.anthropic.com"}).model, "",
+                         "no default: the bot names its model")
+
+    def test_the_form_offers_anthropic_and_asks_it_for_models_the_way_it_wants(self):
+        from unittest import mock
+        self.assertIn("Anthropic", [label for label, _address in acp_bots.PROVIDERS])
+        seen = []
+
+        class Reply:
+            def __enter__(self):
+                return io.BytesIO(b'{"data": [{"id": "b"}, {"id": "a"}]}')
+
+            def __exit__(self, *_args):
+                return False
+
+        def open_url(request, timeout):
+            seen.append((request.full_url, dict(request.header_items())))
+            return Reply()
+
+        with tempfile.NamedTemporaryFile("w", delete=False) as fh:
+            fh.write("sk-ant-test\n")
+        self.addCleanup(os.remove, fh.name)
+        with mock.patch("botwidget.acp_bots.open_url", open_url):
+            ids, error = acp_bots.fetch_models("https://api.anthropic.com", fh.name)
+        self.assertEqual((ids, error), (["a", "b"], ""))
+        url, headers = seen[0]
+        self.assertEqual(url, "https://api.anthropic.com/v1/models?limit=1000")
+        self.assertEqual(headers.get("X-api-key"), "sk-ant-test")
+        self.assertEqual(headers.get("Anthropic-version"), "2023-06-01")
+        self.assertNotIn("Authorization", headers)

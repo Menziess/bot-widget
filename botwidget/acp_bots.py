@@ -12,6 +12,7 @@ import urllib.request
 
 from botwidget.acplink import PREFIX, _slug
 from botwidget.avatar import SUPPORTED_SHAPES
+from harness.agent.models import ANTHROPIC_URL, AnthropicMessages, api_kind
 from harness.agent.netsafe import key_may_travel, open_url
 from harness.agent.workspace import check_rules
 
@@ -212,6 +213,7 @@ PROVIDERS = (
     ("OpenRouter", "https://openrouter.ai/api/v1"),
     ("Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai"),
     ("GitHub Models", "https://models.github.ai/inference"),
+    ("Anthropic", ANTHROPIC_URL),
 )
 
 
@@ -247,17 +249,21 @@ def fetch_models(base_url: str, key_file: str = "", timeout: float = 5.0) -> tup
     token; a service that wants none ignores it."""
     if error := address_error(base_url):
         return [], error
-    headers = {}
+    headers, key = {}, ""
     if key_file:
         try:
             with open(os.path.expanduser(key_file)) as fh:
                 key = fh.read().strip()
-            if key:
-                headers["Authorization"] = "Bearer " + key
         except OSError:
             pass  # a local server needs none; a hosted one answers 401, which says so
+    if api_kind(base_url) == "anthropic":
+        url = base_url.rstrip("/") + "/v1/models?limit=1000"
+        headers = {"anthropic-version": AnthropicMessages.version, **({"x-api-key": key} if key else {})}
+    else:
+        url = base_url.rstrip("/") + "/models"
+        headers = {"Authorization": "Bearer " + key} if key else {}
     try:
-        with open_url(urllib.request.Request(base_url.rstrip("/") + "/models", headers=headers), timeout) as reply:
+        with open_url(urllib.request.Request(url, headers=headers), timeout) as reply:
             payload = json.load(reply)
     except urllib.error.HTTPError as error:
         said = (": the key was not accepted" if error.code in (401, 403)

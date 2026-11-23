@@ -356,14 +356,25 @@ class AnthropicMessages:
                        if block.get("type") == "text")
 
 
+ANTHROPIC_URL = "https://api.anthropic.com"
+
+
+def api_kind(base_url: str, declared: str = "") -> str:
+    """"anthropic" for the Messages API, "chat" for Chat Completions. A bot says so with HARNESS_MODEL_PROVIDER;
+    otherwise the address tells: Anthropic's own host speaks Messages, every other address Chat Completions."""
+    if declared.strip().lower() in ("anthropic", "chat"):
+        return declared.strip().lower()
+    return "anthropic" if urllib.parse.urlsplit(base_url or "").hostname == "api.anthropic.com" else "chat"
+
+
 def from_environment(env=None):
-    """The model this bot uses: Chat Completions for every provider that speaks it, or Anthropic."""
+    """The model this bot uses: Chat Completions for every provider that speaks it, or Anthropic. The model name is
+    always the bot's own: none is built in."""
     import os
     env = env or os.environ
-    if (env.get("HARNESS_MODEL_PROVIDER") or "").lower() == "anthropic":
-        return AnthropicMessages(env.get("HARNESS_MODEL") or "claude-sonnet-4-5",
-                                 env.get("HARNESS_MODEL_API_KEY") or "",
-                                 env.get("HARNESS_MODEL_BASE_URL") or "https://api.anthropic.com")
+    if api_kind(env.get("HARNESS_MODEL_BASE_URL") or "", env.get("HARNESS_MODEL_PROVIDER") or "") == "anthropic":
+        return AnthropicMessages(env.get("HARNESS_MODEL") or "", env.get("HARNESS_MODEL_API_KEY") or "",
+                                 env.get("HARNESS_MODEL_BASE_URL") or ANTHROPIC_URL)
     # The default is the llama.cpp server the README starts: port 8081, model name "local". A bot
     # that points elsewhere sets HARNESS_MODEL_BASE_URL; the precheck then says plainly when nothing
     # answers there, instead of a turn that hangs.
