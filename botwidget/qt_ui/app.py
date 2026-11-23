@@ -106,9 +106,6 @@ def main():
         remote.serve(faces)
     faces.hotkey_on = register_hotkey(faces.hotkey)
     faces.welcome(startup.apply_default())
-    from botwidget.qt_ui.demo_board import DemoBoard, demo_wanted
-    if demo_wanted():
-        app._demo_board = DemoBoard()
     first = next(iter(faces.faces.values()), None)
     if first and os.environ.get("BOT_WIDGET_OPEN_CHAT"):
         QTimer.singleShot(800, first.pin)

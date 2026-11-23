@@ -53,21 +53,35 @@ class DemoCommand(unittest.TestCase):
         self.assertFalse(hasattr(face, "_demo_session"))
 
     def test_should_send_prompts_and_not_run_the_in_process_demo(self):
-        from botwidget import demo_run
         from botwidget.demo_chat import Session
         sent = []
         session = Session()
-        with mock.patch.object(demo_run, "_files", side_effect=AssertionError("ran the task")):
-            session.tick(True, sent.append)
+        session.tick(True, sent.append)
         self.assertEqual(len(sent), 1)
         self.assertIn("Demo task browser", sent[0])
         session.tick(False, sent.append)
         self.assertEqual(len(sent), 1, "a busy chat does not take the next task")
 
-    def test_should_ignore_an_enable_file(self):
-        from botwidget.qt_ui.demo_board import demo_wanted
-        with mock.patch("sys.argv", ["botwidget"]), \
-                mock.patch("os.path.exists", return_value=True):
-            self.assertFalse(demo_wanted())
-        with mock.patch("sys.argv", ["botwidget", "--demo"]):
-            self.assertTrue(demo_wanted())
+    def test_the_checklist_is_text_for_the_bubble_with_one_line_per_chat_task(self):
+        from botwidget.demo_chat import PROMPTS, Session
+        session = Session()
+        session.board.consider("files", {"checked": True, "ok": True, "detail": "match"})
+        session.board.consider("browser", {"checked": True, "ok": False, "blocked": "not checked from the chat"})
+        text = session.summary()
+        self.assertIn("1 of %d ticked" % len(PROMPTS), text)
+        self.assertIn("✔ Files: write, then read back: match", text)
+        self.assertIn("✘ Browser: reuse a tab over CDP: not checked from the chat", text)
+        self.assertIn("✘ Script: write it and run it: not run", text)
+        self.assertEqual(text.count("\n- "), len(PROMPTS))
+
+    def test_the_checklist_opens_in_the_bubble_only_after_the_last_task(self):
+        from botwidget import demo_chat
+        face = mock.Mock(_working=False, _sending=False)
+        face._outbox.items = []
+        with mock.patch("PySide6.QtCore.QTimer.singleShot", side_effect=lambda _ms, call: call()), \
+                mock.patch.object(demo_chat, "check", return_value={"checked": True, "ok": True, "detail": "ok"}):
+            demo_chat.begin(face)
+        self.assertEqual(face.on_user_message.call_count, len(demo_chat.PROMPTS))
+        face.bubble.show_blocks.assert_called_once()
+        self.assertEqual(face.bubble.show_blocks.call_args.args[1], "say")
+        face.pin.assert_called_once()

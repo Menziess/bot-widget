@@ -106,7 +106,7 @@ def poke_action(code_changed: bool) -> str:
 def run(folder: str = PACKAGE, poll: float = POLL_S, checkout: str | None = None):
     """Keeps the widget running with the newest code. A crash retries with backoff after a fast-forward."""
     ensure_single_instance(DEV_PIDFILE, (b"--dev",))
-    extra = [flag for flag in ("--keep-login", "--demo") if flag in sys.argv]
+    extra = [flag for flag in ("--keep-login",) if flag in sys.argv]
     seen = snapshot(folder)
     started = launched(seen)
     child = start(extra)

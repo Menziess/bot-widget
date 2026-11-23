@@ -1,9 +1,9 @@
 """The /demo command. The six tasks go out through the chat. Code checks what they left behind.
 
-This does not run the in-process demo that performs each task itself.
 """
 
 import os
+import shutil
 import subprocess
 import sys
 
@@ -12,11 +12,20 @@ from botwidget.demo_check import (
     a11y_read,
     browser_tab,
     file_readback,
+    plant_seed,
     repair_result,
     script_exit,
-    write_board,
 )
-from botwidget.demo_run import BOARD, LABELS, ROOT
+
+ROOT = os.environ.get("BOTWIDGET_DEMO_ROOT") or "/tmp/t-demo"
+LABELS = (
+    ("browser", "Browser: reuse a tab over CDP"),
+    ("files", "Files: write, then read back"),
+    ("script", "Script: write it and run it"),
+    ("process", "Process: start, check, stop"),
+    ("accessibility", "Accessibility: read the desktop"),
+    ("repair", "Repair: fix a seeded failing test"),
+)
 
 PROMPTS = {
     "browser": (
@@ -101,24 +110,18 @@ def check(key: str) -> dict:
     if key == "process":
         return file_readback(os.path.join(ROOT, "work", "process.txt"), "stopped\n")
     if key == "browser":
-        return browser_tab(False, "", False, False, "not opened by the checker")
+        return browser_tab(False, "", False, False, "not checked from the chat")
     return {"checked": True, "ok": False, "detail": "not seen from here"}
-
-
-def publish(board: Board) -> None:
-    rows = []
-    for key, label in LABELS:
-        row = board.rows.get(key, {"ticked": False, "detail": "waiting", "blocked": ""})
-        detail = row.get("blocked") or row.get("detail") or ""
-        rows.append({"id": key, "label": label, "ticked": bool(row.get("ticked")), "detail": detail})
-    write_board(BOARD, rows)
 
 
 class Session:
     """Send one prompt when the chat is idle, then tick that task from check()."""
 
     def __init__(self):
-        self.queue = [key for key, _label in LABELS]
+        # What an earlier run left behind must not tick this one.
+        shutil.rmtree(os.path.join(ROOT, "work"), ignore_errors=True)
+        plant_seed(os.path.join(ROOT, "repair"), False)
+        self.queue = list(PROMPTS)
         self.waiting = ""
         self.board = Board()
 
@@ -127,7 +130,6 @@ class Session:
             return
         if self.waiting:
             self.board.consider(self.waiting, check(self.waiting))
-            publish(self.board)
             self.waiting = ""
         if not self.queue:
             return
@@ -138,23 +140,33 @@ class Session:
     def done(self) -> bool:
         return not self.queue and not self.waiting
 
+    def summary(self) -> str:
+        """The checklist as markdown: one line per task that went through the chat."""
+        labels = dict(LABELS)
+        lines = []
+        for key in PROMPTS:
+            row = self.board.rows.get(key, {})
+            detail = row.get("blocked") or row.get("detail") or "not run"
+            lines.append(f"- {'✔' if row.get('ticked') else '✘'} {labels[key]}: {detail}")
+        ticked = sum(bool(self.board.ticked(key)) for key in PROMPTS)
+        return f"**Demo checklist: {ticked} of {len(PROMPTS)} ticked**\n\n" + "\n".join(lines)
+
 
 def begin(face) -> None:
-    """Show the checklist and feed the chat. No second widget."""
+    """Feed the chat one task at a time; when the last one is checked, the checklist opens in the bubble."""
     from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication
 
-    app = QApplication.instance()
-    if app is not None and getattr(app, "_demo_board", None) is None:
-        from botwidget.qt_ui.demo_board import DemoBoard
-        app._demo_board = DemoBoard()
+    from botwidget.markdown import md_blocks
+
     session = Session()
-    publish(session.board)
     face._demo_session = session
 
     def step():
         session.tick(not (face._working or face._sending or face._outbox.items), face.on_user_message)
         if not session.done():
             QTimer.singleShot(500, step)
+            return
+        face.bubble.show_blocks(md_blocks(session.summary()), "say")
+        face.pin()
 
     QTimer.singleShot(0, step)
