@@ -508,6 +508,17 @@ class AcpFace(unittest.TestCase):
             self.assertEqual(window._latest(), {"messages": [], "activity": "", "failed": "", "approvals": []})
 
 
+class LoopClosed(unittest.TestCase):
+    def test_an_agent_loop_is_closed_when_its_link_is(self):
+        link = AcpLink("python -m harness.agent")
+        loop = link._loop
+        link.close(wait=5)
+        deadline = time.monotonic() + 5
+        while not loop.is_closed() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertTrue(loop.is_closed(), "an open loop keeps its sockets for as long as the process lives")
+
+
 class KeyFileNote(unittest.TestCase):
     @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
     def test_a_key_file_other_users_can_read_is_said_in_the_note(self):

@@ -207,7 +207,10 @@ class AcpLink:
         asyncio.set_event_loop(self._loop)
         self._gate = asyncio.Lock()
         self._loop.call_soon(lambda: self._loop.create_task(self._boot()))
-        self._loop.run_forever()
+        try:
+            self._loop.run_forever()
+        finally:
+            self._loop.close()  # a loop left open keeps its selector and sockets for as long as the process lives
 
     async def _boot(self) -> None:
         """Load the saved session as the widget starts. A failure here is reported on the first send."""
