@@ -44,6 +44,7 @@ Build an ACP client adapter first, then run a lean agent behind it, and let that
 - [03-architecture.md](03-architecture.md) Three ways to build it and the design of the lean one
 - [04-efficiency.md](04-efficiency.md) Where context and money go, and how a lean backend saves them
 - [05-roadmap.md](05-roadmap.md) Phases, acceptance tests, risks and open decisions
+- [07-autonomy.md](07-autonomy.md) Tests-first plan for confirm, feedback, routines, autonomy, long goals and the vault (t1141u)
 
 ## Status, 2026-11-17
 
