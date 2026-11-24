@@ -4,6 +4,7 @@ Async, with no opinion about the widget: the spike prints what comes in, the wid
 turns it into the dictionary the bubble draws from.
 """
 
+import asyncio
 import inspect
 import os
 import shlex
@@ -143,6 +144,11 @@ class AcpClient:
             # An agent with something specific to say about the failure puts it here; a bear "refusal"
             # alone leaves the bubble guessing whether it was a 401 or a bad prompt.
             turn.error = str((getattr(reply, "field_meta", None) or {}).get("error") or "")
+        except asyncio.CancelledError:
+            # On Windows a cancel often arrives as CancelledError (and a WinError 10038
+            # on the already-closed socket) instead of a PromptResponse(stop_reason="cancelled").
+            # Catching it here is what makes the turn a cancel, not a leaked ERROR.
+            turn.stop_reason = "cancelled"
         except Exception as error:  # a dead agent must read as a failed turn, not a traceback
             turn.error = f"{type(error).__name__}: {error}"
             turn.stop_reason = "error"

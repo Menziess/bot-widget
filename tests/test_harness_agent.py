@@ -348,6 +348,19 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(usage[-1]["estimated"], "a cancel before any usage chunk is an estimate, not a measured 0")
         self.assertGreater(usage[-1]["input_tokens"], 0)
 
+    async def test_a_cancelled_rpc_is_reported_as_a_cancelled_turn(self):
+        """CancelledError from the RPC (Windows often raises this) is a cancelled turn, not a leaked exception."""
+        async with self.client() as client:
+            await client.start()
+
+            async def boom(*_a, **_k):
+                raise asyncio.CancelledError()
+
+            client.conn.prompt = boom
+            turn = await client.prompt("Hallo")
+        self.assertEqual(turn.stop_reason, "cancelled")
+        self.assertEqual(turn.error, "")
+
     async def test_a_turn_that_ends_closes_its_flag_and_one_cut_off_by_a_vanished_client_leaves_it(self):
         from unittest import mock
 

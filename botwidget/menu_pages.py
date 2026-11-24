@@ -58,10 +58,25 @@ def commands(available=(), *, dev: bool = False) -> tuple:
 FEEDBACK_ISSUE = "https://github.com/Menziess/bot-widget/issues/new"
 
 
-def feedback_issue_url(version: str, system: str, install: str) -> str:
-    """A new-issue page, filled in. The browser signs the user in; the app has no GitHub token."""
-    body = f"Widget version: {version}\nOS: {system}\nInstall: {install}\n\n"
-    return FEEDBACK_ISSUE + "?" + urllib.parse.urlencode({"title": "Feedback", "body": body})
+def feedback_issue_url(version: str, system: str, install: str,
+                       title: str = "", body: str = "") -> str:
+    """A new-issue page, filled in. The browser signs the user in; the app has no GitHub token.
+
+    When *title* and *body* are non-empty they override the defaults, so a
+    confirmed draft can be sent straight into the URL.
+    """
+    version = str(version or "")
+    system = str(system or "")
+    install = str(install or "")
+    user_title = (title or "").strip()
+    user_body = (body or "").strip()
+    if user_body:
+        # Prepend the version info lines when the user also supplied a body.
+        base_body = f"Widget version: {version}\nOS: {system}\nInstall: {install}\n\n{user_body}"
+    else:
+        base_body = f"Widget version: {version}\nOS: {system}\nInstall: {install}\n\n"
+    final_title = user_title or "Feedback"
+    return FEEDBACK_ISSUE + "?" + urllib.parse.urlencode({"title": final_title, "body": base_body})
 
 
 def _row(*chunks) -> dict:

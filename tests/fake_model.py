@@ -88,34 +88,55 @@ class FakeModel:
                 self.end_headers()
                 self.wfile.write(payload)
 
+            def _send(self, data=None):
+                # A cancel can close the client socket first; on Windows that is WinError 10038.
+                try:
+                    if data is not None:
+                        self.wfile.write(data)
+                    else:
+                        self.wfile.flush()
+                    return True
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return False
+
             def _stream(self, body):
                 time.sleep(model.first_delay)
                 with model._lock:
                     reply = model.script.pop(0) if model.script else model.reply
-                self.send_response(200)
-                self.send_header("Content-Type", "text/event-stream")
-                self.send_header("Cache-Control", "no-cache")
-                self.send_header("Connection", "close")
-                self.end_headers()
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Cache-Control", "no-cache")
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return
                 if isinstance(reply, dict):
                     for index, call in enumerate(reply["tool_calls"]):
                         part = {"index": index, "id": f"call-{index}", "type": "function",
                                 "function": {"name": call["name"], "arguments": json.dumps(call["arguments"])}}
-                        self.wfile.write(f"data: {json.dumps({'choices': [{'index': 0, 'delta': {'tool_calls': [part]}}]})}\n\n".encode())
+                        if not self._send(f"data: {json.dumps({'choices': [{'index': 0, 'delta': {'tool_calls': [part]}}]})}\n\n".encode()):
+                            return
                     done = {"choices": [], "usage": model.usage(body)}
-                    self.wfile.write(f"data: {json.dumps(done)}\n\n".encode())
-                    self.wfile.write(b"data: [DONE]\n\n")
-                    self.wfile.flush()
+                    if not self._send(f"data: {json.dumps(done)}\n\n".encode()):
+                        return
+                    if not self._send(b"data: [DONE]\n\n"):
+                        return
+                    self._send()
                     return
                 for word in reply.split(" "):
                     chunk = {"choices": [{"index": 0, "delta": {"content": word + " "}}]}
-                    self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
-                    self.wfile.flush()
+                    if not self._send(f"data: {json.dumps(chunk)}\n\n".encode()):
+                        return
+                    if not self._send():
+                        return
                     time.sleep(0.01)
                 done = {"choices": [], "usage": model.usage(body)}
-                self.wfile.write(f"data: {json.dumps(done)}\n\n".encode())
-                self.wfile.write(b"data: [DONE]\n\n")
-                self.wfile.flush()
+                if not self._send(f"data: {json.dumps(done)}\n\n".encode()):
+                    return
+                if not self._send(b"data: [DONE]\n\n"):
+                    return
+                self._send()
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -133,5 +154,4 @@ class FakeModel:
 
     def close(self) -> None:
         self.server.shutdown()
-        self.server.server_close()
         self.server.server_close()

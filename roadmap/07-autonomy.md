@@ -66,8 +66,8 @@ Keep the no-token browser path as the fallback so a machine without `gh` still w
 
 **Blocks**
 
-- **1a.** Tests above, including an extended `feedback_issue_url`.
-- **1b.** Draft + confirm + stubbed sender; browser fallback with the confirmed text. Local model.
+- **1a.** ✅ Tests above, including an extended `feedback_issue_url`. (`tests/test_feedback_confirm.py`)
+- **1b.** ✅ Draft + confirm + stubbed sender; browser fallback with the confirmed text. Local model. (`botwidget/feedback.py`)
 - **1c.** Real `gh issue create` path, skipped in CI when `gh` is not logged in. Only after 1b is green. A live smoke is a `--dev` widget with a temp config, never the daily MacBook widget, and should target a dry-run or a throwaway issue only with Stefan's yes.
 
 **Depends on.** 0. Vault (5) is optional and only for 1c's token fallback.
