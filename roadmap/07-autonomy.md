@@ -200,3 +200,19 @@ Only these need a decision. The plan can start on 0, 1a/1b, 3a, 4a and 5a with t
 - **C.** An encrypted file under `APP_DIR`.
 
 **Recommendation:** A. It is the cross-platform standard and keeps tests off the real store. Not C for real secrets. Not B unless `keyring` fails on one of Stefan's machines. OpenBot's existing headers file stays where it is in v1; do not copy that token into the vault unless Stefan asks.
+
+## Settled decisions (2026-11-24)
+
+General approved these on 2026-11-24. The recommendations are now the design; only the open-question history remains above.
+
+### Q1. Feedback send path: B
+After a yes for the exact text, `gh issue create` when `gh` is already logged in; otherwise open the prefilled GitHub issue page (user still clicks Submit). A (browser-only) is the fallback. C (GitHub API with a vault token) only after the vault is in, and only with a vault-kind confirm for that use. The hard rule: confirm the exact text. Do not invent wording.
+
+### Q2. Suggested actions: A
+Every suggested action needs a yes, every time, in v1. Not C. A later tight allowlist (B) may be considered if prompts get noisy, still excluding feedback, vault get, send, quit, and install, and still confirming screenshot.
+
+### Q3. Routine storage: A
+`routines.json` (or a sibling) under `APP_DIR`, next to `widget.json`, not inside it. In-process scheduler. Not OS schedulers in v1.
+
+### Q4. Vault backend: A
+The `keyring` library plus a fake backend for tests. OpenBot's headers file stays where it is in v1.

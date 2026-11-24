@@ -23,7 +23,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QWidget
 
-from botwidget import __version__, acplink, attachments, grokbot, hermesbot, menu_pages, power
+from botwidget import __version__, acplink, attachments, confirm, grokbot, hermesbot, menu_pages, power
 from botwidget.animation import IDLE_MS, FaceAnimator, frame_ms
 from botwidget.avatar import (
     AVATAR_SIZE,
@@ -339,6 +339,8 @@ class FaceWindow(QWidget):
         self._messages = []
         self._chat = {}
         self._moving = False
+        self.confirm_board = confirm.ConfirmBoard()
+        self._confirm_pending = None
         self.anim = FaceAnimator()
         self.anim.jump(pitch=STILL[0], yaw=STILL[1], roll=STILL[2])
         self._last_tick = time.monotonic()
@@ -1613,6 +1615,7 @@ class FaceWindow(QWidget):
             if expanded:
                 blocks = [role_panel("bot")] + thought_blocks(chat.get("activity") or "")
                 blocks += self._attention_blocks()
+                blocks += self._confirm_blocks()
                 blocks += self._relay_status_blocks()
                 if self._send_status:
                     blocks.append(status_block(self._send_status))
@@ -1769,6 +1772,10 @@ class FaceWindow(QWidget):
         if kind in ("answer", "approve"):
             self._attention_command(kind, rest)
             return
+        # Confirm primitive: confirm/<id>/yes or confirm/<id>/no.
+        if kind == "confirm":
+            self._handle_confirm_command(rest)
+            return
         if self.faces is None or self._menu_page is None:
             return
         if command == "page/commands":
@@ -1807,6 +1814,8 @@ class FaceWindow(QWidget):
         if self._working or (self._outbox.items and not self._send_status):
             blocks += [role_panel("bot"), plain_block("dots")]
         blocks += self._attention_blocks()
+        # Confirm primitive: the pending confirm's blocks.
+        blocks += self._confirm_blocks()
         # Learn at once that sending is not possible yet.
         if self.link:
             status = self._send_status or self.link.note()
@@ -1844,6 +1853,14 @@ class FaceWindow(QWidget):
         if open_question:
             self._give_answer(*open_question, [text])
             return
+        # Confirm primitive: typed yes/no while a confirm is open.
+        if not files:
+            stripped = text.strip()
+            if stripped and self._confirm_pending and not self._confirm_pending.settled:
+                low = stripped.lower()
+                if low in ("yes", "no"):
+                    self._handle_confirm_decision(low, stripped)
+                    return
         asking = bool(self.acp and self._attention.get("approvals"))
         if asking:
             self.acp.interrupt()
@@ -1917,7 +1934,8 @@ class FaceWindow(QWidget):
 
     def _has_attention(self) -> bool:
         return bool(self._attention.get("prompts") or self._attention.get("approvals")
-                    or self._attention.get("browserTakeovers"))
+                    or self._attention.get("browserTakeovers")
+                    or (self._confirm_pending is not None and not self._confirm_pending.settled))
 
     def _sync_pending_dot(self):
         """Top-right notification dot.
@@ -2074,6 +2092,64 @@ class FaceWindow(QWidget):
             self._answering.clear()
             self._answers.clear()
         self._poll_timer.start(200)
+
+    # ── Confirm primitive ──────────────────────────────────────────────
+
+    def ask_confirm(self, kind: str, payload: str,
+                    *, ttl: int = 600, on_yes=None) -> None:
+        """Show a confirm for *payload* in the bubble.
+
+        The *on_yes* callback is called once when the user accepts.
+        """
+        req = self.confirm_board.put(self.agent_id, kind, payload, ttl=ttl)
+        self._confirm_pending = req
+        self._confirm_on_yes = on_yes
+        self._sync_pending_dot()
+        self._sync_bubble(self._latest(), force=True)
+
+    def _handle_confirm_command(self, command: str):
+        """confirm/<id>/yes or confirm/<id>/no from a button click.
+
+        *command* is the *rest* from _menu_command: id/yes or id/no.
+        """
+        parts = command.split("/", 2)
+        if len(parts) != 2:
+            return
+        request_id, decision = parts
+        if decision not in ("yes", "no"):
+            return
+        req = self._confirm_pending
+        if req is None or req.id != request_id or req.settled:
+            return
+        decision_obj = self.confirm_board.decide(self.agent_id, decision, request_id=request_id)
+        self._apply_confirm_decision(decision_obj)
+
+    def _handle_confirm_decision(self, decision: str, typed_text: str):
+        """Typed yes/no in the field while a confirm is open."""
+        req = self._confirm_pending
+        if req is None or req.settled:
+            return
+        decision_obj = self.confirm_board.decide(self.agent_id, decision, request_id=req.id)
+        self._apply_confirm_decision(decision_obj)
+
+    def _apply_confirm_decision(self, decision_obj):
+        """Apply a confirm decision: call on_yes, refresh the bubble."""
+        if decision_obj.accepted:
+            on_yes = getattr(self, "_confirm_on_yes", None)
+            if on_yes is not None:
+                on_yes()
+        # Clear the pending confirm.
+        self._confirm_pending = None
+        self._confirm_on_yes = None
+        self._sync_pending_dot()
+        self._sync_bubble(self._latest(), force=True)
+
+    def _confirm_blocks(self) -> list:
+        """Bubble blocks for the current confirm, or []."""
+        req = self._confirm_pending
+        if req is None or req.settled:
+            return []
+        return self.confirm_board.blocks(req)
 
     # ── Sending ─────────────────────────────────────────────────
 
