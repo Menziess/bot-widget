@@ -992,13 +992,13 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
     return [
         # ── read ──
         Tool("list_dir",
-             "List directory contents inside the workspace (scoped). Read-only.",
+             "List directory contents. Relative paths start in the workspace; an absolute path elsewhere works too. Read-only.",
              {"type": "object",
               "properties": {"path": {"type": "string"}},
               "required": ["path"]},
              lambda a: _ws_list(workspace, a.get("path", "."))),
         Tool("read_file",
-             "Read a text file inside the workspace. Read-only. offset and limit are line numbers, for "
+             "Read a text file. Relative paths start in the workspace; an absolute path elsewhere works too. Read-only. offset and limit are line numbers, for "
              "reading part of a large file or of a saved tool output.",
              {"type": "object",
               "properties": {"path": {"type": "string"},

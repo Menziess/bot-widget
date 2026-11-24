@@ -1705,6 +1705,20 @@ class PlainPaths(unittest.TestCase):
         self.addCleanup(window.close_face)
         return window
 
+    def test_entry_wraps_to_the_width_left_of_the_slash_button(self):
+        """Should wrap on the first show to the viewport beside the / button, never under it."""
+        from PySide6.QtWidgets import QApplication
+
+        from botwidget.qt_ui.bubble_window import BubbleEntry
+
+        entry = BubbleEntry()
+        self.addCleanup(entry.deleteLater)
+        entry.setText("word " * 12)
+        entry.resize(entry.fontMetrics().horizontalAdvance("word " * 12) + 20, 40)
+        entry.show()
+        QApplication.processEvents()
+        self.assertGreater(entry.line_count(), 1)
+
     def test_paste_history_links_and_the_wheel(self):
         """Should accept a pasted file, refuse a history step that is only a cursor move, and open a link."""
         from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl

@@ -256,6 +256,8 @@ class BubbleEntry(QPlainTextEdit):
         self.commands_open = False
         self.slash_button = SlashButton(self)
         self.slash_button.clicked.connect(self.slash_asked.emit)
+        # Before the first resize: margins set later leave the text wrapped to the wider viewport.
+        self.setViewportMargins(0, 0, self.slash_button.width() + 8, 0)
         self.history = lambda: []  # earlier prompts, oldest first
         self._recall = None  # index into the history while Up/Down walk through it
         self._draft = ""
