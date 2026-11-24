@@ -216,7 +216,8 @@ def builtins() -> list[Tool]:
              lambda arguments: accessibility_text(str(arguments.get("query") or ""))),
         *_computer_tools(),
         Tool("browser_tabs",
-             "List the tabs in the user's already open Chrome. Read-only. Use this to see the browser.",
+             "List the tabs in the user's already open Chrome. Read-only. Clicking and forms need the browser-use MCP "
+             "server (README, The browser); with its browser_exec, reuse an open tab (list_tabs, switch_tab, goto_url).",
              {"type": "object", "properties": {}},
              lambda _arguments: browser_tabs()),
         Tool("browser_read",

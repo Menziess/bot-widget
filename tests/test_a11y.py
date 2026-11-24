@@ -164,7 +164,7 @@ class AccessibilityProbe(unittest.TestCase):
 class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
     def test_the_prompt_names_the_tool_and_an_empty_query_lists_names(self):
         self.assertIn("heuristic", accessibility_requested.__doc__.lower())
-        self.assertIn("call accessibility", SYSTEM.lower())
+        self.assertIn("matching tool", SYSTEM)
         self.assertTrue(accessibility_requested(
             "Which applications are open on my desktop? Use your accessibility tool."))
         self.assertFalse(accessibility_requested("hello"))
