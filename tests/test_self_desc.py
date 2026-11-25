@@ -25,9 +25,10 @@ class SelfDesc(unittest.IsolatedAsyncioTestCase):
         patched.start()
         self.addCleanup(patched.stop)
         self.started = []
+        self.moved = []
 
     def ask(self, method, **params):
-        return self_desc.answer(method, params, ROWS, self.started.append)
+        return self_desc.answer(method, params, ROWS, self.started.append, lambda x, y: self.moved.append((x, y)))
 
     def test_commands_come_as_a_list(self):
         self.assertEqual(self.ask("commands")["text"], "/bots: Your bots\n/demo: Play the chat demo")
@@ -39,6 +40,14 @@ class SelfDesc(unittest.IsolatedAsyncioTestCase):
         self.assertIn("error", self.ask("run", name="/screenshot"))
         self.assertIn("error", self.ask("run", name="hello"))
         self.assertEqual(len(self.started), 2)
+
+    def test_the_widget_moves_itself_to_a_place_or_an_edge(self):
+        from botwidget.system import control
+        with mock.patch.object(control.desktop, "screen", (1000, 800)), mock.patch.object(control.desktop, "size", (100, 100)):
+            self.assertIn("moved", self.ask("move", x=15, y=25)["text"])
+            self.assertIn("moved", self.ask("move", edge="right")["text"])
+            self.assertIn("error", self.ask("move", edge="nowhere"))
+        self.assertEqual(self.moved, [(15, 25), (900, 350)])
 
     def test_settings_come_by_name_and_never_with_a_key(self):
         listing = self.ask("settings")["text"]

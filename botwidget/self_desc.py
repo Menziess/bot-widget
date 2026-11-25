@@ -42,8 +42,9 @@ def change_setting(key: str, value: str) -> str:
     return ""
 
 
-def answer(method: str, params: dict, rows, start) -> dict:
-    """The widget's reply to one question from the agent; `start` sends the command text through the face, on the UI thread."""
+def answer(method: str, params: dict, rows, start, move) -> dict:
+    """The widget's reply to one question from the agent. `start` sends a command through the face and `move` puts
+    the face somewhere, both on the UI thread."""
     if method == "commands":
         return {"text": commands_text(rows)}
     if method == "settings":
@@ -54,6 +55,15 @@ def answer(method: str, params: dict, rows, start) -> dict:
             return {"error": f"{text} is not one of the commands in about_me topic commands."}
         start(text)
         return {"text": f"{text} started."}
+    if method == "move":
+        from botwidget.system.control import ControlUnavailable, desktop, edge_point
+        try:
+            x, y = (edge_point(str(params["edge"]), desktop.screen, desktop.size) if params.get("edge")
+                    else (int(params.get("x") or 0), int(params.get("y") or 0)))
+        except ControlUnavailable as error:
+            return {"error": str(error)}
+        move(x, y)
+        return {"text": f"moved to {x},{y}"}
     if method == "set":
         problem = change_setting(str(params.get("key") or ""), str(params.get("value") or ""))
         return {"error": problem} if problem else {"text": "Saved. Some settings apply after a restart."}

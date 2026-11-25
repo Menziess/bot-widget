@@ -4,8 +4,9 @@ Linux uses PyGObject and the Atspi 2.0 typelib a GNOME desktop already ships
 (`gir1.2-atspi-2.0` plus `python3-gi`). That is the same bus Orca uses. The
 apt package `python3-pyatspi` is a second binding of that bus and is not used.
 
-Windows (UI Automation) and macOS (the AX API) are named here so a later
-computer-use tool has one place to look. They are not implemented.
+macOS goes through System Events (macos_desktop.py), which needs the user's Allow under Privacy & Security >
+Automation and Accessibility. Windows (UI Automation) is named here so a later computer-use tool has one place to
+look. It is not implemented.
 
 shortcut: no in-widget PolicyKit install until a desktop is actually missing
 the typelib, add the agree dialog when a real probe returns available false.
@@ -87,12 +88,33 @@ def log_once(write=None) -> dict:
     return row
 
 
+_mac_seen = [0.0, []]
+
+
+def application_windows() -> list:
+    """macOS: each app with its windows (title, place, size) and whether it is in front. Empty elsewhere. Asking is
+    slow (every app is asked), so the answer is kept for a few seconds. Raises ControlUnavailable when macOS has not
+    allowed it, with what the user has to do."""
+    import time
+    if _platform_name() != "macos":
+        return []
+    if time.monotonic() - _mac_seen[0] > 5:
+        from botwidget.system.macos_desktop import Macos
+        _mac_seen[:] = [time.monotonic(), Macos().windows()]
+    return _mac_seen[1]
+
+
 def application_names(load=None) -> list[str]:
     """Top-level application names on the accessibility bus. Empty when it is down."""
     if load is None:
         row = accessibility()
         if not row["available"]:
             return []
+        if row["platform"] == "macos":
+            try:
+                return [entry["app"] for entry in application_windows()]
+            except Exception:
+                return []
         try:
             bus = _load_platform()
         except Exception:
@@ -136,7 +158,7 @@ def _probe(load) -> dict:
     if platform == "windows":
         return {"available": False, "reason": "UI Automation is not implemented", "platform": platform}
     if platform == "macos":
-        return {"available": False, "reason": "the AX API is not implemented", "platform": platform}
+        return {"available": True, "reason": "System Events", "platform": platform}
     try:
         bus = load()
         desktop = bus.get_desktop(0)

@@ -257,6 +257,7 @@ class FaceWindow(QWidget):
     # Result of the POST from the sending thread back to the window.
     message_done = Signal(str, bool, bool, str)
     attention_done = Signal(bool, str)  # the answer to a question or approval went through, or why not
+    move_widget = Signal(int, int)  # the bot asked this face to go somewhere: on the UI thread
     start_command = Signal(str)  # the bot asked for a slash command to be run, as if typed: on the UI thread
     wake = Signal()  # the agent has news (a message or a question): look now, from any thread
     grok_polled = Signal()  # Grok Bot was asked for new answers
@@ -283,8 +284,9 @@ class FaceWindow(QWidget):
         if self.acp:
             self.acp.on_change = self.wake.emit
             self.acp.widget = lambda method, params: self_desc.answer(
-                method, params, self.command_rows(), self.start_command.emit)
+                method, params, self.command_rows(), self.start_command.emit, self.move_widget.emit)
             self.start_command.connect(self.on_user_message)
+            self.move_widget.connect(self.move)
         self.faces = faces
         self._hue = hue
         self._seed = seed or agent_id

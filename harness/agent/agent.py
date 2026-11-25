@@ -328,6 +328,12 @@ class LeanAgent:
                  {"type": "object", "properties": {"name": string("the command, with the slash and any arguments")},
                   "required": ["name"]}, lambda args: self._widget("run", name=str(args.get("name") or "")),
                  writes=True),
+            Tool("move_me", "Move this widget to x, y or to a screen edge (left, right, top, bottom). The user is asked "
+                 "first. For the window of another app use computer_move.",
+                 {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"},
+                                                   "edge": string("left, right, top or bottom")}},
+                 lambda args: self._widget("move", x=args.get("x"), y=args.get("y"), edge=args.get("edge")),
+                 writes=True),
             Tool("change_setting", "Change one widget setting; the user is asked first.",
                  {"type": "object", "properties": {"key": string("the setting's name"),
                                                    "value": string("the new value, as JSON")},

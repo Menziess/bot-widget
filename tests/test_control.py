@@ -118,34 +118,36 @@ class Approval(unittest.IsolatedAsyncioTestCase):
         self.assertIn("ok", result)
         self.assertEqual(self.backend.calls, [("click", 3, 4, "right")])
 
-    async def test_an_accepted_move_uses_the_bound_window(self):
-        """Should move the bound window only after Accept."""
-        moved = []
-        previous = control.desktop.mover
-        control.bind_mover(lambda x, y: moved.append((x, y)))
-        self.addCleanup(control.bind_mover, previous)
-        result = await self._call("computer_move", {"x": 15, "y": 25}, allow=True)
+    async def test_an_accepted_move_puts_the_window_of_that_app_there(self):
+        """Should move the window of another app only after Accept."""
+        result = await self._call("computer_move", {"app": "Chrome", "x": 15, "y": 25, "width": 800, "height": 600},
+                                  allow=True)
         self.assertIn("ok", result)
-        self.assertEqual(moved, [(15, 25)])
-        moved.clear()
-        await self._call("computer_move", {"x": 1, "y": 1}, allow=False)
-        self.assertEqual(moved, [])
+        self.assertEqual(self.backend.calls, [("move_window", "Chrome", 15, 25, 800, 600)])
+        self.backend.calls.clear()
+        await self._call("computer_move", {"app": "Chrome", "x": 1, "y": 1}, allow=False)
+        self.assertEqual(self.backend.calls, [])
 
 
 class Platforms(unittest.TestCase):
-    def test_windows_and_macos_are_not_implemented(self):
-        """Should refuse Windows and macOS with a clear not-implemented result."""
-        for platform, title in (("win32", "Windows"), ("darwin", "macOS")):
-            backend = control.make_backend(platform)
-            for name in ("click", "scroll", "type_text", "key", "drag"):
-                with self.assertRaises(control.ControlUnavailable) as caught:
-                    getattr(backend, name)(0, 0) if name == "scroll" else (
-                        backend.click(0, 0, "left") if name == "click"
-                        else backend.type_text("a") if name == "type_text"
-                        else backend.key("a") if name == "key"
-                        else backend.drag(0, 0, 1, 1))
-                self.assertIn("not implemented", str(caught.exception).lower())
-                self.assertIn(title, str(caught.exception))
+    def test_windows_is_not_implemented(self):
+        """Should refuse Windows with a clear not-implemented result."""
+        backend = control.make_backend("win32")
+        for name in ("click", "scroll", "type_text", "key", "drag"):
+            with self.assertRaises(control.ControlUnavailable) as caught:
+                getattr(backend, name)(0, 0) if name == "scroll" else (
+                    backend.click(0, 0, "left") if name == "click"
+                    else backend.type_text("a") if name == "type_text"
+                    else backend.key("a") if name == "key"
+                    else backend.drag(0, 0, 1, 1))
+            self.assertIn("not implemented", str(caught.exception).lower())
+            self.assertIn("Windows", str(caught.exception))
+
+    def test_a_backend_without_window_moves_says_so(self):
+        desk = control.Desktop(control.make_backend("win32"))
+        with self.assertRaises(control.ControlUnavailable) as caught:
+            control.perform(desk, "move_app_window", {"app": "x", "x": 1, "y": 1}, approved=True)
+        self.assertIn("not available", str(caught.exception))
 
     def test_this_session_is_wayland_or_x11(self):
         """Should read XDG_SESSION_TYPE, then Wayland, then X11."""

@@ -2,8 +2,8 @@
 
 Linux uses xdotool on X11 and ydotool on Wayland when that program is on PATH.
 A missing program is named in CONSENT and nothing is installed from here.
-Windows and macOS are named and not implemented. A window this process owns
-can still be moved and typed into without those programs.
+macOS uses osascript once the user has allowed it (macos_desktop.py). Windows is named and not implemented.
+A window this process owns can still be moved and typed into without any of that.
 """
 
 import os
@@ -48,9 +48,12 @@ class Fake:
     def drag(self, x, y, to_x, to_y):
         self.calls.append(("drag", int(x), int(y), int(to_x), int(to_y)))
 
+    def move_window(self, app, x, y, width=0, height=0):
+        self.calls.append(("move_window", app, int(x), int(y), int(width), int(height)))
+
 
 class Stub:
-    """Windows or macOS until that backend exists."""
+    """Windows until that backend exists."""
 
     def __init__(self, title):
         self.title = title
@@ -179,7 +182,8 @@ def make_backend(platform=None, session=None, which=None, run=None):
     if platform == "win32":
         return Stub("Windows")
     if platform == "darwin":
-        return Stub("macOS")
+        from botwidget.system.macos_desktop import Macos
+        return Macos(run)
     return Linux(session if session is not None else session_type(), which, run)
 
 
@@ -215,6 +219,13 @@ class Desktop:
             if self.mover is None:
                 raise ControlUnavailable("no widget window is bound")
             self.mover(x, y)
+            return "ok"
+        if action == "move_app_window":
+            move = getattr(self.backend, "move_window", None)
+            if move is None:
+                raise ControlUnavailable("moving the window of another app is not available on this desktop")
+            move(str(arguments.get("app") or ""), int(arguments.get("x") or 0), int(arguments.get("y") or 0),
+                 int(arguments.get("width") or 0), int(arguments.get("height") or 0))
             return "ok"
         if action == "click":
             self.backend.click(int(arguments.get("x") or 0), int(arguments.get("y") or 0),

@@ -151,15 +151,26 @@ class AccessibilityProbe(unittest.TestCase):
         self.assertEqual(a11y.CONSENT["install"], "install_after_agree")
         self.assertNotIn("pkexec", a11y.CONSENT["choices"])
 
-    def test_windows_and_macos_are_named_and_not_available(self):
+    def test_windows_is_named_and_not_available_and_macos_goes_through_system_events(self):
         with mock.patch.object(a11y, "_platform_name", return_value="windows"):
             row = a11y.accessibility(load=lambda: _Bus())
         self.assertFalse(row["available"])
         self.assertIn("UI Automation", row["reason"])
         with mock.patch.object(a11y, "_platform_name", return_value="macos"):
             row = a11y.accessibility(load=lambda: _Bus())
-        self.assertFalse(row["available"])
-        self.assertIn("AX", row["reason"])
+        self.assertTrue(row["available"])
+        self.assertIn("System Events", row["reason"])
+
+    def test_the_windows_of_each_app_are_listed_on_macos_and_cached_a_moment(self):
+        listing = [{"app": "Chrome", "frontmost": True, "windows": [{"title": "T", "x": 1, "y": 2, "width": 3, "height": 4}]}]
+        a11y._mac_seen[:] = [0.0, []]
+        with mock.patch.object(a11y, "_platform_name", return_value="macos"), \
+                mock.patch("botwidget.system.macos_desktop.Macos.windows", return_value=listing) as asked:
+            self.assertEqual(a11y.application_windows(), listing)
+            self.assertEqual([e["app"] for e in a11y.application_windows()], ["Chrome"])
+        asked.assert_called_once()
+        with mock.patch.object(a11y, "_platform_name", return_value="linux"):
+            self.assertEqual(a11y.application_windows(), [])
 
 
 class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
