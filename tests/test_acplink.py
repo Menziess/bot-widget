@@ -415,9 +415,12 @@ class AcpTurns(unittest.TestCase):
         link._updated(Update("user", "Background job j1 finished."))
         self.assertEqual(link.messages[-1]["role"], "user")
         self.assertIn("j1", link.messages[-1]["text"])
+        link._updated(Update("thought", "Reading the result of the job"))
+        self.assertIn("Reading", link.chat()["activity"])
         link._updated(Update("usage", extra={"jobs_only": True, "jobs": 0, "followup": False}))
         self.assertEqual(link.note(), "Context 80% full.")
         self.assertFalse(link._followup)
+        self.assertEqual(link.chat()["activity"], "", "a turn the agent started itself must not leave Thinking behind")
         link.decide("no-such-request", False)
         link.cancel()
 
@@ -534,3 +537,14 @@ class KeyFileNote(unittest.TestCase):
         self.assertEqual(link._environment()["HARNESS_MODEL_API_KEY"], "sk-secret-123456")
         self.assertIn("chmod 600", link.note())
         self.assertNotIn("sk-secret-123456", link.note())
+
+
+class BubbleLine(unittest.TestCase):
+    def test_a_long_thought_line_is_cut_between_words_not_in_one(self):
+        from botwidget.acplink import ACTIVITY_CHARS, _bubble_line
+        self.assertEqual(_bubble_line("Reading the file first.\nThen I compare"), "Then I compare")
+        self.assertEqual(_bubble_line("word"), "word")
+        self.assertEqual(_bubble_line(""), "")
+        cut = _bubble_line(" ".join(["wordy"] * 40))
+        self.assertLessEqual(len(cut), ACTIVITY_CHARS + 1)
+        self.assertEqual(cut.split(" ")[-1], "wordy…", "no half word before the dots")

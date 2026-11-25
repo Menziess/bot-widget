@@ -54,6 +54,10 @@ Since 2026-11-16 the lean agent can read the tabs of the everyday Chrome (`brows
 
 Still open: a hosted provider has not been measured on either side, so cost per finished task is unknown. OpenCode 2.1.3 was tried beside hermes-acp (`18cf2e5`). Claude Code and Codex are not tried.
 
+## Status, 2026-11-26
+
+The turn of the lean agent is data and guards now (`harness/agent/turn.py`): progress and answer are separate, every message has an id, and a request or a claim has to be backed by the right tool. The bot looks itself up (`about_me`), runs slash commands and changes settings after Accept. On macOS it sees the running apps and their windows and can click, type, scroll, drag and move the window of another app. `/demo` has eleven rows and passes. Open: raising a window, doing everything a user does (controls by name, minimise, maximise, menus), Windows and Linux windows. See [05-roadmap.md](05-roadmap.md), "Turn loop, self-knowledge and the computer, 2026-11-26".
+
 ## Status of the facts
 
 Facts about protocols and providers come from public documentation read on 2026-10-27, with links at the bottom of each file. Provider details change quickly. Treat numbers, versions and command lines as examples that must be checked again at build time. Token counts for OpenBot are estimates read off the instruction block, not measurements.

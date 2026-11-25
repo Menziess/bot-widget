@@ -851,7 +851,6 @@ class BubbleWindow(QWidget):
         self._shadow_key = None
         self._shadow_pix = None
         self._trail = None
-        self._dots_cycles = 0
         self._blur_mask = b""
         self._keep_draft = False  # opened with words in the field: stays until the field has had the keyboard
         self._input = False
@@ -2326,19 +2325,17 @@ class BubbleWindow(QWidget):
             self._update_fade()
             return
         self._fade.setEnabled(False)
-        before = self._dots_phase
         calm = 2 if power.reduced() else 1
         if self._dots.interval() != DOTS_MS * calm:
             self._dots.setInterval(DOTS_MS * calm)
-        self._dots_phase = (self._dots_phase + self._dots.interval() / 1000 / DOTS_CYCLE_S) % 1.0
-        if self._dots_phase < before:
-            self._dots_cycles += 1
-            if self._dots_cycles >= DOTS_BURST_CYCLES:
-                # Rest: still dots for a while, no timer running; they pulse again afterwards.
-                self._dots_cycles, self._dots_phase = 0, -1.0  # at rest all three are small
-                self._dots_on = False
-                self._dots.stop()
-                QTimer.singleShot(round(DOTS_REST_S * calm * 1000), self._resume_dots)
+        self._dots_phase += self._dots.interval() / 1000 / DOTS_CYCLE_S
+        if self._dots_phase >= DOTS_BURST_CYCLES + 1:
+            # Rest: the last cycle has died out, so all three are small. Still dots for a while, no timer running;
+            # they pulse again afterwards.
+            self._dots_phase = -1.0
+            self._dots_on = False
+            self._dots.stop()
+            QTimer.singleShot(round(DOTS_REST_S * calm * 1000), self._resume_dots)
         for line in self._dots_lines:
             line["phase"] = self._dots_phase
         if self._geom:

@@ -156,7 +156,9 @@ Done on main. Planned for /demo: show the checklist in a normal chat bubble inst
 
 ### Desktop computer use, 2026-11-21
 
-Not built. Asked on 2026-11-21, the bot said it can only use the tools in the chat, and that is what the code does.
+Update 2026-11-26: built, see "Turn loop, self-knowledge and the computer, 2026-11-26" below. The text here is the design it was built from, and the state of 2026-11-21.
+
+Not built on 2026-11-21. Asked that day, the bot said it can only use the tools in the chat, and that is what the code did then.
 
 Nothing in the tool list is a computer-use tool: move the pointer, press keys, then see what changed. Checked the builtins in `harness/agent/tools.py`, the workspace tools, and the MCP tools the agent forwards. `deny-tools` only hides tools a skill already has. `Cdp.screenshot` and `Cdp.click_text` are one Chrome tab, and the model is not offered them (see Browser actions as tools above). The widget screenshot is the user dragging a region; the picture waits as an attachment. `harness/capability.py` scores `computer_use` as zero because a blank session has no display.
 
@@ -199,6 +201,43 @@ Open:
 - A subscription login like `opencode auth login` (GitHub Copilot). opencode runs the OAuth device flow (RFC 8628) with its own registered GitHub OAuth app and then calls the Copilot API with that token. Not built here: the client id belongs to opencode's app (using it would show its name on the consent screen), the Copilot API for third parties is undocumented, and nothing here can be tested without a Copilot account. The documented route is GitHub Models (`models.github.ai/inference`) with a token that has `models: read`: a fine-grained personal access token works today in the key file. A device flow for your own GitHub App (expiring tokens, a refresh token, the client id in widget.json) is the secure way to automate it.
 - Done 2026-11-23: /demo ticks Browser when the bot names the right number of open tabs (only Chrome can tell it; blocked when Chrome is not listening) and Computer by code after the chat tasks (a window of its own is moved and typed into).
 - Animations, done 2026-11-23: a finished background job (Done_B), a reset (Blocked_C), a wink on accept, dazed eyes after a throw, a working mood while a tool runs, and a doze after five quiet minutes. Not yet: eyes for love.
+
+### Turn loop, self-knowledge and the computer, 2026-11-26
+
+Done on main (`dc5863f` to `8bb4e7b`; CI green on macOS, Linux and Windows).
+
+The turn, as data (`harness/agent/turn.py`):
+- A step is reasoning, text and tool calls. A step with tool calls is progress and goes to the cloud as a thought; only the closing step is the answer. A notice of the harness (a loop it stopped, the step limit) is a message of its own. Every chunk carries an ACP `message_id`, and the widget starts a new message when it changes.
+- A request or a claim is an obligation that only a call of the right tool discharges: one `Obligation` class and a table (the desktop asked for, a tool named, a place named, a change asked for, a promise, a claim of done, a claim of written). A guard speaks at most once per reason, so a turn always ends. A guard that asks for exactly one tool makes the next request call it (`tool_choice`, both adapters).
+- A skill left in the conversation by an older version is cleared each turn. A job the bot cancelled itself does not start a new turn. The same call three times inside one answer is one step for the loop detector.
+- Measured and left alone: moving the changing context blocks after the history, to help the cache. On the local llama.cpp it was worse (680 new tokens against 112).
+
+The bot knows itself, lazily:
+- `about_me` answers one topic at a time (skills, bot, commands, settings, approvals); `run_command` runs any slash command and `change_setting` and `move_me` change a setting or the widget, each after Accept. The widget answers over an ACP extension method; the agent asks the widget for none of this up front.
+- An approval reads `shell: ls -la`, not a dict. `search` takes a path. `write_file` says how the file ends. The tab list is numbered and counted.
+
+Chrome:
+- Chrome asks for Allow on every new connection and cannot remember it (open request ChromeDevTools/chrome-devtools-mcp#825). The browser tools use the browser-use daemon's connection when it runs, so one Allow serves `browser_exec` and `browser_tabs`; a declined connection is not tried again at another address of the same Chrome; a slow answer keeps the connection.
+
+The demo (`/demo`, dev only) has ten chat rows and the computer row: browser, files, script, process, accessibility, repair, search outside the workspace, recover, order, commands. The checklist is a line in the conversation.
+
+Computer use on macOS (`botwidget/system/macos_desktop.py`):
+- Through osascript, with scripts that are constants and arguments in JSON. `accessibility` lists the running apps with their windows (title, place, size). `computer_click`, `computer_type`, `computer_key`, `computer_scroll` and `computer_drag` act anywhere; `computer_move` puts the window of another app somewhere, with a size. Tried live: on a Finder window move, resize, drag by the title bar and close with cmd+w; on a window of its own click (it becomes the active window), scroll (0 to 3 lines) and select-all plus typing (the text was replaced).
+- macOS has to allow it once: Accessibility for the app that runs the widget, and Automation for System Events. Until then the tool says what to allow.
+
+Open, in the order the owner asked on 2026-11-26. Bugs and todos are in `___/todo.md`.
+
+- **Bring a window to the front.** Not built. The bot can list windows and move them, not raise one or switch to an app. On macOS that is `frontmost` of a System Events process, or `AXRaise` of a window; also open an app or a file the way `open -a` does.
+- **Do what a user does.** The aim is that the bot can do anything a person does at the machine, each step after Accept: write in a text field, press a button, scroll, drag, enlarge, minimise, maximise, close, switch app, pick a menu item, open an app or a file. What it needs:
+  - See the controls, not only the windows: the accessibility tree of an app (role, name, place, value), so a button is pressed by its name and not by a guessed coordinate. `AXPress` and setting `AXValue` are the right actions for a button and a text field; a coordinate click stays the fallback.
+  - Window state: minimise, maximise (zoom), full screen and close, through the window's own buttons or attributes.
+  - Menus: pick an item of the menu bar by its path.
+  - See what changed after an action, through the same tree, and a screenshot only as the fallback (the design of 2026-11-21).
+  - Another desktop (Space) and another display.
+  - A limit the owner sets: which apps the bot may touch, and a refusal list for the ones that hold secrets (Keychain, password managers, System Settings).
+  - Always allow for one app and one kind of action, not for the pointer in general.
+- **Windows and Linux.** Windows is a stub. Linux has `xdotool` and `ydotool` for the pointer and keys, and no list of windows or move of another app's window (`wmctrl`, or AT-SPI on GNOME).
+- **One approved Chrome connection for everything.** The MCP server and the daemon share one; `browser_tabs` uses it when it runs. When the daemon is down the agent opens its own, and Chrome asks again.
 
 ### Open from the teacher rounds, 2026-11-21
 

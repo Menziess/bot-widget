@@ -159,10 +159,12 @@ def _append_message(messages: list, role: str, text: str, fold: bool, message_id
 
 
 def _bubble_line(text: str) -> str:
-    """One short line for the cloud: the line a thought is on, cut where the bubble would."""
+    """One short line for the cloud: the line a thought is on, cut between words and not in one."""
     lines = [" ".join(line.split()) for line in (text or "").splitlines()]
     line = next((line for line in reversed(lines) if line), "")
-    return line[:ACTIVITY_CHARS]
+    if len(line) > ACTIVITY_CHARS:
+        line = line[:ACTIVITY_CHARS].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return line
 
 
 class AcpLink:
@@ -623,6 +625,10 @@ class AcpLink:
                         self._jobs = running
                     if update.extra.get("followup") is not None:
                         self._followup = bool(update.extra.get("followup"))
+                        if not self._followup:
+                            # A turn the agent started itself (a finished job) ends here; nothing else clears its thought.
+                            self._activity = self._thought = ""
+                            self._tool = False
                     wake = True
                 else:
                     used, size = update.extra.get("used") or 0, update.extra.get("size") or 0

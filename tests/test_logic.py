@@ -5231,7 +5231,7 @@ class BubbleHover(unittest.TestCase):
         bubble._dots_on = True
         bubble._dots.start()
         with mock.patch("botwidget.qt_ui.bubble_window.QTimer.singleShot") as later:
-            for _ in range(round(DOTS_BURST_CYCLES * DOTS_CYCLE_S * 1000 / DOTS_MS) + 2):
+            for _ in range(round((DOTS_BURST_CYCLES + 1) * DOTS_CYCLE_S * 1000 / DOTS_MS) + 2):
                 bubble._tick_dots()
         self.assertFalse(bubble._dots.isActive(), "no timer runs while the dots rest")
         later.assert_called_once()
@@ -5310,6 +5310,20 @@ class BubbleHover(unittest.TestCase):
         from botwidget.theme import DOTS_R, DOTS_START_PHASE
         sizes = [float(r) for r in re.findall(r'r="([\d.]+)"', bubble.dots_svg(0, 0, DOTS_START_PHASE, "#000"))]
         self.assertLess(max(sizes), DOTS_R * 0.9, "the first frame has no big dot")
+
+    def test_the_dots_die_out_in_a_last_cycle_so_none_shrinks_at_once(self):
+        import re
+
+        from botwidget import bubble
+        from botwidget.theme import DOTS_BURST_CYCLES
+        sizes = lambda phase: [float(r) for r in re.findall(r'r="([\d.]+)"', bubble.dots_svg(0, 0, phase, "#000"))]
+        rest = sizes(-1.0)
+        before_end = max(max(abs(a - b) for a, b in zip(sizes(t), sizes(t + 0.02), strict=True))
+                         for t in [DOTS_BURST_CYCLES + step / 50 for step in range(0, 49)])
+        self.assertLess(before_end, 0.2, "no dot jumps while the wave dies out")
+        self.assertEqual(sizes(DOTS_BURST_CYCLES + 1), rest, "the last cycle ends exactly at rest")
+        self.assertLess(max(abs(a - b) for a, b in zip(sizes(DOTS_BURST_CYCLES + 0.98), rest, strict=True)), 0.2,
+                        "and nothing jumps into the rest")
 
     def test_at_rest_all_three_dots_are_small(self):
         import re

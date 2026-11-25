@@ -100,6 +100,7 @@ _WORKSPACE_CACHE_KEY = ("", "")
 KEEP_TURNS = 12
 CONTEXT_TOKENS = 32000  # default fallback when the model's window is unknown
 SUMMARY_AFTER = 40  # messages on disk; a second trigger for many short turns
+SUMMARY_BATCH = 10  # new messages a summary has to cover; a full window does not wait for them
 # Share of the context window. At or above this, the summary starts as soon as the answer is stored.
 FILL_SUMMARISE = 0.8
 # Seconds the next request waits for that compaction. Then it is sent, and the summary is stored
@@ -448,7 +449,10 @@ def to_summarise(store, *, filled: bool = False) -> list[dict]:
     keep = store.get("summary_upto")
     start = int(keep or 0)
     end = len(messages) - KEEP_TURNS * 2
-    return messages[start:end] if end > start else []
+    # A summary of two new messages costs a model call, and the next request waits for it: fold in batches.
+    if end - start < (1 if filled else SUMMARY_BATCH):
+        return []
+    return messages[start:end]
 
 
 SUMMARY_PROMPT = ("Summarise this part of a conversation in at most 120 words. Keep names, decisions, "

@@ -184,6 +184,17 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(over.store.summary)
         self.assertEqual(len(over.store.messages()), SUMMARY_AFTER + 1)
 
+    async def test_a_summary_waits_for_a_batch_unless_the_window_is_full(self):
+        """Two new messages are not worth a model call that the next request waits for."""
+        from harness.agent.context import SUMMARY_BATCH
+        thread = await self._prompt_with_history(SUMMARY_AFTER + 20, "long")
+        await thread._summary_task
+        thread.store.set("summary_upto", str(len(thread.store.messages()) - 24 - 3))  # three messages past the mark
+        self.assertEqual(to_summarise(thread.store), [])
+        self.assertEqual(len(to_summarise(thread.store, filled=True)), 3, "a full window does not wait")
+        thread.store.set("summary_upto", str(len(thread.store.messages()) - 24 - SUMMARY_BATCH))
+        self.assertEqual(len(to_summarise(thread.store)), SUMMARY_BATCH)
+
     async def _prompt_filled(self, tokens: int, size: int, reply: str = "ok", usage: bool = True):
         """One answer on a short thread, so only the window can start a summary."""
         folder = tempfile.mkdtemp()
