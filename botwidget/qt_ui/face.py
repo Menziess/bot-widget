@@ -23,7 +23,17 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QWidget
 
-from botwidget import __version__, acplink, attachments, confirm, grokbot, hermesbot, menu_pages, power, self_desc
+from botwidget import (
+    __version__,
+    acplink,
+    attachments,
+    confirm,
+    grokbot,
+    hermesbot,
+    menu_pages,
+    power,
+    self_desc,
+)
 from botwidget.animation import IDLE_MS, FaceAnimator, frame_ms
 from botwidget.avatar import (
     AVATAR_SIZE,
@@ -138,6 +148,8 @@ class ThinkingRow(QWidget):
     line in it would cover the face or change its size. Clicks pass through.
     """
 
+    travels = True  # on the desktop of its face, like the bubble, see desktops.apply
+
     def __init__(self, face):
         super().__init__(face)
         self.face = face
@@ -182,6 +194,13 @@ class ThinkingRow(QWidget):
         super().setVisible(visible)
         if not visible:
             drop_hidden(self)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Where the platform ignores the bottom layer (a tool window on macOS) the face and the bubble go behind
+        # the other windows by hand, so the row does too.
+        if not always_on_top():
+            send_behind_windows(native_id(self))
 
     def place(self):
         face = self.face

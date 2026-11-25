@@ -90,6 +90,19 @@ class ThinkingRowUnderWorkingFace(unittest.TestCase):
     def _geom(self, face):
         return (face.x(), face.y(), face.width(), face.height())
 
+    def test_should_follow_the_layer_and_desktop_setting_of_its_face(self):
+        face = self.window
+        self.assertTrue(face._thinking.travels)
+        for on_top, behind in ((False, 1), (True, 0)):
+            with self.subTest(always_on_top=on_top), \
+                    mock.patch("botwidget.qt_ui.face.always_on_top", return_value=on_top), \
+                    mock.patch("botwidget.qt_ui.face.send_behind_windows") as send:
+                face._thinking.hide()
+                face._thinking.show()
+                rows = [call.args[0] for call in send.call_args_list]
+                self.assertEqual(len(rows), behind)
+                face._thinking.hide()
+
     def test_should_hide_the_row_when_the_face_is_idle(self):
         self._work(self.window, False)
         self.assertEqual(self._rows(self.window), [])
