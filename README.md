@@ -143,6 +143,8 @@ You can add a bot from the widget instead of editing this file. `/bots`, then Ne
 
 The bot can leave a shell command running and keep talking. `shell_background` starts it (the same permission question as `shell`), `jobs` lists what is still running, and `job_cancel` stops one. When the command exits, the same session gets the exit code and a short tail of the output, and the bot answers that. The job keeps running when the bubble closes, and when the agent restarts: its output goes to files in `jobs/` under the bot's folder, and the agent that starts next adopts it, tells the session in one line that it is still running (so the bot does not start it again), and delivers the result when it ends. A job that ended while the agent was away reports itself the same way. Only `job_cancel` or the job's own timeout stops one. While one is running, the line under the conversation says so.
 
+The bot can look itself up. `about_me` answers one topic at a time (skills, bot, commands, settings), so none of it sits in the prompt until the bot asks. `run_command` starts any slash command in the list, and `change_setting` changes one plain setting. Both ask for Accept in the bubble first. Keys never show. `remote_control`, and the lists on /bots and /connections, cannot be changed this way.
+
 ```json
 "env": {
   "HARNESS_JOB_HOOK": "python3 -c 'import sys; sys.stdin.read()'",

@@ -195,6 +195,7 @@ class AcpLink:
         self._commands = ()  # (name, description) from available_commands_update
         self._client = None
         self._interrupted = False
+        self.widget = None  # the face sets it: answers what the agent asks about commands and settings
         self.on_change = None  # the face sets it: a new message or question must wake it, even when it sleeps
         self._closed = False
         self._epoch = 0  # a reset bumps it: a turn of an older one must not write into the new chat
@@ -517,7 +518,8 @@ class AcpLink:
                 self._note = (f"Could not read your shell's PATH ({problem}), so programs outside the system "
                               "folders may not be found.")
         client = AcpClient(*split_command(self.target), cwd=room, env=env,
-                           allow=self._ask, on_update=self._updated)
+                           allow=self._ask, on_update=self._updated,
+                           widget=lambda method, params: self.widget(method, params) if self.widget else {})
         await client.__aenter__()
         with self._lock:
             self._loading = True

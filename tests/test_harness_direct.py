@@ -470,7 +470,7 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
             yield  # pragma: no cover - makes this a generator
 
         model = ScriptModel([
-            [("thought", "even "), ("text", "klaar")],
+            [("thought", "even "), ("text", "prima")],
             [("tool_calls", [call("missing", {}),
                               call("read_file", "not-json", "2"),
                               call("write_file", {"path": target, "content": "x"}, "3"),

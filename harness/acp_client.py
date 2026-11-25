@@ -81,10 +81,11 @@ class AcpClient:
     """
 
     def __init__(self, command: str, *args: str, cwd: str | None = None, env: dict | None = None,
-                 allow=None, on_update=None):
+                 allow=None, on_update=None, widget=None):
         self.command, self.args, self.cwd, self.env = command, args, cwd, env
         self.allow = allow or (lambda _title, _options=(): False)
         self.on_update = on_update or (lambda _update: None)
+        self.widget = widget or (lambda _method, _params: {"error": "not available"})
         self.conn = None
         self.process = None
         self.session_id = ""
@@ -215,6 +216,9 @@ class AcpClient:
                 turn.first_update = time.monotonic()
             turn.updates.append(event)
         self.on_update(event)
+
+    async def ext_method(self, method: str, params: dict) -> dict:
+        return self.widget(method, params)
 
     async def request_permission(self, session_id: str, tool_call: ToolCallUpdate,
                                  options: list[PermissionOption], **kwargs) -> RequestPermissionResponse:

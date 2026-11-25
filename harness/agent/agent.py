@@ -57,14 +57,15 @@ SKILL_ENDINGS = {"done": "Call this when the skill is finished and you have said
 SKILL_NUDGES = 2
 A11Y_NUDGE = ("Call the accessibility tool now, before you answer. Leave query empty so the result lists "
              "application names. Do not invent a list.")
-PROMISE_NUDGE = ("You ended on a promise to act. Do it now with a tool call. If no tool can do it, say so plainly "
-                 "and do not invent a result.")
+PROMISE_NUDGE = ("You ended on a promise or a claim that it is done, and this turn has no tool call. Do it now "
+                 "with a tool call. If no tool can do it, say so plainly and do not invent a result.")
 FAILED_NUDGE = ("A tool call just failed and your last message does not say so. Either call it again with a fix, or "
                 "say plainly that it failed. Do not answer from earlier messages as if it had worked.")
 # Words that own up to a failure: a final message with one of them needs no second round.
 FAILURE_WORDS = re.compile(r"\b(fail|failed|error|unable|cannot|can't|could not|couldn't|not found|mislukt|"
                            r"niet gelukt|niet gevonden|kon niet|lukt niet|fout|bestaat niet)\b", re.IGNORECASE)
 PROMISE = re.compile(r"\b(ik ga|ik zal|ik probeer|let me|i'll|i will|i'm going to|i am going to)\b")
+DONE_CLAIM = re.compile(r"\b(done|klaar|gedaan|geschreven|uitgevoerd|aangemaakt|written|created|executed|ran)\b")
 BRIEF_PROMPT = ("Write down what a helper needs from this conversation to carry out the user's last request: facts, "
                 "names, dates and decisions that matter. Leave out the rest. At most 120 words, plain text.")
 SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
@@ -276,6 +277,51 @@ class LeanAgent:
                                "user's answer, and not_for_me when the user's message has nothing to do with the skill. "
                                "Never end a message on only a promise to do something.")
 
+    async def _widget(self, method: str, **params) -> str:
+        if self.conn is None:
+            return "No widget is connected."
+        try:
+            answer = await self.conn.ext_method(method, params)
+        except Exception as error:
+            return f"The widget did not answer: {error}"
+        return str(answer.get("error") or answer.get("text") or "")
+
+    def _self_tools(self) -> list:
+        """Ask about myself: a topic at a time, so nothing of it sits in the prompt until it is needed."""
+        async def about(args: dict) -> str:
+            topic = str(args.get("topic") or "")
+            if topic == "skills":
+                return "\n".join(f"/{s['name']}: {s['description']}" for s in self.skills.values()) or "No skills."
+            if topic == "bot":
+                return f"{self.bot}. Tools: {', '.join(sorted(self.tools.tools))}"
+            if topic == "commands":
+                return await self._widget("commands")
+            if topic == "settings":
+                return await self._widget("settings", key=str(args.get("key") or ""))
+            return ("Topics: skills (my skill commands), bot (my name and tools), commands (all slash commands), "
+                    "settings (the widget's settings). Call about_me again with a topic.")
+
+        def string(what: str) -> dict:
+            return {"type": "string", "description": what}
+
+        return [
+            Tool("about_me", "Look up how this widget and I are set up, one topic at a time. Call it with no topic "
+                 "for the list of topics.",
+                 {"type": "object", "properties": {"topic": string("skills, bot, commands or settings"),
+                                                   "key": string("for settings: one setting's name")}}, about),
+            Tool("run_command", "Run a slash command for the user, for example /demo or /settings, as if they typed "
+                 "it; the user is asked first. about_me topic commands lists them.",
+                 {"type": "object", "properties": {"name": string("the command, with the slash and any arguments")},
+                  "required": ["name"]}, lambda args: self._widget("run", name=str(args.get("name") or "")),
+                 writes=True),
+            Tool("change_setting", "Change one widget setting; the user is asked first.",
+                 {"type": "object", "properties": {"key": string("the setting's name"),
+                                                   "value": string("the new value, as JSON")},
+                  "required": ["key", "value"]},
+                 lambda args: self._widget("set", key=str(args.get("key") or ""), value=str(args.get("value") or "")),
+                 writes=True),
+        ]
+
     async def cancel(self, session_id: str, **kwargs) -> None:
         """Stop the turn now. A cancel with no turn running is dropped: it used to arrive before the
         turn it was meant for, and cancel that one."""
@@ -294,6 +340,9 @@ class LeanAgent:
 
     async def prompt(self, session_id: str, prompt, **kwargs) -> PromptResponse:
         main = self.stores.setdefault(session_id, SessionStore(self.folder))
+        # Skills run in their own session; a skill an older version left in the conversation would ride along forever.
+        main.set("skill", "")
+        main.set("skill_deny", "")
         text = "".join(block.text for block in prompt if getattr(block, "text", ""))
         store = main
         if text != RESUME_PROMPT:
@@ -325,6 +374,8 @@ class LeanAgent:
         self._ensure_job_tools()
         self.tools.add(self._pin(store))
         for t in self._memory_tools():
+            self.tools.add(t)
+        for t in self._self_tools():
             self.tools.add(t)
         self.tools.add(Tool("approval_log", "Who accepted or declined which action recently, and how (bubble, cli, timeout).",
                             {"type": "object", "properties": {}}, lambda _args: approvals.recent()))
@@ -457,8 +508,9 @@ class LeanAgent:
                         messages.append({"role": "assistant", "content": said})
                         messages.append({"role": "user", "content": FAILED_NUDGE})
                         continue
+                    tail = said[-200:].lower()
                     if (not cancelled and not skill_on and promise_nudges < 1 and not said.endswith("?")
-                            and PROMISE.search(said[-200:].lower())):
+                            and (PROMISE.search(tail) or (not called and DONE_CLAIM.search(tail)))):
                         promise_nudges += 1
                         messages.append({"role": "assistant", "content": said})
                         messages.append({"role": "user", "content": PROMISE_NUDGE})

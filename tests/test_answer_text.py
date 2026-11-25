@@ -136,8 +136,8 @@ class AnswerText(unittest.IsolatedAsyncioTestCase):
     async def test_a_glued_sentinel_is_not_part_of_the_final_text(self):
         """Should strip a not_for_me run glued onto the end of one chunk."""
         agent, conn, session = await self.agent([[
-            ("text", "Klaar.not_for_menot_for_me"),
+            ("text", "Prima.not_for_menot_for_me"),
         ]])
         await self.say(agent, session, "hoi")
-        self.assertEqual(shown(conn), "Klaar.")
-        self.assertEqual(agent.stores[session].messages()[-1]["text"], "Klaar.")
+        self.assertEqual(shown(conn), "Prima.")
+        self.assertEqual(agent.stores[session].messages()[-1]["text"], "Prima.")

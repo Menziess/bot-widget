@@ -23,7 +23,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QWidget
 
-from botwidget import __version__, acplink, attachments, confirm, grokbot, hermesbot, menu_pages, power
+from botwidget import __version__, acplink, attachments, confirm, grokbot, hermesbot, menu_pages, power, self_desc
 from botwidget.animation import IDLE_MS, FaceAnimator, frame_ms
 from botwidget.avatar import (
     AVATAR_SIZE,
@@ -238,6 +238,7 @@ class FaceWindow(QWidget):
     # Result of the POST from the sending thread back to the window.
     message_done = Signal(str, bool, bool, str)
     attention_done = Signal(bool, str)  # the answer to a question or approval went through, or why not
+    start_command = Signal(str)  # the bot asked for a slash command to be run, as if typed: on the UI thread
     wake = Signal()  # the agent has news (a message or a question): look now, from any thread
     grok_polled = Signal()  # Grok Bot was asked for new answers
 
@@ -262,6 +263,9 @@ class FaceWindow(QWidget):
         self._jobs_seen = self.acp.jobs_finished if self.acp else 0
         if self.acp:
             self.acp.on_change = self.wake.emit
+            self.acp.widget = lambda method, params: self_desc.answer(
+                method, params, self.command_rows(), self.start_command.emit)
+            self.start_command.connect(self.on_user_message)
         self.faces = faces
         self._hue = hue
         self._seed = seed or agent_id

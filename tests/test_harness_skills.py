@@ -59,6 +59,36 @@ class Skills(unittest.IsolatedAsyncioTestCase):
         agent._run_skill(fresh, "/unknown")
         self.assertNotIn("STEP ONE", " ".join(m["content"] for m in context.build(fresh, "sk")))
 
+    async def test_a_skill_left_in_the_conversation_by_an_older_version_is_not_sent(self):
+        agent, _ = self.agent()
+        session = (await agent.new_session(cwd=self.tmp)).session_id
+        agent._run_skill(agent.stores[session], "/parking")
+        await agent.prompt(session, [type("Block", (), {"text": "hoi"})()])
+        self.assertNotIn("STEP ONE", " ".join(m["content"] for m in context.build(agent.stores[session], "sk")))
+
+    async def test_the_bot_looks_itself_up_by_topic_and_asks_the_widget_for_the_rest(self):
+        agent, conn = self.agent()
+        asked = []
+
+        async def ext_method(method, params):
+            asked.append((method, params))
+            return {"text": "widget says " + method}
+        conn.ext_method = ext_method
+        session = (await agent.new_session(cwd=self.tmp)).session_id
+        await agent.tools.start()
+        agent._tool_session = session
+        for tool in agent._self_tools():
+            agent.tools.add(tool)
+        run = lambda name, args: agent.tools.find(name).run(args)  # noqa: E731
+        self.assertIn("Topics:", await run("about_me", {}))
+        self.assertEqual(await run("about_me", {"topic": "skills"}), "/parking: Book a parking ticket")
+        self.assertEqual(asked, [])
+        self.assertEqual(await run("about_me", {"topic": "settings", "key": "k"}), "widget says settings")
+        self.assertEqual(await run("run_command", {"name": "/demo"}), "widget says run")
+        self.assertEqual(asked, [("settings", {"key": "k"}), ("run", {"name": "/demo"})])
+        self.assertTrue(agent.tools.find("change_setting").writes)
+        self.assertTrue(agent.tools.find("run_command").writes)
+
 
 class SkillTurnsEndOnPurpose(unittest.IsolatedAsyncioTestCase):
     """A skill is only over when the model says so: a message that is only a promise is not an end."""
