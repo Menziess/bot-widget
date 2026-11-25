@@ -14,7 +14,8 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import NamedTuple
 
-from harness.agent.tools import accessibility_requested
+from harness import RESUME_PROMPT
+from harness.agent.tools import TOOL_OUTPUT, accessibility_requested
 
 # Words that own up to a failure: a closing message with one of them needs no second round.
 FAILURE_WORDS = re.compile(r"\b(fail|failed|error|unable|cannot|can't|could not|couldn't|not found|mislukt|"
@@ -25,11 +26,15 @@ DONE_CLAIM = re.compile(r"\b(done|klaar|gedaan|geschreven|uitgevoerd|aangemaakt|
 # A claim that something was written needs a tool in this turn that can write; the others need any tool.
 WRITE_CLAIM = re.compile(r"\b(wrote|written|saved|created|now contains|geschreven|opgeslagen|aangemaakt|bevat nu)\b")
 WRITERS = {"write_file", "edit", "shell", "delete_file"}
+# A place on this machine: a home path, a drive path, or an absolute path with at least two parts (`/demo` is a command).
+PATH = re.compile(r"(?<![\w/\\.])(?:~|[A-Za-z]:)?(?:[\\/][\w.\-~]+){2,}|(?<![\w/\\.])~(?:[\\/][\w.\-~]+)+")
 
 A11Y_NUDGE = ("Call the accessibility tool now, before you answer. Leave query empty so the result lists "
               "application names. Do not invent a list.")
 FAILED_NUDGE = ("A tool call just failed and your last message does not say so. Either call it again with a fix, or "
                 "say plainly that it failed. Do not answer from earlier messages as if it had worked.")
+GROUNDING_NUDGE = ("The user named {place} on this machine and this turn has not looked at anything. Look with a tool "
+                   "before you answer. Do not answer from memory.")
 NAMED_NUDGE = ("The user asked you to use {tools}, and this turn did not call it. Call it now, before you answer. "
                "Do not answer from memory.")
 CLAIM_NUDGE = ("You ended on a promise, or on a claim of work that this turn has no tool call for. Do it now "
@@ -128,6 +133,21 @@ class NamedToolGuard(Guard):
         return NAMED_NUDGE.format(tools=", ".join(missing)) if missing else None
 
 
+class GroundingGuard(Guard):
+    """The user named a place on this machine and the turn answers without having looked at anything. A message that
+    reports a finished job also holds paths, and is not a question about them."""
+
+    name = "grounding"
+
+    def review(self, turn, step):
+        if turn.skill_on or turn.called or step.text.strip().endswith("?"):
+            return None
+        if turn.user_text.startswith((TOOL_OUTPUT, RESUME_PROMPT)):
+            return None
+        place = PATH.search(turn.user_text)
+        return GROUNDING_NUDGE.format(place=place.group(0)) if place else None
+
+
 class ClaimGuard(Guard):
     """The closing words promise work, or say it is done, with no tool call in the turn that could have done it."""
 
@@ -158,7 +178,8 @@ class Governor:
     """Runs the guards in order, each within its own limit. The first nudge wins."""
 
     def __init__(self, guards=None):
-        self.guards = guards or (AccessibilityGuard(), FailedToolGuard(), NamedToolGuard(), ClaimGuard(), SkillGuard())
+        self.guards = guards or (AccessibilityGuard(), FailedToolGuard(), NamedToolGuard(), GroundingGuard(), ClaimGuard(),
+                                        SkillGuard())
         self.used = Counter()
 
     def review(self, turn: Turn, step: Step) -> Nudge | None:
