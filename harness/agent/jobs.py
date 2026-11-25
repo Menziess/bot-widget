@@ -160,11 +160,14 @@ class JobRunner:
 
     def __init__(self, workspace: str, on_done, *, hook_command: str = "", hook_url: str = "",
                  hook_key_file: str = "", tail: int = TAIL, max_jobs: int = MAX_JOBS,
-                 timeout: float | None = None, state_dir: str | None = None):
+                 timeout: float | None = None, state_dir: str | None = None, on_cancelled=None):
         self.workspace = workspace
         self.dir = state_dir or tempfile.mkdtemp(prefix="harness-jobs-")
         os.makedirs(self.dir, exist_ok=True)
         self.on_done = on_done  # (session_id, text) from the watcher thread
+        # Where a job goes that was cancelled on purpose: its owner asked for that and was told so. Without this it is
+        # delivered like any other, and an agent that reads the news as a new request starts the same work again.
+        self.on_cancelled = on_cancelled
         self.hook_command = hook_command
         self.hook_url = hook_url
         self.hook_key_file = hook_key_file
@@ -373,7 +376,8 @@ class JobRunner:
         if self._closed:
             return
         try:
-            self.on_done(job.session_id, format_result(payload))
+            (self.on_cancelled if job.cancelled and self.on_cancelled else self.on_done)(
+                job.session_id, format_result(payload))
         except Exception as error:
             log.warning("job result was not delivered: %s", redact(f"{type(error).__name__}: {error}", self.secrets))
 

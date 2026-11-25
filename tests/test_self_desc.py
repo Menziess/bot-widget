@@ -60,3 +60,19 @@ class SelfDesc(unittest.IsolatedAsyncioTestCase):
     async def test_the_client_hands_a_question_from_the_agent_to_the_widget(self):
         client = AcpClient("x", widget=lambda method, params: {"text": f"{method}:{params['key']}"})
         self.assertEqual(await client.ext_method("settings", {"key": "k"}), {"text": "settings:k"})
+
+
+class ToolTitle(unittest.TestCase):
+    def test_a_call_reads_as_a_line_not_as_a_dict(self):
+        from harness.agent.agent import tool_title
+        self.assertEqual(tool_title("shell", {"command": "ls -la"}), "shell: ls -la")
+        self.assertEqual(tool_title("change_setting", {"key": "sound", "value": "false"}),
+                         "change_setting: key=sound, value=false")
+        self.assertTrue(tool_title("shell", {"command": "echo " + "x" * 500 + " && rm -rf /"}).endswith("rm -rf /"))
+
+
+class WriteResult(unittest.TestCase):
+    def test_a_write_says_how_the_file_ends(self):
+        from harness.agent.tools import wrote
+        self.assertEqual(wrote("demo-note\n", "/x"), "Wrote 10 characters to /x (ends with a newline).")
+        self.assertEqual(wrote("demo-note", "/x"), "Wrote 9 characters to /x (has no final newline).")

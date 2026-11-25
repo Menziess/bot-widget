@@ -7,7 +7,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from harness.agent.agent import FAILED_NUDGE, LeanAgent
+from harness.agent.agent import LeanAgent
+from harness.agent.turn import FAILED_NUDGE
 from tests.test_harness_direct import Block, Conn, ScriptModel
 
 

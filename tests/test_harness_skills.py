@@ -82,12 +82,26 @@ class Skills(unittest.IsolatedAsyncioTestCase):
         run = lambda name, args: agent.tools.find(name).run(args)  # noqa: E731
         self.assertIn("Topics:", await run("about_me", {}))
         self.assertEqual(await run("about_me", {"topic": "skills"}), "/parking: Book a parking ticket")
+        self.assertIn(f"Workspace (relative paths and search start here): {self.tmp}", await run("about_me", {"topic": "bot"}))
         self.assertEqual(asked, [])
         self.assertEqual(await run("about_me", {"topic": "settings", "key": "k"}), "widget says settings")
         self.assertEqual(await run("run_command", {"name": "/demo"}), "widget says run")
         self.assertEqual(asked, [("settings", {"key": "k"}), ("run", {"name": "/demo"})])
         self.assertTrue(agent.tools.find("change_setting").writes)
         self.assertTrue(agent.tools.find("run_command").writes)
+
+
+class AskedByTheWidget(unittest.IsolatedAsyncioTestCase):
+    async def test_the_widget_may_ask_for_a_tool_that_only_reads(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        agent = LeanAgent("sk", ScriptModel(), folder=folder)
+        agent.tools.add(Tool("look", "x", {"type": "object", "properties": {}}, lambda args: "3 tabs"))
+        agent.tools.add(Tool("change", "x", {"type": "object", "properties": {}}, lambda args: "no", writes=True))
+        self.assertEqual(await agent.ext_method("tool", {"name": "look"}), {"text": "3 tabs"})
+        self.assertIn("error", await agent.ext_method("tool", {"name": "change"}))
+        self.assertIn("error", await agent.ext_method("tool", {"name": "nothing"}))
+        self.assertIn("error", await agent.ext_method("other", {}))
 
 
 class SkillTurnsEndOnPurpose(unittest.IsolatedAsyncioTestCase):

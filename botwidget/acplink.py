@@ -135,10 +135,16 @@ def options_for(agent_id: str) -> dict:
             "key_file": bot["key_file"], "debug_launch": bot.get("debug_launch", False)}
 
 
-def _append_message(messages: list, role: str, text: str, fold: bool) -> None:
-    """Add one piece to the conversation. Bot text is folded so a repeated final chunk is not shown twice."""
+def _append_message(messages: list, role: str, text: str, fold: bool, message_id: str = "") -> None:
+    """Add one piece to the conversation. Bot text is folded so a repeated final chunk is not shown twice.
+
+    Pieces with one message id are one message. A piece with another id starts a new one; an agent that sends no
+    ids keeps the old way, consecutive pieces of one role are one message."""
+    previous = messages[-1] if messages else None
+    if previous and message_id and previous.get("id") and previous["id"] != message_id:
+        previous = None
     if fold:
-        if messages and messages[-1]["role"] == role:
+        if previous and previous["role"] == role:
             messages[-1]["text"] = fold_chunk(messages[-1]["text"], text)
             if not messages[-1]["text"]:
                 messages.pop()
@@ -146,10 +152,10 @@ def _append_message(messages: list, role: str, text: str, fold: bool) -> None:
         text = fold_chunk("", text)
         if not text:
             return
-    elif messages and messages[-1]["role"] == role:
-        messages[-1]["text"] += text
+    elif previous and previous["role"] == role:
+        previous["text"] += text
         return
-    messages.append({"role": role, "text": text})
+    messages.append({"role": role, "text": text, **({"id": message_id} if message_id else {})})
 
 
 def _bubble_line(text: str) -> str:
@@ -260,6 +266,16 @@ class AcpLink:
         """Skill commands the agent advertised, as (name, description). Empty until an update arrives."""
         with self._lock:
             return self._commands
+
+    def ask_agent(self, method: str, params: dict, timeout: float = 30) -> dict:
+        """A question to the agent from any thread; its answer, or {"error": ...}."""
+        client, loop = self._client, getattr(self, "_loop", None)
+        if client is None or loop is None:
+            return {"error": "the agent is not running"}
+        try:
+            return asyncio.run_coroutine_threadsafe(client.ask(method, params), loop).result(timeout)
+        except Exception as error:
+            return {"error": f"{type(error).__name__}: {error}"}
 
     def attention(self) -> dict:
         """What waits for you, in the shape the bubble already draws buttons from."""
@@ -586,7 +602,7 @@ class AcpLink:
         with self._lock:
             if self._loading and update.kind in ("text", "user") and update.text:
                 role = "user" if update.kind == "user" else "bot"
-                _append_message(self._history, role, update.text, fold=role == "bot")
+                _append_message(self._history, role, update.text, fold=role == "bot", message_id=update.message_id)
                 return
             # A lone space is a piece of the thought: without it "November 26" read "November26".
             if update.kind == "thought" and (update.text.strip() or (self._thought and update.text)):
@@ -630,8 +646,7 @@ class AcpLink:
                 self._thought = ""
                 self._said = True
                 note_raw({"source": "acp", "kind": "text", "text": update.text})
-                # shortcut: one answer message per turn; ACP message ids are ignored for now.
-                _append_message(self.messages, "bot", update.text, fold=True)
+                _append_message(self.messages, "bot", update.text, fold=True, message_id=update.message_id)
                 if self._followup:
                     wake = True
         if tool:

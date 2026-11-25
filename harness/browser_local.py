@@ -190,12 +190,21 @@ def attach(port: int = 9222, port_file: str | None = None) -> Cdp:
     else:
         from_file = _port_file_url()
     urls = [*_shared, from_file, *([version["webSocketDebuggerUrl"]] if version else []), *_listening_urls()]
+    refused = set()  # ports where Chrome answered the connection itself: no other path there will ask less
     for url in filter(None, urls):
+        port_of = (urlparse(url).hostname, urlparse(url).port)
+        if port_of in refused:
+            continue
         with _shared_lock:
             try:
                 _shared.get(url) or _shared.setdefault(url, WebSocketCdp(url))
+            except NotABrowser:
+                continue  # an answer that is not Chrome's debugging socket: the next address may be
             except OSError:
-                continue  # not the debugging port of a browser
+                # Closed or silent after the Allow popup: it was declined, or it is still open. Asking again at
+                # another address of the same Chrome would only show the popup twice.
+                refused.add(port_of)
+                continue
         return Cdp(_shared_call(url))
     raise ConnectionError(
         "Chrome is not listening on 127.0.0.1:%s. Turn on remote debugging in "
@@ -204,6 +213,10 @@ def attach(port: int = 9222, port_file: str | None = None) -> Cdp:
 
 _shared: dict = {}
 _shared_lock = threading.Lock()
+
+
+class NotABrowser(ConnectionError):
+    """The address answered, but not as Chrome's debugging socket (a 403, a 404)."""
 
 
 def _shared_call(url: str):
@@ -216,6 +229,8 @@ def _shared_call(url: str):
                 if fresh:
                     known = _shared[url] = WebSocketCdp(url)
                 return known.call(method, params, session_id)
+            except TimeoutError:
+                raise  # a slow answer is not a dead socket: a new one means a new Allow popup
             except OSError:
                 _shared.pop(url, None)
                 if fresh:
@@ -253,7 +268,7 @@ class WebSocketCdp:
             raw += chunk
         head, self._pending = raw.split(b"\r\n\r\n", 1)
         if b" 101 " not in head.split(b"\r\n", 1)[0]:
-            raise ConnectionError(head.split(b"\r\n", 1)[0].decode(errors="replace"))
+            raise NotABrowser(head.split(b"\r\n", 1)[0].decode(errors="replace"))
         self.sock.settimeout(timeout)
         self._id = 0
 

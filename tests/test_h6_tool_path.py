@@ -14,7 +14,7 @@ import time
 import unittest
 
 from harness.acp_client import AcpClient, Turn
-from harness.agent.agent import LeanAgent
+from harness.agent.turn import call_key
 from tests.fake_model import FakeModel
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -201,7 +201,7 @@ class Dedup(unittest.TestCase):
 
         def key(name, path):
             call = {"id": "c", "function": {"name": name, "arguments": json.dumps({"path": path})}}
-            return LeanAgent._call_cache_key(call)
+            return call_key(call)
 
         base = key("read_file", "/tmp/foo.txt")
         cases = (

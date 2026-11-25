@@ -278,6 +278,15 @@ class Turns(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(last["calls"], 0)
         self.assertTrue(last["text_tail"].endswith("twee woorden. "), "a turn that ends on talk keeps how it ended")
 
+    async def test_the_widget_asks_the_running_agent_for_a_tool_that_only_reads(self):
+        open(os.path.join(self.folder, "marker.txt"), "w").close()
+        async with self.client() as client:
+            await client.start()
+            listing = await client.ask("tool", {"name": "list_dir", "arguments": {"path": self.folder}})
+            refused = await client.ask("tool", {"name": "write_file", "arguments": {"path": "x", "content": "y"}})
+        self.assertIn("marker.txt", listing["text"])
+        self.assertIn("error", refused)
+
     async def test_a_turn_cut_off_by_a_restart_is_offered_again_and_answered_without_a_second_user_line(self):
         from harness import RESUME_PROMPT
         async with self.client() as client:

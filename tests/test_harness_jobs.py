@@ -34,11 +34,6 @@ def quote(text: str) -> str:
     return subprocess.list2cmdline([text]) if os.name == "nt" else shlex.quote(text)
 
 
-def shown(text: str) -> str:
-    """How a string reads inside the repr of the arguments in a permission title: Windows paths get doubled backslashes."""
-    return repr(text)[1:-1]
-
-
 def py(code: str) -> str:
     return f"{sys.executable} -c {quote(code)}"
 
@@ -156,6 +151,20 @@ class Jobs(unittest.TestCase):
         self.assertEqual(self.runner.jobs["j1"].status, "cancelled")
         self.assertIsNotNone(self.runner.jobs["j1"].proc.poll())
         self.assertTrue(wait_until(lambda: self.done), "a cancelled job is still delivered")
+
+    def test_a_job_cancelled_on_purpose_goes_to_its_own_callback_not_to_the_conversation(self):
+        cancelled = []
+        runner = JobRunner(self.folder, lambda sid, text: self.done.append((sid, text)),
+                           on_cancelled=lambda sid, text: cancelled.append((sid, text)))
+        self.addCleanup(runner.kill_all)
+        runner.start("s1", py("import time; time.sleep(30)"))
+        runner.cancel("s1", "j1")
+        self.assertTrue(wait_until(lambda: cancelled))
+        runner.start("s1", py("print('x')"))
+        self.assertTrue(wait_until(lambda: self.done))
+        self.assertIn("j2", self.done[0][1])
+        self.assertEqual(len(cancelled), 1)
+        self.assertEqual(len(self.done), 1)
 
     @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
     def test_a_job_outlives_its_agent_and_the_next_one_reports_it(self):
@@ -552,7 +561,7 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(agent.conn.asks), 1)
         title = agent.conn.asks[0]
         self.assertIn("shell_background", title)
-        self.assertIn(shown(hook), title)
+        self.assertIn(hook, title)
         self.assertIn(url, title)
 
     async def test_a_denied_model_hook_starts_nothing(self):
@@ -570,7 +579,7 @@ class AgentJobs(unittest.IsolatedAsyncioTestCase):
         ])
         agent = self.agent(model, allow=False, permission="ask")
         await agent.prompt("s1", [Block("go")])
-        self.assertIn(shown(hook), agent.conn.asks[0])
+        self.assertIn(hook, agent.conn.asks[0])
         self.assertIn(server.url, agent.conn.asks[0])
         self.assertFalse(await self._until(
             lambda: bool(agent.jobs.jobs or server.hits or os.path.exists(out)), timeout=0.4))

@@ -30,6 +30,7 @@ class Steps(unittest.IsolatedAsyncioTestCase):
         model = ScriptModel(scripts)
         agent = LeanAgent("st", model, folder=folder)
         conn = _Conn()
+        self.conn = conn
         agent.on_connect(conn)
         self.pings = []
         agent.tools.add(Tool("ping", "x", {"type": "object", "properties": {"n": {"type": "integer"}}},
@@ -55,6 +56,35 @@ class Steps(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.pings), 2)  # the third identical call is never run
         self.assertEqual(len(model.scripts), 7)  # three model steps were used
         self.assertIn("same arguments 3 times in a row", text)
+
+    async def test_the_same_call_three_times_inside_one_answer_still_runs_once(self):
+        scripts = [[("tool_calls", [_call(i, n=1) for i in range(3)]), ("finish", "tool_calls")],
+                   [("text", "fine"), ("finish", "stop")]]
+        _agent, _model, text = await self._run(scripts)
+        self.assertEqual(len(self.pings), 1)
+        self.assertIn("fine", text)
+        self.assertNotIn("I stopped", text)
+
+    async def test_only_the_closing_step_is_the_answer_what_came_before_a_tool_call_is_progress(self):
+        scripts = [[("text", "All done, ik ben klaar."), ("tool_calls", [_call(0, n=1)]), ("finish", "tool_calls")],
+                   [("text", "Het is gelukt."), ("finish", "stop")]]
+        _agent, _model, text = await self._run(scripts)
+        self.assertEqual(text, "Het is gelukt.")
+        self.assertEqual(_agent.stores[next(iter(_agent.stores))].messages()[-1]["text"], "Het is gelukt.")
+
+    async def test_a_turn_without_a_closing_message_still_shows_the_last_thing_said(self):
+        scripts = [[("text", "Ik zoek het uit."), ("tool_calls", [_call(0, n=1)]), ("finish", "tool_calls")]]
+        _agent, _model, text = await self._run(scripts, HARNESS_MAX_STEPS="1")
+        self.assertIn("Ik zoek het uit.", text)
+        self.assertIn("I stopped after 1 steps", text)
+
+    async def test_the_answer_and_a_notice_are_separate_messages(self):
+        scripts = [[("text", "Ik zoek het uit."), ("tool_calls", [_call(0, n=1)]), ("finish", "tool_calls")]]
+        await self._run(scripts, HARNESS_MAX_STEPS="1")
+        chunks = [(u.content.text, u.message_id) for _s, u in self.conn.updates if isinstance(u, AgentMessageChunk)]
+        self.assertEqual([text for text, _id in chunks][0], "Ik zoek het uit.")
+        self.assertTrue(all(mid for _text, mid in chunks), "every piece says which message it belongs to")
+        self.assertEqual(len({mid for _text, mid in chunks}), 2, "the answer and the notice are two messages")
 
     async def test_different_arguments_do_not_count_as_a_loop(self):
         scripts = [[("tool_calls", [_call(0, n=1)]), ("finish", "tool_calls")],

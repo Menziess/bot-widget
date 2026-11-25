@@ -122,7 +122,7 @@ class Secrets(unittest.TestCase):
         _write(os.path.join(ssh_dir, "id_rsa"), "secret-key")
         _write(os.path.join(folder, "main.py"), "import config")
         result = search_files(folder, "secret-key")
-        self.assertEqual(result, "(no matches)")
+        self.assertTrue(result.startswith("(no matches"))
 
     def test_list_dir_skips_secrets(self):
         folder = tempfile.mkdtemp()
@@ -159,7 +159,15 @@ class SearchFiles(unittest.TestCase):
         self.addCleanup(shutil.rmtree, folder, True)
         _write(os.path.join(folder, "a.txt"), "hello")
         result = search_files(folder, "xyz")
-        self.assertEqual(result, "(no matches)")
+        self.assertEqual(result, f"(no matches in {folder})")
+
+    def test_search_can_look_in_another_folder_than_the_workspace(self):
+        workspace, elsewhere = tempfile.mkdtemp(), tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, workspace, True)
+        self.addCleanup(shutil.rmtree, elsewhere, True)
+        _write(os.path.join(elsewhere, "a.txt"), "needle")
+        self.assertIn("needle", search_files(workspace, "needle", path=elsewhere))
+        self.assertIn("no matches", search_files(workspace, "needle"))
 
     def test_search_limit_is_respected(self):
         folder = tempfile.mkdtemp()

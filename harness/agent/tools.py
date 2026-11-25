@@ -73,7 +73,13 @@ def write_file(path: str, content: str) -> str:
             fh.write(content)
     except OSError as error:
         raise ToolError(f"cannot write {at}: {error.strerror}") from error
-    return f"Wrote {len(content)} characters to {at}."
+    return wrote(content, at)
+
+
+def wrote(content: str, at: str) -> str:
+    """What a write says back: the model checks an exact byte count or a final newline against this, not against itself."""
+    ends = "ends with a newline" if content.endswith("\n") else "has no final newline"
+    return f"Wrote {len(content)} characters to {at} ({ends})."
 
 
 def browser_tabs() -> str:
@@ -85,7 +91,9 @@ def browser_tabs() -> str:
         raise ToolError(f"Chrome is not listening ({error}).") from error
     if not tabs:
         return "No open tabs."
-    return redact("\n".join(f"{tab['title']}\n{tab['url']}" for tab in tabs))
+    lines = [redact(f"{i+1}. {tab['title']}\n   {tab['url']}") for i, tab in enumerate(tabs)]
+    lines.append(f"{len(tabs)} tab{'s' if len(tabs) != 1 else ''}")
+    return "\n".join(lines)
 
 
 def browser_read(title: str = "") -> str:

@@ -145,6 +145,8 @@ The bot can leave a shell command running and keep talking. `shell_background` s
 
 The bot can look itself up. `about_me` answers one topic at a time (skills, bot, commands, settings), so none of it sits in the prompt until the bot asks. `run_command` starts any slash command in the list, and `change_setting` changes one plain setting. Both ask for Accept in the bubble first. Keys never show. `remote_control`, and the lists on /bots and /connections, cannot be changed this way.
 
+What the bot says while it works is not its answer. A step that calls tools is progress: its text goes to the cloud as a thought line. Only the text of the step that ends the turn is the answer, one message with its own id, and a notice from the harness (a loop it stopped, the step limit) is another message, so nothing glues together. A closing message is sent back once per reason when it promises work, claims work that no tool in the turn could have done, ignores a failed tool, or skips a tool the user named; `harness/agent/turn.py` holds those checks, each with a limit so a turn always ends. The demo asks the agent to count Chrome's tabs, because Chrome asks the user to Allow every new connection and the agent already has one.
+
 ```json
 "env": {
   "HARNESS_JOB_HOOK": "python3 -c 'import sys; sys.stdin.read()'",

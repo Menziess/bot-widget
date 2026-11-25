@@ -22,6 +22,7 @@ class Update:
 
     kind: str  # thought | text | tool | usage | user
     text: str = ""
+    message_id: str = ""  # chunks with the same id are one message; empty when the agent sends none
     # Free-form extras: a tool call's status, a usage update's numbers.
     extra: dict = field(default_factory=dict)
 
@@ -171,7 +172,8 @@ class AcpClient:
         kind = getattr(update, "session_update", "")
         if kind in ("agent_thought_chunk", "agent_message_chunk", "user_message_chunk"):
             event = Update(kind={"agent_thought_chunk": "thought", "agent_message_chunk": "text",
-                                 "user_message_chunk": "user"}[kind], text=_text_of(update.content))
+                                 "user_message_chunk": "user"}[kind], text=_text_of(update.content),
+                          message_id=getattr(update, "message_id", None) or "")
         elif kind in ("tool_call", "tool_call_update"):
             title = getattr(update, "title", "") or ""
             # H6 fix: on tool_call_update, do not re-emit the same title as a new tool line
@@ -219,6 +221,10 @@ class AcpClient:
 
     async def ext_method(self, method: str, params: dict) -> dict:
         return self.widget(method, params)
+
+    async def ask(self, method: str, params: dict) -> dict:
+        """A question to the agent, over its own extension methods."""
+        return await self.conn.ext_method(method, params)
 
     async def request_permission(self, session_id: str, tool_call: ToolCallUpdate,
                                  options: list[PermissionOption], **kwargs) -> RequestPermissionResponse:

@@ -57,7 +57,7 @@ import subprocess
 from difflib import unified_diff
 
 from harness.agent.procs import group_kwargs, stop
-from harness.agent.tools import Tool, ToolError, trash_file
+from harness.agent.tools import Tool, ToolError, trash_file, wrote
 
 # ── Defaults ──────────────────────────────────────────────────────────
 
@@ -163,7 +163,7 @@ def _safe_walk(workspace: str):
         yield dirpath, files
 
 
-def search_files(workspace: str, pattern: str, limit: int = 100) -> str:
+def search_files(workspace: str, pattern: str, limit: int = 100, path: str = "") -> str:
     """Search file contents using Python's re (ripgrep is preferred externally).
 
     Files/dirs that match secret rules are skipped entirely.  Returns
@@ -171,7 +171,10 @@ def search_files(workspace: str, pattern: str, limit: int = 100) -> str:
     """
     matches: list[str] = []
     compiled = re.compile(pattern, re.IGNORECASE)
-    for dirpath, files in _safe_walk(workspace):
+    root = _real_path(workspace, path) if path else workspace
+    if _is_secret_path(root):
+        raise ToolError("that path is private and is not searched")
+    for dirpath, files in _safe_walk(root):
         for fname in sorted(files):
             full = os.path.join(dirpath, fname)
             if _is_secret_name(fname):
@@ -185,7 +188,7 @@ def search_files(workspace: str, pattern: str, limit: int = 100) -> str:
                                 return "\n".join(matches)
             except OSError:
                 continue
-    return "\n".join(matches) if matches else "(no matches)"
+    return "\n".join(matches) if matches else f"(no matches in {root})"
 
 
 # ── File tools ────────────────────────────────────────────────────────
@@ -249,7 +252,7 @@ def _ws_write(workspace: str, path: str, content: str) -> str:
             fh.write(content)
     except OSError as err:
         raise ToolError(f"cannot write {real}: {err.strerror}") from err
-    return f"Wrote {len(content)} characters to {real}."
+    return wrote(content, real)
 
 
 def _ws_delete(workspace: str, path: str) -> str:
@@ -1008,14 +1011,16 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
              lambda a: _ws_read(workspace, a["path"], int(a.get("offset") or 0), int(a.get("limit") or 0))),
         # ── search ──
         Tool("search",
-             "Search file contents inside the workspace. Skips secret files/dirs.",
+             "Search file contents in the workspace, or in the folder path (absolute, or relative to the workspace). "
+             "Skips secret files/dirs.",
              {"type": "object",
               "properties": {
                   "pattern": {"type": "string"},
+                  "path": {"type": "string", "description": "Folder to search. Default: the workspace."},
                   "limit": {"type": "integer"},
               },
               "required": ["pattern"]},
-             lambda a: search_files(workspace, a["pattern"], int(a.get("limit") or 100))),
+             lambda a: search_files(workspace, a["pattern"], int(a.get("limit") or 100), str(a.get("path") or ""))),
         # ── edit ──
         Tool("write_file",
              "Write a text file inside the workspace. Needs user permission.",

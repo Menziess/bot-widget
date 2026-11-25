@@ -7,9 +7,10 @@ import unittest
 from unittest import mock
 
 from botwidget.system import a11y
-from harness.agent.agent import A11Y_NUDGE, LeanAgent
+from harness.agent.agent import LeanAgent
 from harness.agent.context import SYSTEM
 from harness.agent.tools import Tools, accessibility_requested, accessibility_text
+from harness.agent.turn import A11Y_NUDGE
 from tests.test_harness_direct import Block, Conn, ScriptModel
 
 
@@ -222,6 +223,31 @@ class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
                 mock.patch("botwidget.system.a11y.application_names", return_value=["botwidget"]):
             await agent.prompt(session, [Block("Schrijf een script")])
         self.assertEqual(agent.stores[session].tool_results()[-1]["name"], "accessibility")
+
+    async def test_a_claim_of_a_written_file_needs_a_writing_tool_in_the_turn(self):
+        about = ("tool_calls", [{"id": "w1", "function": {"name": "about_me", "arguments": json.dumps({})}}])
+        claim = [("text", "Het bestand is geschreven."), ("finish", "stop")]
+        folder = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder, True))
+        model = ScriptModel([[about, ("finish", "tool_calls")], claim, [("text", "Niet gelukt."), ("finish", "stop")]])
+        agent = LeanAgent("bot", model, folder=os.path.join(folder, "agent"))
+        agent.on_connect(Conn())
+        session = (await agent.new_session(cwd=folder)).session_id
+        await agent.prompt(session, [Block("Geef een overzicht")])
+        self.assertEqual(model.scripts, [], "the claim after a read-only tool got one more round")
+
+    async def test_a_tool_the_user_names_is_called_even_when_the_model_answers_without_it(self):
+        guess = [("text", "Je hebt 3 tabs."), ("finish", "stop")]
+        call = ("tool_calls", [{"id": "n1", "function": {"name": "about_me", "arguments": json.dumps({})}}])
+        folder = tempfile.mkdtemp()
+        self.addCleanup(lambda: __import__("shutil").rmtree(folder, True))
+        agent = LeanAgent("bot", ScriptModel([guess, [call, ("finish", "tool_calls")],
+                                               [("text", "Topics."), ("finish", "stop")]]),
+                          folder=os.path.join(folder, "agent"))
+        agent.on_connect(Conn())
+        session = (await agent.new_session(cwd=folder)).session_id
+        await agent.prompt(session, [Block("Gebruik je about_me tool en antwoord met een getal")])
+        self.assertEqual(agent.stores[session].tool_results()[-1]["name"], "about_me")
 
     async def test_a_line_written_before_the_accessibility_call_is_never_shown(self):
         """The model guesses the result before it has it ("No applications matched"); only the tool's list counts."""

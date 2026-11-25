@@ -14,10 +14,10 @@ import hashlib
 import inspect
 import json
 import os
-import re
 import sqlite3
 import threading
 import time
+import uuid
 
 from acp import PROTOCOL_VERSION
 from acp.schema import (
@@ -42,7 +42,8 @@ from harness import RESUME_PROMPT, approvals
 from harness.agent import context
 from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
-from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools, accessibility_requested
+from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
+from harness.agent.turn import Governor, LoopDetector, Step, Turn, call_key
 from harness.agent.workspace import _diff_text, _real_path, compute_edit, outside_workspace, shell_segments
 from harness.stream_text import collapse_repeats, fold_chunk, note_raw
 
@@ -54,23 +55,16 @@ SKILL_ENDINGS = {"done": "Call this when the skill is finished and you have said
                  "wait_for_user": "Call this when you have asked the user something and wait for the answer.",
                  "not_for_me": "Call this, and say nothing else, when the user's message has nothing to do with this "
                                "skill's task."}
-SKILL_NUDGES = 2
-A11Y_NUDGE = ("Call the accessibility tool now, before you answer. Leave query empty so the result lists "
-             "application names. Do not invent a list.")
-PROMISE_NUDGE = ("You ended on a promise or a claim that it is done, and this turn has no tool call. Do it now "
-                 "with a tool call. If no tool can do it, say so plainly and do not invent a result.")
-FAILED_NUDGE = ("A tool call just failed and your last message does not say so. Either call it again with a fix, or "
-                "say plainly that it failed. Do not answer from earlier messages as if it had worked.")
-# Words that own up to a failure: a final message with one of them needs no second round.
-FAILURE_WORDS = re.compile(r"\b(fail|failed|error|unable|cannot|can't|could not|couldn't|not found|mislukt|"
-                           r"niet gelukt|niet gevonden|kon niet|lukt niet|fout|bestaat niet)\b", re.IGNORECASE)
-PROMISE = re.compile(r"\b(ik ga|ik zal|ik probeer|let me|i'll|i will|i'm going to|i am going to)\b")
-DONE_CLAIM = re.compile(r"\b(done|klaar|gedaan|geschreven|uitgevoerd|aangemaakt|written|created|executed|ran)\b")
+def tool_title(name: str, arguments: dict) -> str:
+    """What the bubble says a call does: `shell: ls -la`, or `change_setting: key=sound, value=false`."""
+    # Whole values: a question to approve must show the end of a long command too.
+    if len(arguments) == 1:
+        return f"{name}: {next(iter(arguments.values()))}"
+    return f"{name}: " + ", ".join(f"{key}={value}" for key, value in arguments.items())
+
+
 BRIEF_PROMPT = ("Write down what a helper needs from this conversation to carry out the user's last request: facts, "
                 "names, dates and decisions that matter. Leave out the rest. At most 120 words, plain text.")
-SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
-               "call. If you are finished call done, if you wait for the user's answer call wait_for_user, and if the "
-               "user's message has nothing to do with this skill call not_for_me.")
 SKILL_IDLE_S = 600  # a skill that waited this long for the user is over; the chat answers
 BRIEF_SHORT = 1500  # characters of conversation a skill gets as they are, without a model to pick from them
 
@@ -172,15 +166,14 @@ class LeanAgent:
         self._tool_session = session_id
         self._workspace = self._workspace_for(session_id)
         self._ensure_job_tools()
-        for message in store.messages(limit=context.KEEP_TURNS * 2):
+        for index, message in enumerate(store.messages(limit=context.KEEP_TURNS * 2)):
             if message["role"] == "tool":
                 # An ordinary tool line stays out of the bubble. A decline must still be said,
                 # or a restart looks like the write happened.
                 if "declined" not in message["text"]:
                     continue
-                await self._chunk(session_id, "agent", message["text"])
-                continue
-            await self._chunk(session_id, "user" if message["role"] == "user" else "agent", message["text"])
+            await self._chunk(session_id, "user" if message["role"] == "user" else "agent", message["text"],
+                              f"{session_id}:{index}")
         # A turn that was open when the process went away: say so, so the widget can ask it to pick up again.
         return LoadSessionResponse(field_meta={"interrupted": True}) if store.get("open_turn") else None
 
@@ -277,6 +270,23 @@ class LeanAgent:
                                "user's answer, and not_for_me when the user's message has nothing to do with the skill. "
                                "Never end a message on only a promise to do something.")
 
+    async def ext_method(self, method: str, params: dict) -> dict:
+        """What the widget may ask of this agent: the output of a tool that only reads. The agent already holds the
+        connections those tools use (Chrome asks the user to Allow for every new one), so the widget asks it
+        instead of opening its own."""
+        if method != "tool":
+            return {"error": f"unknown question {method}"}
+        tool = self.tools.find(str(params.get("name") or ""))
+        if tool is None or tool.writes:
+            return {"error": "that tool is not one to ask for"}
+        try:
+            result = tool.run(params.get("arguments") or {})
+            if inspect.isawaitable(result):
+                result = await result
+        except ToolError as error:
+            return {"error": str(error)}
+        return {"text": str(result)}
+
     async def _widget(self, method: str, **params) -> str:
         if self.conn is None:
             return "No widget is connected."
@@ -293,7 +303,8 @@ class LeanAgent:
             if topic == "skills":
                 return "\n".join(f"/{s['name']}: {s['description']}" for s in self.skills.values()) or "No skills."
             if topic == "bot":
-                return f"{self.bot}. Tools: {', '.join(sorted(self.tools.tools))}"
+                workspace = self._workspace_for(self._tool_session) or "none"
+                return f"{self.bot}. Workspace (relative paths and search start here): {workspace}. Tools: {', '.join(sorted(self.tools.tools))}"
             if topic == "commands":
                 return await self._widget("commands")
             if topic == "settings":
@@ -387,16 +398,11 @@ class LeanAgent:
                 self.tools.add(Tool(name, what, {"type": "object", "properties": {}}, lambda _args: "Ok."))
             else:
                 self.tools.tools.pop(name, None)
-        nudges = 0
-        a11y_nudges = 0
-        promise_nudges = 0
-        failed_nudges = 0
-        tool_failed = False  # the step before this one called a tool that failed
-        # A line the model writes before the accessibility call is a guess at its result: it is not shown.
-        asked_a11y = False
-        if self.tools.find("accessibility") is not None:
-            last_user = next((m["text"] for m in reversed(store.messages()) if m["role"] == "user"), "")
-            asked_a11y = accessibility_requested(last_user)
+        offered = {name for name in self.tools.tools if self.tools.find(name) is not None}
+        turn = Turn(user_text=next((m["text"] for m in reversed(store.messages()) if m["role"] == "user"), ""),
+                    offered=offered, skill_on=skill_on)
+        governor = Governor()
+        loop = LoopDetector(_env_int("HARNESS_LOOP_REPEATS", LOOP_REPEATS))
         started = time.monotonic()
         first = 0.0
         answer = []
@@ -406,28 +412,27 @@ class LeanAgent:
         steps = 0
         last = {}
         max_steps = max(_env_int("HARNESS_MAX_STEPS", MAX_STEPS), 1)
-        repeats = _env_int("HARNESS_LOOP_REPEATS", LOOP_REPEATS)  # 0 turns loop detection off
-        recent_calls: list[str] = []
-        called: set[str] = set()
-        stopped = ""
+        progress: list[list[str]] = []
+        notice = ""
+        answer_id = uuid.uuid4().hex
         await self._wait_for_summary()
         self._stream_idle.clear()
         self._streaming = True
 
-        async def show_text(value: str, tool_names: set[str] | None = None, new_step: bool = False) -> None:
+        async def say(chunks: list[str], tool_names: set[str] | None = None) -> None:
+            """The answer: what the closing step said, as one message. Everything before it was progress. Every piece
+            goes through one stage."""
             nonlocal shown, first
-            # Every piece the bubble will show, including a nudge reply, goes through one stage.
-            new = fold_chunk(shown, value, tool_names, SKILL_ENDINGS if skill_on else (), new_step)
-            if new == shown:
-                return
-            extra = new[len(shown):] if new.startswith(shown) else new
-            shown = new
-            if not extra:
-                return
-            if not first:
-                first = time.monotonic()  # the first word, not the first event
-            answer.append(extra)
-            await self._chunk(session_id, "agent", extra)
+            for index, value in enumerate(chunks):
+                new = fold_chunk(shown, value, tool_names, SKILL_ENDINGS if skill_on else (), index == 0)
+                if new == shown:
+                    continue
+                extra = new[len(shown):] if new.startswith(shown) else new
+                shown = new
+                if extra:
+                    first = first or time.monotonic()  # the first word, not the first event
+                    answer.append(extra)
+                    await self._chunk(session_id, "agent", extra, answer_id)
 
         try:
             if not self._checked and hasattr(self.model, "ready"):
@@ -437,121 +442,55 @@ class LeanAgent:
             await self._usage(session_id, store)
             for _step in range(max_steps):
                 steps += 1
-                calls = []
-                step_text, thought_chars, finish = [], 0, ""
-                # Held until this step's tool calls arrive. fold_chunk drops the reply when the
-                # only tool is not_for_me, and keeps it when the step did real work.
-                hold_for_tool = asked_a11y and "accessibility" not in called
-                # After a failed tool the closing words wait too: a claim it worked is not shown, it is nudged.
-                held: list[str] | None = [] if nudges or hold_for_tool or tool_failed else None
-                note_raw({"source": "model", "kind": "nudge" if nudges else "step"})
-                async for kind, value in self._events(session_id, messages):
-                    if kind == "cancelled":
-                        cancelled = True
-                        break
-                    if kind == "usage":
-                        usage["prompt_tokens"] += value.get("prompt_tokens") or 0
-                        usage["completion_tokens"] += value.get("completion_tokens") or 0
-                        usage["cached_tokens"] += (value.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+                step = await self._step(session_id, messages, usage, governor.nudged)
+                cancelled = cancelled or step.cancelled
+                last = {"finish": step.finish, "calls": len(step.calls), "thought_chars": step.thought_chars,
+                        "text_tail": step.text[-200:]}
+                if step.cancelled or not step.calls:
+                    nudge = None if step.cancelled else governor.review(turn, step)
+                    if nudge:
+                        if nudge.keeps_text:
+                            await say(step.chunks)
+                        else:
+                            await self._chunk(session_id, "thought", step.text)
+                        if step.text.strip():
+                            messages.append({"role": "assistant", "content": step.text})
+                        messages.append({"role": "user", "content": nudge.text})
                         continue
-                    if kind == "tool_calls":
-                        calls = value
-                        for call in value:
-                            note_raw({"source": "model", "kind": "tool",
-                                      "name": (call.get("function") or {}).get("name") or ""})
-                        continue
-                    if kind == "finish":
-                        finish = value
-                        continue
-                    if kind == "thought":
-                        thought_chars += len(value)
-                        await self._chunk(session_id, "thought", value)
-                        continue
-                    if kind != "text":
-                        continue
-                    note_raw({"source": "model", "kind": "text", "text": value})
-                    step_text.append(value)
-                    if held is not None:
-                        held.append(value)
-                        continue
-                    await show_text(value, None, len(step_text) == 1)
-                said_now = "".join(step_text).strip()
-                retry_failed = (not cancelled and not calls and tool_failed and failed_nudges < 1 and bool(said_now)
-                                and not FAILURE_WORDS.search(said_now))
-                if held:
-                    names = {(call.get("function") or {}).get("name") for call in calls}
-                    if (hold_for_tool and "accessibility" in names) or retry_failed:
-                        held = []
-                    for index, value in enumerate(held):
-                        await show_text(value, names, index == 0)
-                # What the last step looked like, so a turn that ends on talk without the call can be explained.
-                last = {"finish": finish, "calls": len(calls), "thought_chars": thought_chars,
-                        "text_tail": "".join(step_text)[-200:]}
-                if cancelled or not calls:
-                    asked = ""
-                    # A correct call already happened, or the tool is hidden: one answer, no second round.
-                    if (not cancelled and not calls and a11y_nudges < 1 and "accessibility" not in called
-                            and self.tools.find("accessibility") is not None):
-                        for message in reversed(store.messages()):
-                            if message["role"] == "user":
-                                asked = message["text"]
-                                break
-                    if asked and accessibility_requested(asked):
-                        a11y_nudges += 1
-                        if step_text:
-                            messages.append({"role": "assistant", "content": "".join(step_text)})
-                        messages.append({"role": "user", "content": A11Y_NUDGE})
-                        continue
-                    said = "".join(step_text).strip()
-                    if retry_failed:
-                        failed_nudges += 1
-                        messages.append({"role": "assistant", "content": said})
-                        messages.append({"role": "user", "content": FAILED_NUDGE})
-                        continue
-                    tail = said[-200:].lower()
-                    if (not cancelled and not skill_on and promise_nudges < 1 and not said.endswith("?")
-                            and (PROMISE.search(tail) or (not called and DONE_CLAIM.search(tail)))):
-                        promise_nudges += 1
-                        messages.append({"role": "assistant", "content": said})
-                        messages.append({"role": "user", "content": PROMISE_NUDGE})
-                        continue
-                    if cancelled or not skill_on or nudges >= SKILL_NUDGES:
-                        break
-                    nudges += 1
-                    if step_text:
-                        messages.append({"role": "assistant", "content": "".join(step_text)})
-                    messages.append({"role": "user", "content": SKILL_NUDGE})
-                    continue
-                for call in calls:
-                    called.add((call.get("function") or {}).get("name") or "")
-                    recent_calls.append(self._call_cache_key(call))
-                if repeats > 1 and len(recent_calls) >= repeats and len(set(recent_calls[-repeats:])) == 1:
-                    name = (calls[-1].get("function") or {}).get("name") or "a tool"
-                    stopped = (f"\n\nI stopped: I called {name} with the same arguments {repeats} times in a row "
-                               "and that is not getting anywhere. Tell me what to try instead.")
-                    last["loop"] = name
+                    await say(step.chunks)
                     break
-                messages.append({"role": "assistant", "content": "", "tool_calls": calls})
+                turn.called |= step.tool_names
+                ending = [name for name in step.tool_names if name in SKILL_ENDINGS] if skill_on else []
+                if ending:
+                    await say(step.chunks, step.tool_names)  # the skill's closing words come with its closing call
+                else:
+                    progress.append(step.chunks)
+                    await self._chunk(session_id, "thought", step.text)
+                if stuck := loop.stuck(step):
+                    notice = (f"I stopped: I called {stuck} with the same arguments {loop.repeats} times in a row "
+                              "and that is not getting anywhere. Tell me what to try instead.")
+                    last["loop"] = stuck
+                    break
+                messages.append({"role": "assistant", "content": "", "tool_calls": step.calls})
                 # H6: execute tool calls with parallel reads, cheap-first, dedup, and guard-rails.
-                results = await self._execute_calls(session_id, store, calls)
-                for call, result in zip(calls, results, strict=False):
+                results = await self._execute_calls(session_id, store, step.calls)
+                for call, result in zip(step.calls, results, strict=False):
                     messages.append({"role": "tool", "tool_call_id": call["id"],
                                      "content": TOOL_OUTPUT + "\n" + result})
-                tool_failed = bool(results) and all(str(result).startswith("The tool failed") for result in results)
-                ending = [(call.get("function") or {}).get("name") for call in calls
-                          if (call.get("function") or {}).get("name") in SKILL_ENDINGS]
-                if skill_on and ending:
+                turn.tool_failed = bool(results) and all(str(result).startswith("The tool failed") for result in results)
+                if ending:
                     self._skill_ended = ending[0]
                     break
             else:
                 # The loop ran out of steps with the model still asking for tools.
-                if calls and not cancelled:
-                    stopped = (f"\n\nI stopped after {max_steps} steps in one turn. Say continue and I will "
-                               "carry on from here.")
+                if step.calls and not cancelled:
+                    notice = (f"I stopped after {max_steps} steps in one turn. Say continue and I will "
+                              "carry on from here.")
                     last["step_limit"] = max_steps
-            if stopped:
-                answer.append(stopped)
-                await self._chunk(session_id, "agent", stopped)
+            if not answer and progress and not cancelled:
+                await say(progress[-1])  # no closing message: the last thing said is all there is to show
+            if notice:
+                await self._chunk(session_id, "agent", notice, uuid.uuid4().hex)
         except ModelError as error:
             store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                          "ms": round((time.monotonic() - started) * 1000), "error": str(error)[:300]})
@@ -565,6 +504,8 @@ class LeanAgent:
         said = collapse_repeats("".join(answer))
         if said:
             store.add("bot", said)
+        if notice:
+            store.add("bot", notice)
         counted = bool(usage["prompt_tokens"])
         store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                      "ms": round((time.monotonic() - started) * 1000),
@@ -648,7 +589,8 @@ class LeanAgent:
         from harness.agent.jobs import JobRunner, config_from_env
 
         settings = config_from_env()
-        self.jobs = JobRunner(workspace, self._job_finished, state_dir=os.path.join(self.folder, "jobs"), **settings)
+        self.jobs = JobRunner(workspace, self._job_finished, state_dir=os.path.join(self.folder, "jobs"),
+                              on_cancelled=self._job_cancelled, **settings)
         self.jobs.adopt()
         self._note_adopted_jobs()
         command = {
@@ -755,6 +697,12 @@ class LeanAgent:
             return
         loop.call_soon_threadsafe(self._enqueue_job, session_id, text)
 
+    def _job_cancelled(self, session_id: str, text: str) -> None:
+        """The bot cancelled it and job_cancel said so: the count under the chat changes, the conversation does not."""
+        loop = self._aio
+        if not self._shutting and loop is not None and not loop.is_closed():
+            asyncio.run_coroutine_threadsafe(self._jobs_ping(session_id), loop)
+
     def _enqueue_job(self, session_id: str, text: str) -> None:
         self._inbox.setdefault(session_id, []).append(text)
         asyncio.create_task(self._drain_jobs(session_id))
@@ -807,7 +755,7 @@ class LeanAgent:
         tool = self.tools.find(name)
         if tool is None:
             return f"There is no tool called {name}."
-        title = f"{name} {arguments}"
+        title = tool_title(name, arguments)
         if name in ("write_file", "edit", "delete_file") and outside_workspace(
                 getattr(self.tools, "workspace", "") or "", str(arguments.get("path") or "")):
             title += " (outside the workspace)"
@@ -959,18 +907,6 @@ class LeanAgent:
                 return idx
         return len(self._CHEAP_FIRST)  # unknown tools go last
 
-    @staticmethod
-    def _call_cache_key(call: dict) -> str:
-        """Canonical JSON for deduplication: tool name + sorted arguments."""
-        name = (call.get("function") or {}).get("name") or ""
-        raw_args = (call.get("function") or {}).get("arguments") or "{}"
-        try:
-            args = json.loads(raw_args)
-            canonical = json.dumps({"name": name, "args": args}, sort_keys=True)
-        except json.JSONDecodeError:
-            canonical = raw_args
-        return hashlib.sha256(canonical.encode()).hexdigest()
-
     async def _execute_calls(self, session_id: str, store: SessionStore, calls: list) -> list:
         """Execute a list of tool calls. H6 features:
         - Cheap-first ordering (within one model step only).
@@ -991,7 +927,7 @@ class LeanAgent:
                 classified.append({"call": call, "tool": None, "is_write": False,
                                    "is_no_tool": True, "result": f"There is no tool called {name}."})
                 continue
-            cache_key = self._call_cache_key(call) if not tool.writes else None
+            cache_key = hashlib.sha256(call_key(call).encode()).hexdigest() if not tool.writes else None
             classified.append({"call": call, "tool": tool, "is_write": tool.writes,
                                "is_no_tool": False, "cache_key": cache_key})
 
@@ -1222,12 +1158,39 @@ class LeanAgent:
             self._queues.pop(session_id, None)
             self._replies.pop(session_id, None)
 
-    async def _chunk(self, session_id: str, role: str, text: str) -> None:
+    async def _step(self, session_id: str, messages: list, usage: dict, nudged: bool) -> Step:
+        """One request to the model, read to its end. The reasoning goes out as it comes; the rest is kept, because
+        whether the text is the answer or only progress depends on what else the step did."""
+        step = Step()
+        note_raw({"source": "model", "kind": "nudge" if nudged else "step"})
+        async for kind, value in self._events(session_id, messages):
+            if kind == "cancelled":
+                step.cancelled = True
+                break
+            if kind == "usage":
+                usage["prompt_tokens"] += value.get("prompt_tokens") or 0
+                usage["completion_tokens"] += value.get("completion_tokens") or 0
+                usage["cached_tokens"] += (value.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
+            elif kind == "tool_calls":
+                step.calls = value
+                for call in value:
+                    note_raw({"source": "model", "kind": "tool", "name": (call.get("function") or {}).get("name") or ""})
+            elif kind == "finish":
+                step.finish = value
+            elif kind == "thought":
+                step.thought_chars += len(value)
+                await self._chunk(session_id, "thought", value)
+            elif kind == "text":
+                note_raw({"source": "model", "kind": "text", "text": value})
+                step.chunks.append(value)
+        return step
+
+    async def _chunk(self, session_id: str, role: str, text: str, message_id: str | None = None) -> None:
         if not text or self.conn is None:
             return
         content = TextContentBlock(type="text", text=text)
         if role == "agent":
-            update = AgentMessageChunk(session_update="agent_message_chunk", content=content)
+            update = AgentMessageChunk(session_update="agent_message_chunk", content=content, message_id=message_id)
         elif role == "user":
             update = UserMessageChunk(session_update="user_message_chunk", content=content)
         else:

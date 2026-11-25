@@ -1,0 +1,193 @@
+"""A turn of the agent as data: what one model step produced, and the checks that decide whether the turn may end.
+
+The loop in agent.py only moves messages. What a step means is decided here:
+
+- A step with tool calls is progress. Its text is commentary and never the answer.
+- A step without tool calls is the end of the turn, unless a guard sends the model back to work.
+- A guard reads the facts of the turn and answers with one nudge or nothing. Each guard speaks at most `limit` times
+  per turn, so a check that can never be satisfied cannot hold a turn forever.
+"""
+
+import json
+import re
+from collections import Counter
+from dataclasses import dataclass, field
+from typing import NamedTuple
+
+from harness.agent.tools import accessibility_requested
+
+# Words that own up to a failure: a closing message with one of them needs no second round.
+FAILURE_WORDS = re.compile(r"\b(fail|failed|error|unable|cannot|can't|could not|couldn't|not found|mislukt|"
+                           r"niet gelukt|niet gevonden|kon niet|lukt niet|fout|bestaat niet)\b", re.IGNORECASE)
+# Closing words that promise work, or claim it was done. One list for every tool.
+PROMISE = re.compile(r"\b(ik ga|ik zal|ik probeer|let me|i'll|i will|i'm going to|i am going to)\b")
+DONE_CLAIM = re.compile(r"\b(done|klaar|gedaan|geschreven|uitgevoerd|aangemaakt|written|created|executed|ran)\b")
+# A claim that something was written needs a tool in this turn that can write; the others need any tool.
+WRITE_CLAIM = re.compile(r"\b(wrote|written|saved|created|now contains|geschreven|opgeslagen|aangemaakt|bevat nu)\b")
+WRITERS = {"write_file", "edit", "shell", "delete_file"}
+
+A11Y_NUDGE = ("Call the accessibility tool now, before you answer. Leave query empty so the result lists "
+              "application names. Do not invent a list.")
+FAILED_NUDGE = ("A tool call just failed and your last message does not say so. Either call it again with a fix, or "
+                "say plainly that it failed. Do not answer from earlier messages as if it had worked.")
+NAMED_NUDGE = ("The user asked you to use {tools}, and this turn did not call it. Call it now, before you answer. "
+               "Do not answer from memory.")
+CLAIM_NUDGE = ("You ended on a promise, or on a claim of work that this turn has no tool call for. Do it now "
+               "with a tool call. If no tool can do it, say so plainly and do not invent a result.")
+SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
+               "call. If you are finished call done, if you wait for the user's answer call wait_for_user, and if the "
+               "user's message has nothing to do with this skill call not_for_me.")
+
+
+@dataclass
+class Step:
+    """One request to the model, read to its end."""
+
+    chunks: list = field(default_factory=list)  # the text as it came, piece by piece
+    calls: list = field(default_factory=list)
+    finish: str = ""
+    thought_chars: int = 0
+    cancelled: bool = False
+
+    @property
+    def text(self) -> str:
+        return "".join(self.chunks)
+
+    @property
+    def tool_names(self) -> set[str]:
+        return {(call.get("function") or {}).get("name") or "" for call in self.calls}
+
+
+@dataclass
+class Turn:
+    """What the guards may look at."""
+
+    user_text: str
+    offered: set[str]
+    skill_on: bool = False
+    called: set[str] = field(default_factory=set)
+    tool_failed: bool = False  # the step before this one called tools, and every one failed
+
+
+def call_key(call: dict) -> str:
+    """The same call in the same words: tool name plus sorted arguments."""
+    name = (call.get("function") or {}).get("name") or ""
+    raw = (call.get("function") or {}).get("arguments") or "{}"
+    try:
+        return json.dumps({"name": name, "args": json.loads(raw)}, sort_keys=True)
+    except json.JSONDecodeError:
+        return raw
+
+
+class Nudge(NamedTuple):
+    text: str  # what the model is told
+    keeps_text: bool  # the message it answers is still a message for the user; otherwise it was a guess or a claim
+
+
+class Guard:
+    """A check on a step that would end the turn. review() returns a nudge for the model, or None."""
+
+    name = ""
+    limit = 1
+    keeps_text = False
+
+    def review(self, turn: Turn, step: Step) -> str | None:
+        raise NotImplementedError
+
+
+class AccessibilityGuard(Guard):
+    name = "accessibility"
+
+    def review(self, turn, step):
+        if "accessibility" in turn.offered and "accessibility" not in turn.called \
+                and accessibility_requested(turn.user_text):
+            return A11Y_NUDGE
+        return None
+
+
+class FailedToolGuard(Guard):
+    """The last tools all failed and the closing words do not say so."""
+
+    name = "failed_tool"
+
+    def review(self, turn, step):
+        said = step.text.strip()
+        return FAILED_NUDGE if turn.tool_failed and said and not FAILURE_WORDS.search(said) else None
+
+
+class NamedToolGuard(Guard):
+    """The user named a tool and the turn never called it. Only a snake_case name counts: `edit` is also a word."""
+
+    name = "named_tool"
+
+    def review(self, turn, step):
+        if turn.skill_on:
+            return None
+        missing = sorted(name for name in turn.offered
+                         if "_" in name and name not in turn.called and re.search(rf"\b{name}\b", turn.user_text))
+        return NAMED_NUDGE.format(tools=", ".join(missing)) if missing else None
+
+
+class ClaimGuard(Guard):
+    """The closing words promise work, or say it is done, with no tool call in the turn that could have done it."""
+
+    name = "claim"
+
+    def review(self, turn, step):
+        said = step.text.strip()
+        if turn.skill_on or said.endswith("?"):
+            return None
+        tail = said[-200:].lower()
+        claims = (PROMISE.search(tail) or (not turn.called and DONE_CLAIM.search(tail))
+                  or (not turn.called & WRITERS and WRITE_CLAIM.search(tail)))
+        return CLAIM_NUDGE if claims else None
+
+
+class SkillGuard(Guard):
+    """A skill is over when it says so with a tool: a message that only talks gets sent back."""
+
+    name = "skill"
+    limit = 2
+    keeps_text = True  # it asks whether the skill is over; what was said still counts
+
+    def review(self, turn, step):
+        return SKILL_NUDGE if turn.skill_on else None
+
+
+class Governor:
+    """Runs the guards in order, each within its own limit. The first nudge wins."""
+
+    def __init__(self, guards=None):
+        self.guards = guards or (AccessibilityGuard(), FailedToolGuard(), NamedToolGuard(), ClaimGuard(), SkillGuard())
+        self.used = Counter()
+
+    def review(self, turn: Turn, step: Step) -> Nudge | None:
+        for guard in self.guards:
+            if self.used[guard.name] >= guard.limit:
+                continue
+            text = guard.review(turn, step)
+            if text:
+                self.used[guard.name] += 1
+                return Nudge(text, guard.keeps_text)
+        return None
+
+    @property
+    def nudged(self) -> bool:
+        return bool(sum(self.used.values()))
+
+
+class LoopDetector:
+    """The same step, tool calls and arguments alike, this many times in a row. 0 turns it off.
+
+    One entry per step: the same call three times inside one answer is one step, not three in a row."""
+
+    def __init__(self, repeats: int):
+        self.repeats = repeats
+        self.recent: list[str] = []
+
+    def stuck(self, step: Step) -> str:
+        """The tool the loop is on, or empty."""
+        self.recent.append("|".join(sorted({call_key(call) for call in step.calls})))
+        if self.repeats > 1 and len(self.recent) >= self.repeats and len(set(self.recent[-self.repeats:])) == 1:
+            return (step.calls[-1].get("function") or {}).get("name") or "a tool"
+        return ""

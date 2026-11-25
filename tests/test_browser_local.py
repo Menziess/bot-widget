@@ -171,7 +171,7 @@ class DirectCdp(unittest.TestCase):
         class Socket:
             def __init__(self, url):
                 if "1111" in url:
-                    raise ConnectionError("HTTP/1.1 403 Forbidden")
+                    raise browser_local.NotABrowser("HTTP/1.1 403 Forbidden")
                 self.url = url
 
             def call(self, method, params=None, session_id=None):
@@ -186,3 +186,47 @@ class DirectCdp(unittest.TestCase):
             tabs = browser_local.attach().list_tabs()
         browser_local._shared.clear()
         self.assertEqual(tabs[0]["title"], "ws://127.0.0.1:2222/devtools/browser")
+
+
+class OneAllowPopup(unittest.TestCase):
+    def setUp(self):
+        from harness import browser_local
+        self.module = browser_local
+        browser_local._shared.clear()
+        self.addCleanup(browser_local._shared.clear)
+
+    def test_a_declined_connection_is_not_tried_again_at_another_address_of_the_same_chrome(self):
+        from unittest import mock
+        tried = []
+
+        class Socket:
+            def __init__(self, url):
+                tried.append(url)
+                raise ConnectionError("websocket handshake closed")
+
+        with mock.patch.object(self.module, "WebSocketCdp", Socket), \
+                mock.patch.object(self.module, "devtools_version", return_value=None), \
+                mock.patch.object(self.module, "_port_file_url", return_value="ws://127.0.0.1:5555/devtools/browser/abc"), \
+                mock.patch.object(self.module, "_listening_urls", return_value=["ws://127.0.0.1:5555/devtools/browser"]):
+            with self.assertRaises(ConnectionError):
+                self.module.attach()
+        self.assertEqual(tried, ["ws://127.0.0.1:5555/devtools/browser/abc"])
+
+    def test_a_slow_answer_keeps_the_connection(self):
+        from unittest import mock
+        made = []
+
+        class Socket:
+            def __init__(self, url):
+                made.append(self)
+
+            def call(self, method, params=None, session_id=None):
+                raise TimeoutError("timed out")
+
+        with mock.patch.object(self.module, "WebSocketCdp", Socket):
+            call = self.module._shared_call("ws://x")
+            with self.assertRaises(TimeoutError):
+                call("a")
+            with self.assertRaises(TimeoutError):
+                call("b")
+        self.assertEqual(len(made), 1)
