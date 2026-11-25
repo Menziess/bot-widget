@@ -406,6 +406,7 @@ class LeanAgent:
         turn = Turn(user_text=next((m["text"] for m in reversed(store.messages()) if m["role"] == "user"), ""),
                     offered=offered, skill_on=skill_on)
         governor = Governor()
+        required = ""
         loop = LoopDetector(_env_int("HARNESS_LOOP_REPEATS", LOOP_REPEATS))
         started = time.monotonic()
         first = 0.0
@@ -446,7 +447,8 @@ class LeanAgent:
             await self._usage(session_id, store)
             for _step in range(max_steps):
                 steps += 1
-                step = await self._step(session_id, messages, usage, governor.nudged)
+                step = await self._step(session_id, messages, usage, governor.nudged, required)
+                required = ""
                 cancelled = cancelled or step.cancelled
                 last = {"finish": step.finish, "calls": len(step.calls), "thought_chars": step.thought_chars,
                         "text_tail": step.text[-200:]}
@@ -460,6 +462,7 @@ class LeanAgent:
                         if step.text.strip():
                             messages.append({"role": "assistant", "content": step.text})
                         messages.append({"role": "user", "content": nudge.text})
+                        required = nudge.tool  # asked for one tool: the next request has to call it
                         continue
                     await say(step.chunks)
                     break
@@ -1126,7 +1129,7 @@ class LeanAgent:
                                         title=title, kind="other", status=progress))
         await self.conn.session_update(session_id=session_id, update=update)
 
-    async def _events(self, session_id: str, messages: list[dict]):
+    async def _events(self, session_id: str, messages: list[dict], tool: str = ""):
         """The model stream, read in a thread: a 56 s wait must not freeze the ACP loop, or a cancel
         and a permission request would only be seen after the answer.
         """
@@ -1140,7 +1143,8 @@ class LeanAgent:
         def pump() -> None:
             try:
                 for event in self.model.stream(messages, tools=self.tools.specs(), stop=stop,
-                                               opened=lambda reply: self._replies.__setitem__(session_id, reply)):
+                                               opened=lambda reply: self._replies.__setitem__(session_id, reply),
+                                               **({"tool": tool} if tool else {})):
                     loop.call_soon_threadsafe(queue.put_nowait, event)
             except ModelError as error:
                 loop.call_soon_threadsafe(queue.put_nowait, ("error", error))
@@ -1164,12 +1168,12 @@ class LeanAgent:
             self._queues.pop(session_id, None)
             self._replies.pop(session_id, None)
 
-    async def _step(self, session_id: str, messages: list, usage: dict, nudged: bool) -> Step:
+    async def _step(self, session_id: str, messages: list, usage: dict, nudged: bool, tool: str = "") -> Step:
         """One request to the model, read to its end. The reasoning goes out as it comes; the rest is kept, because
         whether the text is the answer or only progress depends on what else the step did."""
         step = Step()
         note_raw({"source": "model", "kind": "nudge" if nudged else "step"})
-        async for kind, value in self._events(session_id, messages):
+        async for kind, value in self._events(session_id, messages, tool):
             if kind == "cancelled":
                 step.cancelled = True
                 break

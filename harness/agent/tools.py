@@ -111,7 +111,11 @@ def browser_read(title: str = "") -> str:
     if chosen is None:
         raise ToolError("No matching tab.")
     try:
-        text = browser.use_tab(chosen["id"]).read_text() or ""
+        tab = browser.use_tab(chosen["id"])
+        try:
+            text = tab.read_text() or ""
+        finally:
+            tab.release()
     except (OSError, ConnectionError, TimeoutError, RuntimeError, ValueError) as error:
         raise ToolError(f"Chrome is not listening ({error}).") from error
     return redact(text[:12000])

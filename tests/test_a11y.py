@@ -237,13 +237,13 @@ class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
         call = ("tool_calls", [{"id": "n1", "function": {"name": "about_me", "arguments": json.dumps({})}}])
         folder = tempfile.mkdtemp()
         self.addCleanup(lambda: __import__("shutil").rmtree(folder, True))
-        agent = LeanAgent("bot", ScriptModel([guess, [call, ("finish", "tool_calls")],
-                                               [("text", "Topics."), ("finish", "stop")]]),
-                          folder=os.path.join(folder, "agent"))
+        model = ScriptModel([guess, [call, ("finish", "tool_calls")], [("text", "Topics."), ("finish", "stop")]])
+        agent = LeanAgent("bot", model, folder=os.path.join(folder, "agent"))
         agent.on_connect(Conn())
         session = (await agent.new_session(cwd=folder)).session_id
         await agent.prompt(session, [Block("Gebruik je about_me tool en antwoord met een getal")])
         self.assertEqual(agent.stores[session].tool_results()[-1]["name"], "about_me")
+        self.assertEqual(model.required, ["", "about_me", ""], "after the nudge the model has to call it, then it is free")
 
     async def test_a_line_written_before_the_accessibility_call_is_never_shown(self):
         """The model guesses the result before it has it ("No applications matched"); only the tool's list counts."""

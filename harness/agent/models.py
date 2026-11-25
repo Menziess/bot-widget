@@ -47,10 +47,12 @@ class ChatCompletions:
         self.reported_model = ""
         self.model_owned_by = ""
 
-    def _request(self, messages: list[dict], stream: bool, tools: list[dict] | None = None):
+    def _request(self, messages: list[dict], stream: bool, tools: list[dict] | None = None, tool: str = ""):
         payload = {"model": self.model, "messages": messages, "stream": stream}
         if tools:
             payload["tools"] = tools
+            if tool:
+                payload["tool_choice"] = {"type": "function", "function": {"name": tool}}
         if stream:
             payload["stream_options"] = {"include_usage": True}
         body = json.dumps(payload).encode()
@@ -159,8 +161,10 @@ class ChatCompletions:
         if isinstance(vision, bool):
             self.vision = vision
 
-    def stream(self, messages: list[dict], tools: list[dict] | None = None, stop=None, opened=None):
+    def stream(self, messages: list[dict], tools: list[dict] | None = None, stop=None, opened=None, tool: str = ""):
         """Yield events: ("text", str), ("thought", str), ("usage", dict), ("finish", str) and ("tool_calls", list).
+
+        tool names the one tool the model must call in this step.
 
         A tool call streams in pieces too, so the pieces are joined by index and handed over once,
         when the model has finished the step.
@@ -169,7 +173,7 @@ class ChatCompletions:
         cancelled stops paying for the rest of the answer. opened receives the response, so the
         caller can close the socket from another thread.
         """
-        request = self._request(messages, stream=True, tools=tools)
+        request = self._request(messages, stream=True, tools=tools, tool=tool)
         calls: dict[int, dict] = {}
         try:
             with open_url(request, timeout=self.timeout) as reply:
@@ -260,7 +264,7 @@ class AnthropicMessages:
         self.max_tokens = max_tokens
         self.context_size = 0  # filled from the server's /props, when it has one
 
-    def _body(self, messages: list[dict], stream: bool, tools: list[dict] | None) -> dict:
+    def _body(self, messages: list[dict], stream: bool, tools: list[dict] | None, tool: str = "") -> dict:
         system, conversation = [], []
         for message in messages:
             if message["role"] == "system":
@@ -278,9 +282,11 @@ class AnthropicMessages:
         body = {"model": self.model, "max_tokens": self.max_tokens, "system": system,
                 "messages": conversation, "stream": stream}
         if tools:
-            body["tools"] = [{"name": tool["function"]["name"],
-                              "description": tool["function"]["description"],
-                              "input_schema": tool["function"]["parameters"]} for tool in tools]
+            body["tools"] = [{"name": spec["function"]["name"],
+                              "description": spec["function"]["description"],
+                              "input_schema": spec["function"]["parameters"]} for spec in tools]
+            if tool:
+                body["tool_choice"] = {"type": "tool", "name": tool}
         return body
 
     def _request(self, body: dict) -> urllib.request.Request:
@@ -299,9 +305,9 @@ class AnthropicMessages:
                 "completion_tokens": source.get("output_tokens") or 0,
                 "prompt_tokens_details": {"cached_tokens": source.get("cache_read_input_tokens") or 0}}
 
-    def stream(self, messages: list[dict], tools: list[dict] | None = None, stop=None, opened=None):
+    def stream(self, messages: list[dict], tools: list[dict] | None = None, stop=None, opened=None, tool: str = ""):
         """The same events as the Chat Completions adapter, from Anthropic's SSE shape."""
-        request = self._request(self._body(messages, True, tools))
+        request = self._request(self._body(messages, True, tools, tool))
         calls: dict[int, dict] = {}
         try:
             with open_url(request, timeout=self.timeout) as reply:

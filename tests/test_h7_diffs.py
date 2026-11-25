@@ -69,11 +69,13 @@ class ScriptModel:
         self.model = "script"
         self.context_size = 4096
         self.scripts = list(scripts)
+        self.required = []
 
     def ready(self):
         pass
 
-    def stream(self, messages, tools=None, stop=None, opened=None):
+    def stream(self, messages, tools=None, stop=None, opened=None, tool=""):
+        self.required.append(tool)
         step = self.scripts.pop(0)
         if callable(step):
             if opened is not None:

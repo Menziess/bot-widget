@@ -264,8 +264,11 @@ def bind_mover(mover, screen=None, size=None) -> None:
         desktop.size = size
 
 
-def throwaway(text="demo-key", x=40, y=30) -> dict:
-    """Open a window, move it, type, close it. The tick reads the position and the text."""
+def throwaway(text="demo-key", x=40, y=120) -> dict:
+    """Open a window, move it, type, close it. The tick reads the position and the text.
+
+    y is below the menu bar: macOS moves a window that asks for less (30 becomes 33) and the window is then not where
+    it was sent."""
     from PySide6.QtWidgets import QApplication, QLineEdit
 
     from botwidget.demo_check import control_outcome

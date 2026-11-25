@@ -24,6 +24,7 @@ class Guards(unittest.TestCase):
     def test_a_tool_the_user_named_must_be_called(self):
         nudge = Governor().review(turn("Gebruik je browser_tabs tool"), step("Je hebt 3 tabs."))
         self.assertIn("browser_tabs", nudge.text)
+        self.assertEqual(nudge.tool, "browser_tabs", "one tool was asked for: the next request has to call it")
         self.assertFalse(nudge.keeps_text, "a guess is not an answer")
         self.assertIsNone(Governor().review(turn("Gebruik je browser_tabs tool", called={"browser_tabs"}),
                                             step("Je hebt 3 tabs.")))
@@ -43,8 +44,16 @@ class Guards(unittest.TestCase):
         self.assertIn("/tmp/t-demo/search", nudge.text)
         self.assertFalse(nudge.keeps_text)
         self.assertIsNone(Governor().review(turn("Lees ~/notes/todo.txt", called={"read_file"}), step("Drie regels.")))
-        self.assertIsNotNone(Governor().review(turn("Lees ~/notes/todo.txt"), step("Drie regels.")))
+        self.assertEqual(Governor().review(turn("Lees ~/notes/todo.txt"), step("Drie regels.")).tool, "",
+                         "a place is looked at with any tool, none is forced")
         self.assertIsNotNone(Governor().review(turn(r"Open C:\Users\stefan\a.txt"), step("Het is leeg.")))
+
+    def test_a_request_for_a_change_needs_a_tool_that_can_change_something(self):
+        asked = "Change only that file so the test passes."
+        self.assertIn("change", Governor().review(turn(asked, called={"read_file"}), step("Done.")).text)
+        self.assertIsNone(Governor().review(turn(asked, called={"read_file", "shell"}), step("Done.")))
+        self.assertIsNone(Governor().review(turn(asked), step("Wil je dat ik het bestand aanpas?")), "a question claims nothing")
+        self.assertIsNone(Governor().review(turn("Wat doet dit bestand?", called={"read_file"}), step("Het telt woorden.")))
 
     def test_a_command_a_fraction_or_a_finished_job_is_not_a_place(self):
         for text in ("/demo", "Draai /parking vrijdag", "ja/nee", "Dat is 3/4 van het werk",
@@ -115,3 +124,18 @@ class Messages(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RequiredTool(unittest.TestCase):
+    TOOLS = [{"type": "function", "function": {"name": "browser_tabs", "description": "d", "parameters": {"type": "object"}}}]
+
+    def test_both_adapters_ask_for_the_one_tool_and_only_then(self):
+        from harness.agent.models import AnthropicMessages, ChatCompletions
+        chat = ChatCompletions("http://x/v1", "m")
+        sent = json.loads(chat._request([{"role": "user", "content": "hi"}], True, self.TOOLS, "browser_tabs").data)
+        self.assertEqual(sent["tool_choice"], {"type": "function", "function": {"name": "browser_tabs"}})
+        self.assertNotIn("tool_choice", json.loads(chat._request([{"role": "user", "content": "hi"}], True, self.TOOLS).data))
+        anthropic = AnthropicMessages("http://x", "m")
+        self.assertEqual(anthropic._body([{"role": "user", "content": "hi"}], True, self.TOOLS, "browser_tabs")["tool_choice"],
+                         {"type": "tool", "name": "browser_tabs"})
+        self.assertNotIn("tool_choice", anthropic._body([{"role": "user", "content": "hi"}], True, self.TOOLS))

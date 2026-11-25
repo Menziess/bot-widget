@@ -5,6 +5,7 @@ missing Chrome still proves list, switch, navigation, read, screenshot, click
 and in-page fetch.
 """
 
+import json
 import os
 import tempfile
 import unittest
@@ -230,3 +231,81 @@ class OneAllowPopup(unittest.TestCase):
             with self.assertRaises(TimeoutError):
                 call("b")
         self.assertEqual(len(made), 1)
+
+
+@unittest.skipIf(os.name == "nt", "the daemon is an AF_UNIX socket on POSIX")
+class SharedDaemon(unittest.TestCase):
+    """An approved connection that already exists is used before a new one is made, so Chrome asks once."""
+
+    def setUp(self):
+        import shutil
+        import socket
+        import tempfile
+        import threading
+        from unittest import mock
+
+        from harness import browser_local
+        self.module = browser_local
+        self.folder = tempfile.mkdtemp(dir="/tmp")  # AF_UNIX paths are short
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        patched = mock.patch.dict(os.environ, {"BH_RUNTIME_DIR": self.folder})
+        patched.start()
+        self.addCleanup(patched.stop)
+        browser_local._shared.clear()
+        self.addCleanup(browser_local._shared.clear)
+        self.requests = []
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server.bind(os.path.join(self.folder, "bu.sock"))
+        self.server.listen(5)
+        self.addCleanup(self.server.close)
+
+        def serve():
+            while True:
+                try:
+                    conn, _ = self.server.accept()
+                except OSError:
+                    return
+                with conn:
+                    request = json.loads(conn.makefile().readline())
+                    self.requests.append(request)
+                    if request.get("meta") == "ping":
+                        reply = {"pong": True}
+                    elif request.get("method") == "Target.getTargets":
+                        reply = {"result": {"targetInfos": [{"targetId": "t1", "type": "page", "title": "One", "url": "u"}]}}
+                    elif request.get("method") == "Target.attachToTarget":
+                        reply = {"result": {"sessionId": "s1"}}
+                    else:
+                        reply = {"result": {}}
+                    conn.sendall((json.dumps(reply) + "\n").encode())
+        threading.Thread(target=serve, daemon=True).start()
+
+    def test_the_daemon_is_used_and_no_connection_of_our_own_is_made(self):
+        from unittest import mock
+        with mock.patch.object(self.module, "WebSocketCdp") as own:
+            tabs = self.module.attach().list_tabs()
+        self.assertEqual(tabs, [{"id": "t1", "title": "One", "url": "u"}])
+        own.assert_not_called()
+
+    def test_a_tab_that_was_read_is_let_go(self):
+        self.module.attach().use_tab("t1").release()
+        methods = [request.get("method") for request in self.requests if request.get("method")]
+        self.assertEqual(methods, ["Target.attachToTarget", "Target.detachFromTarget"])
+
+    def test_without_a_daemon_the_connection_is_our_own(self):
+        from unittest import mock
+        os.remove(os.path.join(self.folder, "bu.sock"))
+        made = []
+
+        class Socket:
+            def __init__(self, url):
+                made.append(url)
+
+            def call(self, method, params=None, session_id=None):
+                return {"targetInfos": []}
+
+        with mock.patch.object(self.module, "WebSocketCdp", Socket), \
+                mock.patch.object(self.module, "devtools_version", return_value={"webSocketDebuggerUrl": "ws://x/y"}), \
+                mock.patch.object(self.module, "_port_file_url", return_value=None), \
+                mock.patch.object(self.module, "_listening_urls", return_value=[]):
+            self.module.attach().list_tabs()
+        self.assertEqual(made, ["ws://x/y"])

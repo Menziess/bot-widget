@@ -54,11 +54,13 @@ class ScriptModel:
         self.completed = []
         self.complete_result = "notes"
         self.reply = None
+        self.required = []  # the tool each step had to call, "" when it was free
 
     def ready(self):
         self.ready_calls += 1
 
-    def stream(self, messages, tools=None, stop=None, opened=None):
+    def stream(self, messages, tools=None, stop=None, opened=None, tool=""):
+        self.required.append(tool)
         step = self.scripts.pop(0)
         if opened is not None and self.reply is not None:
             opened(self.reply)

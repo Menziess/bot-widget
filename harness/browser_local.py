@@ -1,9 +1,10 @@
 """Read a page from a file, or from the Chrome the user already has open.
 
-Live control talks to 127.0.0.1:9222 after the user has turned on remote
-debugging in chrome://inspect and answered Allow once. This module never
-starts Chrome and never passes --remote-debugging-port. No extension, no
-second profile, no browser-use, no Playwright.
+Live control talks to the Chrome that has remote debugging on (chrome://inspect). Chrome asks the user to Allow
+for every new connection, so a connection that is already approved is used before a new one is made: the
+browser-use daemon's, when one runs (it lives beyond this process and serves every client), else one of our own.
+This module never starts Chrome and never passes --remote-debugging-port. No extension, no second profile, no
+Playwright; browser-use is only a socket that may or may not be there.
 """
 
 import base64
@@ -77,6 +78,11 @@ class Cdp:
     def use_tab(self, target_id: str) -> "Cdp":
         attached = self.call("Target.attachToTarget", {"targetId": target_id, "flatten": True})
         return Cdp(self._call, attached.get("sessionId"))
+
+    def release(self) -> None:
+        """Let go of the tab a use_tab() attached to. A connection that outlives this process keeps what is left."""
+        if self.session_id:
+            self._call("Target.detachFromTarget", {"sessionId": self.session_id}, None)
 
     def goto_url(self, url: str) -> None:
         self.call("Page.navigate", {"url": url})
@@ -179,6 +185,8 @@ def attach(port: int = 9222, port_file: str | None = None) -> Cdp:
     The port file is tried first. Chrome's built-in debugging toggle answers /json/version with 404
     and puts the real socket path in that file.
     """
+    if (shared := _daemon_call()) is not None:
+        return Cdp(shared)
     version = devtools_version(port)
     from_file = None
     if port_file:
@@ -213,6 +221,49 @@ def attach(port: int = 9222, port_file: str | None = None) -> Cdp:
 
 _shared: dict = {}
 _shared_lock = threading.Lock()
+
+
+def _daemon_socket() -> str:
+    """Where the browser-use daemon listens (POSIX; elsewhere it needs a port file and a token, and we make our own)."""
+    isolated = os.environ.get("BH_RUNTIME_DIR")
+    runtime = isolated or os.path.join(os.path.expanduser("~"), ".config/browser-harness/runtime")
+    return os.path.join(runtime, "bu.sock" if isolated else f"bu-{os.environ.get('BU_NAME') or 'default'}.sock")
+
+
+def _daemon_request(request: dict, timeout: float) -> dict:
+    """One JSON line to the daemon, one back."""
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.settimeout(timeout)
+        sock.connect(_daemon_socket())
+        sock.sendall((json.dumps(request) + "\n").encode())
+        data = b""
+        while not data.endswith(b"\n"):
+            chunk = sock.recv(1 << 16)
+            if not chunk:
+                break
+            data += chunk
+        return json.loads(data or b"{}")
+    finally:
+        sock.close()
+
+
+def _daemon_call():
+    """A call through the daemon that already holds an approved connection, or None when there is none."""
+    if not hasattr(socket, "AF_UNIX") or not os.path.exists(_daemon_socket()):
+        return None
+    try:
+        if _daemon_request({"meta": "ping"}, 1.0).get("pong") is not True:
+            return None
+    except (OSError, ValueError, AttributeError):
+        return None
+
+    def call(method, params=None, session_id=None):
+        answer = _daemon_request({"method": method, "params": params or {}, "session_id": session_id}, 30)
+        if "error" in answer:
+            raise RuntimeError(str(answer["error"]))
+        return answer.get("result") or {}
+    return call
 
 
 class NotABrowser(ConnectionError):

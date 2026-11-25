@@ -33,6 +33,9 @@ PATH = re.compile(r"(?<![\w/\\.])(?:~|[A-Za-z]:)?(?:[\\/][\w.\-~]+){2,}|(?<![\w/
 # The user asking for the desktop's applications, in either phrase, in any order.
 ACCESSIBILITY_ASK = re.compile(r"^(?=.*accessibility)(?=.*\btool\b).*|^(?=.*which applications)(?=.*\bopen\b).*",
                                re.IGNORECASE | re.DOTALL)
+# The user asking for something to be changed.
+CHANGE_ASK = re.compile(r"\b(write|create|change|fix|repair|delete|remove|schrijf|maak|wijzig|verwijder|repareer)\b",
+                        re.IGNORECASE)
 # A snake_case word is a tool name; `edit` or `search` are also plain words.
 TOOL_NAME = re.compile(r"\b[a-z]+(?:_[a-z]+)+\b")
 
@@ -44,6 +47,8 @@ GROUNDING_NUDGE = ("The user named {what} on this machine and this turn has not 
                    "before you answer. Do not answer from memory.")
 NAMED_NUDGE = ("The user asked you to use {what}, and this turn did not call it. Call it now, before you answer. "
                "Do not answer from memory.")
+CHANGE_NUDGE = ("The user asked you to {what} something, and no tool that can change anything ran in this turn. Do it "
+                "now with a tool, or say plainly that you did not.")
 CLAIM_NUDGE = ("You ended on a promise, or on a claim of work that this turn has no tool call for. Do it now "
                "with a tool call. If no tool can do it, say so plainly and do not invent a result.")
 SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
@@ -93,7 +98,8 @@ def call_key(call: dict) -> str:
 
 class Nudge(NamedTuple):
     text: str  # what the model is told
-    keeps_text: bool  # the message it answers is still a message for the user; otherwise it was a guess or a claim
+    keeps_text: bool = False  # the message it answers is still a message for the user; otherwise a guess or a claim
+    tool: str = ""  # the one tool the next request must call, when a single tool is what the guard asked for
 
 
 class Guard:
@@ -101,9 +107,8 @@ class Guard:
 
     name = ""
     limit = 1
-    keeps_text = False
 
-    def review(self, turn: Turn, step: Step) -> str | None:
+    def review(self, turn: Turn, step: Step) -> Nudge | None:
         raise NotImplementedError
 
 
@@ -114,7 +119,7 @@ class FailedToolGuard(Guard):
 
     def review(self, turn, step):
         said = step.text.strip()
-        return FAILED_NUDGE if turn.tool_failed and said and not FAILURE_WORDS.search(said) else None
+        return Nudge(FAILED_NUDGE) if turn.tool_failed and said and not FAILURE_WORDS.search(said) else None
 
 
 class Obligation(Guard):
@@ -140,7 +145,9 @@ class Obligation(Guard):
         hits = [hit.group(0) for hit in self.pattern.finditer(text)]
         if self.needs == "match":
             hits = sorted({hit for hit in hits if hit in turn.offered and hit not in turn.called})
-            return self.nudge.format(what=", ".join(hits)) if hits else None
+            if not hits:
+                return None
+            return Nudge(self.nudge.format(what=", ".join(hits)), tool=hits[0] if len(hits) == 1 else "")
         if not hits:
             return None
         if self.needs is None:
@@ -149,13 +156,16 @@ class Obligation(Guard):
             return None  # the tool is not there to ask for
         else:
             met = bool(turn.called & self.needs)
-        return None if met else self.nudge.format(what=hits[0])
+        if met:
+            return None
+        return Nudge(self.nudge.format(what=hits[0]), tool=next(iter(self.needs)) if self.needs and len(self.needs) == 1 else "")
 
 
 OBLIGATIONS = (
     Obligation("accessibility", "user", ACCESSIBILITY_ASK, {"accessibility"}, A11Y_NUDGE),
     Obligation("named_tool", "user", TOOL_NAME, "match", NAMED_NUDGE),
     Obligation("grounding", "user", PATH, None, GROUNDING_NUDGE),
+    Obligation("change", "user", CHANGE_ASK, WRITERS, CHANGE_NUDGE),
     Obligation("promise", "closing", PROMISE, frozenset(), CLAIM_NUDGE),
     Obligation("done", "closing", DONE_CLAIM, None, CLAIM_NUDGE),
     Obligation("write", "closing", WRITE_CLAIM, WRITERS, CLAIM_NUDGE),
@@ -167,10 +177,10 @@ class SkillGuard(Guard):
 
     name = "skill"
     limit = 2
-    keeps_text = True  # it asks whether the skill is over; what was said still counts
 
     def review(self, turn, step):
-        return SKILL_NUDGE if turn.skill_on else None
+        # It asks whether the skill is over; what was said still counts.
+        return Nudge(SKILL_NUDGE, keeps_text=True) if turn.skill_on else None
 
 
 class Governor:
@@ -184,10 +194,10 @@ class Governor:
         for guard in self.guards:
             if self.used[guard.name] >= guard.limit:
                 continue
-            text = guard.review(turn, step)
-            if text:
+            nudge = guard.review(turn, step)
+            if nudge:
                 self.used[guard.name] += 1
-                return Nudge(text, guard.keeps_text)
+                return nudge
         return None
 
     @property
