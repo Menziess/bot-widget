@@ -6,6 +6,7 @@ The loop in agent.py only moves messages. What a step means is decided here:
 - A step without tool calls is the end of the turn, unless a guard sends the model back to work.
 - A guard reads the facts of the turn and answers with one nudge or nothing. Each guard speaks at most `limit` times
   per turn, so a check that can never be satisfied cannot hold a turn forever.
+- A request or a claim is an obligation, and only a call of the right tool discharges it. One table says which.
 """
 
 import json
@@ -15,7 +16,7 @@ from dataclasses import dataclass, field
 from typing import NamedTuple
 
 from harness import RESUME_PROMPT
-from harness.agent.tools import TOOL_OUTPUT, accessibility_requested
+from harness.agent.tools import TOOL_OUTPUT
 
 # Words that own up to a failure: a closing message with one of them needs no second round.
 FAILURE_WORDS = re.compile(r"\b(fail|failed|error|unable|cannot|can't|could not|couldn't|not found|mislukt|"
@@ -29,13 +30,19 @@ WRITERS = {"write_file", "edit", "shell", "delete_file"}
 # A place on this machine: a home path, a drive path, or an absolute path with at least two parts (`/demo` is a command).
 PATH = re.compile(r"(?<![\w/\\.])(?:~|[A-Za-z]:)?(?:[\\/][\w.\-~]+){2,}|(?<![\w/\\.])~(?:[\\/][\w.\-~]+)+")
 
+# The user asking for the desktop's applications, in either phrase, in any order.
+ACCESSIBILITY_ASK = re.compile(r"^(?=.*accessibility)(?=.*\btool\b).*|^(?=.*which applications)(?=.*\bopen\b).*",
+                               re.IGNORECASE | re.DOTALL)
+# A snake_case word is a tool name; `edit` or `search` are also plain words.
+TOOL_NAME = re.compile(r"\b[a-z]+(?:_[a-z]+)+\b")
+
 A11Y_NUDGE = ("Call the accessibility tool now, before you answer. Leave query empty so the result lists "
               "application names. Do not invent a list.")
 FAILED_NUDGE = ("A tool call just failed and your last message does not say so. Either call it again with a fix, or "
                 "say plainly that it failed. Do not answer from earlier messages as if it had worked.")
-GROUNDING_NUDGE = ("The user named {place} on this machine and this turn has not looked at anything. Look with a tool "
+GROUNDING_NUDGE = ("The user named {what} on this machine and this turn has not looked at anything. Look with a tool "
                    "before you answer. Do not answer from memory.")
-NAMED_NUDGE = ("The user asked you to use {tools}, and this turn did not call it. Call it now, before you answer. "
+NAMED_NUDGE = ("The user asked you to use {what}, and this turn did not call it. Call it now, before you answer. "
                "Do not answer from memory.")
 CLAIM_NUDGE = ("You ended on a promise, or on a claim of work that this turn has no tool call for. Do it now "
                "with a tool call. If no tool can do it, say so plainly and do not invent a result.")
@@ -100,16 +107,6 @@ class Guard:
         raise NotImplementedError
 
 
-class AccessibilityGuard(Guard):
-    name = "accessibility"
-
-    def review(self, turn, step):
-        if "accessibility" in turn.offered and "accessibility" not in turn.called \
-                and accessibility_requested(turn.user_text):
-            return A11Y_NUDGE
-        return None
-
-
 class FailedToolGuard(Guard):
     """The last tools all failed and the closing words do not say so."""
 
@@ -120,47 +117,49 @@ class FailedToolGuard(Guard):
         return FAILED_NUDGE if turn.tool_failed and said and not FAILURE_WORDS.search(said) else None
 
 
-class NamedToolGuard(Guard):
-    """The user named a tool and the turn never called it. Only a snake_case name counts: `edit` is also a word."""
+class Obligation(Guard):
+    """Something asked or claimed that only a tool call can back.
 
-    name = "named_tool"
+    `where` is the text it reads: what the user wrote, or how the step closes. `needs` is the tools that discharge it:
+    a set (any of them), None (any tool at all), an empty set (a call right now, a past one does not count), or
+    "match" (the tool the pattern matched). Never in a skill, and never on a closing question."""
 
-    def review(self, turn, step):
-        if turn.skill_on:
-            return None
-        missing = sorted(name for name in turn.offered
-                         if "_" in name and name not in turn.called and re.search(rf"\b{name}\b", turn.user_text))
-        return NAMED_NUDGE.format(tools=", ".join(missing)) if missing else None
-
-
-class GroundingGuard(Guard):
-    """The user named a place on this machine and the turn answers without having looked at anything. A message that
-    reports a finished job also holds paths, and is not a question about them."""
-
-    name = "grounding"
-
-    def review(self, turn, step):
-        if turn.skill_on or turn.called or step.text.strip().endswith("?"):
-            return None
-        if turn.user_text.startswith((TOOL_OUTPUT, RESUME_PROMPT)):
-            return None
-        place = PATH.search(turn.user_text)
-        return GROUNDING_NUDGE.format(place=place.group(0)) if place else None
-
-
-class ClaimGuard(Guard):
-    """The closing words promise work, or say it is done, with no tool call in the turn that could have done it."""
-
-    name = "claim"
+    def __init__(self, name, where, pattern, needs, nudge):
+        self.name, self.where, self.pattern, self.needs, self.nudge = name, where, pattern, needs, nudge
 
     def review(self, turn, step):
         said = step.text.strip()
         if turn.skill_on or said.endswith("?"):
             return None
-        tail = said[-200:].lower()
-        claims = (PROMISE.search(tail) or (not turn.called and DONE_CLAIM.search(tail))
-                  or (not turn.called & WRITERS and WRITE_CLAIM.search(tail)))
-        return CLAIM_NUDGE if claims else None
+        if self.where == "user":
+            if turn.user_text.startswith((TOOL_OUTPUT, RESUME_PROMPT)):  # a finished job is not a question
+                return None
+            text = turn.user_text
+        else:
+            text = said[-200:].lower()
+        hits = [hit.group(0) for hit in self.pattern.finditer(text)]
+        if self.needs == "match":
+            hits = sorted({hit for hit in hits if hit in turn.offered and hit not in turn.called})
+            return self.nudge.format(what=", ".join(hits)) if hits else None
+        if not hits:
+            return None
+        if self.needs is None:
+            met = bool(turn.called)
+        elif self.needs and not self.needs & turn.offered:
+            return None  # the tool is not there to ask for
+        else:
+            met = bool(turn.called & self.needs)
+        return None if met else self.nudge.format(what=hits[0])
+
+
+OBLIGATIONS = (
+    Obligation("accessibility", "user", ACCESSIBILITY_ASK, {"accessibility"}, A11Y_NUDGE),
+    Obligation("named_tool", "user", TOOL_NAME, "match", NAMED_NUDGE),
+    Obligation("grounding", "user", PATH, None, GROUNDING_NUDGE),
+    Obligation("promise", "closing", PROMISE, frozenset(), CLAIM_NUDGE),
+    Obligation("done", "closing", DONE_CLAIM, None, CLAIM_NUDGE),
+    Obligation("write", "closing", WRITE_CLAIM, WRITERS, CLAIM_NUDGE),
+)
 
 
 class SkillGuard(Guard):
@@ -178,8 +177,7 @@ class Governor:
     """Runs the guards in order, each within its own limit. The first nudge wins."""
 
     def __init__(self, guards=None):
-        self.guards = guards or (AccessibilityGuard(), FailedToolGuard(), NamedToolGuard(), GroundingGuard(), ClaimGuard(),
-                                        SkillGuard())
+        self.guards = guards or (FailedToolGuard(), *OBLIGATIONS, SkillGuard())
         self.used = Counter()
 
     def review(self, turn: Turn, step: Step) -> Nudge | None:

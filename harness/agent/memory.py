@@ -133,20 +133,6 @@ def _write_line(path: str, entry: dict) -> None:
         fh.write(json.dumps(entry) + "\n")
 
 
-def _remove_lines(path: str, keep_ids: set[str]) -> None:
-    """Rewrite the file keeping only entries whose ID is in *keep_ids*."""
-    if path is None:
-        return
-    lines = _read_lines(path)
-    kept = [l for l in lines if l.get("id") in keep_ids]
-    try:
-        with open(path, "w") as fh:
-            for entry in kept:
-                fh.write(json.dumps(entry) + "\n")
-    except OSError:
-        pass
-
-
 # Hash helper – imported at call site to avoid issues if hashlib isn't available
 def hashlib_sha256(text: str) -> str:
     import hashlib

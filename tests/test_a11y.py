@@ -9,7 +9,7 @@ from unittest import mock
 from botwidget.system import a11y
 from harness.agent.agent import LeanAgent
 from harness.agent.context import SYSTEM
-from harness.agent.tools import Tools, accessibility_requested, accessibility_text
+from harness.agent.tools import Tools, accessibility_text
 from harness.agent.turn import A11Y_NUDGE
 from tests.test_harness_direct import Block, Conn, ScriptModel
 
@@ -164,11 +164,7 @@ class AccessibilityProbe(unittest.TestCase):
 
 class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
     def test_the_prompt_names_the_tool_and_an_empty_query_lists_names(self):
-        self.assertIn("heuristic", accessibility_requested.__doc__.lower())
         self.assertIn("matching tool", SYSTEM)
-        self.assertTrue(accessibility_requested(
-            "Which applications are open on my desktop? Use your accessibility tool."))
-        self.assertFalse(accessibility_requested("hello"))
         with mock.patch("botwidget.system.a11y.accessibility", return_value={"available": True, "reason": "AT-SPI", "platform": "linux"}), \
                 mock.patch("botwidget.system.a11y.application_names", return_value=["botwidget", "Chrome"]):
             text = accessibility_text("")

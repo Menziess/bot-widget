@@ -130,17 +130,6 @@ def trash_file(at: str) -> str:
     return f"Moved {at} to {gone}."
 
 
-def accessibility_requested(text: str) -> bool:
-    """Heuristic phrase list, not a parser. A bare chat does not ask for the desktop.
-
-    shortcut: misses phrasings such as "what apps are open"; widen the list when a real ask is missed.
-    """
-    low = (text or "").lower()
-    if "accessibility" in low and "tool" in low:
-        return True
-    return "which applications" in low and "open" in low
-
-
 def accessibility_text(query: str = "") -> str:
     """Whether the desktop accessibility bus is up, and which application names match query."""
     from botwidget.system.a11y import accessibility, application_names

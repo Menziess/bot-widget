@@ -28,6 +28,15 @@ class Guards(unittest.TestCase):
         self.assertIsNone(Governor().review(turn("Gebruik je browser_tabs tool", called={"browser_tabs"}),
                                             step("Je hebt 3 tabs.")))
 
+    def test_the_desktop_asked_for_in_either_phrase_needs_the_accessibility_tool(self):
+        for text in ("Welke applicaties staan open? Use your accessibility tool", "Use the tool for accessibility",
+                     "Which applications are open on my desktop?"):
+            with self.subTest(text=text):
+                self.assertIn("accessibility tool", Governor().review(turn(text), step("Geen idee.")).text)
+        self.assertIsNone(Governor().review(turn("Which applications are open on my desktop?", called={"accessibility"}),
+                                            step("Chrome.")))
+        self.assertIsNone(Governor().review(turn("hello"), step("Hoi.")))
+
     def test_a_place_the_user_names_is_looked_at_before_the_answer(self):
         asked = turn("Welk bestand onder /tmp/t-demo/search bevat het woord?")
         nudge = Governor().review(asked, step("data.txt"))

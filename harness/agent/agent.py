@@ -45,7 +45,7 @@ from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
 from harness.agent.turn import Governor, LoopDetector, Step, Turn, call_key
 from harness.agent.workspace import _diff_text, _real_path, compute_edit, outside_workspace, shell_segments
-from harness.stream_text import collapse_repeats, fold_chunk, note_raw
+from harness.stream_text import fold_chunk, note_raw
 
 MAX_STEPS = 30  # default for HARNESS_MAX_STEPS: a tool loop that never settles must still end the turn
 LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the same arguments this many times in a row
@@ -302,6 +302,8 @@ class LeanAgent:
             topic = str(args.get("topic") or "")
             if topic == "skills":
                 return "\n".join(f"/{s['name']}: {s['description']}" for s in self.skills.values()) or "No skills."
+            if topic == "approvals":
+                return approvals.recent()
             if topic == "bot":
                 workspace = self._workspace_for(self._tool_session) or "none"
                 return f"{self.bot}. Workspace (relative paths and search start here): {workspace}. Tools: {', '.join(sorted(self.tools.tools))}"
@@ -310,7 +312,8 @@ class LeanAgent:
             if topic == "settings":
                 return await self._widget("settings", key=str(args.get("key") or ""))
             return ("Topics: skills (my skill commands), bot (my name and tools), commands (all slash commands), "
-                    "settings (the widget's settings). Call about_me again with a topic.")
+                    "settings (the widget's settings), approvals (who accepted or declined what, lately). "
+                    "Call about_me again with a topic.")
 
         def string(what: str) -> dict:
             return {"type": "string", "description": what}
@@ -318,7 +321,7 @@ class LeanAgent:
         return [
             Tool("about_me", "Look up how this widget and I are set up, one topic at a time. Call it with no topic "
                  "for the list of topics.",
-                 {"type": "object", "properties": {"topic": string("skills, bot, commands or settings"),
+                 {"type": "object", "properties": {"topic": string("skills, bot, commands, settings or approvals"),
                                                    "key": string("for settings: one setting's name")}}, about),
             Tool("run_command", "Run a slash command for the user, for example /demo or /settings, as if they typed "
                  "it; the user is asked first. about_me topic commands lists them.",
@@ -377,19 +380,16 @@ class LeanAgent:
                 self._turns.discard(session_id)
                 self._cancelled.discard(session_id)
 
-    async def _answer(self, session_id: str, store: SessionStore) -> PromptResponse:
+    async def _offer_tools(self, session_id: str, store: SessionStore) -> bool:
+        """The tools this turn may use. True when a skill runs: it also gets the ways to end itself."""
         self._tool_session = session_id
         self._aio = asyncio.get_running_loop()
         self._workspace = self._workspace_for(session_id)
         await self.tools.start()
         self._ensure_job_tools()
         self.tools.add(self._pin(store))
-        for t in self._memory_tools():
+        for t in (*self._memory_tools(), *self._self_tools()):
             self.tools.add(t)
-        for t in self._self_tools():
-            self.tools.add(t)
-        self.tools.add(Tool("approval_log", "Who accepted or declined which action recently, and how (bubble, cli, timeout).",
-                            {"type": "object", "properties": {}}, lambda _args: approvals.recent()))
         skill_on = bool(store.get("skill"))
         self.tools.hide([pattern for pattern in store.get("skill_deny").split(",") if pattern])
         self._skill_ended = ""
@@ -398,6 +398,10 @@ class LeanAgent:
                 self.tools.add(Tool(name, what, {"type": "object", "properties": {}}, lambda _args: "Ok."))
             else:
                 self.tools.tools.pop(name, None)
+        return skill_on
+
+    async def _answer(self, session_id: str, store: SessionStore) -> PromptResponse:
+        skill_on = await self._offer_tools(session_id, store)
         offered = {name for name in self.tools.tools if self.tools.find(name) is not None}
         turn = Turn(user_text=next((m["text"] for m in reversed(store.messages()) if m["role"] == "user"), ""),
                     offered=offered, skill_on=skill_on)
@@ -501,11 +505,18 @@ class LeanAgent:
             self._stream_idle.set()
         cancelled = cancelled or session_id in self._cancelled
         self._cancelled.discard(session_id)
-        said = collapse_repeats("".join(answer))
+        said = "".join(answer)
         if said:
             store.add("bot", said)
         if notice:
             store.add("bot", notice)
+        self._record_turn(store, said=said, cancelled=cancelled, started=started, first=first, steps=steps, last=last,
+                          usage=usage, messages=messages)
+        return PromptResponse(stop_reason="cancelled" if cancelled else "end_turn")
+
+    def _record_turn(self, store: SessionStore, *, said: str, cancelled: bool, started: float, first: float, steps: int,
+                     last: dict, usage: dict, messages: list) -> None:
+        """What the turn cost, written down; and the summary of older turns, started once the answer is stored."""
         counted = bool(usage["prompt_tokens"])
         store.usage({"at": round(time.time(), 3), "bot": self.bot, "model": self.model.model,
                      "ms": round((time.monotonic() - started) * 1000),
@@ -525,7 +536,6 @@ class LeanAgent:
             workspace=self._workspace) >= context.FILL_SUMMARISE
         if not cancelled and not self._summarising:
             self._summary_task = asyncio.create_task(self.summarise(store, filled=filled))
-        return PromptResponse(stop_reason="cancelled" if cancelled else "end_turn")
 
     async def _wait_for_summary(self) -> None:
         """Give the previous turn's compaction SUMMARY_WAIT_S to finish before this request is built.
@@ -1085,10 +1095,6 @@ class LeanAgent:
     def _shell_prefixes(self, command: str) -> list[str]:
         from harness.agent.workspace import suggest_prefixes
         return suggest_prefixes(command, getattr(self.tools, "workspace", "") or "", self.shell_readonly_free)
-
-    async def _ask(self, session_id: str, call_id: str, title: str) -> bool:
-        """Accept and Decline in the bubble; anything but an explicit allow counts as no."""
-        return bool(await self._ask_choice(session_id, call_id, title))
 
     async def _ask_choice(self, session_id: str, call_id: str, title: str, always_prefix: str = "") -> str:
         """'allow', 'allow_always' (only offered with a prefix to save) or '' for anything else."""

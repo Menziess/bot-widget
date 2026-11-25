@@ -46,11 +46,6 @@ def _runtime_host(base_url: str) -> str:
     return host
 
 
-def is_local_base_url(base_url: str) -> bool:
-    """True when the base URL points at this machine (loopback)."""
-    return _runtime_host(base_url) in _LOCAL_HOSTS
-
-
 def runtime_facts(model=None) -> str:
     """Pinned facts about the model this bot is actually using. Empty when nothing is known.
 

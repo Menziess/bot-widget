@@ -1882,7 +1882,7 @@ class FaceWindow(QWidget):
             if stripped and self._confirm_pending and not self._confirm_pending.settled:
                 low = stripped.lower()
                 if low in ("yes", "no"):
-                    self._handle_confirm_decision(low, stripped)
+                    self._handle_confirm_decision(low)
                     return
         asking = bool(self.acp and self._attention.get("approvals"))
         if asking:
@@ -2147,7 +2147,7 @@ class FaceWindow(QWidget):
         decision_obj = self.confirm_board.decide(self.agent_id, decision, request_id=request_id)
         self._apply_confirm_decision(decision_obj)
 
-    def _handle_confirm_decision(self, decision: str, typed_text: str):
+    def _handle_confirm_decision(self, decision: str):
         """Typed yes/no in the field while a confirm is open."""
         req = self._confirm_pending
         if req is None or req.settled:
