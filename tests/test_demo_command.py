@@ -79,25 +79,27 @@ class DemoCommand(unittest.TestCase):
         face = mock.Mock(_working=False, _sending=False)
         face._outbox.items = []
         face._latest.return_value = {"messages": []}
+        face._local = []
         with mock.patch("PySide6.QtCore.QTimer.singleShot", side_effect=lambda _ms, call: call()), \
                 mock.patch.object(demo_chat, "check", return_value={"checked": True, "ok": True, "detail": "ok"}):
             demo_chat.begin(face)
         self.assertEqual(face.on_user_message.call_count, len(demo_chat.PROMPTS))
-        face.bubble.show_blocks.assert_called_once()
-        self.assertEqual(face.bubble.show_blocks.call_args.args[1], "say")
+        face.bubble.show_blocks.assert_not_called()
+        self.assertEqual([m["role"] for m in face._local], ["bot"])
+        self.assertIn("Demo checklist", face._local[0]["text"])
         face.pin.assert_called_once()
 
     def test_the_browser_row_ticks_on_the_number_only_chrome_can_tell(self):
         from botwidget import demo_chat
-        chrome = mock.Mock()
-        chrome.list_tabs.return_value = [{}, {}, {}]
-        with mock.patch("harness.browser_local.attach", return_value=chrome):
-            self.assertTrue(demo_chat.check("browser", "3")["ok"])
-            self.assertTrue(demo_chat.check("browser", "There are 3 tabs.")["ok"])
-            self.assertFalse(demo_chat.check("browser", "5")["ok"])
-            self.assertFalse(demo_chat.check("browser", "no idea")["ok"])
-        with mock.patch("harness.browser_local.attach", side_effect=ConnectionError("down")):
-            self.assertEqual(demo_chat.check("browser", "3")["blocked"], "Chrome is not listening")
+        agent = mock.Mock(return_value={"text": "1. One\n   https://a\n2. Two\n   https://b\n3. Three\n   https://c\n3 tabs"})
+        self.assertTrue(demo_chat.check("browser", "3", agent)["ok"])
+        self.assertTrue(demo_chat.check("browser", "There are 3 tabs.", agent)["ok"])
+        self.assertFalse(demo_chat.check("browser", "5", agent)["ok"])
+        self.assertFalse(demo_chat.check("browser", "no idea", agent)["ok"])
+        agent.assert_called_with("tool", {"name": "browser_tabs"})
+        down = mock.Mock(return_value={"error": "Chrome is not listening (down)."})
+        self.assertIn("not listening", demo_chat.check("browser", "3", down)["blocked"])
+        self.assertIn("no agent", demo_chat.check("browser", "3")["blocked"])
 
     def test_the_computer_row_is_checked_by_code_after_the_chat_tasks_without_a_prompt(self):
         from botwidget import demo_chat
@@ -109,3 +111,41 @@ class DemoCommand(unittest.TestCase):
         self.assertEqual(len(sent), len(demo_chat.PROMPTS))
         self.assertTrue(session.board.ticked("computer"))
         self.assertNotIn("computer", " ".join(sent).lower().split("demo task")[-1][:20])
+
+
+class NewTaskChecks(unittest.TestCase):
+    def setUp(self):
+        from botwidget import demo_chat
+        self.demo = demo_chat
+        self.folder = __import__("tempfile").mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, self.folder, True)
+        patched = mock.patch.object(demo_chat, "ROOT", self.folder)
+        patched.start()
+        self.addCleanup(patched.stop)
+        from botwidget.demo_check import plant_files
+        plant_files(self.folder)
+        os.makedirs(os.path.join(self.folder, "work"))
+
+    def test_search_ticks_only_on_the_one_file_that_has_the_text(self):
+        self.assertTrue(self.demo.check("search", "b.txt")["ok"])
+        self.assertFalse(self.demo.check("search", "data.txt")["ok"], "a.txt is not inside data.txt")
+        self.assertFalse(self.demo.check("search", "a.txt and b.txt")["ok"])
+        self.assertFalse(self.demo.check("search", "I do not know")["ok"])
+
+    def test_recover_ticks_when_the_missing_script_exists_and_prints_fixed(self):
+        self.assertFalse(self.demo.check("recover")["ok"])
+        with open(os.path.join(self.folder, "work", "fix.py"), "w") as fh:
+            fh.write("print('fixed')\n")
+        self.assertTrue(self.demo.check("recover")["ok"])
+
+    def test_order_needs_both_the_right_count_and_the_copy(self):
+        self.assertFalse(self.demo.check("order", "It is 23 bytes.")["ok"])
+        with open(os.path.join(self.folder, "work", "copy.txt"), "w") as fh:
+            fh.write("alpha beta gamma delta\n")
+        self.assertTrue(self.demo.check("order", "It is 23 bytes.")["ok"])
+        self.assertFalse(self.demo.check("order", "It is 22 bytes.")["ok"])
+
+    def test_commands_ticks_when_every_builtin_command_is_named(self):
+        from botwidget.menu_pages import COMMANDS
+        self.assertTrue(self.demo.check("commands", " ".join(name for name, _note in COMMANDS))["ok"])
+        self.assertFalse(self.demo.check("commands", "/bots only")["ok"])

@@ -63,3 +63,20 @@ def plant_seed(folder: str, passes: bool) -> None:
     with open(os.path.join(folder, "test_seed.py"), "w", encoding="utf-8") as fh:
         fh.write("import unittest\n\nclass T(unittest.TestCase):\n    def test_seed(self):\n"
                  f"        self.assertEqual(1, {1 if passes else 0})\n")
+
+
+SEARCH_TOKEN = "needle-4721"
+DATA_TEXT = "alpha beta gamma delta\n"
+
+
+def plant_files(root: str) -> None:
+    """What the search and the order task start from: three files, one with the token, and one file to count and copy."""
+    folder = os.path.join(root, "search")
+    shutil.rmtree(folder, ignore_errors=True)
+    os.makedirs(folder)
+    for name, text in (("a.txt", "alpha\n"), ("b.txt", f"beta {SEARCH_TOKEN}\n"), ("c.txt", "gamma\n")):
+        with open(os.path.join(folder, name), "w", encoding="utf-8") as fh:
+            fh.write(text)
+    os.makedirs(os.path.join(root, "seed"), exist_ok=True)
+    with open(os.path.join(root, "seed", "data.txt"), "w", encoding="utf-8") as fh:
+        fh.write(DATA_TEXT)
