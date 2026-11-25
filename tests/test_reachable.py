@@ -1713,8 +1713,12 @@ class PlainPaths(unittest.TestCase):
 
         entry = BubbleEntry()
         self.addCleanup(entry.deleteLater)
-        entry.setText("word " * 12)
-        entry.resize(entry.fontMetrics().horizontalAdvance("word " * 12) + 20, 40)
+        text = " ".join(["word"] * 12)
+        entry.setText(text)
+        # Wide enough for the text across the whole field, narrower once the / button's room is taken. Half that
+        # room each way: a font that measures a few pixels differently (Windows) must not tip it.
+        reserve = entry.viewportMargins().right()
+        entry.resize(entry.fontMetrics().horizontalAdvance(text) + reserve // 2, 40)
         entry.show()
         QApplication.processEvents()
         self.assertGreater(entry.line_count(), 1)
