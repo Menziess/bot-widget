@@ -147,5 +147,8 @@ class NewTaskChecks(unittest.TestCase):
 
     def test_commands_ticks_when_every_builtin_command_is_named(self):
         from botwidget.menu_pages import COMMANDS
-        self.assertTrue(self.demo.check("commands", " ".join(name for name, _note in COMMANDS))["ok"])
-        self.assertFalse(self.demo.check("commands", "/bots only")["ok"])
+        everything = " ".join(name for name, _note in COMMANDS)
+        root = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(self.demo.__file__))))
+        self.assertTrue(self.demo.check("commands", f"{everything} in /x/{root}")["ok"])
+        self.assertFalse(self.demo.check("commands", everything)["ok"], "the source folder has to be found too")
+        self.assertFalse(self.demo.check("commands", f"/bots only {root}")["ok"])

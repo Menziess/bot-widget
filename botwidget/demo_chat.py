@@ -32,7 +32,7 @@ LABELS = (
     ("search", "Search: find a file outside the workspace"),
     ("recover", "Recover: a command fails, fix it, run again"),
     ("order", "Order: answer a question and do the task"),
-    ("commands", "Commands: describe its own slash commands"),
+    ("commands", "Commands: name its slash commands, find its own source"),
     ("computer", "Computer: move a window and type into it"),
 )
 # Checked by code alone, once the chat tasks are done: nothing to ask the bot.
@@ -78,7 +78,9 @@ PROMPTS = {
         "/tmp/t-demo/work/copy.txt."
     ),
     "commands": (
-        "Demo task commands. Which slash commands do you have? Use your about_me tool and name every one."
+        "Demo task commands. Which slash commands do you have? Use your about_me tool and name every one. "
+        "Then find the folder that holds the source code of this widget on this machine (look for it, do not guess) "
+        "and name that folder."
     ),
 }
 
@@ -162,6 +164,9 @@ def check(key: str, reply: str = "", ask=None) -> dict:
     if key == "commands":
         from botwidget.menu_pages import COMMANDS
         missing = [name for name, _note in COMMANDS if name not in reply]
+        root = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        if root not in reply:
+            missing.append(f"the source folder {root}")
         return {"checked": True, "ok": not missing, "detail": "all named" if not missing else "missing " + " ".join(missing)}
     if key == "computer":
         from botwidget.system.control import throwaway
@@ -232,7 +237,7 @@ def begin(face) -> None:
             QTimer.singleShot(500, step)
             return
         # A line in the conversation, not blocks drawn straight on the bubble: pin() redraws the conversation over those.
-        face._local.append({"role": "bot", "text": session.summary(), "until": time.monotonic() + 600})
+        face._local.append({"role": "bot", "text": session.summary(), "until": time.monotonic() + 600, "demo": True})
         face.pin()
 
     QTimer.singleShot(0, step)

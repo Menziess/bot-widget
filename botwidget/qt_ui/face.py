@@ -1874,6 +1874,7 @@ class FaceWindow(QWidget):
             self.toggle_pin()
             return
         self._think_quiet = False
+        self._local = [m for m in self._local if not m.get("demo")]
         open_question = None if files else self._open_question()
         if open_question:
             self._give_answer(*open_question, [text])
