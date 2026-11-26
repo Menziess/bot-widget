@@ -1992,7 +1992,7 @@ class OffscreenCalls(unittest.TestCase):
         self.assertLess(len(bubble._dot_frames), 256)
         bubble._geom = None
         bubble._place_controls()
-        editor = bubble._make_control({"control": "editor", "value": "hi"})
+        editor = bubble._make_control({"control": "editor", "command": "editor", "value": "hi"})
         self.addCleanup(editor.deleteLater)
         self.assertIsInstance(editor, TextEditor)
 

@@ -1906,7 +1906,9 @@ class BubbleWindow(QWidget):
             widget.command = line["command"]
             return widget
         if line["control"] == "editor":
-            return TextEditor(str(line.get("value") or ""), self._text)
+            widget = TextEditor(str(line.get("value") or ""), self._text)
+            widget.command = line["command"]
+            return widget
         if line["control"] == "slider":
             widget = ValueSlider(line["label"], int(line["on"]), self._text)
             widget.changed.connect(lambda value, command=line["command"]: self.command.emit(f"{command}/{value}"))

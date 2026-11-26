@@ -367,7 +367,8 @@ def memory_add(state: dict) -> list:
     if error:
         blocks.append(_row((error, "b")))
     blocks += [
-        _field("Text", "field/memory_text", state.get("_memory_text", "")),
+        _row(("Text", "dim")),
+        {**control_block("editor", "Text", "field/memory_text"), "value": state.get("_memory_text", "")},
     ]
     if not editing:
         blocks.append(_field("Scope (user/project/topic)", "field/memory_scope", state.get("_memory_scope", "user")))
