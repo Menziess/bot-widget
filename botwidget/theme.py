@@ -62,6 +62,7 @@ PAD_SVG = 18
 PAD_BODY = 12
 PAD_PANEL_X = 12
 PAD_PANEL_Y = 11
+PAD_DOTS_Y = 4  # the dots of a cloud, which have no panel to see
 GAP_PANEL = 10
 # The arrow that says there are earlier messages: a slim strip that sits close to the message below it.
 MORE_PAD = 2

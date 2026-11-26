@@ -25,6 +25,7 @@ from botwidget.theme import (
     MORE_OVAL_HALF_W,
     MORE_PAD,
     PAD_BODY,
+    PAD_DOTS_Y,
     PAD_PANEL_X,
     PAD_PANEL_Y,
     PAD_SVG,
@@ -66,12 +67,20 @@ def reading_seconds(text: str) -> float:
     return min(BUBBLE_LINGER_MAX, BUBBLE_LINGER + BUBBLE_PER_WORD * len(text.split()))
 
 
+def _only_dots(panel: dict | None) -> bool:
+    return bool(panel) and all(line["kind"] == "dots" for line in panel["lines"])
+
+
 def panel_pad(panel: dict) -> int:
+    if _only_dots(panel):
+        return PAD_DOTS_Y
     return MORE_PAD if panel["role"] == "more" else PAD_PANEL_Y
 
 
 def panel_gap(panel: dict, following: dict | None = None) -> int:
     """Space between this panel and the one under it."""
+    if _only_dots(following):
+        return 0  # the dots tuck under the thought: the cloud stays small
     if panel["role"] != "more":
         return GAP_PANEL
     return MORE_GAP_DARK if following and following["role"] == "user" else MORE_GAP
