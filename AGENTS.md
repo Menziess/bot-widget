@@ -55,6 +55,8 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 - Pointing at a face opens its bubble with the latest answer, and the field only shows while the pointer is on the bubble or its face
 - A new answer opens the bubble by itself and keeps it for the time it takes to read, unless the pointer is on it
 - Sending a message shows the cloud with dots until the bot has answered
+- A question or approval outranks everything in the cloud: clicking the face while one waits never swaps it for the last answer. Without one, a click on a thinking face switches between the thought and the last answer; with the bot idle, a click pins the answer
+- The demo checklist goes when the next message is sent
 - The bubble stays while the pointer is on the face or the bubble, with a margin around it
 - The bubble also stays while words are typed or selected, a draft is in the field, a file waits to be sent, a form was typed in, or the bot works
 - Keyboard focus that came from resting the pointer on the face never keeps the bubble open, only typing, a click in the field or one of the reasons above does

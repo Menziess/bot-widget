@@ -248,6 +248,14 @@ Skip what is already done (idle send, named python and unsigned commit, student-
 - A write outside the home workspace still raises the approval bubble. The supervisor may accept it when the title stays inside the student tree. A person should not see that bubble for a path the loop already allowed.
 - Done 2026-11-23: after a tool call that failed, a closing message that does not own up to it is held back and nudged once (`FAILED_NUDGE`), whichever tool it was; and a line written before the accessibility call is never shown, because it guesses the result.
 
+### Owner findings, 2026-11-26 (second round)
+
+Done: the bot ran `/demo` for a task (the `run_command` text named /demo; it now says only on request by name), and the demo checklist stayed under every later answer (it goes with the next message); a promise like "laat me eerst even kijken" now counts as a promise without a tool call (`PROMISE`); "Waking" showed on every send (now only on a cold start); a thought or tool update that arrives after the turn ended left the cloud up (ignored when no turn runs); a question outranks the click that swaps the cloud for the last answer; a muted bot sleeps (lids mostly shut) instead of a cross for a mouth; the memory text is an editor, not one line; the demo's commands row also asks the bot to find its own source folder, and the system prompt asks for that.
+
+Second pass, same day: the cloud is tighter (the dots of a cloud take a gap of 0 and a pad of 4 instead of 10 and 11, `PAD_DOTS_Y`). A memory page of 100 memories already stays inside 70% of the screen and scrolls (a test holds it); that cap is the "grows taller" the owner saw, and a smaller one for lists is the owner's call.
+
+Open: macOS asks "python3.xx wants to control this computer" because the process that runs the code is the Python interpreter; macOS names the process, and the code cannot change that. A packaged app asks under its own name; a run from a checkout does not.
+
 ## Where to start (historical)
 
 The spike in phase 0 costs the least and answers the largest unknown, which is how well existing agents behave through ACP. Everything after it depends on that answer.
