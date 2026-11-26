@@ -323,8 +323,8 @@ class LeanAgent:
                  "for the list of topics.",
                  {"type": "object", "properties": {"topic": string("skills, bot, commands, settings or approvals"),
                                                    "key": string("for settings: one setting's name")}}, about),
-            Tool("run_command", "Run a slash command for the user, for example /demo or /settings, as if they typed "
-                 "it; the user is asked first. about_me topic commands lists them.",
+            Tool("run_command", "Run a slash command only when the user asks for that command by name, for example /settings; "
+                 "never to carry out a task. The user is asked first. about_me topic commands lists them.",
                  {"type": "object", "properties": {"name": string("the command, with the slash and any arguments")},
                   "required": ["name"]}, lambda args: self._widget("run", name=str(args.get("name") or "")),
                  writes=True),

@@ -22,7 +22,8 @@ from harness.agent.tools import TOOL_OUTPUT
 FAILURE_WORDS = re.compile(r"\b(fail|failed|error|unable|cannot|can't|could not|couldn't|not found|mislukt|"
                            r"niet gelukt|niet gevonden|kon niet|lukt niet|fout|bestaat niet)\b", re.IGNORECASE)
 # Closing words that promise work, or claim it was done. One list for every tool.
-PROMISE = re.compile(r"\b(ik ga|ik zal|ik probeer|let me|i'll|i will|i'm going to|i am going to)\b")
+PROMISE = re.compile(r"\b(ik ga|ik zal|ik probeer|ik kan het (wel )?proberen|laat me|laat mij|even kijken|let me|let's|"
+                     r"i'll|i will|i'm going to|i am going to)\b")
 DONE_CLAIM = re.compile(r"\b(done|klaar|gedaan|geschreven|uitgevoerd|aangemaakt|written|created|executed|ran)\b")
 # A claim that something was written needs a tool in this turn that can write; the others need any tool.
 WRITE_CLAIM = re.compile(r"\b(wrote|written|saved|created|now contains|geschreven|opgeslagen|aangemaakt|bevat nu)\b")

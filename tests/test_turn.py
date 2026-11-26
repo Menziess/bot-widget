@@ -66,6 +66,10 @@ class Guards(unittest.TestCase):
 
     def test_a_claim_of_work_needs_a_tool_that_could_have_done_it(self):
         self.assertIsNotNone(Governor().review(turn(), step("Klaar, het staat erin.")))
+        for text in ("Ik kan het wel proberen aan te passen — laat me eerst even kijken of er een setting voor is.",
+                     "Let's look at the config first."):
+            with self.subTest(text):
+                self.assertIsNotNone(Governor().review(turn(), step(text)))
         self.assertIsNotNone(Governor().review(turn(called={"list_dir"}), step("Het bestand is geschreven.")))
         self.assertIsNone(Governor().review(turn(called={"write_file"}), step("Het bestand is geschreven.")))
         self.assertIsNone(Governor().review(turn(), step("Is het bestand al geschreven?")), "a question claims nothing")
