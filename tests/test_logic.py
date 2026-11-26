@@ -322,9 +322,8 @@ class GrokMarks(unittest.TestCase):
         rest = avatar.face_svg(seed="grok:Admin", avatar=shape)
         self.assertNotEqual(avatar.face_svg(dx=4, seed="grok:Admin", avatar=shape), rest)
         self.assertNotEqual(avatar.face_svg(scale=0.1, seed="grok:Admin", avatar=shape), rest)
-        self.assertIn('stroke-width="2.6"', avatar.face_svg(seed="grok:Admin", avatar=shape, muted=True),
-                      "a muted mark gets the cross too")
-        self.assertNotIn('stroke-width="2.6"', rest)
+        self.assertNotEqual(avatar.face_svg(seed="grok:Admin", avatar=shape, muted=True), rest,
+                            "a muted mark sleeps too")
 
     def test_the_blob_has_grok_bots_two_pill_eyes_on_its_own_outline(self):
         blob = {"shape": "blob", "color": "black"}
@@ -941,18 +940,17 @@ class RefusedMessages(unittest.TestCase):
 
 
 class MutedFace(unittest.TestCase):
-    """Should draw a muted bot with a cross for a mouth, and sleepy bots with their eyes open."""
+    """Should draw a muted bot asleep, and sleepy bots with their eyes open."""
 
-    def test_a_muted_face_has_a_cross_the_others_do_not(self):
+    def test_a_muted_face_keeps_its_lids_down_even_when_the_blink_says_open(self):
         from botwidget.avatar import face_svg
-        self.assertNotIn(" L", face_svg(seed="x"))
-        self.assertIn(" L", face_svg(seed="x", muted=True))
+        self.assertNotEqual(face_svg(seed="x", muted=True), face_svg(seed="x"))
+        self.assertEqual(face_svg(seed="x", muted=True, scale=0.9), face_svg(seed="x", muted=True))
 
     def test_a_grok_blob_has_eyes_and_no_mouth_unless_muted(self):
         from botwidget.avatar import face_svg
         ball = face_svg(seed="General", avatar={"shape": "blob", "color": "black"})
         self.assertEqual(len(eye_paths(ball)), 2, "Grok Bot's two eyes")
-        self.assertNotIn('stroke-width="2.6"', ball, "no cross for a mouth")
         self.assertEqual(face_svg(seed="x").count(" A"), 0, "no crescent on other faces")
         self.assertEqual(len(eye_paths(face_svg(seed="x"))), 2, "others keep two eyes")
 
@@ -2686,6 +2684,26 @@ class BubbleHover(unittest.TestCase):
                                                "menu_command": lambda _self, command, page, fields=None: page,
                                                "close_bubbles_except": lambda _self, _id: None,
                                                "hold_arc": lambda _self: None,
+    def test_a_memory_page_with_a_hundred_memories_stays_in_its_bubble_and_scrolls(self):
+        from harness.agent import memory
+        from botwidget.bubble import MENU_SCREEN_SHARE
+        from botwidget.qt_ui import screens
+        for number in range(100):
+            memory.write_memory(f"Memory number {number}, with some words to fill a row.", "user")
+        self.addCleanup(lambda: [memory.forget_memory(m["id"]) for m in memory.list_memories()])
+        self.window.faces = type("Faces", (), {"menu_state": lambda _self: {},
+                                               "menu_command": lambda _self, command, page, fields=None: page,
+                                               "close_bubbles_except": lambda _self, _id: None,
+                                               "hold_arc": lambda _self: None,
+                                               "raise_bubbles": lambda _self: None})()
+        self.window.open_menu("memory")
+        self.finish_growth()
+        self.app.processEvents()
+        bubble = self.window.bubble
+        _x, _y, _w, screen_h = screens.rect_at(self.window.x() + 34, self.window.y() + 34)
+        self.assertLessEqual(bubble.height(), screen_h * MENU_SCREEN_SHARE + bubble._extras() + 1)
+        self.assertGreater(bubble._scroll.verticalScrollBar().maximum(), 0)
+
                                                "raise_bubbles": lambda _self: None})()
         self.window.open_menu("settings")
         self.finish_growth()

@@ -273,16 +273,7 @@ def eye_length(length: float, width: float, scale: float) -> float:
     return _lerp(length, LID_SHUT * width, 1 - max(0.0, scale))
 
 
-MOUTH_SIZE = 3.2  # half the width of the cross
-MOUTH_DROP = 0.5  # below the eyes, in head radii, at most
-
-
-def _mouth(cx: float, cy: float, fill: str, opacity: float) -> str:
-    """A cross: the bot is muted."""
-    s = MOUTH_SIZE
-    return (f'<path d="M{cx - s:.2f} {cy - s:.2f} L{cx + s:.2f} {cy + s:.2f}'
-            f' M{cx - s:.2f} {cy + s:.2f} L{cx + s:.2f} {cy - s:.2f}" fill="none" stroke="{fill}"'
-            f' stroke-width="2.6" stroke-linecap="round" opacity="{opacity}"/>')
+MUTED_LIDS = 0.3  # a muted bot sleeps: its lids stay this far open
 
 
 # Grok Bot's neutral eye, in head radii: a capsule 0.26 wide and 0.57 long, the two 0.312 from the
@@ -578,11 +569,12 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
     lift raises the whole face (px), shift moves it right, lean tilts it, squash stretches or
     flattens it, zoom sizes it. expression is (face, face, t): Grok Bot's faces (GROK_FACES), the
     eyes t of the way from the first to the second. happy 0 is the eye the expression gives, 1 Grok
-    Bot's happy arc; scale below 1 closes the lids. A muted bot has a cross for a mouth. Every face,
+    Bot's happy arc; scale below 1 closes the lids. A muted bot keeps its lids mostly shut, as if asleep. Every face,
     OpenBot's and Grok Bot's, has the same eyes: Grok Bot's own for a Grok Bot avatar, the seed's
     sizes and spacing for an OpenBot one.
     """
     profile = avatar_profile(seed, hue, avatar)
+    scale = min(scale, MUTED_LIDS) if muted else scale
     centre = AVATAR_SIZE / 2
     look_pitch, look_yaw = body3d.angles_for(dx, dy, CIRCLE_R)
     pitch, yaw = look_pitch + pitch, look_yaw + yaw
@@ -594,7 +586,7 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
     start, end, t = expression
     outline = body_points(profile, pitch, yaw, roll)
     inside = _within(outline)
-    eyes, middles = [], []
+    eyes = []
     for i, ((x, y, z), normal, (w, h, tilt, open_)) in enumerate(seats):
         eye = (w, h * open_, tilt)
         shape, (du, dv) = expressed_eye(end, i, eye, happy, scale, arc)
@@ -613,15 +605,9 @@ def face_svg(dx: float = 0, dy: float = 0, scale: float = 1.0, converge: float =
             laid = body3d.eye_on_surface(place, shape, rot, normal)
         else:
             laid = body3d.eye_draped(place, shape, rot, normal, _surface_height(profile["shape"]))
-        middles.append(rot(*place))
         if laid:
             laid = inside(laid)
             eyes.append(f'<path d="{_points_path(laid, CIRCLE_R, centre, centre)}" fill="{EYE_FILL}"/>')
-    if muted:
-        mx = sum(m[0] for m in middles) / 2 * CIRCLE_R
-        my = sum(m[1] for m in middles) / 2 * CIRCLE_R
-        drop = min(MOUTH_DROP, 0.6 * (profile["bottom"] - my / CIRCLE_R)) * CIRCLE_R
-        eyes.append(_mouth(centre + mx, centre + my + drop, EYE_FILL, 1.0))
     body = _points_path(outline, CIRCLE_R, centre, centre)
     bx, by, _bz = front(0.0, 0.0, body3d.DEPTH)
     head = (f'<path d="{body}" fill="{profile["hex"]}"/>'
