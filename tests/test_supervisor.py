@@ -222,6 +222,7 @@ class BusyDev(unittest.TestCase):
         env = {"BOTWIDGET_DEV_WANT": want, "BOTWIDGET_DEV_BUSY": busy}
         from botwidget.acplink import AcpLink
         link = AcpLink("local")
+        link._sending = True
         with mock.patch.dict(os.environ, env):
             link._updated(SimpleNamespace(kind="tool", text="looping on a tool", extra={}))
             child = mock.Mock()

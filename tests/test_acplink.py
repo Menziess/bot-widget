@@ -344,6 +344,7 @@ class AcpTurns(unittest.TestCase):
         from harness.acp_client import Update
         link = self.link()
         self.assertTrue(wait_for(lambda: not link.active()))
+        link._sending = True
         for piece in ("Laat", " me", " even", " kij", "ken"):
             link._updated(Update("thought", piece))
         self.assertEqual(link.chat()["activity"], "Laat me even kijken")
@@ -352,6 +353,14 @@ class AcpTurns(unittest.TestCase):
         link._updated(Update("tool", "shell ls"))
         link._updated(Update("thought", "Klaar"))
         self.assertEqual(link.chat()["activity"], "Klaar", "a thought after a tool starts over")
+
+    def test_a_thought_or_tool_that_arrives_after_the_turn_ended_leaves_no_cloud_behind(self):
+        from harness.acp_client import Update
+        link = self.link()
+        self.assertTrue(wait_for(lambda: not link.active()))
+        link._updated(Update("thought", "Te laat"))
+        link._updated(Update("tool", "shell ls"))
+        self.assertEqual(link.chat()["activity"], "")
 
     def test_a_job_that_ends_is_counted_so_the_face_can_react(self):
         from harness.acp_client import Update
@@ -366,6 +375,7 @@ class AcpTurns(unittest.TestCase):
         from harness.acp_client import Update
         link = self.link()
         self.assertTrue(wait_for(lambda: not link.active()))
+        link._sending = True
         for piece in ("Op", " ", "November", " ", "26"):
             link._updated(Update("thought", piece))
         self.assertEqual(link.chat()["activity"], "Op November 26")
@@ -397,9 +407,11 @@ class AcpTurns(unittest.TestCase):
         link._updated(Update("text", " tweede"))
         self.assertEqual(link._history[-1]["text"], "eerste tweede")
         link._loading = False
+        link._sending = True
         link._updated(Update("tool", "   "))
         link._updated(Update("tool", "read file"))
         self.assertIn("read file", link.chat()["activity"])
+        link._sending = False
         link._updated(Update("usage", extra={"used": 1, "size": 0}))
         self.assertEqual(link.note(), "")
         link._updated(Update("usage", extra={"used": 80, "size": 100}))

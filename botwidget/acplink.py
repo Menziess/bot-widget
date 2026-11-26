@@ -251,8 +251,9 @@ class AcpLink:
             self.messages.append({"role": "user", "text": text})
             self._said = False
             # Off by default: the raw launch command stays out of the bubble unless asked for.
-            self._activity = (f"Waking (target: {self.target})" if self.debug_launch
-                              else f"Waking {self._name}…")
+            # Only a cold start wakes the agent; an agent that is up just starts thinking.
+            woken = f"Waking (target: {self.target})" if self.debug_launch else f"Waking {self._name}…"
+            self._activity = woken if self._client is None else ""
         asyncio.run_coroutine_threadsafe(self._turn(text), self._loop)
         self._changed()
         return True, ""
@@ -607,10 +608,15 @@ class AcpLink:
                 _append_message(self._history, role, update.text, fold=role == "bot", message_id=update.message_id)
                 return
             # A lone space is a piece of the thought: without it "November 26" read "November26".
-            if update.kind == "thought" and (update.text.strip() or (self._thought and update.text)):
+            running = self._sending or self._followup  # a late thought after the turn ended would leave the cloud up for good
+            if update.kind == "thought" and not running:
+                pass
+            elif update.kind == "thought" and (update.text.strip() or (self._thought and update.text)):
                 self._tool = False
                 self._thought += update.text
                 self._activity = _bubble_line(self._thought)
+            elif update.kind == "tool" and not running:
+                pass
             elif update.kind == "tool":
                 self._tool = True
                 self._thought = ""
