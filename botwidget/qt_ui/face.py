@@ -1253,7 +1253,7 @@ class FaceWindow(QWidget):
             self._menu_page = None
             self._sync_bubble(self._latest(), force=True, show_field=leaving)
             return True
-        if not self._working or self.pinned or not self._show_think():
+        if not self._working or self.pinned or not self._show_think() or self._has_attention():
             return False
         if not any(m.get("role") == "bot" for m in (self._chat or {}).get("messages") or []):
             return False
@@ -1534,8 +1534,8 @@ class FaceWindow(QWidget):
             # The screen is dark and the pointer is on the overlay: a bubble would only stay behind, empty.
             self.bubble.close_bubble("screenshot")
             return
-        if not (self._working or self._waiting):
-            self._answer_view = False
+        if not (self._working or self._waiting) or self._has_attention():
+            self._answer_view = False  # a question outranks the answer view
         # OpenBot: the last turn failed (a spent provider, say). The face shows it like Grok Bot offline.
         self._failed_note = chat.get("failed") or ""
         if self._asked and self._failed_note and not self._working and self._failed_since_asked(chat.get("failed_at")):
