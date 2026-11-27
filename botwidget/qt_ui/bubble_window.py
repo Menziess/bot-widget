@@ -16,6 +16,7 @@ from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
     QIODevice,
+    QMimeData,
     QObject,
     QPoint,
     QPointF,
@@ -101,7 +102,7 @@ from botwidget.qt_ui.controls import (
 from botwidget.qt_ui.measure import measure
 from botwidget.qt_ui.native import drop_hidden, native_id, raise_window, set_flags
 from botwidget.qt_ui.render import blurred, cut_out, stacked, svg_pixmap
-from botwidget.qt_ui.text_doc import fill_document
+from botwidget.qt_ui.text_doc import fill_document, selected_text
 from botwidget.system.current import before_show, pointer_window, send_behind_windows
 from botwidget.theme import (
     BUBBLE_FONT,
@@ -250,12 +251,14 @@ class BubbleEntry(QPlainTextEdit):
     closed = Signal()  # Escape: only the list of commands goes away
     used = Signal()  # a click or a key: the user is at the field themselves
     slash_asked = Signal()  # the / button: the list under the field
+    stop_asked = Signal()  # the same button while the bot works: stop the turn
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.commands_open = False
         self.slash_button = SlashButton(self)
-        self.slash_button.clicked.connect(self.slash_asked.emit)
+        self.slash_button.clicked.connect(
+            lambda: (self.stop_asked if self.slash_button.stopping else self.slash_asked).emit())
         # Before the first resize: margins set later leave the text wrapped to the wider viewport.
         self.setViewportMargins(0, 0, self.slash_button.width() + 8, 0)
         self.history = lambda: []  # earlier prompts, oldest first
@@ -582,6 +585,14 @@ class BubbleText(QTextBrowser):
         """The text is never taller than its frame: the bubble scrolls, not the text."""
         event.ignore()
 
+    def createMimeDataFromSelection(self):
+        """Copy (Cmd+C or Ctrl+C) puts a wrapped paragraph on the clipboard as one line, not one per wrapped row."""
+        cursor = self.textCursor()
+        mime = QMimeData()  # not the default one: it builds its plain text itself and ignores setText
+        mime.setText(selected_text(self.document(), cursor.selectionStart(), cursor.selectionEnd()))
+        mime.setHtml(cursor.selection().toHtml())
+        return mime
+
     def _cursor_for(self, pos):
         """A hand over a message (a click copies it), the text cursor while selecting."""
         if self._dragging:
@@ -829,6 +840,7 @@ class BubbleWindow(QWidget):
     older = Signal()
     command = Signal(str)
     edit_queued = Signal(str)  # the id of a queued message that was clicked
+    stop = Signal()  # the stop square in the field was clicked
 
     def __init__(self, face):
         super().__init__()
@@ -953,6 +965,7 @@ class BubbleWindow(QWidget):
         self._entry.chosen.connect(lambda: self._run_command(self._slash.current()))
         self._entry.closed.connect(self._close_commands)
         self._entry.slash_asked.connect(self.open_command_list)
+        self._entry.stop_asked.connect(self.stop.emit)
         # WindowShortcut: Escape still arrives when a line on the page has the cursor.
         self._escape = QShortcut(QKeySequence(Qt.Key_Escape), self)
         self._escape.setContext(Qt.WindowShortcut)
@@ -1579,7 +1592,8 @@ class BubbleWindow(QWidget):
 
     def set_queueing(self, queueing: bool, waiting: int = 0, answering: bool = False):
         """While the bot works, what is typed waits in line instead of going out at once; with a question
-        open, it is the answer."""
+        open, it is the answer. The / button is a stop square while the bot works."""
+        self._entry.slash_button.set_stopping(queueing)
         if answering:
             self._entry.setPlaceholderText("Type your answer…")
         elif not queueing:

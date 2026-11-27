@@ -383,6 +383,7 @@ class FaceWindow(QWidget):
         self.bubble.older.connect(self.show_older)
         self.bubble.edit_queued.connect(self._edit_queued)
         self.bubble.command.connect(self._menu_command)
+        self.bubble.stop.connect(self._stop_turn)
         self._thinking = ThinkingRow(self)
 
         if spot:
@@ -637,8 +638,7 @@ class FaceWindow(QWidget):
             if self._menu_page is not None or self.bubble.commands_held():
                 self.open_input()
             elif self._working and self.link:
-                # Stop the turn that is answering.
-                self.link.cancel()
+                self._stop_turn()
             else:
                 self._forget_page()
                 self.unpin()
@@ -646,7 +646,7 @@ class FaceWindow(QWidget):
         super().keyPressEvent(event)
 
     def _stop_turn(self):
-        """The stop button callback: stop the turn that is answering."""
+        """The stop square in the field, and Escape: stop the turn that is answering."""
         if self._working and self.link:
             self.link.cancel()
 

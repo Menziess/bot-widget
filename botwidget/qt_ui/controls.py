@@ -228,12 +228,14 @@ class ActionButton(PointerWatch, QPushButton):
 
 
 class SlashButton(QWidget):
-    """A / at the far right inside the message field. A click opens the command list under the field."""
+    """A / at the far right inside the message field. A click opens the command list under the field. While the bot
+    works it is a stop square in the same place, and the click stops the turn."""
 
     clicked = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.stopping = False
         self.setObjectName("slashButton")
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
@@ -244,14 +246,23 @@ class SlashButton(QWidget):
             self.clicked.emit()
         super().mouseReleaseEvent(event)
 
+    def set_stopping(self, stopping: bool):
+        if stopping != self.stopping:
+            self.stopping = stopping
+            self.update()
+
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(color(SAND_ACCENT))
+        if self.stopping:
+            painter.setBrush(color(SAND_ACCENT))
+            painter.drawRoundedRect(self.rect().adjusted(7, 7, -7, -7), 2, 2)
+            return
         font = QFont(SAND_SANS)
         font.setPixelSize(BUBBLE_FONT)
         font.setBold(True)
         painter.setFont(font)
-        painter.setPen(color(SAND_ACCENT))
         painter.drawText(self.rect(), Qt.AlignCenter, "/")
 
 

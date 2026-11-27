@@ -1779,8 +1779,7 @@ class BubbleHover(unittest.TestCase):
         cursor.setPosition(0)
         cursor.movePosition(cursor.MoveOperation.End, cursor.MoveMode.KeepAnchor)
         doc.setTextCursor(cursor)
-        from botwidget.qt_ui.text_doc import selected_text
-        copied = selected_text(doc.document(), cursor.selectionStart(), cursor.selectionEnd())
+        copied = doc.createMimeDataFromSelection().text()  # what Cmd+C puts on the clipboard
         self.assertNotIn("\n", copied, "wrapped lines are one paragraph")
         self.assertEqual(copied.split(), text.split())
 
@@ -2666,6 +2665,21 @@ class BubbleHover(unittest.TestCase):
         self.window._stop_turn()
         self.window.acp.cancel.assert_called_once()
         self.window.acp.interrupt.assert_not_called()
+
+    def test_the_slash_button_is_a_stop_square_only_while_the_bot_works(self):
+        bubble = self.window.bubble
+        stopped, asked = [], []
+        bubble.stop.connect(lambda: stopped.append(True))
+        bubble._entry.slash_asked.connect(lambda: asked.append(True))
+        button = bubble._entry.slash_button
+        bubble.set_queueing(True)
+        self.assertTrue(button.stopping)
+        button.clicked.emit()
+        self.assertEqual((stopped, asked), ([True], []))
+        bubble.set_queueing(False)
+        self.assertFalse(button.stopping)
+        button.clicked.emit()
+        self.assertEqual((stopped, asked), ([True], [True]))
 
     def test_the_field_stays_put_when_a_new_thought_makes_the_cloud_grow(self):
         self.start_working()
