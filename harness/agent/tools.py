@@ -123,8 +123,12 @@ def browser_read(title: str = "") -> str:
 
 def trash_file(at: str) -> str:
     """One file, moved to the trash folder: nothing is destroyed, and the answer says where it went."""
-    if not os.path.isfile(at) or os.path.islink(at):
-        raise ToolError("only a single file can be deleted")
+    if os.path.islink(at):
+        raise ToolError(f"{at} is a link: only a plain file can be deleted")
+    if os.path.isdir(at):
+        raise ToolError(f"{at} is a folder: only a single file can be deleted")
+    if not os.path.isfile(at):  # the path is in the message: a relative one starts in the working folder
+        raise ToolError(f"{at} does not exist")
     gone = os.path.join(TRASH, f"{time.strftime('%Y%m%d-%H%M%S')}-{os.path.basename(at)}")
     try:
         os.makedirs(TRASH, exist_ok=True)

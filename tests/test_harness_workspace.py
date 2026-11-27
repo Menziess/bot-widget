@@ -213,6 +213,21 @@ class GitInAnotherFolder(unittest.TestCase):
             self.assertNotIn("inside the workspace", tool.description, name)
 
 
+class DeleteErrors(unittest.TestCase):
+    def test_a_delete_that_cannot_happen_says_which_path_and_why(self):
+        from harness.agent.tools import trash_file
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        missing, inner = os.path.join(folder, "gone.txt"), os.path.join(folder, "sub")
+        os.makedirs(inner)
+        with self.assertRaises(ToolError) as caught:
+            trash_file(missing)
+        self.assertEqual(str(caught.exception), f"{missing} does not exist")
+        with self.assertRaises(ToolError) as caught:
+            trash_file(inner)
+        self.assertIn("is a folder", str(caught.exception))
+
+
 class FindFiles(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.mkdtemp()

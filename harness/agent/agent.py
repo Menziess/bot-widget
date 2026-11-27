@@ -974,7 +974,7 @@ class LeanAgent:
                 return self._note_tool(store, name, f"failed: {error}",
                                        f"The tool failed: {error}")
         await self._tool_call(session_id, call["id"], diff_title, "completed", "completed")
-        return self._note_tool(store, name, "ok", result if name == "edit" else f"Wrote to {path}.")
+        return self._note_tool(store, name, "ok", result)
 
     @staticmethod
     def _write_root(workspace: str, path: str) -> str:
