@@ -268,3 +268,69 @@ previous content of the most recent write.
 H2 after this change (scripted, 2026-11-10 Europe/Amsterdam): all five tasks still
 pass. The diff path is only entered for `write_file` calls; other tools and the
 scripted benchmark tasks are unaffected.
+
+## H8 lean turns: the agreed order (t1159u, t1161u)
+
+Eight blocks, one local block each, in this order. Every block is tests first:
+the listed tests are written and fail before the change, the full suite is
+green after it, and tokens per turn are measured before and after with
+`harness/benchmark.py --live` plus about ten real tasks. A block stays only when
+the success rate is equal or higher and tokens or steps go down; otherwise it
+is reverted and the numbers are noted here. model-arena is only a regression
+guard. Already present and not rebuilt: `spill.py`, `RESULT_STUB`,
+`FILL_SUMMARISE`, `_skill_store` / `_brief`.
+
+1. **Stop button and Esc cancel a running turn.** While the face is `_working`,
+   the stop button and Esc call `acp.cancel()` (today `face.py` around line 1894
+   only calls `interrupt()` for an approval). An option also cancels background
+   jobs through `JobRunner.cancel`. Tests: `test_acplink.py` (cancel while a turn
+   runs ends it and leaves the link open), `test_harness_jobs.py` (jobs cancelled
+   only when the option is on), and an offscreen Qt test that clicks stop and
+   presses Esc.
+2. **Stable prefix first in `context.py` `build()`.** System text, tools and the
+   kept conversation come first and stay byte-identical between turns; the
+   per-turn reminders and the newest tool results come last, so the llama.cpp
+   prompt cache hits (cache share is 58% today). Test: two consecutive `build()`
+   calls share the longest possible prefix, and a reminder change only touches
+   the tail.
+3. **Adaptive window.** `KEEP_TURNS`, `RESULT_KEEP` and `CONTEXT_TOKENS` scale
+   with the context window the model reports instead of fixed 12 / 6 / 32000.
+   Test: a small, the default and a large window give monotonic limits, and an
+   unknown window falls back to today's numbers.
+4. **Ack-first.** A request shows a fixed "bezig…" bubble at once, with no model
+   call, and the result arrives as one separate message. The SYSTEM text in
+   `context.py` (lines 16-31) that discourages a short first answer is rewritten
+   to match. Test: the ack appears before any model request and costs no
+   tokens; the result is one message, not appended to the ack.
+5. **Thumbs-up or silence is a valid outcome.** The `turn.py` `Governor` accepts
+   an empty reply or a 👍 as done, and a 👍 clicked in the UI triggers no model
+   call. Tests: Governor does not retry or nudge on an empty / 👍 reply; the UI
+   👍 path sends nothing to the agent.
+6. **Lazy skill body.** `_run_skill` stops putting the full SKILL.md into
+   `store.set("skill")` on every request; it stores the name, path and summary,
+   and the body is read only when the model asks for it. Test: the request after
+   `/skill` carries no full body; reading it once returns the body.
+7. **Autonomy through `confirm.py`, writes only.** Only tools marked
+   `Tool.writes` (risky actions) go through the confirm primitive; reads and safe
+   actions run without asking. The system prompt and `agent.py` `_verdict`
+   follow that rule. Tests: a read tool runs without a confirm, a write tool
+   waits for a yes on the exact payload, and a no leaves it unrun.
+8. **Short skill summary return.** `_after_skill` returns a short summary to the
+   main session instead of the whole skill transcript. Test: the main store gets
+   a bounded summary and the full transcript stays in the skill store.
+
+After these, in this order:
+
+9. **LoopDetector stops repeated failures.** `turn.py` `LoopDetector` also stops
+   on repeated failure of the same kind of command (same tool and normalised
+   command, non-zero result), and a fixed search-step budget ends a search that
+   keeps going. Tests: three failures of the same kind stop the turn with a
+   clear message; different commands do not trip it; the search budget ends at
+   the set step count.
+10. **Verify before done.** A turn that changed files or ran an action checks
+    the result (re-read, test, or status) before it says done. Test: a scripted
+    turn that claims done without a check gets one verify step; a turn with
+    nothing to verify is unchanged.
+11. **`Tools.hide` per turn.** Tools that the turn cannot need are hidden for
+    that request through `Tools.hide`, and come back the next turn. Test: hidden
+    tools are absent from that request's tool list and present again after it.

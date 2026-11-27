@@ -216,3 +216,12 @@ Every suggested action needs a yes, every time, in v1. Not C. A later tight allo
 
 ### Q4. Vault backend: A
 The `keyring` library plus a fake backend for tests. OpenBot's headers file stays where it is in v1.
+
+## Next: lean turns (see 04-efficiency.md H8)
+
+After block 5 (vault), the order is the eight H8 blocks in
+`roadmap/04-efficiency.md` (stop/Esc cancel, stable prefix first, adaptive
+window, ack-first, thumbs-up or silence, lazy skill body, autonomy via
+`confirm.py` for writes only, short skill summary return), then LoopDetector,
+verify-before-done and `Tools.hide` per turn. Block 7 reuses the confirm
+primitive from block 0 here.
