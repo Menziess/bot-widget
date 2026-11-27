@@ -220,6 +220,7 @@ class VaultInCommands(unittest.IsolatedAsyncioTestCase):
     def shell(command, **extra):
         return {"id": "s", "function": {"name": "shell", "arguments": json.dumps({"command": command, **extra})}}
 
+    @unittest.skipIf(os.name == "nt", "the commands use $VAR and sh quoting")
     async def test_the_command_gets_the_value_and_the_model_gets_none_of_it(self):
         conn = _Conn(auto_allow=True)
         agent, sid, store = await self._agent(conn)
@@ -248,6 +249,7 @@ class VaultInCommands(unittest.IsolatedAsyncioTestCase):
         self.assertIn("declined", result)
         self.assertFalse(os.path.exists(os.path.join(agent.tools.workspace, "out.txt")))
 
+    @unittest.skipIf(os.name == "nt", "the commands use $VAR and sh quoting")
     async def test_the_model_cannot_pass_an_environment_of_its_own(self):
         conn = _Conn(auto_allow=True)
         agent, sid, store = await self._agent(conn)

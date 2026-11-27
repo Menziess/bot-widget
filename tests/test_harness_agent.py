@@ -109,6 +109,7 @@ class Defaults(unittest.TestCase):
             port.append(server.getsockname()[1])
             gate.set()
             seen = 0
+            held = []
             while not done.is_set():
                 server.settimeout(0.2)
                 try:
@@ -117,8 +118,7 @@ class Defaults(unittest.TestCase):
                     continue
                 seen += 1
                 if seen == 1:
-                    clock.sleep(0.6)
-                    conn.close()
+                    held.append(conn)  # accepted and quiet, the way a proxy is while the model loads
                     continue
                 conn.settimeout(1)
                 try:
