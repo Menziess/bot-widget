@@ -66,6 +66,7 @@ def tool_title(name: str, arguments: dict) -> str:
 BRIEF_PROMPT = ("Write down what a helper needs from this conversation to carry out the user's last request: facts, "
                 "names, dates and decisions that matter. Leave out the rest. At most 120 words, plain text.")
 SKILL_IDLE_S = 600  # a skill that waited this long for the user is over; the chat answers
+SKILL_SUMMARY_MAX = 150  # characters of a skill's reply copied to the main conversation
 BRIEF_SHORT = 1500  # characters of conversation a skill gets as they are, without a model to pick from them
 
 
@@ -227,10 +228,11 @@ class LeanAgent:
         if self._skill_ended == "not_for_me":
             main.set("skill_active", "")
             return await self._answer(session_id, main)  # the same message, now for the chat
-        # What the skill said is part of the conversation the user and the bot share.
-        for message in store.messages()[seen:]:
-            if message["role"] == "bot":
-                main.add("bot", message["text"])
+        # Only the summary of what the skill did goes to the conversation;
+        # the full transcript stays in the skill session.
+        summary = self._skill_summary(store.messages()[seen:])
+        if summary:
+            main.add("bot", summary)
         self._after_skill(main, response)
         return response
 
@@ -238,6 +240,15 @@ class LeanAgent:
         """The skill is over when it said so or the user cancelled; otherwise the clock for waiting starts again."""
         over = response.stop_reason == "cancelled" or self._skill_ended == "done"
         main.set("skill_active", "" if over else str(time.time()))
+
+    @staticmethod
+    def _skill_summary(messages: list[dict]) -> str:
+        """Bounded summary of what the skill said, joined from bot messages."""
+        bot_parts = [m["text"] for m in messages if m["role"] == "bot"]
+        if not bot_parts:
+            return ""
+        joined = " ".join(bot_parts)
+        return joined[:SKILL_SUMMARY_MAX] if len(joined) > SKILL_SUMMARY_MAX else joined
 
     async def _brief(self, main: SessionStore) -> str:
         """What a skill needs from the conversation so far, picked out by the model; the last lines as they are when
