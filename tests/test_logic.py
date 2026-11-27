@@ -5398,6 +5398,31 @@ class BubbleHover(unittest.TestCase):
         self.window._animate()
         self.assertEqual(activated, [])
 
+    def test_the_chat_that_a_click_on_the_face_brings_back_keeps_nothing_of_the_page_area(self):
+        """Settings, then a click on the face: the old page area is not held, so moving off closes the chat."""
+        import time
+        self.screen((0, 0, 1600, 900))  # room beside the face: the page does not cover it
+        self.window._move_icon(700, 500)
+        self.window._remember_spot()
+        self.hover()
+        self.open_settings()
+        self.finish_growth()
+        self.window.open_input()
+        self.finish_growth()
+        bubble = self.window.bubble
+        self.assertIsNone(bubble.holding_area(), "the pointer was on the face, not on the page")
+        self.where["at"] = (self.window.x() + 34, self.window.y() + 34)
+        for _ in range(5):
+            bubble._tick()
+            self.window._check_hover()
+        self.where["at"] = (5000, 5000)
+        for _ in range(60):
+            bubble._tick()
+            self.window._check_hover()
+            self.window._animate()
+            time.sleep(0.02)
+        self.assertEqual(bubble.kind, "")
+
     def test_moving_the_pointer_onto_the_bubble_gives_it_the_focus_but_resting_there_does_not(self):
         import time
         from unittest import mock

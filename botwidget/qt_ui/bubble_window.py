@@ -1128,15 +1128,22 @@ class BubbleWindow(QWidget):
         return QRect(self._held) if self._held is not None else None
 
     def _area_under_pointer(self) -> QRect | None:
-        """The whole window, when the pointer is on it: what a smaller card keeps as hover area.
+        """The whole window, when the pointer is on the card itself: what a smaller card keeps as hover area. A
+        pointer on the face is near the bubble, but not on it, even where the card reaches over the face (the face is
+        on top there): the click on the face that brings the chat back
+        keeps nothing of the page, or the chat would stay open for as long as the pointer is anywhere in that area.
 
-        A frame that misses the X query still keeps it when the pointer was already on the bubble.
+        Where the pointer is not known, a frame that misses the X query still keeps it when the pointer was
+        already on the bubble.
         """
         if not (self.isVisible() and self.kind):
             return None
-        if not (self.face.pointer_near(self) or self._was_near):
-            return None
-        return QRect(self.frameGeometry())
+        if self.face.pointer_known():
+            px, py = self.face._pointer()
+            over = self.card().contains(int(px), int(py)) and not self.face._pointer_on_head()
+        else:
+            over = self.face.pointer_near(self) or self._was_near
+        return QRect(self.frameGeometry()) if over else None
 
     def _hold_after(self, old: QRect | None):
         """A page change made the card smaller (the back arrow) or moved it (a tall page that no longer fits
