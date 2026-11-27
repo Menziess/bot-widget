@@ -252,6 +252,7 @@ class ArcCatcher(QWidget):
 
 
 # Each of these runs on the second click of the same row, and nothing else in between.
+MEMORY_SCOPES = ("user", "project", "topic")
 DESTRUCTIVE = ("bot-remove", "connection-remove", "memory-forget", "vault-delete", "reset")
 
 
@@ -819,7 +820,7 @@ class Faces(QObject):
         if kind != "reset":
             self._reset_done = ""
         if command in ("action/save-bot", "action/save-json", "action/save-approvals", "action/save-connection",
-                       "action/memory-save", "action/models") or kind == "cycle":
+                       "action/memory-save", "action/models", "action/save-secret") or kind == "cycle":
             self._take(fields, page)
         if kind == "page" and (name == "bot" or name.startswith("bot/")):
             self._open_bot_form(name.split("/", 1)[1] if name.startswith("bot/") else "")
@@ -836,6 +837,9 @@ class Faces(QObject):
             return name
         if kind == "page" and name == "memory/new":
             self._memory_id, self._memory_text, self._memory_scope, self._memory_topic = "", "", "user", ""
+            return name
+        if kind == "page" and name == "vault/new":
+            self._vault_new_id, self._vault_new_value, self._vault_error = "", "", ""
             return name
         if kind == "page" and name.startswith("memory/edit/"):
             self._open_memory(name.rsplit("/", 1)[1])
@@ -855,6 +859,11 @@ class Faces(QObject):
             return page
         if kind == "action" and name == "models":
             self._list_models()
+            return page
+        if kind == "cycle" and name == "memory_scope":
+            scope = str(getattr(self, "_memory_scope", "user") or "user")
+            self._memory_scope = MEMORY_SCOPES[(MEMORY_SCOPES.index(scope) + 1) % len(MEMORY_SCOPES)] \
+                if scope in MEMORY_SCOPES else MEMORY_SCOPES[0]
             return page
         if kind == "cycle" and name == "model":
             draft = self._connection_draft or acp_bots.blank_connection()
@@ -952,12 +961,7 @@ class Faces(QObject):
         elif kind == "vault-delete":
             self._delete_vault_secret(name)
             return page
-        elif kind == "vault-new":
-            # Open the new-secret form.
-            self._vault_new_id, self._vault_new_value = "", ""
-            self._vault_error = ""
-            return "vault/new"
-        elif kind == "vault-save":
+        elif command == "action/save-secret":
             self._vault_error = self._save_vault_secret()
             return page if self._vault_error else "vault"
         return None

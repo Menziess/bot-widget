@@ -17,9 +17,9 @@ SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections"
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
 # No /home: a right-click shows this list on its own. A page steps back to the screen before it.
 COMMANDS = (("/settings", "Sound, updates, startup, look"), ("/bots", "Show, hide, add or edit bots"),
-            ("/connections", "Apps and models the bots use"), ("/memory", "See, add or forget memories"),
-            ("/approvals", "What bots may do without asking"), ("/screenshot", "Capture a region, or double-click a face"),
-            ("/feedback", "Report a problem on GitHub"), ("/vault", "Secrets stored in the keychain"))
+            ("/connections", "Apps and models the bots use"), ("/memory", "See, add or remove memories"),
+            ("/vault", "Secrets stored in the keychain"), ("/approvals", "What bots may do without asking"),
+            ("/screenshot", "Capture a region, or double-click a face"), ("/feedback", "Report a problem on GitHub"))
 
 
 def _slash_name(name: str) -> str:
@@ -127,18 +127,20 @@ def settings(state: dict) -> list:
         blocks.append(_row((f"Open the chat from any app with {state['hotkey']}", "dim")))
     if state.get("switch_label"):
         blocks.append(_button(state["switch_label"], "action/switch"))
-    blocks.append(plain_block("gap"))
-    if state.get("can_glass"):
-        blocks.append(control_block("slider", "Glass transparency", "slider/glass", state["glass_clear"]))
     blocks += [
+        plain_block("gap"),
         _toggle("Sound on a new answer", "toggle/sound", state["sound"]),
         _toggle(f"No sound from {QUIET_FROM}:00 to {QUIET_TO:02d}:00", "toggle/quiet_hours", state["quiet_hours"]),
-        _toggle("Face stays above other windows", "toggle/always_on_top", state["always_on_top"]),
-        _toggle("Fewer animations on battery or in low power mode", "toggle/save_battery", state["save_battery"]),
+        plain_block("gap"),
     ]
+    if state.get("can_glass"):
+        blocks.append(control_block("slider", "Glass transparency", "slider/glass", state["glass_clear"]))
+    blocks.append(_toggle("Face stays above other windows", "toggle/always_on_top", state["always_on_top"]))
     if state.get("can_pick_desktops"):
         blocks.append(_toggle("Show on all desktops", "toggle/all_desktops", state["all_desktops"]))
     blocks += [
+        _toggle("Fewer animations on battery or in low power mode", "toggle/save_battery", state["save_battery"]),
+        plain_block("gap"),
         _toggle("Start at login", "toggle/login", state["login"]),
         _toggle("Check for updates", "toggle/check_updates", state["check_updates"]),
     ]
@@ -206,9 +208,9 @@ def bot_form(state: dict) -> list:
         _button(f"Face: {form.get('face') or 'automatic'}", "cycle/face"),
         _button(f"Colour: {form.get('color') or 'automatic'}", "cycle/color"),
         _face_preview(form),
+        plain_block("gap"),
         _button(_connection_label(state, form), "cycle/connection"),
     ]
-    # Workspace
     ws = form.get("workspace") or ""
     blocks.append(_field("Workspace", "field/workspace", ws))
     ws_perm = form.get("workspace_permissions") or "ask"
@@ -312,9 +314,9 @@ def connection_form(state: dict) -> list:
         _button(f"Provider: {acp_bots.provider_of(form)}", "cycle/provider"),
         _field("Name", "field/name", form.get("name") or ""),
         _field("Model address", "field/base_url", form.get("base_url") or ""),
+        _field("Key file", "field/key_file", form.get("key_file") or ""),
         _field("Model", "field/model", form.get("model") or ""),
         *_model_list(state, form),
-        _field("Key file", "field/key_file", form.get("key_file") or ""),
     ]
     if state.get("connection_error"):
         blocks.append(_row((state["connection_error"], "b")))
@@ -377,7 +379,7 @@ def vault_page(state: dict) -> list:
             remove = f"vault-delete/{sid}"
             blocks.append(_item(sid, "", None, [(_armed(state, remove, "Remove"), remove)]))
     blocks += [plain_block("gap"),
-               _button("New secret", "vault-new")]
+               _button("New secret", "page/vault/new")]
     return blocks
 
 
@@ -391,7 +393,7 @@ def vault_new_page(state: dict) -> list:
         _field("Secret ID", "field/vault_new_id", state.get("_vault_new_id", "")),
         _field("Secret value", "field/vault_new_value", state.get("_vault_new_value", "")),
         plain_block("gap"),
-        _button("Save secret", "vault-save"),
+        _button("Save secret", "action/save-secret"),
     ]
     return blocks
 
@@ -408,7 +410,7 @@ def memory_add(state: dict) -> list:
         {**control_block("editor", "Text", "field/memory_text"), "value": state.get("_memory_text", "")},
     ]
     if not editing:
-        blocks.append(_field("Scope (user/project/topic)", "field/memory_scope", state.get("_memory_scope", "user")))
+        blocks.append(_button(f"Scope: {state.get('_memory_scope') or 'user'}", "cycle/memory_scope"))
     blocks += [
         _field("Topic (optional)", "field/memory_topic", state.get("_memory_topic", "")),
         plain_block("gap"),

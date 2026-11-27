@@ -447,6 +447,44 @@ class ApprovalsPage(WidgetSave):
         self.assertNotIn("closed", self.calls, "a refused edit stays open")
 
 
+class VaultPage(WidgetSave):
+    """The /vault page: a secret is saved from the form fields, listed by id with one Remove, and removed on the second click."""
+
+    def setUp(self):
+        super().setUp()
+        from botwidget import vault
+        vault._activate_fake()
+        self.addCleanup(vault._fake.clear)
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        ids = mock.patch.object(vault, "_SECRET_IDS_PATH", os.path.join(folder, "ids.json"))
+        ids.start()
+        self.addCleanup(ids.stop)
+        self.vault = vault
+
+    def test_the_form_fields_are_saved_and_a_missing_id_is_refused(self):
+        self.assertEqual(self.box.menu_command("page/vault/new", "vault"), "vault/new")
+        refused = self.box.menu_command("action/save-secret", "vault/new",
+                                        {"field/vault_new_id": "", "field/vault_new_value": "x"})
+        self.assertEqual(refused, "vault/new")
+        self.assertEqual(self.vault.list_secret_ids(), [])
+        saved = self.box.menu_command("action/save-secret", "vault/new",
+                                      {"field/vault_new_id": "api", "field/vault_new_value": "s3cr3t"})
+        self.assertEqual(saved, "vault")
+        self.assertEqual(self.vault.list_secret_ids(), ["api"])
+
+    def test_a_secret_is_one_row_and_goes_on_the_second_click(self):
+        from botwidget import menu_pages
+        self.vault.set_secret("api", "s3cr3t")
+        text = json.dumps(menu_pages.vault_page({}), default=str)
+        self.assertIn('"command": "vault-delete/api"', text)
+        self.assertNotIn("s3cr3t", text)
+        self.box.menu_command("vault-delete/api", "vault")
+        self.assertEqual(self.vault.list_secret_ids(), ["api"], "the first click only arms it")
+        self.box.menu_command("vault-delete/api", "vault")
+        self.assertEqual(self.vault.list_secret_ids(), [])
+
+
 class MemoryPage(WidgetSave):
     """The /memory page: every row can be edited or forgotten, and a save changes that memory in place."""
 
@@ -489,6 +527,14 @@ class MemoryPage(WidgetSave):
         self.assertEqual(len(self.memory.list_memories()), 2, "the first click only arms it")
         self.assertEqual(self.box.menu_command(f"memory-forget/{second}", "memory"), "memory")
         self.assertEqual([m["id"] for m in self.memory.list_memories()], [first])
+
+    def test_the_scope_button_steps_through_the_three_scopes(self):
+        self.box.menu_command("page/memory/new", "memory")
+        seen = []
+        for _ in range(4):
+            self.box.menu_command("cycle/memory_scope", "memory/new")
+            seen.append(self.box._memory_scope)
+        self.assertEqual(seen, ["project", "topic", "user", "project"])
 
     def test_a_new_memory_takes_the_typed_fields(self):
         fields = {"field/memory_text": "Nieuw", "field/memory_scope": "user", "field/memory_topic": ""}

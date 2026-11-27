@@ -2736,7 +2736,7 @@ class BubbleHover(unittest.TestCase):
         buttons = [w for w in bubble._control_widgets if isinstance(w, ActionButton)]
         self.assertEqual(len(switches), 7)
         self.assertEqual(action_labels(buttons), ["Quit Bot Widget"])
-        self.assertEqual([w.isChecked() for w in switches], [True, False, True, True, False, False, True])
+        self.assertEqual([w.isChecked() for w in switches], [True, False, True, False, True, False, True])
         rows = [w.geometry().top() for w in switches]
         self.assertEqual(rows, sorted(rows), "in the order of the page")
         self.assertEqual(len(set(rows)), len(rows), "each in a row of its own")
