@@ -357,6 +357,7 @@ After the H8 blocks, the harness keeps improving in a loop on the PC (setup 2), 
 
 Seed backlog, in order:
 
+- *2026-11-27, by hand, not gated by `benchmark.py --live`: LoopDetector extension (`failed`: three failing steps of one kind in a row, kind = tool, plus the program for shell; `searched`: `HARNESS_SEARCH_STEPS`, default 10) and verify before done (`VerifyGuard`: a changed file with no later look gets one nudge) are in. The dropped attempt stopped on three calls of the same tool whatever the result, so three reads in a row tripped it. Block 7 is not retried: reads already run without asking, so it only added a prompt sentence. `Tools.hide` per turn and lazy skill body are not built.*
 - **LoopDetector extension** (H8 item 9; feature): stop on repeated failure of the same kind of command, and a fixed
   search-step budget.
 - **Verify before done** (H8 item 10; feature): a turn that changed something checks the result before it says done.

@@ -31,6 +31,9 @@ WRITERS = {"write_file", "edit", "shell", "delete_file"}
 # A place on this machine: a home path, a drive path, or an absolute path with at least two parts (`/demo` is a command).
 PATH = re.compile(r"(?<![\w/\\.])(?:~|[A-Za-z]:)?(?:[\\/][\w.\-~]+){2,}|(?<![\w/\\.])~(?:[\\/][\w.\-~]+)+")
 
+SEARCHES = {"search"}
+CHANGERS = {"write_file", "edit", "delete_file"}  # shell can change things too, but a shell call is also how a check runs
+
 # The user asking for the desktop's applications, in either phrase, in any order.
 ACCESSIBILITY_ASK = re.compile(r"^(?=.*accessibility)(?=.*\btool\b).*|^(?=.*which applications)(?=.*\bopen\b).*",
                                re.IGNORECASE | re.DOTALL)
@@ -52,6 +55,8 @@ CHANGE_NUDGE = ("The user asked you to {what} something, and no tool that can ch
                 "now with a tool, or say plainly that you did not.")
 CLAIM_NUDGE = ("You ended on a promise, or on a claim of work that this turn has no tool call for. Do it now "
                "with a tool call. If no tool can do it, say so plainly and do not invent a result.")
+VERIFY_NUDGE = ("You changed a file and have not looked at the result since. Check it now with a tool (read the file, "
+                "run its test, or check the status), then say what you found.")
 SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
                "call. If you are finished call done, if you wait for the user's answer call wait_for_user, and if the "
                "user's message has nothing to do with this skill call not_for_me.")
@@ -84,6 +89,7 @@ class Turn:
     offered: set[str]
     skill_on: bool = False
     called: set[str] = field(default_factory=set)
+    unverified: bool = False  # a file was changed and no later step looked at anything
     tool_failed: bool = False  # the step before this one called tools, and every one failed
 
 
@@ -173,6 +179,15 @@ OBLIGATIONS = (
 )
 
 
+class VerifyGuard(Guard):
+    """Something was changed and the closing words come before any check of the result."""
+
+    name = "verify"
+
+    def review(self, turn, step):
+        return Nudge(VERIFY_NUDGE, keeps_text=True) if turn.unverified and not turn.skill_on else None
+
+
 class SkillGuard(Guard):
     """A skill is over when it says so with a tool: a message that only talks gets sent back."""
 
@@ -192,7 +207,7 @@ class Governor:
     """
 
     def __init__(self, guards=None):
-        self.guards = guards or (FailedToolGuard(), *OBLIGATIONS, SkillGuard())
+        self.guards = guards or (FailedToolGuard(), *OBLIGATIONS, VerifyGuard(), SkillGuard())
         self.used = Counter()
 
     def review(self, turn: Turn, step: Step) -> Nudge | None:
@@ -217,11 +232,17 @@ class Governor:
 class LoopDetector:
     """The same step, tool calls and arguments alike, this many times in a row. 0 turns it off.
 
-    One entry per step: the same call three times inside one answer is one step, not three in a row."""
+    One entry per step: the same call three times inside one answer is one step, not three in a row.
 
-    def __init__(self, repeats: int):
+    The same kind of call failing in a row also counts, with other arguments each time, and so do too many search
+    steps in a row. `failed` and `searched` return the tool to stop on, or empty."""
+
+    def __init__(self, repeats: int, search_steps: int = 0):
         self.repeats = repeats
+        self.search_steps = search_steps
         self.recent: list[str] = []
+        self.kinds: list[str] = []
+        self.searching = 0
 
     def stuck(self, step: Step) -> str:
         """The tool the loop is on, or empty."""
@@ -229,3 +250,32 @@ class LoopDetector:
         if self.repeats > 1 and len(self.recent) >= self.repeats and len(set(self.recent[-self.repeats:])) == 1:
             return (step.calls[-1].get("function") or {}).get("name") or "a tool"
         return ""
+
+    def failed(self, step: Step, results: list) -> str:
+        """Called after the tools ran. A step in which every call failed is one kind of failure: the tool name, and for
+        shell the program that ran. Any step with a success starts the count again."""
+        if not step.calls or not all(str(result).startswith("The tool failed") for result in results):
+            self.kinds.clear()
+            return ""
+        self.kinds.append("|".join(sorted({_kind(call) for call in step.calls})))
+        if self.repeats > 1 and len(self.kinds) >= self.repeats and len(set(self.kinds[-self.repeats:])) == 1:
+            return self.kinds[-1]
+        return ""
+
+    def searched(self, step: Step) -> bool:
+        """A step of only searches, too many in a row: the search is not converging."""
+        only_search = bool(step.calls) and step.tool_names <= SEARCHES
+        self.searching = self.searching + 1 if only_search else 0
+        return self.search_steps > 0 and self.searching >= self.search_steps
+
+
+def _kind(call: dict) -> str:
+    function = call.get("function") or {}
+    name = function.get("name") or ""
+    if name != "shell":
+        return name
+    try:
+        words = str(json.loads(function.get("arguments") or "{}").get("command") or "").split()
+    except json.JSONDecodeError:
+        words = []
+    return f"shell {words[0]}" if words else name

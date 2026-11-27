@@ -43,11 +43,12 @@ from harness.agent import context
 from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
-from harness.agent.turn import Governor, LoopDetector, Step, Turn, call_key
+from harness.agent.turn import CHANGERS, Governor, LoopDetector, Step, Turn, call_key
 from harness.agent.workspace import _diff_text, _real_path, compute_edit, outside_workspace, shell_segments
 from harness.stream_text import fold_chunk, note_raw
 
 MAX_STEPS = 30  # default for HARNESS_MAX_STEPS: a tool loop that never settles must still end the turn
+SEARCH_STEPS = 10  # default for HARNESS_SEARCH_STEPS: this many steps of only searches in a row end the turn; 0 is off
 LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the same arguments this many times in a row
 # A skill is over when the model calls one of these. A message that ends without a call (a bare "let me look") gets
 # SKILL_NUDGES nudges to go on first.
@@ -429,7 +430,7 @@ class LeanAgent:
                     offered=offered, skill_on=skill_on)
         governor = Governor()
         required = ""
-        loop = LoopDetector(_env_int("HARNESS_LOOP_REPEATS", LOOP_REPEATS))
+        loop = LoopDetector(_env_int("HARNESS_LOOP_REPEATS", LOOP_REPEATS), _env_int("HARNESS_SEARCH_STEPS", SEARCH_STEPS))
         started = time.monotonic()
         first = 0.0
         answer = []
@@ -515,6 +516,20 @@ class LeanAgent:
                     messages.append({"role": "tool", "tool_call_id": call["id"],
                                      "content": TOOL_OUTPUT + "\n" + result})
                 turn.tool_failed = bool(results) and all(str(result).startswith("The tool failed") for result in results)
+                if step.tool_names & CHANGERS:
+                    turn.unverified = True
+                elif step.tool_names:
+                    turn.unverified = False
+                if failing := loop.failed(step, results):
+                    notice = (f"I stopped: {failing} failed {loop.repeats} times in a row, with different arguments "
+                              "each time. Tell me what to try instead.")
+                    last["loop"] = failing
+                    break
+                if loop.searched(step):
+                    notice = (f"I stopped: {loop.search_steps} searches in a row and no answer yet. Tell me where to "
+                              "look, or what to try instead.")
+                    last["loop"] = "search"
+                    break
                 if ending:
                     self._skill_ended = ending[0]
                     break

@@ -493,6 +493,7 @@ class DirectAgent(unittest.IsolatedAsyncioTestCase):
                               call("pin_fact", {"fact": "houdt van thee"}, "7"),
                               call("pin_fact", {}, "8")])],
             [("text", "na tools")],
+            [("text", "na tools")],  # the answer after the verify nudge: the file was written and not looked at
             ModelError("HTTP 401: no"),
             wait_then_fail,
         ])

@@ -130,6 +130,54 @@ class Loops(unittest.TestCase):
         off = LoopDetector(0)
         self.assertEqual([off.stuck(step("", "shell")) for _ in range(5)], [""] * 5)
 
+    def shell_step(self, command):
+        call = {"id": "s", "function": {"name": "shell", "arguments": json.dumps({"command": command})}}
+        return Step(chunks=[""], calls=[call])
+
+    def test_the_same_kind_of_call_failing_in_a_row_is_a_loop_even_with_other_arguments(self):
+        loop = LoopDetector(3)
+        failed = ["The tool failed: no"]
+        stops = [loop.failed(self.shell_step(f"ls /x{n}"), failed) for n in range(3)]
+        self.assertEqual(stops, ["", "", "shell ls"])
+
+    def test_a_success_or_another_program_breaks_the_failing_run(self):
+        loop = LoopDetector(3)
+        failed = ["The tool failed: no"]
+        for command, result in (("ls a", failed), ("ls b", failed), ("ls c", ["fine"]), ("ls d", failed),
+                                ("ls e", failed), ("cat f", failed)):
+            self.assertEqual(loop.failed(self.shell_step(command), result), "")
+
+    def test_a_tool_that_succeeds_three_times_is_not_failing(self):
+        loop = LoopDetector(3)
+        self.assertEqual([loop.failed(step("", "read_file"), ["text"]) for _ in range(4)], [""] * 4)
+
+    def test_too_many_search_steps_in_a_row_end_the_turn(self):
+        loop = LoopDetector(3, search_steps=3)
+        self.assertEqual([loop.searched(step("", "search")) for _ in range(3)], [False, False, True])
+
+    def test_another_step_resets_the_search_count_and_zero_is_off(self):
+        loop = LoopDetector(3, search_steps=3)
+        for names in (("search",), ("search",), ("read_file",), ("search",), ("search",)):
+            self.assertFalse(loop.searched(step("", *names)))
+        off = LoopDetector(3)
+        self.assertFalse(any(off.searched(step("", "search")) for _ in range(20)))
+
+
+class Verify(unittest.TestCase):
+    def test_closing_after_a_change_without_a_check_is_sent_back_once(self):
+        governor = Governor()
+        nudge = governor.review(turn(unverified=True), step("Ik heb het aangepast."))
+        self.assertIn("Check it now", nudge.text)
+        self.assertTrue(nudge.keeps_text)
+        self.assertIsNone(governor.review(turn(unverified=True), step("Ik heb het aangepast.")))
+
+    def test_a_checked_change_or_no_change_ends_the_turn(self):
+        self.assertIsNone(Governor().review(turn(unverified=False), step("Het bestand heeft drie regels.")))
+
+    def test_a_skill_is_not_asked_to_verify(self):
+        nudge = Governor().review(turn(unverified=True, skill_on=True), step("x"))
+        self.assertNotIn("Check it now", nudge.text)
+
 
 class Messages(unittest.TestCase):
     def test_pieces_with_one_id_are_one_message_and_another_id_starts_a_new_one(self):

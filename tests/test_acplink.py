@@ -529,6 +529,7 @@ class ThumbsUp(unittest.TestCase):
         async def fake_ensure():
             return Stub()
 
+        self.assertTrue(wait_for(lambda: not link.active()))  # the history load at start is not the turn
         link._ensure = fake_ensure
         ok, error = link.send("\U0001f44d")
         self.assertTrue(ok, error)
