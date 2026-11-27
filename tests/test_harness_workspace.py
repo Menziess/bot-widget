@@ -212,6 +212,11 @@ class FindFiles(unittest.TestCase):
         result = find_files("", "bot-widget", path=self.folder).splitlines()
         self.assertEqual(result, [os.path.join(self.folder, "Projects", "bot-widget") + "/"])
 
+    def test_the_search_stops_at_the_first_level_with_a_match(self):
+        _write(os.path.join(self.folder, "Projects", "bot-widget", "deep", "bot-widget-notes.txt"), "x")
+        result = find_files("", "bot-widget", path=self.folder).splitlines()
+        self.assertEqual(result, [os.path.join(self.folder, "Projects", "bot-widget") + "/"])
+
     def test_a_glob_is_used_as_given_and_case_is_ignored(self):
         self.assertIn("README.md", find_files("", "READ*.MD", path=self.folder))
 
@@ -220,7 +225,9 @@ class FindFiles(unittest.TestCase):
         self.assertIn(f"nothing named zzz in {os.path.realpath(self.folder)}", find_files("", "zzz", path=self.folder))
 
     def test_the_limit_and_the_time_budget_stop_the_walk(self):
-        self.assertEqual(len(find_files("", "*", limit=2, path=self.folder).splitlines()), 2)
+        for name in ("a.md", "b.md", "c.md"):
+            _write(os.path.join(self.folder, name), "x")
+        self.assertEqual(len(find_files("", "*.md", limit=2, path=self.folder).splitlines()), 2)
         with unittest.mock.patch("harness.agent.workspace.SEARCH_SECONDS", -1):
             self.assertIn("search stopped", find_files("", "zzz", path=self.folder))
 

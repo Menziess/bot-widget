@@ -208,28 +208,44 @@ def search_files(workspace: str, pattern: str, limit: int = 100, path: str = "")
     return f"(no matches in {root}){note}"
 
 
-SKIP_WHILE_FINDING = {"node_modules", "Library", "__pycache__"}  # shortcut: hidden folders are skipped too; none of these hold projects
+SKIP_WHILE_FINDING = {"node_modules", "Library", "__pycache__"}  # shortcut: hidden folders and app bundles are skipped too; none hold projects
 
 
 def find_files(workspace: str, name: str, limit: int = 50, path: str = "") -> str:
     """Files and folders whose name matches *name* (a glob; plain words match anywhere in the name), in the home
-    folder or in *path*. Secret files and folders are skipped. Stops at the search time budget and says so."""
-    pattern = name if any(c in name for c in "*?[") else f"*{name}*"
+    folder or in *path*. The search goes one level deeper at a time and stops at the first level with a match. Secret files and
+    folders are skipped. Stops at the search time budget and says so."""
+    pattern = (name if any(c in name for c in "*?[") else f"*{name}*").lower()
     root = _real_path(workspace, path) if path else os.path.expanduser("~")
     if _is_secret_path(root):
         raise ToolError("that path is private and is not searched")
     deadline = time.monotonic() + SEARCH_SECONDS
     found: list[str] = []
-    for dirpath, dirs, files in os.walk(root, followlinks=False):
-        dirs[:] = sorted(d for d in dirs if not _is_secret_dir(d) and not d.startswith(".") and d not in SKIP_WHILE_FINDING)
-        for entry, suffix in [*((d, "/") for d in dirs), *((f, "") for f in sorted(files))]:
-            if fnmatch.fnmatchcase(entry.lower(), pattern.lower()) and not (suffix == "" and _is_secret_name(entry)):
-                found.append(os.path.join(dirpath, entry) + suffix)
-                if len(found) >= limit:
-                    return "\n".join(found)
-        if time.monotonic() > deadline:
-            found.append(f"(search stopped after {SEARCH_SECONDS} seconds; narrow the path)")
-            break
+    level = [root]
+    while level and not found:  # the shallowest places that match are the answer: deeper ones are not looked at
+        deeper = []
+        for directory in level:
+            if time.monotonic() > deadline:
+                found.append(f"(search stopped after {SEARCH_SECONDS} seconds; narrow the path)")
+                return "\n".join(found)
+            try:
+                entries = sorted(os.scandir(directory), key=lambda entry: entry.name)
+            except OSError:
+                continue
+            for entry in entries:
+                is_dir = entry.is_dir(follow_symlinks=False)
+                if is_dir and (_is_secret_dir(entry.name) or entry.name.startswith(".")
+                               or entry.name in SKIP_WHILE_FINDING or entry.name.endswith(".app")):
+                    continue
+                if not is_dir and _is_secret_name(entry.name):
+                    continue
+                if fnmatch.fnmatchcase(entry.name.lower(), pattern):
+                    found.append(entry.path + ("/" if is_dir else ""))
+                    if len(found) >= limit:
+                        return "\n".join(found)
+                if is_dir:
+                    deeper.append(entry.path)
+        level = deeper
     return "\n".join(found) or f"(nothing named {name} in {root})"
 
 
