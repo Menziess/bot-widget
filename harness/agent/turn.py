@@ -58,7 +58,8 @@ CHANGE_NUDGE = ("The user asked you to {what} something, and no tool that can ch
 CLAIM_NUDGE = ("You ended on a promise, or on a claim of work that this turn has no tool call for. Do it now "
                "with a tool call. If no tool can do it, say so plainly and do not invent a result.")
 VERIFY_NUDGE = ("You changed a file and have not looked at the result since. Check it now with a tool (read the file, "
-                "run its test, or check the status), then say what you found.")
+                "run its test, or check the status). Then answer once, in one or two short sentences: what you did, "
+                "and that the check agreed or what it showed. Do not repeat the file's content.")
 SEARCH_NUDGE = ("You said it was not there after a quick look. Search further before you answer: find_files looks "
                 "for a name across the whole home folder. Only say it is not there when that search came up empty, "
                 "and say where you looked.")
@@ -190,7 +191,7 @@ class VerifyGuard(Guard):
     name = "verify"
 
     def review(self, turn, step):
-        return Nudge(VERIFY_NUDGE, keeps_text=True) if turn.unverified and not turn.skill_on else None
+        return Nudge(VERIFY_NUDGE) if turn.unverified and not turn.skill_on else None
 
 
 class SearchGuard(Guard):

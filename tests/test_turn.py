@@ -166,7 +166,7 @@ class Verify(unittest.TestCase):
         governor = Governor()
         nudge = governor.review(turn(unverified=True), step("Ik heb het aangepast."))
         self.assertIn("Check it now", nudge.text)
-        self.assertTrue(nudge.keeps_text)
+        self.assertFalse(nudge.keeps_text, "the first closing words are not an answer: one summary comes after the check")
         self.assertIsNone(governor.review(turn(unverified=True), step("Ik heb het aangepast.")))
 
     def test_a_checked_change_or_no_change_ends_the_turn(self):
