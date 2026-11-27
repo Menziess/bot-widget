@@ -1089,10 +1089,6 @@ class LeanAgent:
         return [name]
 
     def _verdict(self, name: str, arguments: dict) -> bool | None:
-        """Only call for tools marked writes: reads never ask."""
-        tool = self.tools.find(name)
-        if tool is not None and not tool.writes:
-            raise AssertionError(f"_verdict called for read tool {name}")
         mode = getattr(self.tools, "permission", "ask")
         return self.rules.decide(self._approve_texts(name, arguments), session=mode in ("allow", "allow_session"))
 
