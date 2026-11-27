@@ -261,6 +261,13 @@ class VaultInCommands(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(variable("VAULT_X", windows=False), "$VAULT_X")
         self.assertEqual(variable("VAULT_X", windows=True), "%VAULT_X%")
 
+    async def test_a_vault_that_cannot_load_does_not_stop_a_plain_command(self):
+        conn = _Conn(auto_allow=True)
+        agent, sid, store = await self._agent(conn)
+        with mock.patch("botwidget.vault.refs_in", side_effect=ModuleNotFoundError("keyring")):
+            result = await agent._use_tool(sid, store, self.shell("echo hi"))
+        self.assertEqual(result, "hi")
+
     async def test_a_missing_keychain_fails_the_call_instead_of_the_turn(self):
         conn = _Conn(auto_allow=True)
         agent, sid, store = await self._agent(conn)

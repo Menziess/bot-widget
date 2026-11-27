@@ -868,8 +868,12 @@ class LeanAgent:
 
     @staticmethod
     def _vault_refs(command: str) -> list[str]:
-        from botwidget.vault import refs_in
-        return refs_in(command)
+        """The stored secrets a command names. A machine where the vault cannot load has none: the command still runs."""
+        try:
+            from botwidget.vault import refs_in
+            return refs_in(command)
+        except Exception:
+            return []
 
     @staticmethod
     def _redact(text, values: dict):
