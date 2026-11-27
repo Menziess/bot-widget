@@ -22,6 +22,7 @@ from harness.agent.workspace import (
     _ws_list,
     _ws_read,
     _ws_write,
+    find_files,
     load_workspace_rules,
     outside_workspace,
     resolve_workspace,
@@ -196,6 +197,33 @@ class SearchFiles(unittest.TestCase):
 
 
 # ── Safe walk ─────────────────────────────────────────────────────────
+
+class FindFiles(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.folder, True)
+        _write(os.path.join(self.folder, "Projects", "bot-widget", "README.md"), "x")
+        _write(os.path.join(self.folder, "Projects", "other", "notes.txt"), "x")
+        _write(os.path.join(self.folder, ".hidden", "bot-widget-copy", "a.txt"), "x")
+        _write(os.path.join(self.folder, "node_modules", "bot-widget-dep", "a.txt"), "x")
+        _write(os.path.join(self.folder, "Projects", ".env"), "TOKEN=1")
+
+    def test_a_plain_word_finds_folders_and_files_by_name_anywhere_under_the_path(self):
+        result = find_files("", "bot-widget", path=self.folder).splitlines()
+        self.assertEqual(result, [os.path.join(self.folder, "Projects", "bot-widget") + "/"])
+
+    def test_a_glob_is_used_as_given_and_case_is_ignored(self):
+        self.assertIn("README.md", find_files("", "READ*.MD", path=self.folder))
+
+    def test_secret_files_are_not_listed_and_nothing_found_says_where_it_looked(self):
+        self.assertNotIn("Projects", find_files("", ".env", path=self.folder))
+        self.assertIn(f"nothing named zzz in {os.path.realpath(self.folder)}", find_files("", "zzz", path=self.folder))
+
+    def test_the_limit_and_the_time_budget_stop_the_walk(self):
+        self.assertEqual(len(find_files("", "*", limit=2, path=self.folder).splitlines()), 2)
+        with unittest.mock.patch("harness.agent.workspace.SEARCH_SECONDS", -1):
+            self.assertIn("search stopped", find_files("", "zzz", path=self.folder))
+
 
 class SafeWalk(unittest.TestCase):
     def test_walk_skips_secret_dirs(self):
@@ -452,7 +480,7 @@ class WorkspaceBuiltins(unittest.TestCase):
         tools = workspace_builtins(folder, EditStore())
         names = {t.name for t in tools}
         expected = {
-            "list_dir", "read_file", "search",
+            "list_dir", "read_file", "search", "find_files",
             "write_file", "edit", "delete_file", "undo_edit", "undo_last", "diff",
             "git_status", "git_log", "git_diff",
             "shell",

@@ -208,6 +208,31 @@ def search_files(workspace: str, pattern: str, limit: int = 100, path: str = "")
     return f"(no matches in {root}){note}"
 
 
+SKIP_WHILE_FINDING = {"node_modules", "Library", "__pycache__"}  # shortcut: hidden folders are skipped too; none of these hold projects
+
+
+def find_files(workspace: str, name: str, limit: int = 50, path: str = "") -> str:
+    """Files and folders whose name matches *name* (a glob; plain words match anywhere in the name), in the home
+    folder or in *path*. Secret files and folders are skipped. Stops at the search time budget and says so."""
+    pattern = name if any(c in name for c in "*?[") else f"*{name}*"
+    root = _real_path(workspace, path) if path else os.path.expanduser("~")
+    if _is_secret_path(root):
+        raise ToolError("that path is private and is not searched")
+    deadline = time.monotonic() + SEARCH_SECONDS
+    found: list[str] = []
+    for dirpath, dirs, files in os.walk(root, followlinks=False):
+        dirs[:] = sorted(d for d in dirs if not _is_secret_dir(d) and not d.startswith(".") and d not in SKIP_WHILE_FINDING)
+        for entry, suffix in [*((d, "/") for d in dirs), *((f, "") for f in sorted(files))]:
+            if fnmatch.fnmatchcase(entry.lower(), pattern.lower()) and not (suffix == "" and _is_secret_name(entry)):
+                found.append(os.path.join(dirpath, entry) + suffix)
+                if len(found) >= limit:
+                    return "\n".join(found)
+        if time.monotonic() > deadline:
+            found.append(f"(search stopped after {SEARCH_SECONDS} seconds; narrow the path)")
+            break
+    return "\n".join(found) or f"(nothing named {name} in {root})"
+
+
 # ── File tools ────────────────────────────────────────────────────────
 
 MAX_READ_CHARS = 5_000_000  # one read never loads more than this; large answers spill to a file
@@ -1039,6 +1064,14 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
               "required": ["pattern"]},
              lambda a: search_files(workspace, a["pattern"], int(a.get("limit") or 100), str(a.get("path") or ""))),
         # ── edit ──
+        Tool("find_files",
+             "Find files and folders by name (a plain word matches anywhere in the name; * and ? work). Searches the "
+             "whole home folder unless path is given, so use it to look for a repo, a file or a folder the working "
+             "folder does not hold. Skips secret and hidden folders.",
+             {"type": "object",
+              "properties": {"name": {"type": "string"}, "path": {"type": "string"}, "limit": {"type": "integer"}},
+              "required": ["name"]},
+             lambda a: find_files(workspace, a["name"], int(a.get("limit") or 50), str(a.get("path") or ""))),
         Tool("write_file",
              "Write a text file inside the workspace. Needs user permission.",
              {"type": "object",

@@ -37,7 +37,7 @@ WRITERS = {"write_file", "edit", "shell", "delete_file"}
 # A place on this machine: a home path, a drive path, or an absolute path with at least two parts (`/demo` is a command).
 PATH = re.compile(r"(?<![\w/\\.])(?:~|[A-Za-z]:)?(?:[\\/][\w.\-~]+){2,}|(?<![\w/\\.])~(?:[\\/][\w.\-~]+)+")
 
-SEARCHES = {"search"}
+SEARCHES = {"search", "find_files"}
 CHANGERS = {"write_file", "edit", "delete_file"}  # shell can change things too, but a shell call is also how a check runs
 
 # The user asking for the desktop's applications, in either phrase, in any order.
@@ -63,9 +63,9 @@ CLAIM_NUDGE = ("You ended on a promise, or on a claim of work that this turn has
                "with a tool call. If no tool can do it, say so plainly and do not invent a result.")
 VERIFY_NUDGE = ("You changed a file and have not looked at the result since. Check it now with a tool (read the file, "
                 "run its test, or check the status), then say what you found.")
-SEARCH_NUDGE = ("You said it was not there after a quick look. Search further before you answer: by name across the "
-                "home folder, with a shell command such as find ~ -maxdepth 5 -iname '*name*' (mdfind -name on "
-                "macOS). Only say it is not there when that search came up empty, and say where you looked.")
+SEARCH_NUDGE = ("You said it was not there after a quick look. Search further before you answer: find_files looks "
+                "for a name across the whole home folder. Only say it is not there when that search came up empty, "
+                "and say where you looked.")
 SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
                "call. If you are finished call done, if you wait for the user's answer call wait_for_user, and if the "
                "user's message has nothing to do with this skill call not_for_me.")
