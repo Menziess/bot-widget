@@ -369,3 +369,4 @@ names, descriptions and paths (`harness/agent/workspace.py:996-998`, added throu
 the skill's own session.
 
 Loop log (one line per cycle):
+- 2026-11-27 16:06 Block 7 re-measure (re-measure, feature gate): left out; cause: gate: ; per task (largest token rise first): short_answer steps 1.0->1.0 tokens 4139->4177; compact_without_summary steps 1.0->1.0 tokens 4901->4939; compact_with_summary steps 1.0->1.0 tokens 4356->4394; topic_switch_recall steps 1.8->2.4 tokens 4240->4271; tool_read steps 2.8->2.6 tokens 11811->11068 [4cb988a]
