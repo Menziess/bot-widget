@@ -1534,6 +1534,7 @@ class BubbleHover(unittest.TestCase):
 
     def test_the_thinking_cloud_is_not_kept_open_by_its_dots(self):
         import time
+        self.window._pointer_on_head = lambda: True
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)
         bubble = self.window.bubble
         self.assertEqual(bubble.kind, "think")
@@ -1809,16 +1810,14 @@ class BubbleHover(unittest.TestCase):
         self.window.pin()
         self.assertFalse(self.window.unsent())
 
-    def test_a_message_shows_at_once_with_the_thinking_dots_before_openbot_confirms(self):
+    def test_a_sent_message_closes_the_bubble_and_the_face_says_thinking_before_openbot_confirms(self):
         self.window.pin()
         self.window.bubble._entry.setText("Hallo daar")
         old = self.window._pump_outbox
         self.window._pump_outbox = lambda: None
         self.addCleanup(setattr, self.window, "_pump_outbox", old)
         self.window.bubble._entry.returnPressed.emit()
-        self.assertEqual(self.window.bubble.kind, "think")
-        self.assertFalse(self.window.bubble._input)
-        self.assertTrue(self.window.bubble._dots_lines, "the dots show as soon as the message is on its way")
+        self.assertEqual(self.window.bubble.kind, "", "your text leaves with the send")
 
     def answer_sounds(self, visible):
         from unittest import mock
@@ -1872,8 +1871,8 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(self.window.visible_to_user())
         self.window.hide()
 
-    def test_asking_shows_dots_at_once_and_hover_brings_the_thought_back(self):
-        """Should open a dots cloud before the bot is thinking, close it, and expand it on hover."""
+    def test_asking_shows_no_cloud_and_hover_brings_the_thought_back(self):
+        """Should show no cloud before the bot is thinking, show the answer when it comes, and open the thought on hover."""
         import time
 
         from botwidget.bubble import reading_seconds
@@ -1881,20 +1880,16 @@ class BubbleHover(unittest.TestCase):
         self.window._seeded = True
         self.window.on_user_message("Hallo")
         bubble = self.window.bubble
-        self.assertEqual(bubble.kind, "think")
-        self.assertFalse(bubble._input)
-        self.assertNotIn("reading", bubble.full_text)
-        # The send already finished and the bot is not thinking yet: the cloud stays.
+        self.assertEqual(bubble.kind, "")
+        # The send already finished and the bot is not thinking yet: still no cloud.
         self.window._outbox.items.clear()
         self.window._sending = False
         self.window._asked = True
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": ""})
-        self.assertEqual(bubble.kind, "think")
-        # A pause while the question is still the latest line keeps the cloud.
+        self.assertEqual(bubble.kind, "")
         asked = self.MESSAGES + [{"role": "user", "text": "Hallo"}]
         self.window._sync_bubble({"messages": asked, "activity": "reading"})
-        self.window._sync_bubble({"messages": asked, "activity": ""})
-        self.assertEqual(bubble.kind, "think")
+        self.assertEqual(bubble.kind, "")
         self.window._sync_bubble({"messages": asked + [{"role": "bot", "text": "Klaar."}], "activity": ""})
         self.assertNotEqual(bubble.kind, "think")
         bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) - 1
@@ -1906,14 +1901,7 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(bubble._input)
         self.window._pointer_on_head = lambda: False
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"}, force=True)
-        self.assertNotIn("reading files", bubble.full_text)
-        self.assertFalse(bubble._input)
-        self.assertEqual(bubble.kind, "think")
-        bubble._tick()
-        self.assertEqual(bubble.kind, "think", "leaving starts the wait again")
-        bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) - 1
-        bubble._tick()
-        self.assertEqual(bubble.kind, "")
+        self.assertEqual(bubble.kind, "", "leaving takes the thought away")
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading files"})
         self.assertEqual(bubble.kind, "", "a new thought does not bring the chat bubble")
 
@@ -1932,13 +1920,9 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         self.assertEqual(bubble.kind, "")
 
-    def test_the_dots_move_in_a_bubble_that_was_already_open(self):
-        self.window.pin()
+    def test_the_dots_at_the_end_of_the_thought_move(self):
+        self.start_working()
         bubble = self.window.bubble
-        self.assertFalse(bubble._dots.isActive())
-        self.window._pump_outbox = lambda: None
-        self.window.bubble._entry.setText("Hallo daar")
-        self.window.bubble._entry.returnPressed.emit()
         self.assertTrue(bubble._dots_lines)
         self.assertTrue(bubble._dots.isActive(), "the animation timer runs as soon as there are dots")
         phase = bubble._dots_phase
@@ -2308,6 +2292,7 @@ class BubbleHover(unittest.TestCase):
         self.screen(screen)
         self.window._move_icon(*face_at)
         self.window._remember_spot()
+        self.window._pointer_on_head = lambda: True
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading"}, force=True)
         self.finish_growth()
         self.assertEqual(self.window.bubble.kind, "think")
@@ -2559,9 +2544,7 @@ class BubbleHover(unittest.TestCase):
             else:
                 self.where["at"] = (5000, 5000)
                 bubble._tick()
-            self.assertEqual(bubble.kind, "think", "back to the dots")
-            self.assertFalse(bubble._input)
-            self.assertNotIn("reading", bubble.full_text)
+            self.assertEqual(bubble.kind, "", "closed: only Thinking under the face is left")
             self.where["at"] = (5000, 5000)
             bubble.changed = time.monotonic() - reading_seconds(bubble.full_text) - 1
             bubble._tick()
@@ -4532,7 +4515,7 @@ class BubbleHover(unittest.TestCase):
         self.assertGreater(entry.line_count(), 6)
         self.assertEqual(entry.document().blockCount(), 1, "one paragraph, many lines")
 
-    def test_the_cloud_after_a_message_stays_when_the_pointer_was_on_the_bubble_and_then_leaves(self):
+    def test_no_cloud_after_a_message_when_the_pointer_was_on_the_bubble_and_then_leaves(self):
         self.window._pump_outbox = lambda: None
         self.window._pointer_on_head = lambda: False
         self.hover()
@@ -4542,14 +4525,13 @@ class BubbleHover(unittest.TestCase):
         bubble._tick()
         bubble.type_text("Hallo")
         bubble._send()
-        self.assertEqual(bubble.kind, "think")
+        self.assertEqual(bubble.kind, "")
         bubble._tick()
         self.where["at"] = (5000, 5000)
         for _ in range(5):
             bubble._tick()
             self.window._check_hover()
-        self.assertEqual(bubble.kind, "think", "the mouse went back to the work: only the dots are left")
-        self.assertFalse(bubble._input)
+        self.assertEqual(bubble.kind, "", "the mouse went back to the work: only Thinking under the face is left")
 
     def wheel_up_at(self, bubble, moment, phase=None, delta=120):
         from unittest import mock
@@ -4830,7 +4812,7 @@ class BubbleHover(unittest.TestCase):
         self.assertTrue(other.bubble.isVisible(), "the face under the border is pointed at")
         self.assertFalse(mine.isVisible(), "one at a time")
 
-    def test_after_sending_the_cloud_stays_at_its_dots_until_the_pointer_leaves_and_comes_back(self):
+    def test_after_sending_there_is_no_cloud_until_the_pointer_leaves_and_comes_back(self):
         self.window._pump_outbox = lambda: None
         self.hover()
         self.window.pin()
@@ -4839,11 +4821,10 @@ class BubbleHover(unittest.TestCase):
         bubble.type_text("Hallo")
         bubble._send()
         self.window._sync_bubble(self.window._latest(), force=True)
-        self.assertEqual(bubble.kind, "think")
-        self.assertFalse(bubble._input, "the pointer is still on it, but you just sent: no field")
+        self.assertEqual(bubble.kind, "", "the pointer is still on it, but you just sent: no cloud")
         self.assertTrue(self.window._think_held)
         self.window._sync_bubble(self.window._latest(), force=True)
-        self.assertFalse(bubble._input)
+        self.assertEqual(bubble.kind, "")
         self.where["at"] = (5000, 5000)
         self.window._think_expanded()
         self.assertFalse(self.window._think_held, "the pointer left")
@@ -5074,19 +5055,6 @@ class BubbleHover(unittest.TestCase):
         other.bubble._growth_done()
         self.assertTrue(other.bubble.isVisible())
         self.assertFalse(self.window.bubble.isVisible(), "one at a time")
-
-    def test_a_short_message_sent_with_the_pointer_away_keeps_the_bubble_open_for_a_while(self):
-        self.window.pin()
-        self.finish_growth()
-        bubble = self.window.bubble
-        self.window.unpin()
-        self.where["at"] = (5000, 5000)
-        bubble._was_near = True
-        bubble.type_text("ok")
-        bubble._entry.clearFocus()
-        bubble._send()
-        bubble._tick()
-        self.assertTrue(bubble.kind, "a message that was just sent keeps it for a moment")
 
     def test_a_bubble_that_opens_by_itself_steps_aside_for_the_one_the_user_is_busy_with_and_returns(self):
         from botwidget.qt_ui.face import conversation_blocks
@@ -5421,6 +5389,7 @@ class BubbleHover(unittest.TestCase):
         old = self.face.activate_app
         self.addCleanup(setattr, self.face, "activate_app", old)
         self.face.activate_app = lambda: activated.append(1)
+        self.window._pointer_on_head = lambda: True
         self.window._sync_bubble({"messages": self.MESSAGES, "activity": "reading"}, force=True)
         self.assertEqual(self.window.bubble.kind, "think")
         self.where["at"] = (self.window.x() + 34, self.window.y() + 34)

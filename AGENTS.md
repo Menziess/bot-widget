@@ -55,7 +55,7 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 ### Bubble
 - Pointing at a face opens its bubble with the latest answer, and the field only shows while the pointer is on the bubble or its face
 - A new answer opens the bubble by itself and keeps it for the time it takes to read, unless the pointer is on it
-- Sending a message shows the cloud with dots until the bot has answered
+- Sending a message closes the bubble, at once and also with the pointer on it: the face says "Thinking" under it until the bot has answered. Pointing at the face opens the cloud with the thoughts and the field (moving dots trail the thoughts); moving away closes it
 - A question or approval outranks everything in the cloud: clicking the face while one waits never swaps it for the last answer. Without one, a click on a thinking face switches between the thought and the last answer; with the bot idle, a click pins the answer
 - The demo checklist goes when the next message is sent
 - The bubble stays while the pointer is on the face or the bubble, with a margin around it

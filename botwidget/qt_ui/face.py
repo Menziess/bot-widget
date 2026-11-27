@@ -569,7 +569,8 @@ class FaceWindow(QWidget):
             return
         watching = getattr(self, "_screenshot_active", False)
         show = self.isVisible() and (watching or (
-            self._working and not self._has_attention() and not self._thinking_cloud_open()))
+            (self._working or self._sending or bool(self._outbox.items))
+            and not self._has_attention() and not self._thinking_cloud_open()))
         if show:
             row.set_text(WATCHING_TEXT if watching else THINKING_TEXT)
             row.place()
@@ -1630,40 +1631,38 @@ class FaceWindow(QWidget):
             # Do not clear _asked: the dots should stay until an answer arrives.
             pass
         if pending and not self.pinned and not show_now and not replace_menu:
-            if self._muted and not self._has_attention():
-                # Thinking is silenced: no cloud, until the face is clicked again.
-                self._shown_text = ""
-                if self.bubble.kind == "think":
-                    self.bubble.close_bubble("quiet")
-                return
-            # Dots from the moment you ask, before the bot is marked as thinking.
-            # Hover shows the thought and the field. Leaving shrinks it back to the dots.
+            # Hover shows the thought and the field. Without it there is no cloud, only "Thinking" under the face: a
+            # muted face never shows the thought, until it is clicked again.
             # A question or approval is the cloud's business, with or without the pointer: it closes by itself after
             # the reading time, like an answer does.
-            expanded = self._think_expanded() or self._has_attention()
+            expanded = (self._think_expanded() and not self._muted) or self._has_attention()
             self._think_on_bot = expanded
-            if expanded:
-                blocks = [role_panel("bot")] + thought_blocks(chat.get("activity") or "")
-                blocks += self._attention_blocks()
-                blocks += self._confirm_blocks()
-                blocks += self._relay_status_blocks()
-                if self._send_status:
-                    blocks.append(status_block(self._send_status))
-                elif self.link and self.link.note():
-                    blocks.append(status_block(self.link.note()))
-                if self._queue:
-                    blocks.append(status_block("Queued, click one to edit it"))
-                    waiting = [{"role": "user", "text": attachments.label_with(item["text"], item["files"]),
-                                "queued": item["id"]} for item in self._queue]
-                    blocks += conversation_blocks(waiting, self.bot_name, limit=len(waiting), max_chars=10 ** 9)
-                if not self._has_attention():  # the bot does not think while it waits for you
-                    blocks += [role_panel("bot"), plain_block("dots")]
-            else:
-                blocks = [role_panel("bot"), plain_block("dots")]
-            text = block_text(blocks) + ("|field" if expanded else "")
+            if not expanded:
+                # What you sent leaves with it: the field and your text go, "Thinking" shows under the face.
+                self._shown_text = ""
+                if self._menu_page is None:
+                    self.bubble.close_bubble("sent")  # at once, also with the pointer on it: it is the user's own send
+                self._place_thinking()
+                return
+            blocks = [role_panel("bot")] + thought_blocks(chat.get("activity") or "")
+            blocks += self._attention_blocks()
+            blocks += self._confirm_blocks()
+            blocks += self._relay_status_blocks()
+            if self._send_status:
+                blocks.append(status_block(self._send_status))
+            elif self.link and self.link.note():
+                blocks.append(status_block(self.link.note()))
+            if self._queue:
+                blocks.append(status_block("Queued, click one to edit it"))
+                waiting = [{"role": "user", "text": attachments.label_with(item["text"], item["files"]),
+                            "queued": item["id"]} for item in self._queue]
+                blocks += conversation_blocks(waiting, self.bot_name, limit=len(waiting), max_chars=10 ** 9)
+            if not self._has_attention():  # the bot does not think while it waits for you
+                blocks += [role_panel("bot"), plain_block("dots")]
+            text = block_text(blocks) + "|field"
             if force or text != self._shown_text or self.bubble.kind != "think":
                 self._shown_text = text
-                self.bubble.show_blocks(blocks, "think", input=expanded)
+                self.bubble.show_blocks(blocks, "think", input=True)
             return
         if self._asked and self.link and self.link.stopped:
             self._asked = False

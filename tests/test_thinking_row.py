@@ -195,19 +195,38 @@ class ThinkingRowUnderWorkingFace(unittest.TestCase):
         with mock.patch("botwidget.qt_ui.face.openbot_installed", return_value=True):
             self.window._muted = False
             self.window._think_quiet = False
+            self.window._pointer_on_head = lambda: True
             self._work(self.window, True)
             self.assertEqual(self.window.bubble.kind, "think")
             self.assertTrue(self.window.bubble.isVisible())
             self.assertEqual(self._rows(self.window), [], "the live cloud is up, so the row stays away")
+            self.window._pointer_on_head = lambda: False
+            self._work(self.window, True)
+            self.assertNotEqual(self.window.bubble.kind, "think", "no pointer on it: no cloud at all")
+            self.assertEqual(len(self._rows(self.window)), 1, "only Thinking under the face")
+            self.window._pointer_on_head = lambda: True
             self.window._muted = True
             self._work(self.window, True)
             self.assertNotEqual(self.window.bubble.kind, "think")
             self.assertEqual(len(self._rows(self.window)), 1, "muted: the row stands in for the cloud")
             self.window._muted = False
             self.window._think_quiet = True
+            self.window._pointer_on_head = lambda: False
             self._work(self.window, True)
             self.assertNotEqual(self.window.bubble.kind, "think")
             self.assertEqual(len(self._rows(self.window)), 1, "the cloud closed itself")
+
+    def test_should_show_the_row_from_the_moment_a_message_is_on_its_way(self):
+        """Should say Thinking right after a send, before the bot is marked as working, with no cloud."""
+        with mock.patch("botwidget.qt_ui.face.openbot_installed", return_value=True):
+            self.window._pointer_on_head = lambda: False
+            self.window._working = False
+            self.window._sending = True
+            self.window._place_thinking()
+            self.assertEqual(len(self._rows(self.window)), 1)
+            self.window._sending = False
+            self.window._place_thinking()
+            self.assertEqual(self._rows(self.window), [], "nothing on its way and no work: no row")
 
     def test_should_hide_the_row_while_the_face_wants_attention(self):
         """Should hide Thinking for a prompt, an approval or a browser takeover."""

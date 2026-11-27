@@ -39,7 +39,7 @@ botwidget
 - The bubble opens at its full size, fading in and sliding out from the face, and closes shortly after the pointer leaves (a little longer while the pointer still moves fast) or when you click into another window with nothing typed
 - The bubble and the thinking cloud are glass: a white that turns faintly cool towards the bottom, with a bright inner edge, a faint outer line and a soft shadow that stays outside the shape. On macOS what is behind the bubble is blurred (frosted glass; the Glass transparency slider on the /settings page sets how much of it shows through, live), elsewhere the glass is almost opaque so the text stays easy to read
 - Text that scrolls out of the bubble fades away at the edge instead of being cut off, on the sides where there is more of it
-- After you send a message the bubble stays, with moving dots, until the bot has answered
+- After you send a message the bubble closes and the face says "Thinking" under it until the bot has answered
 - A new answer opens it by itself and it stays for as long as it takes to read, unless you point at it
 - It also stays while you have typed words or selected words
 - A hand shows over a message: click copies it as plain text, shift+click copies the markdown it was written in
@@ -52,9 +52,9 @@ botwidget
 - Idle is calm: the face holds still and only now and then, after a random 8 to 30 seconds, blinks or looks around. When something happens it plays one of Grok Bot's own clips: a nod when your message goes out, an inspecting look while the bot thinks, a happy hop on the reply, surprise at a message nobody asked for, a sad face when a message is refused, confused and then sleepy when there is no route, a bounce when you click it, a finish hop when a background job ends, a head shake when you reset it, a nod and a wink when you accept what it asked, dazed eyes when you throw it, narrowed eyes while a tool runs, and sleepy eyes after five quiet minutes (anything wakes it). While it holds still it draws only ten frames a second.
 - While the bot works with nothing sent from the bubble, it turns into a thought cloud
 - While a bot is working and its thinking cloud is muted or closed, a small line under its face says Thinking (Watching while you select what to screenshot), on a faint glass chip so it can be read on any wallpaper. The line stays away while that cloud is open, and while a question, an approval or the browser is waiting
-- A message you send shows a small cloud with dots at once. Pointing at the face or the cloud opens the thought with the field; moving away shrinks it back to the dots, which go by themselves after a few seconds
-- Right after you send, the cloud shows only its dots, with no field, even when the pointer is still on it; the thought and the field open when you leave the cloud and point at it again, or click the face
-- Dots and thought, and chat and cloud, replace each other with a fade instead of growing into each other; a thought is read from the top while the cloud grows
+- A message you send shows no cloud, only "Thinking" under the face. Pointing at the face opens the cloud with the thought and the field, with moving dots at its end; moving away closes it again
+- Right after you send, the cloud stays closed even when the pointer is still on the face; the thought and the field open when you leave and point at it again, or click the face
+- Chat and cloud replace each other with a fade instead of growing into each other; a thought is read from the top while the cloud grows
 - The cloud shows the thought as markdown, follows the end of it as it grows, and has the field below
 - What you type while the bot works waits in a queue under the thought, a click on one puts it back in the field to edit, and one goes out per finished turn
 - A turn that a restart cut off before it was answered is picked up again when the widget is back, and says so in the cloud. The bot sees what it already did and asks again for what needs permission
