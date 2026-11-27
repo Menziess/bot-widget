@@ -21,7 +21,7 @@ from PySide6.QtGui import (
     QLinearGradient,
     QPainter,
 )
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 
 from botwidget import (
     __version__,
@@ -352,6 +352,7 @@ class FaceWindow(QWidget):
         self._hovered = False
         self._hover_since = 0.0
         self._pointer_seen = ((0, 0), 0.0)  # pointer position, and when it last moved
+        self._bubble_reached = False  # the pointer moved onto the bubble and it took the focus; once per visit
         self._hover_blocked_until = 0.0  # closed on purpose while the pointer is on the face
         self._hover_retry = 0.0
         self._menu_page = None  # a page of the menu is in the bubble
@@ -1017,6 +1018,7 @@ class FaceWindow(QWidget):
         here = self._pointer()
         if here != self._pointer_seen[0]:
             self._pointer_seen = (here, now)
+        self._reach_bubble(now)
         if hovered:
             self.bubble.heal()
         if not hovered:
@@ -1051,6 +1053,26 @@ class FaceWindow(QWidget):
             if moved_lately and self.bubble.isVisible() and self.bubble.takes_input() and self.bubble.kind == "say":
                 self._activate_here()
                 self.bubble.focus_by_hover()
+
+    def _reach_bubble(self, now: float):
+        """The pointer moved onto the bubble: a clear sign that you want to read or use it, so it takes the focus, which
+        makes its buttons light up and its field type. Resting there does not, and nor does a platform where hover
+        never focuses (FOCUS_ON_HOVER)."""
+        bubble = self.bubble
+        if not (FOCUS_ON_HOVER and bubble.isVisible() and self.pointer_known()):
+            self._bubble_reached = False
+            return
+        px, py = self._pointer()
+        if not bubble.frameGeometry().contains(int(px), int(py)):
+            self._bubble_reached = False
+        elif (not self._bubble_reached and now - self._pointer_seen[1] < HOVER_FOCUS_MOVE_S
+              and QApplication.activeWindow() is not bubble):
+            self._bubble_reached = True
+            self._activate_here()
+            if bubble.takes_input():
+                bubble.focus_by_hover()
+            else:
+                bubble.take_keys()
 
     def _animate(self):
         """One frame: determine targets, step the springs, draw if something changed."""

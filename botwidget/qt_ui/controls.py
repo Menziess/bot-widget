@@ -227,7 +227,7 @@ class ActionButton(PointerWatch, QPushButton):
             self.style().polish(self)
 
 
-class SlashButton(QWidget):
+class SlashButton(PointerWatch, QWidget):
     """A / at the far right inside the message field. A click opens the command list under the field. While the bot
     works it is a stop square in the same place, and the click stops the turn."""
 
@@ -236,10 +236,18 @@ class SlashButton(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.stopping = False
+        self.hot = False
         self.setObjectName("slashButton")
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.NoFocus)
         self.setFixedSize(22, 22)
+        self._watch_pointer()
+
+    def _pointer_moved(self, point):
+        hot = point is not None
+        if hot != self.hot:
+            self.hot = hot
+            self.update()
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton and self.rect().contains(event.position().toPoint()):
@@ -254,6 +262,10 @@ class SlashButton(QWidget):
     def paintEvent(self, _event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        if self.hot:  # the same soft blue as the other buttons light up with
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(11, 109, 211, 26))
+            painter.drawEllipse(self.rect())
         painter.setPen(color(SAND_ACCENT))
         if self.stopping:
             painter.setBrush(color(SAND_ACCENT))

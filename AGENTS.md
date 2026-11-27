@@ -61,6 +61,7 @@ The rules below are what the user expects. A change that breaks one is a bug, al
 - The demo checklist goes when the next message is sent
 - The bubble stays while the pointer is on the face or the bubble, with a margin around it
 - The bubble also stays while words are typed or selected, a draft is in the field, a file waits to be sent, a form was typed in, or the bot works
+- Moving the pointer onto the bubble (from the face or from anywhere) gives the bubble the focus, once per visit, on a platform where hover focuses (macOS): its buttons then light up and its field types. A pointer that merely rests there takes nothing
 - Keyboard focus that came from resting the pointer on the face never keeps the bubble open, only typing, a click in the field or one of the reasons above does
 - The bubble closes shortly after the pointer left: 0.4 seconds, longer while the pointer moves faster than 300 pixels a second, never beyond 1.5 seconds
 - The bubble closes at once on Escape, when another face opens one, when a face is dragged, when the pointer clicks outside it, and when /screenshot starts

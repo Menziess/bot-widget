@@ -5398,6 +5398,42 @@ class BubbleHover(unittest.TestCase):
         self.window._animate()
         self.assertEqual(activated, [])
 
+    def test_moving_the_pointer_onto_the_bubble_gives_it_the_focus_but_resting_there_does_not(self):
+        import time
+        from unittest import mock
+        self.hover()
+        bubble = self.window.bubble
+        taken = []
+        self.window._activate_here = lambda: taken.append(True)
+        frame = bubble.frameGeometry()
+        inside = (frame.center().x(), frame.center().y())
+        self.window._pointer = lambda: inside
+        with mock.patch.object(self.face, "FOCUS_ON_HOVER", True), \
+                mock.patch.object(type(self.window), "pointer_known", return_value=True), \
+                mock.patch.object(self.face.QApplication, "activeWindow", return_value=None):
+            now = time.monotonic()
+            self.window._pointer_seen = (inside, now - 5)  # it has been resting there
+            self.window._reach_bubble(now)
+            self.assertEqual(taken, [], "a resting pointer takes nothing")
+            self.window._pointer_seen = (inside, now)  # it just moved there
+            self.window._reach_bubble(now)
+            self.window._reach_bubble(now)
+            self.assertEqual(taken, [True], "once per visit")
+            self.window._pointer_seen = (inside, now)
+        with mock.patch.object(self.face, "FOCUS_ON_HOVER", False), \
+                mock.patch.object(type(self.window), "pointer_known", return_value=True):
+            self.window._bubble_reached = False
+            self.window._reach_bubble(time.monotonic())
+            self.assertEqual(taken, [True], "a platform where hover never focuses stays as it was")
+
+    def test_the_slash_button_lights_up_under_the_pointer_like_the_other_buttons(self):
+        from PySide6.QtCore import QPoint
+        button = self.window.bubble._entry.slash_button
+        button._pointer_moved(QPoint(3, 3))
+        self.assertTrue(button.hot)
+        button._pointer_moved(None)
+        self.assertFalse(button.hot)
+
     def test_a_new_message_brings_back_only_the_latest(self):
         self.hover()
         self.window.show_older()
