@@ -1254,6 +1254,9 @@ class FaceWindow(QWidget):
             self._arc_for_page(None)
             self._depth = 1
             self._sync_bubble(self._latest(), force=True, replace_menu=menu, show_field=menu)
+            # The pointer is on the face, not on the page: nothing of the page's area is held, or the chat would stay
+            # open for as long as the pointer is anywhere in that area.
+            self.bubble._release_hold()
         self._claim_bubble()
         self._activate_here()
         self.bubble.focus_entry()
