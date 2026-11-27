@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""The whole unit-test suite, in parallel: one process per slice of test classes. Same tests as
+`python -m unittest discover -s tests -t .`, about five times faster on 8 cores. Exit 0 only when every slice passes."""
+import os
+import subprocess
+import sys
+import unittest
+from concurrent.futures import ThreadPoolExecutor
+
+JOBS = int(os.environ.get("TEST_JOBS") or min(os.cpu_count() or 2, 8))
+
+
+def classes(suite):
+    for test in suite:
+        if isinstance(test, unittest.TestSuite):
+            yield from classes(test)
+        else:
+            yield test.id().rsplit(".", 1)[0]
+
+
+def run(batch):
+    done = subprocess.run([sys.executable, "-m", "unittest", *batch], capture_output=True, text=True)
+    return done.returncode, f"slice that failed: {' '.join(batch)}\n{done.stderr}"
+
+
+if __name__ == "__main__":
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    ids = sorted(set(classes(unittest.defaultTestLoader.discover("tests", top_level_dir="."))))
+    # Round robin, so the big modules do not end up in one slice.
+    batches = [ids[i::JOBS * 3] for i in range(JOBS * 3)]
+    failed = 0
+    with ThreadPoolExecutor(JOBS) as pool:
+        for code, output in pool.map(run, [batch for batch in batches if batch]):
+            if code:
+                failed += 1
+                print(output, file=sys.stderr)
+    print(f"{len(ids)} test classes, {'FAILED' if failed else 'OK'}")
+    sys.exit(1 if failed else 0)

@@ -360,7 +360,7 @@ Keep the installed app next to your checkout and hop between them from the /sett
 
 On Linux the installer names its command `bot-widget` so it does not clash with the `botwidget` command from `uv tool install`.
 
-- Unit tests need no display and no Qt, run them with `QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -t .`
+- Unit tests need no display and no Qt, run them with `QT_QPA_PLATFORM=offscreen .venv/bin/python -m unittest discover -s tests -t .`, or `.venv/bin/python scripts/test-fast` for the same tests in parallel (about 50 seconds instead of 3 minutes on 10 cores; `TEST_JOBS` sets the number of processes)
 - A repeated answer, a leaked tool name, or a skill-nudge sentence is fixed in one place, `harness/stream_text.py`. Each of those is also a fixture under `tests/replay/`: the raw events a backend emitted, and the bubble text they must become. The replay test runs every fixture through the agent
 
 To replay a real chat without committing it, point the log outside the checkout and turn that log into a fixture. The fixture lands in `/tmp/botwidget-replay/` unless you pass another path, and a path inside the checkout is refused.

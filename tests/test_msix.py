@@ -400,6 +400,16 @@ class TestManifestXml(unittest.TestCase):
 
 
 class TestWriteAssets(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        # write_assets deletes the application it creates, which breaks every later Qt test in this process. An
+        # application that already exists, and that the class keeps, is left alone.
+        try:
+            from PySide6.QtWidgets import QApplication
+        except ImportError as error:
+            raise unittest.SkipTest(f"no Qt: {error}") from error
+        cls.app = QApplication.instance() or QApplication([])
+
     @unittest.skipUnless(os.environ.get("QT_QPA_PLATFORM") == "offscreen",
                          "requires offscreen Qt")
     def test_write_assets_produces_pngs(self):
