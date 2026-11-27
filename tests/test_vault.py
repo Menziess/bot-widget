@@ -6,8 +6,10 @@ thread-safe dict keyed by (service, username).
 
 import json
 import os
+import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -244,6 +246,34 @@ class VaultSmoke(unittest.TestCase):
         self.assertIn("Yes", labels)
         self.assertIn("No", labels)
         self.assertNotIn("Always allow", labels)
+
+
+class UseInCommands(unittest.TestCase):
+    def setUp(self):
+        from botwidget import vault
+        vault._activate_fake()
+        self.addCleanup(vault._fake.clear)
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        ids = mock.patch.object(vault, "_SECRET_IDS_PATH", os.path.join(folder, "ids.json"))
+        ids.start()
+        self.addCleanup(ids.stop)
+        vault.set_secret("github-token", "ghp_abc")
+
+    def test_the_variable_is_the_id_in_capitals(self):
+        from botwidget.vault import env_name
+        self.assertEqual(env_name("github-token"), "VAULT_GITHUB_TOKEN")
+
+    def test_only_a_stored_secret_named_as_a_whole_word_counts(self):
+        from botwidget.vault import refs_in
+        self.assertEqual(refs_in("curl -H $VAULT_GITHUB_TOKEN x"), ["github-token"])
+        self.assertEqual(refs_in("echo $VAULT_GITHUB_TOKEN_2 $VAULT_OTHER"), [])
+
+    def test_env_and_redact_round_trip_and_a_deleted_secret_is_left_out(self):
+        from botwidget import vault
+        env = vault.env_for(["github-token", "gone"])
+        self.assertEqual(env, {"VAULT_GITHUB_TOKEN": "ghp_abc"})
+        self.assertEqual(vault.redact("token ghp_abc!", env), "token $VAULT_GITHUB_TOKEN!")
 
 
 if __name__ == "__main__":

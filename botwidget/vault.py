@@ -20,10 +20,16 @@ Usage::
     value = get_secret("github-token", decision)    # needs decision
     delete_secret("github-token", decision)         # needs decision
     ids = list_secret_ids()                         # ["github-token"]
+
+The bot never sees a value. A shell command names `$VAULT_GITHUB_TOKEN`; the agent asks the user each time (no
+Always allow), runs the command with the value in its environment, and replaces the value in the output with the
+variable name. shortcut: a command that encodes the value (base64, reversed) before printing it is not caught by
+that replacement; the user reads each command before accepting.
 """
 
 import json
 import os
+import re
 import threading
 from typing import TYPE_CHECKING
 
@@ -198,3 +204,29 @@ def list_secret_ids() -> list[str]:
     """
     with _ids_lock:
         return sorted(_load_ids())
+
+
+# ── Use in a command: the bot names a variable, never sees the value ──
+
+def env_name(secret_id: str) -> str:
+    """The variable a command uses for this secret: `github-token` is `$VAULT_GITHUB_TOKEN`."""
+    return "VAULT_" + re.sub(r"[^A-Za-z0-9]", "_", secret_id).upper()
+
+
+def refs_in(command: str) -> list[str]:
+    """The ids of stored secrets that this command names as a variable."""
+    return [sid for sid in list_secret_ids() if re.search(rf"\b{env_name(sid)}\b", command)]
+
+
+def env_for(ids: list[str]) -> dict[str, str]:
+    """Variable name to value, for a process the user agreed to give them to. A secret that is gone is left out."""
+    values = {sid: keyring.get_password(VAULT_SERVICE, sid) for sid in ids}
+    return {env_name(sid): value for sid, value in values.items() if value}
+
+
+def redact(text: str, values: dict[str, str]) -> str:
+    """The text with every secret value replaced by its variable name, so output never carries one to the model."""
+    for name, value in sorted(values.items(), key=lambda item: -len(item[1])):
+        text = text.replace(value, f"${name}")
+    return text
+

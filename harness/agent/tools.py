@@ -134,6 +134,16 @@ def trash_file(at: str) -> str:
     return f"Moved {at} to {gone}."
 
 
+def variable(name: str, windows: bool = os.name == "nt") -> str:
+    """How a shell command writes an environment variable: cmd.exe wants %NAME%, every other shell $NAME."""
+    return f"%{name}%" if windows else f"${name}"
+
+
+def vault_text() -> str:
+    from botwidget.vault import env_name, list_secret_ids
+    return "\n".join(f"{sid}: {variable(env_name(sid))}" for sid in list_secret_ids()) or "(no secrets stored)"
+
+
 def accessibility_text(query: str = "") -> str:
     """Whether the desktop accessibility bus is up, and which application names match query."""
     from botwidget.system.a11y import accessibility, application_names, application_windows
@@ -227,6 +237,12 @@ def builtins() -> list[Tool]:
              "permission.", {
             "type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
             lambda arguments: trash_file(_path(arguments["path"])), writes=True),
+        Tool("vault_list",
+             "List the secrets the user stored, as id and the variable that stands for it. Read-only, no values. Use a "
+             "variable in a shell command, for example curl -H \"Authorization: Bearer " + variable("VAULT_GITHUB_TOKEN") + "\" ...; "
+             "the user is asked each time, and you never see the value.",
+             {"type": "object", "properties": {}},
+             lambda _arguments: vault_text()),
         Tool("accessibility",
              "Call this when the user asks which applications are open, or says to use the accessibility tool. "
              "Read-only. Lists application names from AT-SPI (Linux), UI Automation (Windows) or AX (macOS). "

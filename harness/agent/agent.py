@@ -810,26 +810,30 @@ class LeanAgent:
             arguments = json.loads((call.get("function") or {}).get("arguments") or "{}")
         except json.JSONDecodeError:
             return "The arguments were not valid JSON."
+        arguments.pop("_env", None)  # only the vault below may set it, never the model
         tool = self.tools.find(name)
         if tool is None:
             return f"There is no tool called {name}."
         title = tool_title(name, arguments)
+        secrets = self._vault_refs(str(arguments.get("command") or "")) if name == "shell" else []
+        if secrets:
+            title += f" (uses secret {', '.join(secrets)})"
         if name in ("write_file", "edit", "delete_file") and outside_workspace(
                 getattr(self.tools, "workspace", "") or "", str(arguments.get("path") or "")):
             title += " (outside the workspace)"
         await self._tool_call(session_id, call["id"], title, "pending", "in_progress")
         if tool.writes:
             verdict = self._verdict(name, arguments)
-            remembered = verdict is True
+            remembered = verdict is True and not secrets  # a secret is asked for every time
             command = str(arguments.get("command") or "")
-            if name in ("shell", "shell_background") and verdict is None and self._shell_free(command):
+            if name in ("shell", "shell_background") and verdict is None and not secrets and self._shell_free(command):
                 remembered = True  # read-only, or a prefix the user saved: no question
             # H7: show diff in bubble for write_file, respect diff_edit_mode
             if name in ("write_file", "edit") and (not remembered or self.diff_edit_mode == "never"):
                 result = await self._handle_write_file(session_id, call, arguments, store, title, verdict is False)
                 return result
             if not remembered:
-                prefixes = self._shell_prefixes(command) if name in ("shell", "shell_background") else []
+                prefixes = self._shell_prefixes(command) if name in ("shell", "shell_background") and not secrets else []
                 choice = await self._ask_choice(session_id, call["id"], title, ", ".join(prefixes))
                 if not choice:
                     await self._tool_call(session_id, call["id"], title, "completed", "failed")
@@ -838,16 +842,39 @@ class LeanAgent:
                 if choice == "allow_always":
                     for prefix in prefixes:
                         self.shell_allow.add(getattr(self.tools, "workspace", "") or "", prefix)
-                self._remember(name, arguments)
+                if not secrets:
+                    self._remember(name, arguments)
+        values = {}
+        if secrets:
+            from botwidget.vault import env_for
+            try:
+                values = env_for(secrets)
+            except Exception as error:  # no keychain on this machine (a Linux box without Secret Service)
+                await self._tool_call(session_id, call["id"], title, "completed", "failed")
+                return self._note_tool(store, name, "failed: the keychain is not available",
+                                       f"The tool failed: the keychain is not available ({type(error).__name__})")
+            arguments["_env"] = values
         try:
             result = tool.run(arguments)
             if inspect.isawaitable(result):
                 result = await result
         except ToolError as error:
             await self._tool_call(session_id, call["id"], title, "completed", "failed")
+            error = self._redact(str(error), values)
             return self._note_tool(store, name, f"failed: {error}", f"The tool failed: {error}")
+        result = self._redact(result, values)
         await self._tool_call(session_id, call["id"], title, "completed", "completed")
         return self._note_tool(store, name, "ok", result)
+
+    @staticmethod
+    def _vault_refs(command: str) -> list[str]:
+        from botwidget.vault import refs_in
+        return refs_in(command)
+
+    @staticmethod
+    def _redact(text, values: dict):
+        from botwidget.vault import redact
+        return redact(text, values) if values and isinstance(text, str) else text
 
     async def _handle_write_file(self, session_id: str, call: dict, arguments: dict,
                                   store: SessionStore, title: str, denied: bool = False) -> str:

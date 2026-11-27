@@ -191,5 +191,87 @@ class ThroughAgent(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(conn.permission_requests), 2)
 
 
+class VaultInCommands(unittest.IsolatedAsyncioTestCase):
+    SECRET = "s3cr3t-value"
+
+    def setUp(self):
+        from botwidget import vault
+        vault._activate_fake()
+        self.addCleanup(vault._fake.clear)
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        ids = mock.patch.object(vault, "_SECRET_IDS_PATH", os.path.join(folder, "ids.json"))
+        ids.start()
+        self.addCleanup(ids.stop)
+        vault.set_secret("my-token", self.SECRET)
+
+    async def _agent(self, conn):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        agent = LeanAgent("ap", ScriptModel(), folder=folder)
+        agent.on_connect(conn)
+        agent.tools = Tools("", set(), workspace=folder, permission="allow_session")
+        for tool in workspace_builtins(folder, EditStore()):
+            agent.tools.add(tool)
+        opened = await agent.new_session(cwd=folder)
+        return agent, opened.session_id, agent.stores[opened.session_id]
+
+    @staticmethod
+    def shell(command, **extra):
+        return {"id": "s", "function": {"name": "shell", "arguments": json.dumps({"command": command, **extra})}}
+
+    async def test_the_command_gets_the_value_and_the_model_gets_none_of_it(self):
+        conn = _Conn(auto_allow=True)
+        agent, sid, store = await self._agent(conn)
+        result = await agent._use_tool(sid, store, self.shell('echo "key=$VAULT_MY_TOKEN"'))
+        self.assertNotIn(self.SECRET, result)
+        self.assertIn("$VAULT_MY_TOKEN", result)
+        self.assertNotIn(self.SECRET, json.dumps(store.messages()))
+        failed = await agent._use_tool(sid, store, self.shell("echo $VAULT_MY_TOKEN >&2; exit 3"))
+        self.assertNotIn(self.SECRET, failed)
+
+    async def test_it_asks_every_time_with_no_always_allow_even_for_a_read_only_command(self):
+        conn = _Conn(auto_allow=True)
+        agent, sid, store = await self._agent(conn)
+        for _ in range(2):
+            await agent._use_tool(sid, store, self.shell("echo $VAULT_MY_TOKEN"))
+        self.assertEqual(len(conn.permission_requests), 2)
+        for request in conn.permission_requests:
+            self.assertIn("uses secret my-token", request["tool_call"].title)
+            self.assertNotIn("allow_always", [option.option_id for option in request["options"]])
+
+    async def test_a_decline_runs_nothing(self):
+        conn = _Conn()
+        conn._responses = [("selected", "decline")]
+        agent, sid, store = await self._agent(conn)
+        result = await agent._use_tool(sid, store, self.shell("echo $VAULT_MY_TOKEN > out.txt"))
+        self.assertIn("declined", result)
+        self.assertFalse(os.path.exists(os.path.join(agent.tools.workspace, "out.txt")))
+
+    async def test_the_model_cannot_pass_an_environment_of_its_own(self):
+        conn = _Conn(auto_allow=True)
+        agent, sid, store = await self._agent(conn)
+        result = await agent._use_tool(sid, store, self.shell('echo "[$EVIL]"', _env={"EVIL": "x"}))
+        self.assertEqual(result, "[]")
+
+    def test_a_variable_is_written_the_way_the_shell_reads_it(self):
+        from harness.agent.tools import variable
+        self.assertEqual(variable("VAULT_X", windows=False), "$VAULT_X")
+        self.assertEqual(variable("VAULT_X", windows=True), "%VAULT_X%")
+
+    async def test_a_missing_keychain_fails_the_call_instead_of_the_turn(self):
+        conn = _Conn(auto_allow=True)
+        agent, sid, store = await self._agent(conn)
+        with mock.patch("botwidget.vault.env_for", side_effect=RuntimeError("no backend")):
+            result = await agent._use_tool(sid, store, self.shell("echo $VAULT_MY_TOKEN"))
+        self.assertIn("keychain is not available", result)
+
+    async def test_a_command_without_a_secret_asks_nothing_when_read_only(self):
+        conn = _Conn(auto_allow=True)
+        agent, sid, store = await self._agent(conn)
+        await agent._use_tool(sid, store, self.shell("echo hi"))
+        self.assertEqual(len(conn.permission_requests), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

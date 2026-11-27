@@ -467,14 +467,14 @@ def shell_refused(command: str) -> bool:
     return bool(_REFUSED_SHELL.search(command or ""))
 
 
-def shell_run(workspace: str, command: str, timeout: int = 30) -> str:
+def shell_run(workspace: str, command: str, timeout: int = 30, env: dict | None = None) -> str:
     """Run a shell command inside the workspace.  Write-heavy patterns are refused."""
     if shell_refused(command):
         raise ToolError("shell command refused: " + command[:120])
     # Its own session, so a timeout can stop the command and everything it started. subprocess.run only killed the
     # shell and left the rest running, which is how a second booking process came to run beside the first.
     try:
-        proc = subprocess.Popen(command, shell=True, cwd=workspace, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        proc = subprocess.Popen(command, shell=True, cwd=workspace, env={**os.environ, **env} if env else None, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                 text=True, **group_kwargs())
     except FileNotFoundError as error:
         raise ToolError("shell not found") from error
@@ -1119,7 +1119,7 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
              {"type": "object",
               "properties": {"command": {"type": "string"}},
               "required": ["command"]},
-             lambda a: shell_run(workspace, a["command"]),
+             lambda a: shell_run(workspace, a["command"], env=a.get("_env")),
              writes=True),
     ]
 
