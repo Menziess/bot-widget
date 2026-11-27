@@ -257,24 +257,18 @@ class LeanAgent:
         return "\n\nWhat matters from the conversation so far:\n" + brief.strip()
 
     def _run_skill(self, store: SessionStore, text: str) -> None:
-        """A message that starts with /name of a skill puts the skill's metadata in front of the model.
-        The full SKILL.md body is not stored; the model reads it with read_file when needed."""
+        """A message that starts with /name of a skill puts that skill's text in front of the model, for this turn and
+        the ones after it, until another skill is run."""
         name = text.split(None, 1)[0][1:].lower() if text.startswith("/") and text.split() else ""
         skill = self.skills.get(name)
         if skill:
             from harness.agent.workspace import skill_body
-            body = skill_body(skill)
-            # A short summary: first two lines of the body, or the first 200 chars.
-            first_lines = [line for line in body.splitlines()[:2] if line.strip()]
-            short_summary = "\n".join(first_lines) if first_lines else body[:200]
             store.set("skill_deny", ",".join(skill.get("deny") or []))
-            store.set("skill",
-                      f"The user ran the skill /{skill['name']} (file: {skill['path']}). "
-                      f"Summary: {short_summary}. "
-                      "Read the full skill with read_file when you need the details. "
-                      "Call the tool done when the skill is finished, wait_for_user when you wait for the "
-                      "user's answer, and not_for_me when the user's message has nothing to do with the skill. "
-                      "Never end a message on only a promise to do something.")
+            store.set("skill", f"The user ran the skill /{skill['name']} (file: {skill['path']}). Follow it:\n"
+                               + skill_body(skill)
+                               + "\n\nCall the tool done when the skill is finished, wait_for_user when you wait for the "
+                               "user's answer, and not_for_me when the user's message has nothing to do with the skill. "
+                               "Never end a message on only a promise to do something.")
 
     async def ext_method(self, method: str, params: dict) -> dict:
         """What the widget may ask of this agent: the output of a tool that only reads. The agent already holds the
