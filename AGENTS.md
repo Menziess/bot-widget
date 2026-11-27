@@ -33,6 +33,7 @@ Each of these went wrong once. A test or a rule holds it now; keep both.
 - Always allow never saves a program that runs other code or commands, in any version or spelling (`never_saved` in `harness/agent/workspace.py`); a rule for one is a regex written by hand.
 - A model name is never written in the code: ask the service (`acp_bots.fetch_models`).
 - What the bot is told about its tools is what it believes, so it matches the code: the tool descriptions (`harness/agent/workspace.py`, `tools.py`) and `SYSTEM` (`harness/agent/context.py`). Change what a tool does and its description in the same commit. A tool description once said "inside the workspace" while any folder worked, and the bot told the user it could not edit its own code; `tests/test_harness_workspace.py` now fails on that wording
+- Always allow is offered from one place, `_always` in `harness/agent/agent.py`, for every question that asks (a command, a file write, a delete, any other tool). A tool is left out only where the saved rule would cover more than was approved, and the reason sits in that function. It once existed for shell and for write_file and edit alone, because it was built into the one code path being worked on, and delete_file and every other tool had none. A new kind of question gets it by going through `_always`, not by a copy of it
 - Ruff checks imports, pyflakes and bugbear (an `except` that raises says `from` what; a `zip` says its `strict=`). A dead-code scan (`uvx vulture`) must also read `scripts/`: files there have no `.py`.
 
 ## Taskbar

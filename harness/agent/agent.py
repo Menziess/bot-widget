@@ -840,15 +840,14 @@ class LeanAgent:
                 result = await self._handle_write_file(session_id, call, arguments, store, title, verdict is False)
                 return result
             if not remembered:
-                prefixes = self._shell_prefixes(command) if name in ("shell", "shell_background") and not secrets else []
-                choice = await self._ask_choice(session_id, call["id"], title, ", ".join(prefixes))
+                rules, save = self._always(name, arguments, no=bool(secrets) or verdict is False)
+                choice = await self._ask_choice(session_id, call["id"], title, ", ".join(rules))
                 if not choice:
                     await self._tool_call(session_id, call["id"], title, "completed", "failed")
                     return self._note_tool(store, name, "declined by the user; nothing was done",
                                            "The user declined this action. Do not try it another way.")
                 if choice == "allow_always":
-                    for prefix in prefixes:
-                        self.shell_allow.add(getattr(self.tools, "workspace", "") or "", prefix)
+                    save()
                 if not secrets:
                     self._remember(name, arguments)
         values = {}
@@ -930,15 +929,14 @@ class LeanAgent:
 
         if mode == "ask":
             # Show diff, wait for user to apply or reject
-            root = self._write_root(workspace, path)
-            choice = await self._ask_diff(session_id, call["id"], diff_title, diff_text, root)
+            rules, save = self._always(name, arguments, no=denied)
+            choice = await self._ask_diff(session_id, call["id"], diff_title, diff_text, ", ".join(rules))
             if not choice:
                 await self._tool_call(session_id, call["id"], diff_title, "completed", "failed")
                 return self._note_tool(store, name, "declined by the user; nothing was done",
                                        "The user declined this action. Do not try it another way.")
             if choice == "allow_always":
-                for tool in ("write_file", "edit"):  # not delete_file: that one keeps asking
-                    self.rules.remember(f"{tool} {root}/", persist=True)
+                save()
             else:
                 self._remember(name, arguments)
 
@@ -988,7 +986,7 @@ class LeanAgent:
         return folder if root in (home, os.path.dirname(home), os.path.sep) or not root else root
 
     async def _ask_diff(self, session_id: str, call_id: str, title: str, diff_text: str, always: str = "") -> str:
-        """Show a diff in the bubble and wait for Apply or Reject. 'allow', 'allow_always' (offered with a folder to
+        """Show a diff in the bubble and wait for Apply or Reject. 'allow', 'allow_always' (offered with the rule to
         save) or '' for anything else."""
         if self.conn is None:
             return ""
@@ -996,7 +994,7 @@ class LeanAgent:
         # The diff_text is stored in field_meta so the widget can display it in the bubble.
         options = [PermissionOption(option_id="allow", name="Apply", kind="allow_once")]
         if always:
-            options.append(PermissionOption(option_id="allow_always", name=f"Always allow writes in `{always}`",
+            options.append(PermissionOption(option_id="allow_always", name=f"Always allow `{always}`",
                                             kind="allow_always"))
         options.append(PermissionOption(option_id="decline", name="Reject", kind="reject_once"))
         response = await self.conn.request_permission(
@@ -1191,6 +1189,23 @@ class LeanAgent:
         else:
             rule = name
         self.rules.remember(rule, persist=mode == "allow")
+
+    def _always(self, name: str, arguments: dict, no: bool = False) -> tuple[list[str], object]:
+        """What Always allow saves for this call, and the function that saves it. Every question that asks offers it
+        through this one place. No rules, so no offer, where the saved rule would cover more than was approved:
+        computer control (it acts anywhere on screen), a command that holds a secret, a program that runs other code
+        (`_shell_prefixes`), and a call that a rule says must always ask."""
+        workspace = getattr(self.tools, "workspace", "") or ""
+        if no or name.startswith("computer_"):
+            return [], None
+        if name in ("shell", "shell_background"):
+            prefixes = self._shell_prefixes(str(arguments.get("command") or ""))
+            return prefixes, lambda: [self.shell_allow.add(workspace, prefix) for prefix in prefixes]
+        if name in ("write_file", "edit", "delete_file"):
+            rule = f"{name} {self._write_root(workspace, str(arguments.get('path') or ''))}/"
+        else:
+            rule = name
+        return [rule], lambda: self.rules.remember(rule, persist=True)
 
     def _shell_free(self, command: str) -> bool:
         """A shell command that needs no question: read-only, or covered by a saved prefix."""

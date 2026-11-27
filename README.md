@@ -195,7 +195,7 @@ The bot asks before it writes, edits or deletes a file and before a shell comman
 - Value `true` runs without asking. Value `false` always asks, and it wins over `true` and over anything that was remembered
 - A shell command with several parts, such as `a && b`, is approved only when each part is
 - Always allow on such a command saves every part, and is offered only when each part can be saved. A part such as `python` or a redirect takes the offer away. `cd` never needs saving
-- A write of a file (`write_file`, `edit`) offers Always allow too, with the diff: it remembers the repository the file is in (the folder of the file when there is none, never your whole home folder) for `write_file` and `edit`, and `delete_file` keeps asking. The rule lands in `approvals.json`, where /approvals shows it
+- Every question the bot asks offers Always allow, from one place (`_always` in `harness/agent/agent.py`), and saves a rule that covers no more than you approved: a command prefix, the tool in the repository of the file (the folder of the file when there is none, never your whole home folder), or the tool itself. It is left out where it would cover more: computer control, a command that holds a secret, a program that runs other code, and a call that a rule in `approvals.json` says must always ask
 
 ```json
 {
