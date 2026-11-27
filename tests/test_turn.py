@@ -179,6 +179,23 @@ class Verify(unittest.TestCase):
         self.assertNotIn("Check it now", nudge.text)
 
 
+class Search(unittest.TestCase):
+    def test_not_found_after_a_glance_is_sent_back_to_search_once(self):
+        governor = Governor()
+        said = step("Nee, ik zie alleen twee bestanden. Geen bot-widget repo zichtbaar.")
+        nudge = governor.review(turn(calls=1), said)
+        self.assertIn("Search further", nudge.text)
+        self.assertIsNone(governor.review(turn(calls=1), said))
+
+    def test_not_found_after_a_real_search_or_a_found_answer_is_left_alone(self):
+        self.assertIsNone(Governor().review(turn(calls=3), step("I could not find it in ~ or ~/Projects.")))
+        self.assertIsNone(Governor().review(turn(calls=1), step("Ja, het staat in ~/Projects/bot-widget.")))
+
+    def test_a_skill_is_not_sent_to_search(self):
+        nudge = Governor().review(turn(calls=0, skill_on=True), step("Not found."))
+        self.assertNotIn("Search further", nudge.text)
+
+
 class Messages(unittest.TestCase):
     def test_pieces_with_one_id_are_one_message_and_another_id_starts_a_new_one(self):
         from botwidget.acplink import _append_message

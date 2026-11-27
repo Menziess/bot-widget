@@ -21,6 +21,12 @@ from harness.agent.tools import TOOL_OUTPUT
 # Words that own up to a failure: a closing message with one of them needs no second round.
 FAILURE_WORDS = re.compile(r"\b(fail|failed|error|unable|cannot|can't|could not|couldn't|not found|mislukt|"
                            r"niet gelukt|niet gevonden|kon niet|lukt niet|fout|bestaat niet)\b", re.IGNORECASE)
+# Closing words that say something was not found or seen.
+NOT_FOUND = re.compile(r"\b(not found|cannot find|can't find|could not find|couldn't find|no .{1,40} (visible|found)|"
+                       r"cannot see|can't see|niet gevonden|niet gezien|kan .{1,30} niet (vinden|zien)|"
+                       r"geen .{1,40} (zichtbaar|gevonden)|niet zichtbaar|bestaat niet)\b", re.IGNORECASE)
+LOOKS = 3  # fewer calls than this in a turn is a glance, not a search
+
 # Closing words that promise work, or claim it was done. One list for every tool.
 PROMISE = re.compile(r"\b(ik ga|ik zal|ik probeer|ik kan het (wel )?proberen|laat me|laat mij|even kijken|let me|let's|"
                      r"i'll|i will|i'm going to|i am going to)\b")
@@ -57,6 +63,9 @@ CLAIM_NUDGE = ("You ended on a promise, or on a claim of work that this turn has
                "with a tool call. If no tool can do it, say so plainly and do not invent a result.")
 VERIFY_NUDGE = ("You changed a file and have not looked at the result since. Check it now with a tool (read the file, "
                 "run its test, or check the status), then say what you found.")
+SEARCH_NUDGE = ("You said it was not there after a quick look. Search further before you answer: by name across the "
+                "home folder, with a shell command such as find ~ -maxdepth 5 -iname '*name*' (mdfind -name on "
+                "macOS). Only say it is not there when that search came up empty, and say where you looked.")
 SKILL_NUDGE = ("That message ended without a tool call. If the skill still has steps, do the next one now with a tool "
                "call. If you are finished call done, if you wait for the user's answer call wait_for_user, and if the "
                "user's message has nothing to do with this skill call not_for_me.")
@@ -89,6 +98,7 @@ class Turn:
     offered: set[str]
     skill_on: bool = False
     called: set[str] = field(default_factory=set)
+    calls: int = 0  # tool calls made in this turn so far
     unverified: bool = False  # a file was changed and no later step looked at anything
     tool_failed: bool = False  # the step before this one called tools, and every one failed
 
@@ -188,6 +198,18 @@ class VerifyGuard(Guard):
         return Nudge(VERIFY_NUDGE, keeps_text=True) if turn.unverified and not turn.skill_on else None
 
 
+class SearchGuard(Guard):
+    """The closing words say something was not found, and this turn hardly looked. A failed tool is its own guard."""
+
+    name = "search"
+
+    def review(self, turn, step):
+        said = step.text.strip()
+        if turn.skill_on or turn.tool_failed or turn.calls >= LOOKS or not said or not NOT_FOUND.search(said):
+            return None
+        return Nudge(SEARCH_NUDGE)
+
+
 class SkillGuard(Guard):
     """A skill is over when it says so with a tool: a message that only talks gets sent back."""
 
@@ -207,7 +229,7 @@ class Governor:
     """
 
     def __init__(self, guards=None):
-        self.guards = guards or (FailedToolGuard(), *OBLIGATIONS, VerifyGuard(), SkillGuard())
+        self.guards = guards or (FailedToolGuard(), *OBLIGATIONS, VerifyGuard(), SearchGuard(), SkillGuard())
         self.used = Counter()
 
     def review(self, turn: Turn, step: Step) -> Nudge | None:
