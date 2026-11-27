@@ -217,49 +217,15 @@ class Governor:
 class LoopDetector:
     """The same step, tool calls and arguments alike, this many times in a row. 0 turns it off.
 
-    One entry per step: the same call three times inside one answer is one step, not three in a row.
+    One entry per step: the same call three times inside one answer is one step, not three in a row."""
 
-    H8 item 9: also stops on the same kind of command failing repeatedly (same tool name),
-    and a fixed search-step budget that ends a search that keeps going.
-    """
-
-    def __init__(self, repeats: int, search_budget: int = 0):
+    def __init__(self, repeats: int):
         self.repeats = repeats
-        self.search_budget = search_budget
-        # Exact call keys for the original same-step detection.
         self.recent: list[str] = []
-        # Normalised tool names (just the tool name) for same-kind detection.
-        self._kinds: list[str] = []
-        self._search_count: int = 0
 
     def stuck(self, step: Step) -> str:
-        """The tool the loop is on, or "budget", or empty."""
-        call_keys = set()
-        tool_name = ""
-        for call in step.calls:
-            key = call_key(call)
-            call_keys.add(key)
-            if not tool_name:
-                tool_name = (call.get("function") or {}).get("name") or ""
-        joined = "|".join(sorted(call_keys))
-        self.recent.append(joined)
-        self._kinds.append(tool_name)
-
-        # H8 item 9: search-step budget — check first so it fires even when same-kind
-        # would also match on the same step.
-        if self.search_budget > 0 and tool_name == "browser_search":
-            self._search_count += 1
-            if self._search_count >= self.search_budget:
-                return "budget"
-
-        # H8 item 9: same kind of command failing repeatedly.
-        # The same tool name appearing `repeats` times in a row signals a stuck pattern.
-        if self.repeats > 1 and len(self._kinds) >= self.repeats:
-            last_kinds = self._kinds[-self.repeats:]
-            if len(set(last_kinds)) == 1:
-                return tool_name
-
-        # Fallback: original same-step loop detection (exact match).
+        """The tool the loop is on, or empty."""
+        self.recent.append("|".join(sorted({call_key(call) for call in step.calls})))
         if self.repeats > 1 and len(self.recent) >= self.repeats and len(set(self.recent[-self.repeats:])) == 1:
-            return tool_name
+            return (step.calls[-1].get("function") or {}).get("name") or "a tool"
         return ""

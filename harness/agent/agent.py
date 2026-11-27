@@ -49,7 +49,6 @@ from harness.stream_text import fold_chunk, note_raw
 
 MAX_STEPS = 30  # default for HARNESS_MAX_STEPS: a tool loop that never settles must still end the turn
 LOOP_REPEATS = 3  # default for HARNESS_LOOP_REPEATS: the same call with the same arguments this many times in a row
-SEARCH_BUDGET = 0  # default for HARNESS_SEARCH_BUDGET: max browser_search steps before budget fires; 0 means unlimited
 # A skill is over when the model calls one of these. A message that ends without a call (a bare "let me look") gets
 # SKILL_NUDGES nudges to go on first.
 SKILL_ENDINGS = {"done": "Call this when the skill is finished and you have said the result.",
@@ -430,8 +429,7 @@ class LeanAgent:
                     offered=offered, skill_on=skill_on)
         governor = Governor()
         required = ""
-        loop = LoopDetector(_env_int("HARNESS_LOOP_REPEATS", LOOP_REPEATS),
-                            _env_int("HARNESS_SEARCH_BUDGET", SEARCH_BUDGET))
+        loop = LoopDetector(_env_int("HARNESS_LOOP_REPEATS", LOOP_REPEATS))
         started = time.monotonic()
         first = 0.0
         answer = []
