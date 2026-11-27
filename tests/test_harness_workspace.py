@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from harness.agent.tools import ToolError
@@ -177,6 +178,21 @@ class SearchFiles(unittest.TestCase):
         result = search_files(folder, "MATCH", limit=5)
         self.assertIn("MATCH", result)
         self.assertNotIn("f5.txt", result)
+
+    @unittest.skipIf(os.name == "nt", "named pipes are POSIX")
+    def test_search_skips_a_pipe_instead_of_blocking_on_it(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        os.mkfifo(os.path.join(folder, "a.pipe"))
+        _write(os.path.join(folder, "b.txt"), "needle")
+        self.assertIn("b.txt", search_files(folder, "needle"))
+
+    def test_search_stops_at_its_time_budget_and_says_so(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        _write(os.path.join(folder, "a.txt"), "hello")
+        with unittest.mock.patch("harness.agent.workspace.SEARCH_SECONDS", -1):
+            self.assertIn("search stopped", search_files(folder, "needle"))
 
 
 # ── Safe walk ─────────────────────────────────────────────────────────

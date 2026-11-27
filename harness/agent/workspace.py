@@ -53,7 +53,9 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
+import time
 from difflib import unified_diff
 
 from harness.agent.procs import group_kwargs, stop
@@ -163,6 +165,10 @@ def _safe_walk(workspace: str):
         yield dirpath, files
 
 
+SEARCH_SECONDS = 20  # a search over a huge tree stops here and says so, instead of hanging the turn
+SEARCH_MAX_FILE_BYTES = 2_000_000
+
+
 def search_files(workspace: str, pattern: str, limit: int = 100, path: str = "") -> str:
     """Search file contents using Python's re (ripgrep is preferred externally).
 
@@ -174,12 +180,21 @@ def search_files(workspace: str, pattern: str, limit: int = 100, path: str = "")
     root = _real_path(workspace, path) if path else workspace
     if _is_secret_path(root):
         raise ToolError("that path is private and is not searched")
+    deadline = time.monotonic() + SEARCH_SECONDS
+    note = ""
     for dirpath, files in _safe_walk(root):
+        if time.monotonic() > deadline:
+            note = f"\n(search stopped after {SEARCH_SECONDS} seconds; narrow the path)"
+            break
         for fname in sorted(files):
             full = os.path.join(dirpath, fname)
             if _is_secret_name(fname):
                 continue
             try:
+                # open() on a pipe or socket blocks forever; only plain files are read.
+                info = os.stat(full)
+                if not stat.S_ISREG(info.st_mode) or info.st_size > SEARCH_MAX_FILE_BYTES:
+                    continue
                 with open(full, errors="replace") as fh:
                     for lineno, line in enumerate(fh, 1):
                         if compiled.search(line):
@@ -188,7 +203,9 @@ def search_files(workspace: str, pattern: str, limit: int = 100, path: str = "")
                                 return "\n".join(matches)
             except OSError:
                 continue
-    return "\n".join(matches) if matches else f"(no matches in {root})"
+    if matches:
+        return "\n".join(matches) + note
+    return f"(no matches in {root}){note}"
 
 
 # ── File tools ────────────────────────────────────────────────────────
