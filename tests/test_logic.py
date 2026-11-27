@@ -2685,9 +2685,9 @@ class BubbleHover(unittest.TestCase):
         return self.window.bubble
 
     def test_a_memory_page_with_a_hundred_memories_stays_in_its_bubble_and_scrolls(self):
-        from harness.agent import memory
         from botwidget.bubble import MENU_SCREEN_SHARE
         from botwidget.qt_ui import screens
+        from harness.agent import memory
         for number in range(100):
             memory.write_memory(f"Memory number {number}, with some words to fill a row.", "user")
         self.addCleanup(lambda: [memory.forget_memory(m["id"]) for m in memory.list_memories()])
@@ -6365,7 +6365,7 @@ class MenuPages(unittest.TestCase):
         """Should step up one screen: chat, the command list, a page of it, then a form."""
         back = {"settings": "page/commands", "bots": "page/commands", "connections": "page/commands",
                 "bot": "page/bots", "connection": "page/connections", "widget-json": "page/bots",
-                "memory": "page/commands", "approvals": "page/commands"}
+                "memory": "page/commands", "approvals": "page/commands", "vault": "page/commands"}
         for page in menu_pages.PAGES:
             self.assertEqual(self.commands(menu_pages.page_blocks(page, self.STATE))[0], back[page])
         self.assertEqual(self.commands(menu_pages.page_blocks("nonsense", self.STATE)),

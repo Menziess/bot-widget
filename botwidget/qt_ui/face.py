@@ -1744,6 +1744,8 @@ class FaceWindow(QWidget):
     def open_command_menu(self):
         """Right-click, or back from a page: the command list in the bubble. Asked for on purpose, so the other
         bubbles close and it never gives way to one of them."""
+        if getattr(self, "_screenshot_active", False):
+            self._leave_screenshot_mode()
         self.bubble.heal()
         self._menu_page = None
         self._forget_page()

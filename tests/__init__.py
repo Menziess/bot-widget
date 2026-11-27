@@ -108,3 +108,9 @@ def press(widgets, label: str) -> None:
             return
     raise AssertionError(f"no button {label!r} in {action_labels(widgets)}")
 
+
+# gbot installed in the real home (~/.local/bin is on the PATH) does not count either: a CI runner has none, and a
+# test must not reach the real Grok Bot through it. uv and the rest of that PATH stay usable.
+import botwidget.openbot as _openbot  # noqa: E402
+
+_openbot.GBOT = os.path.join(_HOME, ".local", "bin", "gbot")

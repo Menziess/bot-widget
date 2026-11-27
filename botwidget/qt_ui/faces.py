@@ -583,6 +583,9 @@ class Faces(QObject):
             "_memory_scope": getattr(self, "_memory_scope", "user"),
             "_memory_topic": getattr(self, "_memory_topic", ""),
             "_memory_id": getattr(self, "_memory_id", ""),
+            "_vault_new_id": getattr(self, "_vault_new_id", ""),
+            "_vault_new_value": getattr(self, "_vault_new_value", ""),
+            "vault_error": getattr(self, "_vault_error", ""),
         }
 
     TOGGLES = {
@@ -671,6 +674,11 @@ class Faces(QObject):
                 self._memory_scope = fields.get("field/memory_scope", "user")
             if "field/memory_topic" in fields:
                 self._memory_topic = fields.get("field/memory_topic", "")
+        elif page == "vault" or (isinstance(page, str) and page.startswith("vault/")):
+            if "field/vault_new_id" in fields:
+                self._vault_new_id = fields.get("field/vault_new_id", "")
+            if "field/vault_new_value" in fields:
+                self._vault_new_value = fields.get("field/vault_new_value", "")
 
     def _open_bot_form(self, face_id: str):
         bots = {bot["id"]: bot for bot in acplink.configured_bots()}
@@ -936,6 +944,19 @@ class Faces(QObject):
         elif kind == "memory-forget":
             self._forget_memory(name)
             return "memory"
+        elif kind == "vault-delete":
+            # Ask for confirm before deleting the secret.
+            payload = f"Delete secret {name}"
+            self.ask_confirm("vault", payload, on_yes=lambda n=name: self._delete_vault_secret(n))
+            return page
+        elif kind == "vault-new":
+            # Open the new-secret form.
+            self._vault_new_id, self._vault_new_value = "", ""
+            self._vault_error = ""
+            return "vault/new"
+        elif kind == "vault-save":
+            self._vault_error = self._save_vault_secret()
+            return page if self._vault_error else "vault"
         return None
 
     def _open_memory(self, memory_id: str) -> None:
@@ -970,6 +991,30 @@ class Faces(QObject):
             forget_memory(memory_id)
         except Exception:
             pass
+
+    def _delete_vault_secret(self, name: str) -> None:
+        """Delete a vault secret after the user confirmed the action."""
+        try:
+            from botwidget.vault import delete_secret
+            delete_secret(name, confirmed=True)
+        except Exception:
+            pass
+
+    def _save_vault_secret(self) -> str:
+        """Save a new vault secret from the form fields. Returns an error message."""
+        try:
+            from botwidget.vault import set_secret
+            secret_id = (getattr(self, "_vault_new_id", "") or "").strip()
+            secret_value = (getattr(self, "_vault_new_value", "") or "").strip()
+            if not secret_id:
+                return "Secret ID is required."
+            if not secret_value:
+                return "Secret value is required."
+            set_secret(secret_id, secret_value)
+            self._vault_new_id, self._vault_new_value = "", ""
+            return ""
+        except Exception as error:
+            return str(error)[:200]
 
     def _set_glass(self, percent: int):
         save_widget_config(glass_clear=percent)

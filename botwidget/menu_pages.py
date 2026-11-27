@@ -11,15 +11,15 @@ from botwidget.config import QUIET_FROM, QUIET_TO
 from botwidget.markdown import control_block, plain_block, role_panel, text_block
 from botwidget.theme import BUBBLE_FONT, CONTROL_SWITCH_W
 
-PAGES = ("settings", "bots", "connections", "bot", "connection", "widget-json", "memory", "approvals")
+PAGES = ("settings", "bots", "connections", "bot", "connection", "widget-json", "memory", "approvals", "vault")
 # What typing it in the field opens.
-SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections", "/memory": "memory", "/approvals": "approvals"}
+SLASH = {"/settings": "settings", "/bots": "bots", "/connections": "connections", "/memory": "memory", "/approvals": "approvals", "/vault": "vault"}
 # What the list offers when a message starts with a slash, which is also what a right-click shows.
 # No /home: a right-click shows this list on its own. A page steps back to the screen before it.
 COMMANDS = (("/settings", "Sound, updates, startup, look"), ("/bots", "Show, hide, add or edit bots"),
             ("/connections", "Apps and models the bots use"), ("/memory", "See, add or forget memories"),
             ("/approvals", "What bots may do without asking"), ("/screenshot", "Capture a region, or double-click a face"),
-            ("/feedback", "Report a problem on GitHub"))
+            ("/feedback", "Report a problem on GitHub"), ("/vault", "Secrets stored in the keychain"))
 
 
 def _slash_name(name: str) -> str:
@@ -359,6 +359,44 @@ def approvals_page(state: dict) -> list:
     return blocks
 
 
+def vault_page(state: dict) -> list:
+    """List the secret IDs stored in the vault.
+
+    Only IDs are shown — no values, no secrets.  Each ID has a Delete row
+    that triggers a confirm (kind ``vault``) before deletion.
+    """
+    from botwidget.vault import list_secret_ids
+
+    blocks = _back() + [_heading("Vault")]
+    ids = list_secret_ids()
+    if not ids:
+        blocks.append(_row(("No secrets stored yet", "dim")))
+    else:
+        for sid in ids:
+            blocks.append(_row((f"Secret: {sid}", "dim")))
+            blocks.append(_item("", "", None, [
+                ("Delete", f"vault-delete/{sid}"),
+            ]))
+    blocks += [plain_block("gap"),
+               _button("New secret", "vault-new")]
+    return blocks
+
+
+def vault_new_page(state: dict) -> list:
+    """Add a new secret to the vault. Shows ID and value fields."""
+    blocks = _back("page/vault") + [_heading("New secret")]
+    error = state.get("vault_error", "")
+    if error:
+        blocks.append(_row((error, "b")))
+    blocks += [
+        _field("Secret ID", "field/vault_new_id", state.get("_vault_new_id", "")),
+        _field("Secret value", "field/vault_new_value", state.get("_vault_new_value", "")),
+        plain_block("gap"),
+        _button("Save secret", "vault-save"),
+    ]
+    return blocks
+
+
 def memory_add(state: dict) -> list:
     """Add a new memory, or change the one in _memory_id."""
     editing = bool(state.get("_memory_id"))
@@ -394,6 +432,10 @@ def page_blocks(page: str, state: dict) -> list:
         return connection_form(state)
     if page == "approvals":
         return approvals_page(state)
+    if page == "vault" or (isinstance(page, str) and page.startswith("vault/")):
+        if page == "vault/new" or page.startswith("vault/new"):
+            return vault_new_page(state)
+        return vault_page(state)
     if page == "memory":
         return memory_page(state)
     if page == "memory/new" or (isinstance(page, str) and page.startswith("memory/edit/")):
