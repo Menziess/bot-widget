@@ -385,6 +385,9 @@ def memory_write_tool(workspace: str | None = None):
         text = str(arguments.get("text") or "").strip()
         if not text:
             return "Nothing to write."
+        replaces = str(arguments.get("id") or "").strip()
+        if replaces:
+            return update_memory(replaces, text, str(arguments["topic"]) if "topic" in arguments else None, workspace)
         scope = str(arguments.get("scope") or "user")
         if scope not in ("user", "project", "topic"):
             scope = "user"
@@ -394,13 +397,14 @@ def memory_write_tool(workspace: str | None = None):
 
     return Tool(
         "memory_write",
-        "Write a memory that persists across sessions and compaction. Use for facts, decisions, preferences.",
+        "Write a memory that persists across sessions and compaction. Use for a reusable skill: how to connect to or use a system or tool, for one project or in general. Not for one-off fixes, temporary scripts or wishes that only hold for the current work. To improve a memory, pass its id (from memory_read): its text is replaced.",
         {
             "type": "object",
             "properties": {
                 "text": {"type": "string"},
                 "scope": {"type": "string", "enum": ["user", "project", "topic"]},
                 "topic": {"type": "string"},
+                "id": {"type": "string"},
             },
             "required": ["text"],
         },

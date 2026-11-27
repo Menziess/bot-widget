@@ -115,7 +115,7 @@ class ShrinkingOldResults(unittest.TestCase):
         self.assertNotIn("(shortened)", text)
 
     def test_when_tight_old_results_shrink_and_the_newest_stay(self):
-        os.environ["HARNESS_CONTEXT_TOKENS"] = "3200"  # about 1200 characters of room
+        os.environ["HARNESS_CONTEXT_TOKENS"] = "3400"  # about 1200 characters of room
         self.addCleanup(os.environ.pop, "HARNESS_CONTEXT_TOKENS", None)
         self._results(4, 900)
         text = "\n".join(m["content"] for m in context.build(self.store, "b"))

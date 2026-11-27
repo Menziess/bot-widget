@@ -328,6 +328,14 @@ class MemoryTools(unittest.TestCase):
         self.assertIn("user", result)
         self.assertEqual(len(list_memories()), 1)
 
+    def test_memory_write_tool_with_id_replaces_that_memory(self):
+        tool = memory_write_tool()
+        tool.run({"text": "old way"})
+        entry = list_memories()[0]
+        self.assertEqual(tool.run({"text": "better way", "id": entry["id"]}), "Updated.")
+        items = list_memories()
+        self.assertEqual([m["text"] for m in items], ["better way"])
+
     def test_memory_write_tool_empty(self):
         tool = memory_write_tool()
         self.assertEqual(tool.run({}), "Nothing to write.")
