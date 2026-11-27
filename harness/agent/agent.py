@@ -669,8 +669,8 @@ class LeanAgent:
         }
         self.tools.add(Tool(
             "shell_background",
-            "Start a shell command in the background inside the workspace and return immediately. "
-            "Same permission, workspace scope and refusal rules as shell. The job keeps running after "
+            "Start a shell command in the background and return immediately. "
+            "Same permission and refusal rules as shell. The job keeps running after "
             "this turn and after the bubble closes. When it exits, this session gets the exit code and "
             "a short tail of the output as a new message. Optional hook_command and hook_url run then; "
             "hook_key_file is a path to the webhook bearer token, never the token. Use it for anything that can take "
