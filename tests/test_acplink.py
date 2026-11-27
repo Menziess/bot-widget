@@ -509,6 +509,37 @@ class AcpTurns(unittest.TestCase):
         self.assertTrue(link._closed)
 
 
+class ThumbsUp(unittest.TestCase):
+    """H8 block 5: a 👍 from the UI triggers no model call."""
+
+    def test_a_thumbs_up_message_does_not_start_the_agent(self):
+        """When the user sends only '👍', the agent must not be called: no prompt() invocation."""
+        link = AcpLink(FAKE)
+        self.addCleanup(shutil.rmtree, link.room(), True)
+        self.addCleanup(link.close)
+
+        prompt_called = []
+
+        class Stub:
+            async def prompt(self, text):
+                prompt_called.append(text)
+                from harness.acp_client import Turn
+                return Turn(stop_reason="end_turn")
+
+        async def fake_ensure():
+            return Stub()
+
+        link._ensure = fake_ensure
+        ok, error = link.send("\U0001f44d")
+        self.assertTrue(ok, error)
+        # The turn should be over immediately — the agent was never called
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertEqual(prompt_called, [], "👍 must not trigger a model call")
+        # The user message should still be recorded
+        messages = link.chat()["messages"]
+        self.assertEqual(messages[-1]["text"], "\U0001f44d")
+
+
 class AcpFace(unittest.TestCase):
     """An `acp:` id gives a face an ACP link, and nothing else in the face changes."""
 

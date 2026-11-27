@@ -93,6 +93,28 @@ class Guards(unittest.TestCase):
         self.assertTrue(skill.nudged)
 
 
+class EmptyReplyAndThumbsUp(unittest.TestCase):
+    """H8 block 5: empty reply and 👍 are valid outcomes — no nudge from the Governor."""
+
+    def test_an_empty_reply_ends_the_turn(self):
+        """When the model returns no text and no tool calls, the turn ends."""
+        self.assertIsNone(Governor().review(turn(), step("")))
+
+    def test_a_thumbs_up_reply_ends_the_turn(self):
+        """When the model returns only a 👍, the turn ends — no nudge."""
+        self.assertIsNone(Governor().review(turn(), step("👍")))
+
+    def test_a_thumbs_up_with_surrounding_whitespace_ends_the_turn(self):
+        """👍 with leading/trailing whitespace is still just 👍."""
+        self.assertIsNone(Governor().review(turn(), step("  👍  ")))
+
+    def test_a_thumbs_up_with_other_text_is_not_quiet(self):
+        """👍 mixed with other text is not a pure thumbs-up; obligations still apply."""
+        # If the closing words make a claim (e.g. "done"), it should be nudged
+        nudge = Governor().review(turn(), step("👍 Klaar."))
+        self.assertIsNotNone(nudge)
+
+
 class Loops(unittest.TestCase):
     def test_the_same_step_three_times_in_a_row_is_a_loop(self):
         loop = LoopDetector(3)

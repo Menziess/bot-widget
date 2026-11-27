@@ -241,8 +241,17 @@ class AcpLink:
     # ── the calls the face knows ────────────────────────────────
 
     def send(self, text: str) -> tuple[bool, str]:
-        """Hand the message to the agent. True once it is on its way; a slow start is not an error."""
+        """Hand the message to the agent. True once it is on its way; a slow start is not an error.
+
+        H8 block 5: a 👍 (thumbs up) is the user's way of saying "this is fine" — no model
+        call, no turn. The message is recorded in the chat but the agent is never started.
+        """
         with self._lock:
+            # H8: 👍 is the user approving the last answer — no model call.
+            if text.strip() == "\U0001f44d":
+                self.messages.append({"role": "user", "text": text})
+                self._changed()
+                return True, ""
             if self._sending:
                 return False, "still answering the last message"
             self._sending = True

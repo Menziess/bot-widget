@@ -185,13 +185,21 @@ class SkillGuard(Guard):
 
 
 class Governor:
-    """Runs the guards in order, each within its own limit. The first nudge wins."""
+    """Runs the guards in order, each within its own limit. The first nudge wins.
+
+    H8 block 5: an empty reply or a 👍 are valid outcomes — the Governor returns
+    None immediately without checking any guard.
+    """
 
     def __init__(self, guards=None):
         self.guards = guards or (FailedToolGuard(), *OBLIGATIONS, SkillGuard())
         self.used = Counter()
 
     def review(self, turn: Turn, step: Step) -> Nudge | None:
+        # H8: empty or just 👍 — the user is done, no nudge needed.
+        text = step.text.strip()
+        if not text or text == "\U0001f44d":
+            return None
         for guard in self.guards:
             if self.used[guard.name] >= guard.limit:
                 continue
