@@ -32,6 +32,7 @@ Each of these went wrong once. A test or a rule holds it now; keep both.
 - The stream stage (`harness/stream_text.py`) looks only at the end of the text: it runs on every piece of an answer, and a pattern over the whole text made a long answer quadratic (`tests/test_stream_text.py` holds the window).
 - Always allow never saves a program that runs other code or commands, in any version or spelling (`never_saved` in `harness/agent/workspace.py`); a rule for one is a regex written by hand.
 - A model name is never written in the code: ask the service (`acp_bots.fetch_models`).
+- What the bot is told about its tools is what it believes, so it matches the code: the tool descriptions (`harness/agent/workspace.py`, `tools.py`) and `SYSTEM` (`harness/agent/context.py`). Change what a tool does and its description in the same commit. A tool description once said "inside the workspace" while any folder worked, and the bot told the user it could not edit its own code; `tests/test_harness_workspace.py` now fails on that wording
 - Ruff checks imports, pyflakes and bugbear (an `except` that raises says `from` what; a `zip` says its `strict=`). A dead-code scan (`uvx vulture`) must also read `scripts/`: files there have no `.py`.
 
 ## Taskbar

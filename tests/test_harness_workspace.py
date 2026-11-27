@@ -209,8 +209,8 @@ class GitInAnotherFolder(unittest.TestCase):
         self.assertIn("a.txt", tools["git_status"].run({"path": repo}))
         with self.assertRaises(ToolError):
             tools["git_status"].run({})  # the working folder is not a repository
-        for name in ("write_file", "edit", "delete_file", "shell"):
-            self.assertNotIn("inside the workspace", tools[name].description, name)
+        for name, tool in tools.items():
+            self.assertNotIn("inside the workspace", tool.description, name)
 
 
 class FindFiles(unittest.TestCase):
