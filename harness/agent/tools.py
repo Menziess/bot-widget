@@ -206,17 +206,16 @@ def _computer_tools() -> list[Tool]:
              {"type": "object", "properties": {**point, "to_x": {"type": "integer"}, "to_y": {"type": "integer"}},
               "required": ["x", "y", "to_x", "to_y"]},
              _computer("drag"), writes=True),
-        Tool("computer_move", "Move the window of an app (name as accessibility lists it) to x, y, and give it a size "
-             "when width and height are set. Needs Accept.",
+        Tool("computer_window", "Change the window of an app (name as accessibility lists it): state move puts it at "
+             "x, y and gives it a size when width and height are set; minimize, restore (un-minimize) and maximize. "
+             "Moving it off screen is not minimizing. Needs Accept.",
              {"type": "object", "properties": {"app": {"type": "string"}, **point, "width": {"type": "integer"},
-                                               "height": {"type": "integer"}}, "required": ["app", "x", "y"]},
-             _computer("move_app_window"), writes=True),
-        Tool("computer_window", "Minimize, restore (un-minimize) or maximize the window of an app (name as accessibility "
-             "lists it). Moving it off screen is not minimizing. Needs Accept.",
-             {"type": "object", "properties": {"app": {"type": "string"},
-                                               "state": {"type": "string", "enum": ["minimize", "restore", "maximize"]}},
+                                               "height": {"type": "integer"},
+                                               "state": {"type": "string",
+                                                         "enum": ["move", "minimize", "restore", "maximize"]}},
               "required": ["app", "state"]},
-             _computer("window_state"), writes=True),
+             lambda arguments: _computer("move_app_window" if arguments.get("state") == "move" else "window_state")(
+                 arguments), writes=True),
     ]
 
 

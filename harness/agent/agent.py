@@ -341,7 +341,7 @@ class LeanAgent:
                   "required": ["name"]}, lambda args: self._widget("run", name=str(args.get("name") or "")),
                  writes=True),
             Tool("move_me", "Move this widget to x, y or to a screen edge (left, right, top, bottom). The user is asked "
-                 "first. For the window of another app use computer_move, computer_window (minimize, restore, maximize).",
+                 "first. For the window of another app use computer_window.",
                  {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"},
                                                    "edge": string("left, right, top or bottom")}},
                  lambda args: self._widget("move", x=args.get("x"), y=args.get("y"), edge=args.get("edge")),

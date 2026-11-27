@@ -277,7 +277,7 @@ def bind_backend(backend) -> None:
 
 
 def bind_mover(mover, screen=None, size=None) -> None:
-    """The widget window that computer_move moves. The last face to open wins."""
+    """The widget window that move_me moves. The last face to open wins."""
     desktop.mover = mover
     if screen is not None:
         desktop.screen = screen

@@ -83,7 +83,7 @@ class Approval(unittest.IsolatedAsyncioTestCase):
         """Should mark pointer, keyboard and window moves as writes."""
         names = (
             "computer_click", "computer_scroll", "computer_type", "computer_key",
-            "computer_drag", "computer_move", "computer_window",
+            "computer_drag", "computer_window",
         )
         for name in names:
             tool = self.tools.find(name)
@@ -120,12 +120,12 @@ class Approval(unittest.IsolatedAsyncioTestCase):
 
     async def test_an_accepted_move_puts_the_window_of_that_app_there(self):
         """Should move the window of another app only after Accept."""
-        result = await self._call("computer_move", {"app": "Chrome", "x": 15, "y": 25, "width": 800, "height": 600},
+        result = await self._call("computer_window", {"app": "Chrome", "state": "move", "x": 15, "y": 25, "width": 800, "height": 600},
                                   allow=True)
         self.assertIn("ok", result)
         self.assertEqual(self.backend.calls, [("move_window", "Chrome", 15, 25, 800, 600)])
         self.backend.calls.clear()
-        await self._call("computer_move", {"app": "Chrome", "x": 1, "y": 1}, allow=False)
+        await self._call("computer_window", {"app": "Chrome", "state": "move", "x": 1, "y": 1}, allow=False)
         self.assertEqual(self.backend.calls, [])
 
     async def test_an_accepted_window_state_reaches_the_backend_and_a_decline_does_not(self):
