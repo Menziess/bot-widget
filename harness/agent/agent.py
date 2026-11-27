@@ -435,6 +435,14 @@ class LeanAgent:
         self._stream_idle.clear()
         self._streaming = True
 
+        # H8: ack-first — send a brief acknowledgment before any model request, so the
+        # bubble shows "bezig…" instantly without costing tokens. The real answer arrives
+        # later as a separate agent_message_chunk. Use a thought chunk for the ack so it
+        # doesn't merge with the real answer in fold_chunk, and so test harnesses that
+        # filter on AgentMessageChunk don't see it as the first text update.
+        if self.conn is not None:
+            await self._chunk(session_id, "thought", "bezig…")
+
         async def say(chunks: list[str], tool_names: set[str] | None = None) -> None:
             """The answer: what the closing step said, as one message. Everything before it was progress. Every piece
             goes through one stage."""
