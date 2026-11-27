@@ -40,17 +40,13 @@ PATH = re.compile(r"(?<![\w/\\.])(?:~|[A-Za-z]:)?(?:[\\/][\w.\-~]+){2,}|(?<![\w/
 SEARCHES = {"search", "find_files"}
 CHANGERS = {"write_file", "edit", "delete_file"}  # shell can change things too, but a shell call is also how a check runs
 
-# The user asking for the desktop's applications, in either phrase, in any order.
-ACCESSIBILITY_ASK = re.compile(r"^(?=.*accessibility)(?=.*\btool\b).*|^(?=.*which applications)(?=.*\bopen\b).*",
-                               re.IGNORECASE | re.DOTALL)
 # The user asking for something to be changed.
 CHANGE_ASK = re.compile(r"\b(write|create|change|fix|repair|delete|remove|schrijf|maak|wijzig|verwijder|repareer)\b",
                         re.IGNORECASE)
-# A snake_case word is a tool name; `edit` or `search` are also plain words.
-TOOL_NAME = re.compile(r"\b[a-z]+(?:_[a-z]+)+\b")
+# A snake_case word is a tool name, and so is the word before "tool" ("your accessibility tool"); `edit` or `search`
+# alone are also plain words.
+TOOL_NAME = re.compile(r"\b[a-z]+(?:_[a-z]+)+\b|\b[a-z]+(?= tool\b)", re.IGNORECASE)
 
-A11Y_NUDGE = ("Call the accessibility tool now, before you answer. Leave query empty so the result lists "
-              "application names. Do not invent a list.")
 FAILED_NUDGE = ("A tool call just failed and your last message does not say so. Either call it again with a fix, or "
                 "say plainly that it failed. Do not answer from earlier messages as if it had worked.")
 GROUNDING_NUDGE = ("The user named {what} on this machine and this turn has not looked at anything. Look with a tool "
@@ -179,7 +175,6 @@ class Obligation(Guard):
 
 
 OBLIGATIONS = (
-    Obligation("accessibility", "user", ACCESSIBILITY_ASK, {"accessibility"}, A11Y_NUDGE),
     Obligation("named_tool", "user", TOOL_NAME, "match", NAMED_NUDGE),
     Obligation("grounding", "user", PATH, None, GROUNDING_NUDGE),
     Obligation("change", "user", CHANGE_ASK, WRITERS, CHANGE_NUDGE),

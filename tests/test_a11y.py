@@ -10,7 +10,6 @@ from botwidget.system import a11y
 from harness.agent.agent import LeanAgent
 from harness.agent.context import SYSTEM
 from harness.agent.tools import Tools, accessibility_text
-from harness.agent.turn import A11Y_NUDGE
 from tests.test_harness_direct import Block, Conn, ScriptModel
 
 
@@ -295,9 +294,7 @@ class AccessibilityTool(unittest.IsolatedAsyncioTestCase):
         with mock.patch("botwidget.system.a11y.accessibility", return_value={"available": True, "reason": "AT-SPI", "platform": "linux"}), \
                 mock.patch("botwidget.system.a11y.application_names", return_value=["botwidget"]):
             await agent.prompt(session, [Block(ask)])
-        self.assertEqual(len(seen), 2)
-        blob = json.dumps(seen)
-        self.assertNotIn(A11Y_NUDGE, blob)
+        self.assertEqual(len(seen), 2, "the call and the answer: no nudge in between")
         texts = [item[1].content.text for item in agent.conn.updates
                  if getattr(item[1], "session_update", "") == "agent_message_chunk"]
         self.assertEqual(texts, ["botwidget is open."])
