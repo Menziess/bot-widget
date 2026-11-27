@@ -1065,9 +1065,8 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
              lambda a: search_files(workspace, a["pattern"], int(a.get("limit") or 100), str(a.get("path") or ""))),
         # ── edit ──
         Tool("find_files",
-             "Find files and folders by name (a plain word matches anywhere in the name; * and ? work). Searches the "
-             "whole home folder unless path is given, so use it to look for a repo, a file or a folder the working "
-             "folder does not hold. Skips secret and hidden folders.",
+             "Find files and folders by name across the home folder, or in path. A plain word matches anywhere in "
+             "the name; * and ? work. Skips secret and hidden folders.",
              {"type": "object",
               "properties": {"name": {"type": "string"}, "path": {"type": "string"}, "limit": {"type": "integer"}},
               "required": ["name"]},
