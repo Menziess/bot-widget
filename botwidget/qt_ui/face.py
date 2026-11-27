@@ -569,8 +569,7 @@ class FaceWindow(QWidget):
             return
         watching = getattr(self, "_screenshot_active", False)
         show = self.isVisible() and (watching or (
-            (self._working or self._sending or bool(self._outbox.items))
-            and not self._has_attention() and not self._thinking_cloud_open()))
+            self._busy() and not self._has_attention() and not self._thinking_cloud_open()))
         if show:
             row.set_text(WATCHING_TEXT if watching else THINKING_TEXT)
             row.place()
@@ -950,9 +949,13 @@ class FaceWindow(QWidget):
         """Whether the platform says where the pointer is outside our own windows."""
         return global_pointer()
 
+    def _busy(self) -> bool:
+        """A turn is under way: asked and not answered yet, being sent, or the bot is working."""
+        return bool(self._working or self._sending or self._outbox.items or self._asked)
+
     def _show_think(self) -> bool:
         """Open after you send. Hover brings it back while this turn lasts, not when the bot is idle."""
-        if not (self._working or self._sending or self._outbox.items or self._asked):
+        if not self._busy():
             return False
         if self._think_expanded():
             return True

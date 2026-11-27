@@ -221,12 +221,13 @@ class ThinkingRowUnderWorkingFace(unittest.TestCase):
         with mock.patch("botwidget.qt_ui.face.openbot_installed", return_value=True):
             self.window._pointer_on_head = lambda: False
             self.window._working = False
-            self.window._sending = True
-            self.window._place_thinking()
-            self.assertEqual(len(self._rows(self.window)), 1)
-            self.window._sending = False
-            self.window._place_thinking()
-            self.assertEqual(self._rows(self.window), [], "nothing on its way and no work: no row")
+            for state in ("_sending", "_asked"):  # on its way, or asked and the bot has not reported work yet
+                setattr(self.window, state, True)
+                self.window._place_thinking()
+                self.assertEqual(len(self._rows(self.window)), 1, state)
+                setattr(self.window, state, False)
+                self.window._place_thinking()
+                self.assertEqual(self._rows(self.window), [], "nothing on its way and no work: no row")
 
     def test_should_hide_the_row_while_the_face_wants_attention(self):
         """Should hide Thinking for a prompt, an approval or a browser takeover."""
