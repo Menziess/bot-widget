@@ -468,6 +468,10 @@ def _git_refused(args: list[str]) -> bool:
     return False
 
 
+def _git_folder(workspace: str, arguments: dict) -> str:
+    return _real_path(workspace, arguments["path"]) if arguments.get("path") else workspace
+
+
 def _git_run(workspace: str, args: list[str]) -> str:
     """Run git; refuse writes; return stdout or raise."""
     if _git_refused(args):
@@ -1088,7 +1092,7 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
               "required": ["name"]},
              lambda a: find_files(workspace, a["name"], int(a.get("limit") or 50), str(a.get("path") or ""))),
         Tool("write_file",
-             "Write a text file inside the workspace. Needs user permission.",
+             "Write a text file in any folder; outside the working folder it says so when it asks. Needs user permission.",
              {"type": "object",
               "properties": {
                   "path": {"type": "string"},
@@ -1098,7 +1102,7 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
              lambda a: _ws_write(workspace, a["path"], a["content"]),
              writes=True),
         Tool("edit",
-             "Replace one exact piece of text in a file inside the workspace. old_string must match the "
+             "Replace one exact piece of text in a file, in any folder. old_string must match the "
              "file exactly and once (add surrounding lines to make it unique), or set replace_all. "
              "Returns the diff. Needs user permission. Prefer this over write_file for changes to an existing file.",
              {"type": "object",
@@ -1113,14 +1117,14 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
                                 bool(a.get("replace_all"))),
              writes=True),
         Tool("delete_file",
-             "Delete one file inside the workspace. It moves to a trash folder, so it can be restored. Needs user permission.",
+             "Delete one file, in any folder. It moves to a trash folder, so it can be restored. Needs user permission.",
              {"type": "object",
               "properties": {"path": {"type": "string"}},
               "required": ["path"]},
              lambda a: _ws_delete(workspace, a["path"]),
              writes=True),
         Tool("undo_edit",
-             "Undo the last write to a file in the workspace. Restores previous bytes.",
+             "Undo the last write to a file. Restores previous bytes.",
              {"type": "object",
               "properties": {"path": {"type": "string"}},
               "required": ["path"]},
@@ -1143,27 +1147,21 @@ def workspace_builtins(workspace: str, edit: EditStore) -> list[Tool]:
               "required": []},
              lambda _a: _undo_last(edit)),
         Tool("git_status",
-             "Git status inside the workspace. Read-only.",
-             {"type": "object",
-              "properties": {},
-              "required": []},
-             lambda _a: _git_run(workspace, ["status"])),
+             "Git status of the repository in path (default: the working folder). Read-only.",
+             {"type": "object", "properties": {"path": {"type": "string"}}},
+             lambda a: _git_run(_git_folder(workspace, a), ["status"])),
         Tool("git_log",
-             "Git log inside the workspace. Read-only.",
-             {"type": "object",
-              "properties": {
-                  "limit": {"type": "integer"},
-              }},
-             lambda a: _git_run(workspace, ["log", f"--max-count={int(a.get('limit') or 20)}"])),
+             "Git log of the repository in path (default: the working folder). Read-only.",
+             {"type": "object", "properties": {"limit": {"type": "integer"}, "path": {"type": "string"}}},
+             lambda a: _git_run(_git_folder(workspace, a), ["log", f"--max-count={int(a.get('limit') or 20)}"])),
         Tool("git_diff",
-             "Git diff inside the workspace. Read-only.",
-             {"type": "object",
-              "properties": {},
-              "required": []},
-             lambda _a: _git_run(workspace, ["diff"])),
+             "Git diff of the repository in path (default: the working folder). Read-only.",
+             {"type": "object", "properties": {"path": {"type": "string"}}},
+             lambda a: _git_run(_git_folder(workspace, a), ["diff"])),
         # ── shell ──
         Tool("shell",
-             "Run a shell command inside the workspace. Read-only by default.",
+             "Run a shell command. It starts in the working folder and can reach any folder. A command that only reads runs "
+             "without asking; any other asks first.",
              {"type": "object",
               "properties": {"command": {"type": "string"}},
               "required": ["command"]},

@@ -198,6 +198,21 @@ class SearchFiles(unittest.TestCase):
 
 # ── Safe walk ─────────────────────────────────────────────────────────
 
+class GitInAnotherFolder(unittest.TestCase):
+    def test_the_git_tools_read_the_repository_in_path_and_the_descriptions_do_not_claim_a_limit(self):
+        repo, workspace = tempfile.mkdtemp(), tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, repo, True)
+        self.addCleanup(shutil.rmtree, workspace, True)
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        _write(os.path.join(repo, "a.txt"), "x")
+        tools = {tool.name: tool for tool in workspace_builtins(workspace, EditStore())}
+        self.assertIn("a.txt", tools["git_status"].run({"path": repo}))
+        with self.assertRaises(ToolError):
+            tools["git_status"].run({})  # the working folder is not a repository
+        for name in ("write_file", "edit", "delete_file", "shell"):
+            self.assertNotIn("inside the workspace", tools[name].description, name)
+
+
 class FindFiles(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.mkdtemp()
