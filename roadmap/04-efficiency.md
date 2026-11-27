@@ -310,6 +310,7 @@ guard. Already present and not rebuilt: `spill.py`, `RESULT_STUB`,
    `store.set("skill")` on every request; it stores the name, path and summary,
    and the body is read only when the model asks for it. Test: the request after
    `/skill` carries no full body; reading it once returns the body.
+   *27 Nov 2026: tried as 70b84b2 and dropped by the gate (reverted in 48f4659): over 3 live H2 runs passed 15->14, input tokens 78,017->86,595, steps 22->27. The H2 tasks never run a skill, and the 5-run re-measure of block 5 showed a run-to-run spread of 6-11 steps and 26k-39k tokens per run, so this is noise plus one flaky task, not a measured cost; retry with a benchmark task that runs a /skill, and keep the body one read_file away only after the model has shown it reads it.*
 7. **Autonomy through `confirm.py`, writes only.** Only tools marked
    `Tool.writes` (risky actions) go through the confirm primitive; reads and safe
    actions run without asking. The system prompt and `agent.py` `_verdict`
