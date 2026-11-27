@@ -335,3 +335,37 @@ After these, in this order:
 11. **`Tools.hide` per turn.** Tools that the turn cannot need are hidden for
     that request through `Tools.hide`, and come back the next turn. Test: hidden
     tools are absent from that request's tool list and present again after it.
+
+## H9 continuous harness loop (Stefan t1172u, 27 Nov 2026)
+
+After the H8 blocks, the harness keeps improving in a loop on the PC (setup 2), one item per cycle:
+
+1. **Meter first.** Read `usage.json` (`agents/bots/AGENTS.md`). On `pace: hold` or `grok_build_ok: false`, stop and tell
+   General why. Cycles are local only (`oc-run`, `llamacpp/local`); the only Grok Bot cost of a cycle is its one
+   wake to General, well under the 3% cap per block.
+2. **Research cheaply.** The local model reads how other harnesses and current models handle context, tools and
+   turns, and proposes at most three items. No Grok Bot spend on reading.
+3. **Pick one item**, from the backlog first, then from research. Implement it tests first in one local run with a
+   20-minute stall watchdog; the run tests only what it touched and commits, and the loop commits a green worktree
+   itself when the run forgets.
+4. **Gate.** Full suite and ruff, then `harness/benchmark.py --live` 5 times before and 5 after, alternating.
+   Feature or refactor: at most one extra fail, and mean input tokens and mean steps rise at most 5%. Efficiency:
+   at most one extra fail and a lower mean of input tokens or steps. Keep: push to main. Drop: revert and push.
+5. **On failure** the cause goes under the item here; the item is retried at most twice, then the loop moves on.
+6. **One wake per cycle** to General: item, result, kept or dropped, SHA, next item, and whether the PC can go off.
+   The loop keeps its state, stops cleanly when the PC goes off and resumes when it is back.
+
+Seed backlog, in order:
+
+- **LoopDetector extension** (H8 item 9; feature): stop on repeated failure of the same kind of command, and a fixed
+  search-step budget.
+- **Verify before done** (H8 item 10; feature): a turn that changed something checks the result before it says done.
+- **`Tools.hide` per turn** (H8 item 11; efficiency): hide tools the turn cannot need, back the next turn.
+
+Not in the backlog: **lazy skill body** (H8 item 6). Skill bodies never reach the main session. It gets only skill
+names, descriptions and paths (`harness/agent/workspace.py:996-998`, added through `harness/agent/context.py:228`). A
+`/skill` runs in its own store (`harness/agent/agent.py:190-204`), `prompt()` clears skill text from the main store
+(`agent.py:369`), and only the skill's bot replies are copied back (`agent.py:231-233`). Item 6 could only shrink
+the skill's own session.
+
+Loop log (one line per cycle):
