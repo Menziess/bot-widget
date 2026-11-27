@@ -195,6 +195,7 @@ The bot asks before it writes, edits or deletes a file and before a shell comman
 - Value `true` runs without asking. Value `false` always asks, and it wins over `true` and over anything that was remembered
 - A shell command with several parts, such as `a && b`, is approved only when each part is
 - Always allow on such a command saves every part, and is offered only when each part can be saved. A part such as `python` or a redirect takes the offer away. `cd` never needs saving
+- A write of a file (`write_file`, `edit`) offers Always allow too, with the diff: it remembers the repository the file is in (the folder of the file when there is none, never your whole home folder) for `write_file` and `edit`, and `delete_file` keeps asking. The rule lands in `approvals.json`, where /approvals shows it
 
 ```json
 {

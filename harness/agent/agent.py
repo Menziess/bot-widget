@@ -44,7 +44,14 @@ from harness.agent.models import ModelError
 from harness.agent.store import SessionStore
 from harness.agent.tools import TOOL_OUTPUT, Tool, ToolError, Tools
 from harness.agent.turn import CHANGERS, Governor, LoopDetector, Step, Turn, call_key
-from harness.agent.workspace import _diff_text, _real_path, compute_edit, outside_workspace, shell_segments
+from harness.agent.workspace import (
+    _diff_text,
+    _real_path,
+    compute_edit,
+    outside_workspace,
+    project_root,
+    shell_segments,
+)
 from harness.stream_text import fold_chunk, note_raw
 
 MAX_STEPS = 30  # default for HARNESS_MAX_STEPS: a tool loop that never settles must still end the turn
@@ -924,11 +931,17 @@ class LeanAgent:
 
         if mode == "ask":
             # Show diff, wait for user to apply or reject
-            if not await self._ask_diff(session_id, call["id"], diff_title, diff_text):
+            root = self._write_root(workspace, path)
+            choice = await self._ask_diff(session_id, call["id"], diff_title, diff_text, root)
+            if not choice:
                 await self._tool_call(session_id, call["id"], diff_title, "completed", "failed")
                 return self._note_tool(store, name, "declined by the user; nothing was done",
                                        "The user declined this action. Do not try it another way.")
-            self._remember(name, arguments)
+            if choice == "allow_always":
+                for tool in ("write_file", "edit"):  # not delete_file: that one keeps asking
+                    self.rules.remember(f"{tool} {root}/", persist=True)
+            else:
+                self._remember(name, arguments)
 
         # mode is "always" or user approved: apply the write
         # Record bytes before write (for undo)
@@ -966,20 +979,35 @@ class LeanAgent:
         await self._tool_call(session_id, call["id"], diff_title, "completed", "completed")
         return self._note_tool(store, name, "ok", result if name == "edit" else f"Wrote to {path}.")
 
-    async def _ask_diff(self, session_id: str, call_id: str, title: str, diff_text: str) -> bool:
-        """Show a diff in the bubble and wait for Apply or Reject. Returns True if applied."""
+    @staticmethod
+    def _write_root(workspace: str, path: str) -> str:
+        """The folder an Always allow for a write covers: the repository the file is in. Never the home folder or a
+        drive, which would cover everything: then just the folder of the file."""
+        folder = os.path.dirname(_real_path(workspace, path))
+        root = project_root(folder)
+        home = os.path.realpath(os.path.expanduser("~"))
+        return folder if root in (home, os.path.dirname(home), os.path.sep) or not root else root
+
+    async def _ask_diff(self, session_id: str, call_id: str, title: str, diff_text: str, always: str = "") -> str:
+        """Show a diff in the bubble and wait for Apply or Reject. 'allow', 'allow_always' (offered with a folder to
+        save) or '' for anything else."""
         if self.conn is None:
-            return False
+            return ""
         # Use kind="edit" so the widget knows this is an edit diff.
         # The diff_text is stored in field_meta so the widget can display it in the bubble.
+        options = [PermissionOption(option_id="allow", name="Apply", kind="allow_once")]
+        if always:
+            options.append(PermissionOption(option_id="allow_always", name=f"Always allow writes in `{always}`",
+                                            kind="allow_always"))
+        options.append(PermissionOption(option_id="decline", name="Reject", kind="reject_once"))
         response = await self.conn.request_permission(
             session_id=session_id,
             tool_call=ToolCallUpdate(tool_call_id=call_id, title=title, kind="edit", status="pending",
                                      field_meta={"diff": diff_text}),
-            options=[PermissionOption(option_id="allow", name="Apply", kind="allow_once"),
-                     PermissionOption(option_id="decline", name="Reject", kind="reject_once")])
+            options=options)
         outcome = response.outcome
-        return getattr(outcome, "outcome", "") == "selected" and getattr(outcome, "option_id", "") == "allow"
+        chosen = getattr(outcome, "option_id", "")
+        return chosen if getattr(outcome, "outcome", "") == "selected" and chosen in ("allow", "allow_always") else ""
 
     # ── H6: parallel tool execution ───────────────────────────────────
 

@@ -13,6 +13,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from pathlib import Path
 
 from harness.agent.agent import LeanAgent
 from harness.agent.tools import Tools
@@ -140,6 +141,46 @@ class H7DiffAsk(unittest.IsolatedAsyncioTestCase):
         finally:
             os.environ.pop("HARNESS_WORKSPACE", None)
             os.environ.pop("HARNESS_DIFF_PERMISSIONS", None)
+
+    async def test_always_allow_for_a_write_covers_the_repository_and_never_a_delete(self):
+        """Always allow on a write outside the workspace remembers the repository, for write_file and edit alone."""
+        repo = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, repo, True)
+        os.makedirs(os.path.join(repo, ".git"))
+        os.makedirs(os.path.join(repo, "sub"))
+        os.environ["HARNESS_DIFF_PERMISSIONS"] = "ask"
+        self.addCleanup(os.environ.pop, "HARNESS_DIFF_PERMISSIONS", None)
+        agent = LeanAgent("test-always", ScriptModel(), folder=self.folder)
+        conn = _Conn(auto_allow=False, diff_mode="ask")
+        conn._responses.append(("selected", "allow_always"))
+        agent.on_connect(conn)
+        agent.tools = Tools("", set(), workspace=self.workspace, permission="ask")
+        for t in workspace_builtins(self.workspace, EditStore()):
+            agent.tools.add(t)
+        session_id = (await agent.new_session(cwd=self.workspace)).session_id
+        store = agent.stores[session_id]
+
+        def call(name, **arguments):
+            return {"id": "1", "function": {"name": name, "arguments": json.dumps(arguments)}}
+
+        first = os.path.join(repo, "a.txt")
+        await agent._use_tool(session_id, store, call("write_file", path=first, content="one\n"))
+        offered = [option.kind for option in conn.permission_requests[0]["options"]]
+        self.assertEqual(offered, ["allow_once", "allow_always", "reject_once"])
+        self.assertIn(os.path.realpath(repo), conn.permission_requests[0]["options"][1].name)
+        deeper = os.path.join(repo, "sub", "b.txt")
+        await agent._use_tool(session_id, store, call("write_file", path=deeper, content="two\n"))
+        await agent._use_tool(session_id, store, call("edit", path=first, old_string="one", new_string="uno"))
+        self.assertEqual(len(conn.permission_requests), 1, "the repository is allowed: nothing more asks")
+        self.assertEqual(Path(first).read_text(), "uno\n")
+        await agent._use_tool(session_id, store, call("delete_file", path=deeper))
+        self.assertEqual(len(conn.permission_requests), 2, "a delete still asks")
+
+    def test_an_always_allow_never_covers_the_home_folder_or_a_drive(self):
+        home = os.path.realpath(os.path.expanduser("~"))
+        root = LeanAgent._write_root("", os.path.join(home, "loose.txt"))
+        self.assertEqual(root, home, "the folder of the file, not more")
+        self.assertNotIn(LeanAgent._write_root("", os.path.join(os.path.sep, "loose.txt")), ("",))
 
     async def test_ask_mode_rejects(self):
         """In ask mode, Reject means the file is NOT written."""
