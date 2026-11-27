@@ -123,21 +123,6 @@ def radii_points(radii: tuple) -> tuple:
     return tuple((math.cos(i / n * math.tau) * r, math.sin(i / n * math.tau) * r) for i, r in enumerate(radii))
 
 
-def radii_of(points: tuple, count: int = 64) -> tuple:
-    """Back to radii at count even angles, read off a star-shaped outline."""
-    polar = sorted((math.atan2(y, x) % math.tau, math.hypot(x, y)) for x, y in points)
-    polar = [(a - math.tau, r) for a, r in polar[-1:]] + polar + [(a + math.tau, r) for a, r in polar[:1]]
-    out, j = [], 0
-    for i in range(count):
-        want = i / count * math.tau
-        while j < len(polar) - 2 and polar[j + 1][0] < want:
-            j += 1
-        (a0, r0), (a1, r1) = polar[j], polar[j + 1]
-        t = (want - a0) / (a1 - a0) if a1 > a0 else 0.0
-        out.append(r0 + (r1 - r0) * t)
-    return tuple(out)
-
-
 # ── Eyes on the surface ─────────────────────────────────────────────
 def _stroke(line: list, half: float, caps: int = 7) -> list:
     """The outline of a thick line with round ends, around a polyline."""

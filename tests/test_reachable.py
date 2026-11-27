@@ -465,7 +465,7 @@ class SmallModules(unittest.TestCase):
         with mock.patch.object(instance, "process_cmdline", return_value=b"botwidget"), \
                 mock.patch.object(instance.os, "kill") as kill, \
                 mock.patch.object(instance.time, "sleep"):
-            instance.ensure_single_instance(pid, markers=(b"botwidget",))
+            instance.ensure_single_instance(pid)
         self.assertEqual(kill.call_args_list[-1].args[1], getattr(signal, "SIGKILL", signal.SIGTERM))
 
         child = mock.Mock()
@@ -1404,7 +1404,6 @@ class MenuAndCatcher(unittest.TestCase):
         broken.note.side_effect = RuntimeError("no")
         home.acp = broken
         self.assertEqual(home._send_status_or_note(), "")
-        self.assertTrue(home._has_grok_or_hermes())
         home.acp = None
         self.assertFalse(home._failed_since_asked("not-a-date"))
         home._asked_at = 10

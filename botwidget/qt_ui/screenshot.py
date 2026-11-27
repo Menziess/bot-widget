@@ -181,14 +181,6 @@ class ScreenshotOverlay(QWidget):
             overlay._cancel_callback = callback
 
 
-def screen_grab(rect):
-    """Grab a screen region. Wraps QScreen.grabWindow for test injection."""
-    screen = QGuiApplication.primaryScreen()
-    if screen is None:
-        return None
-    return screen.grabWindow(0, *rect)
-
-
 def enter_screenshot_mode(face):
     """Enter screenshot mode for *face*. Returns the overlay."""
     from botwidget.qt_ui.screenshot import ScreenshotOverlay

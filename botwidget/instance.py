@@ -17,12 +17,6 @@ from botwidget.system.current import process_cmdline
 
 PIDFILE = os.path.join(tempfile.gettempdir(), "bot_widget.pid")
 STOPS_LOG = os.path.join(tempfile.gettempdir(), "bot_widget_stops.log")
-# The packaged app is called "Bot Widget"; the other names are the plain start through Python.
-LAUNCHERS = (b"bot_widget.py", b"botwidget", b"Bot Widget")
-
-
-def looks_like_widget(cmdline: bytes, markers: tuple = LAUNCHERS) -> bool:
-    return any(name in cmdline for name in markers)
 
 
 def _cmdline_text(raw) -> str:
@@ -40,11 +34,10 @@ def log_stopper(old: int):
         fh.write(line)
 
 
-def ensure_single_instance(pidfile: str = PIDFILE, markers: tuple = LAUNCHERS):
+def ensure_single_instance(pidfile: str = PIDFILE):
     """Stop a previously started widget, so one window remains.
 
-    markers stays for callers that still pass it. The kill uses the command check, so a
-    reused pid whose prompt merely mentions the widget is left alone.
+    The kill uses the command check, so a reused pid whose prompt merely mentions the widget is left alone.
     """
     try:
         old = int(read_file(pidfile))

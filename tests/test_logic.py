@@ -216,28 +216,16 @@ class AvatarProfile(unittest.TestCase):
         self.assertIn(profile["shape"], avatar.SUPPORTED_SHAPES)
         self.assertGreater(profile["bottom"], 0)
 
-    def test_a_hard_look_stays_inside_the_face_and_a_mark_can_be_drawn(self):
-        """Should clamp a turn that would put the eyes outside, and draw a mark and a body."""
+    def test_the_eyes_the_body_and_the_svg_can_be_drawn(self):
+        """Should draw an expressed eye, every surface, and the avatar svg."""
         from botwidget import body3d
-        from botwidget.grok_marks import GROK_MARKS
-        dx, dy = avatar.grok_look(80, 80)
-        self.assertLessEqual((dx * dx + dy * dy) ** 0.5, avatar.LOOK_MAX + 0.05)
-        shape = next(name for name in GROK_MARKS if name not in avatar.GROK_SHAPES)
-        self.assertTrue(avatar.mark_path(shape, 10, 0, 0).startswith("M"))
-        self.assertTrue(avatar.mark_drawn({"grok": True, "shape": shape}))
-        self.assertIn("C", avatar.silhouette_path(avatar.silhouette_radii("cercle"), 10, 0, 0))
         curve, _shift = avatar.expressed_eye("sleepy", 0, (0.26, 0.57, 0.0), 0.8, 1.0, 0.2)
         self.assertGreater(len(curve), 2)
-        profile = avatar.avatar_profile("agent-1", None)
-        self.assertIn("M", avatar.body_path(profile, 10, 20, 40, 50, 50))
         for name in avatar.SUPPORTED_SHAPES:
             avatar.openbot_surface(name, 0.2, 0.1)
-        self.assertEqual(avatar.xml_escape("a<b>&"), "a&lt;b&gt;&amp;")
         pulled = avatar._within([(1.0, 0.0), (2.0, 0.0)])([(4.0, 0.0)])
         self.assertEqual(len(pulled), 1)
         self.assertEqual(avatar.avatar_svg("rest", "agent-1")[:4], "<svg")
-        points = body3d.radii_points((1.0, 0.8, 1.0, 0.8))
-        self.assertEqual(len(body3d.radii_of(points, 8)), 8)
         self.assertEqual(len(body3d._stroke([(0.0, 0.0)], 0.1)), 28)
         self.assertEqual(body3d._hull([(0.0, 0.0), (1.0, 0.0)]), [(0.0, 0.0), (1.0, 0.0)])
         solid = body3d._solid({"kind": "roundedSlab", "half_depth": 0.2, "edge": 0.05,
@@ -7608,21 +7596,6 @@ class FirstRun(unittest.TestCase):
         self.enabled = False
         self.assertFalse(startup.apply_default())
         self.assertFalse(self.enabled)
-
-
-class SingleInstance(unittest.TestCase):
-    """Should recognise every way to start the widget, also the packaged app."""
-
-    def test_every_launch_style_is_recognised(self):
-        for cmdline in (b"/usr/bin/python3 /home/me/bot_widget.py",
-                        b"/home/me/.local/share/uv/tools/botwidget/bin/python -m botwidget --dev",
-                        b"/Applications/Bot Widget.app/Contents/MacOS/Bot Widget",
-                        b"/home/me/.local/share/botwidget/app/Bot Widget"):
-            self.assertTrue(instance.looks_like_widget(cmdline), cmdline)
-
-    def test_other_programs_are_left_alone(self):
-        for cmdline in (b"vim notes.txt", b"/usr/bin/python3 other_script.py", b""):
-            self.assertFalse(instance.looks_like_widget(cmdline), cmdline)
 
 
 class Channel(unittest.TestCase):

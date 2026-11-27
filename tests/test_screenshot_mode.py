@@ -329,7 +329,6 @@ class ScreenshotOverlay(unittest.TestCase):
             _finalize_screenshot,
             enter_screenshot_mode,
             pixmap_png_bytes,
-            screen_grab,
         )
 
         window = self.face.FaceWindow("shot", "Shot", spot=(300, 400))
@@ -353,12 +352,8 @@ class ScreenshotOverlay(unittest.TestCase):
         overlay._rect = (1, 1, 8, 8)
         grabbed = overlay.grab_region()
         self.assertTrue(grabbed is None or hasattr(grabbed, "isNull"))
-        shot = screen_grab((1, 1, 8, 8))
-        self.assertTrue(shot is None or hasattr(shot, "isNull"))
         overlay._screen = None
         self.assertIsNone(overlay.grab_region())
-        with mock.patch("botwidget.qt_ui.screenshot.QGuiApplication.primaryScreen", return_value=None):
-            self.assertIsNone(screen_grab((0, 0, 2, 2)))
         picture = QPixmap(8, 8)
         picture.fill(Qt.red)
         with mock.patch.object(QImage, "save", return_value=False):
@@ -478,25 +473,6 @@ class AttachmentsStore(unittest.TestCase):
             msg = attachments.message_with("Screenshot", [file_path])
             self.assertIn("Screenshot", msg)
             self.assertIn("screenshot.png", msg)
-
-
-class ScreenGrab(unittest.TestCase):
-    """Should grab the selected region using a screen grab."""
-
-    @classmethod
-    def setUpClass(cls):
-        try:
-            from botwidget.qt_ui import face
-        except ImportError as error:
-            raise unittest.SkipTest(f"no Qt: {error}") from error
-        cls.face = face
-        cls.app = QApplication.instance() or QApplication([])
-
-    def test_grab_returns_pixmap(self):
-
-        from botwidget.qt_ui.screenshot import screen_grab
-        # On offscreen, we can't really grab, but the function should exist
-        self.assertTrue(callable(screen_grab))
 
 
 class EndToEnd(unittest.TestCase):

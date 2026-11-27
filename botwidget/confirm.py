@@ -177,13 +177,6 @@ class ConfirmBoard:
         blocks.append(actions_block(actions))
         return blocks
 
-    def blocks_for_bot(self, bot_id: str) -> list:
-        """Return blocks for the current confirm on *bot_id*, or []."""
-        req = self._by_bot.get(bot_id)
-        if req is None or req.settled:
-            return []
-        return self.blocks(req)
-
     # ── Internal ────────────────────────────────────────────────
 
     @staticmethod

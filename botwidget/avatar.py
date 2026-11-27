@@ -18,19 +18,6 @@ CIRCLE_R = 29.0
 GROK_REST = (-15.9, 33.3)
 # Its still pose in full: also rolled anticlockwise by 25.4 degrees.
 GROK_STILL = (-15.9, 33.3, 25.4)
-# A turn moves the front of the head as far as it would go on a ball of the face's size, up to the
-# 40 degrees or so that Grok Bot's idle turns reach.
-LOOK_MAX = 20.0
-
-
-def grok_look(pitch: float, yaw: float) -> tuple[float, float]:
-    """Where the eyes go, in px from the middle, when the head turns by pitch and yaw degrees."""
-    p, y = math.radians(pitch), math.radians(yaw)
-    dx, dy = CIRCLE_R * math.sin(y), CIRCLE_R * math.cos(y) * math.sin(p)
-    reach = math.hypot(dx, dy)
-    if reach > LOOK_MAX:
-        dx, dy = dx * LOOK_MAX / reach, dy * LOOK_MAX / reach
-    return round(dx, 1), round(dy, 1)
 
 
 # A few still poses: dx, dy, length factor. A blink (length 0) leaves the eyes where they look: None
@@ -124,12 +111,6 @@ def mark_extent(shape: str) -> tuple:
     return -min(ys), max(ys)
 
 
-def mark_path(shape: str, radius: float, cx: float, cy: float) -> str:
-    """The outline of a Grok Bot mark, as the polygon Grok Bot draws it."""
-    return "M" + "L".join(f"{cx + x * radius:.2f} {cy + y * radius:.2f}"
-                          for x, y in GROK_MARKS[shape][0]) + "Z"
-
-
 def silhouette_radii(shape: str) -> tuple:
     """The 64 radii of a face shape: Grok Bot's own art when it names one, ours otherwise."""
     return GROK_SHAPES.get(shape) or SILHOUETTES[shape]
@@ -206,24 +187,6 @@ def avatar_profile(seed: str, hue: float | None, avatar: dict | None = None) -> 
         top, bottom = radii[48], radii[16]
     return {"shape": shape, "expression": expression, "hex": colour, "tilt": tilt,
             "top": top, "bottom": bottom, "grok": grok}
-
-
-def silhouette_path(radii, radius: float, cx: float, cy: float) -> str:
-    """The smooth closed shape through the 64 radius points, just like OpenBot."""
-    pts = []
-    for i, r in enumerate(radii):
-        ang = i / 64 * math.tau
-        pts.append((cx + math.cos(ang) * r * radius, cy + math.sin(ang) * r * radius))
-    tension = 1 / 6
-    n = len(pts)
-    out = [f"M{pts[0][0]:.2f} {pts[0][1]:.2f}"]
-    for i in range(n):
-        a, o, s, c = pts[(i - 1) % n], pts[i], pts[(i + 1) % n], pts[(i + 2) % n]
-        ctrl1 = (o[0] + (s[0] - a[0]) * tension, o[1] + (s[1] - a[1]) * tension)
-        ctrl2 = (s[0] - (c[0] - o[0]) * tension, s[1] - (c[1] - o[1]) * tension)
-        out.append(f"C{ctrl1[0]:.2f} {ctrl1[1]:.2f} {ctrl2[0]:.2f} {ctrl2[1]:.2f} "
-                   f"{s[0]:.2f} {s[1]:.2f}")
-    return "".join(out) + "Z"
 
 
 # Light comes from the top left: a soft highlight there and a shadow at the bottom right in a darker
@@ -393,11 +356,6 @@ def eye_seats(profile: dict) -> list:
     return [((-across if i == 0 else across, 0.0, 0.0), None, eye) for i, eye in enumerate(spec[1:])]
 
 
-def mark_drawn(profile: dict) -> bool:
-    """A Grok Bot shape drawn from its still art, which shows it turned by GROK_REST."""
-    return profile["grok"] and profile["shape"] in GROK_MARKS and profile["shape"] not in GROK_SHAPES
-
-
 # OpenBot's shapes built the way Grok Bot builds the nearest of its own: round ones lofted, the
 # squircle a rounded slab, the capsule a chain of balls, the ones with corners extruded and bevelled.
 # The circle is a ball, so it stays perfectly round however it turns.
@@ -483,12 +441,6 @@ def body_points(profile: dict, pitch: float, yaw: float, roll: float = 0.0) -> t
     outline = _openbot_outline(profile["shape"], round(pitch * 2) / 2, round(yaw * 2) / 2)
     c, s_ = math.cos(math.radians(roll)), math.sin(math.radians(roll))
     return tuple((x * c + y * s_, y * c - x * s_) for x, y in outline)
-
-
-def body_path(profile: dict, pitch: float, yaw: float, radius: float, cx: float, cy: float,
-              roll: float = 0.0) -> str:
-    """The outline of the face's body, turned like a 3D body."""
-    return _points_path(body_points(profile, pitch, yaw, roll), radius, cx, cy)
 
 
 # A hop, a squash or a swell never takes the face out of its window: it keeps this far from the edge,
@@ -632,6 +584,3 @@ def avatar_svg(pose: str = "rest", seed: str = "", hue: float | None = None,
     dx, dy, scale = POSES[pose]
     return face_svg(dx, dy, scale, 0, seed, hue, LIFT.get(pose, 0.0), happy, avatar=avatar)
 
-
-def xml_escape(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

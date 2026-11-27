@@ -122,11 +122,3 @@ def send_feedback(title: str, body: str,
     if on_success is not None:
         on_success()
 
-
-def send_feedback_with_url(title: str, body: str,
-                           on_success=None, on_fail=None) -> str:
-    """Build the URL and return it; the face opens it.
-
-    This is the browser fallback path, always available.
-    """
-    return _send_via_browser(title, body)

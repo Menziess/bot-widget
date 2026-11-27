@@ -158,22 +158,6 @@ def write_memory(text: str, scope: str = "user", topic: str = "",
     return entry["id"]
 
 
-def write_memory_list(entries: list[dict], scope: str = "user",
-                      workspace: str | None = None) -> list[str]:
-    """Write several entries at once (used for migrating pin_fact into memory)."""
-    ids: list[str] = []
-    for entry in entries:
-        entry["scope"] = scope
-        entry["ts"] = entry.get("ts") or time.time()
-        eid = entry.get("id") or _id()
-        entry["id"] = eid
-        path = _memory_path(scope, workspace)
-        if path is not None:
-            _write_line(path, entry)
-            ids.append(eid)
-    return ids
-
-
 # ── Read / Retrieve ─────────────────────────────────────────────────
 
 def retrieve_memories(query: str, top_k: int = RETRIEVE_TOP_K,

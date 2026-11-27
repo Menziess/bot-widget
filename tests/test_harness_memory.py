@@ -28,7 +28,6 @@ from harness.agent.memory import (
     topic_for_message,
     update_memory,
     write_memory,
-    write_memory_list,
 )
 from harness.agent.store import SessionStore
 from tests.fake_model import FakeModel
@@ -112,13 +111,6 @@ class Store(unittest.TestCase):
         items = list_memories()
         self.assertEqual(items[0]["text"], "new")
         self.assertEqual(items[1]["text"], "old")
-
-    def test_write_memory_list(self):
-        ids = write_memory_list(
-            [{"text": "a"}, {"text": "b"}], "user"
-        )
-        self.assertEqual(len(ids), 2)
-        self.assertEqual(len(list_memories()), 2)
 
     def test_project_memory_keyed_by_workspace(self):
         ws1 = write_memory("ws1 data", "project", workspace="/tmp/ws1")

@@ -1180,9 +1180,6 @@ class FaceWindow(QWidget):
         except ValueError:
             return False
 
-    def _has_grok_or_hermes(self) -> bool:
-        return bool(self.link)
-
     def _motion_mood(self) -> str:
         """What the face shows while it lasts: a question waits, the bot thinks, there is no route."""
         if self.has_pending:
