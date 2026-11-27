@@ -148,10 +148,13 @@ def settings(state: dict) -> list:
     return blocks
 
 
+def _armed(state: dict, command: str, label: str, sure: str = "Sure?") -> str:
+    """What a destructive control says: the first click arms it, and it runs on the second click of this same one."""
+    return sure if state.get("armed") == command else label
+
+
 def _remove_button(state: dict, command: str, name: str) -> dict:
-    """The first click arms it. It is gone only after the second click of this same row."""
-    label = "Click again to remove" if state.get("confirm_remove") == command else name
-    return _button(label, command)
+    return _button(_armed(state, command, name, "Click again to remove"), command)
 
 
 def bots(state: dict) -> list:
@@ -162,13 +165,14 @@ def bots(state: dict) -> list:
         # Where the bot lives: OpenBot, Grok Bot, Hermes or a harness bot.
         label = f"{bot['name']} · {bot['source']}" if bot.get("source") else bot["name"]
         actions = [("Unmute" if bot.get("muted") else "Mute", f"mute/{bot['id']}")]
-        if bot["on"]:
-            reset = f"reset/{bot['id']}"
-            actions.append(("Done" if state.get("reset_done") == reset else "Reset", reset))
         if bot.get("acp"):
             actions.append(("Edit", f"page/bot/{bot['id']}"))
+        if bot["on"]:
+            reset = f"reset/{bot['id']}"
+            actions.append((_armed(state, reset, "Done" if state.get("reset_done") == reset else "Reset"), reset))
+        if bot.get("acp"):
             remove = f"bot-remove/{bot['id']}"
-            actions.append(("Again" if state.get("confirm_remove") == remove else "Remove", remove))
+            actions.append((_armed(state, remove, "Remove"), remove))
         blocks.append(_item(label, f"bot/{bot['id']}", bot["on"], actions))
     if not state["bots"]:
         blocks.append(_row(("No bots found yet", "dim")))
@@ -277,7 +281,7 @@ def connections(state: dict) -> list:
         remove = f"connection-remove/{conn['id']}"
         blocks.append(_item(label, f"connection-toggle/{conn['id']}", conn.get("on", True), [
             ("Edit", f"page/connection/{conn['id']}"),
-            ("Again" if state.get("confirm_remove") == remove else "Remove", remove),
+            (_armed(state, remove, "Remove"), remove),
         ]))
     blocks.append(_button("New connection", "page/connection"))
     return blocks
@@ -340,8 +344,9 @@ def memory_page(state: dict) -> list:
             time_str = time.strftime("%b %d %H:%M", time.localtime(ts)) if ts else ""
             label = f"[{scope}{topic}] {m.get('text', '')} · {time_str}"
             blocks.append(_row((label, "dim")))
+            forget = f"memory-forget/{mem_id}"
             blocks.append(_item("", "", None, [("Edit", f"page/memory/edit/{mem_id}"),
-                                               ("Forget", f"memory-forget/{mem_id}")]))
+                                               (_armed(state, forget, "Remove"), forget)]))
     blocks += [plain_block("gap"),
                _button("New memory", "page/memory/new")]
     return blocks
@@ -360,11 +365,7 @@ def approvals_page(state: dict) -> list:
 
 
 def vault_page(state: dict) -> list:
-    """List the secret IDs stored in the vault.
-
-    Only IDs are shown — no values, no secrets.  Each ID has a Delete row
-    that triggers a confirm (kind ``vault``) before deletion.
-    """
+    """List the secret IDs stored in the vault. Only IDs are shown: no values, no secrets."""
     from botwidget.vault import list_secret_ids
 
     blocks = _back() + [_heading("Vault")]
@@ -373,10 +374,8 @@ def vault_page(state: dict) -> list:
         blocks.append(_row(("No secrets stored yet", "dim")))
     else:
         for sid in ids:
-            blocks.append(_row((f"Secret: {sid}", "dim")))
-            blocks.append(_item("", "", None, [
-                ("Delete", f"vault-delete/{sid}"),
-            ]))
+            remove = f"vault-delete/{sid}"
+            blocks.append(_item(sid, "", None, [(_armed(state, remove, "Remove"), remove)]))
     blocks += [plain_block("gap"),
                _button("New secret", "vault-new")]
     return blocks

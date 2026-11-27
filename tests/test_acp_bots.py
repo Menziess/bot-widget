@@ -131,10 +131,10 @@ class BotForm(unittest.TestCase):
         self.assertIn("bot-remove/acp:local", commands)
         armed = bots({"bots": [{"id": "acp:a", "name": "One", "on": True, "acp": True},
                                {"id": "acp:b", "name": "Two", "on": True, "acp": True}],
-                      "confirm_remove": "bot-remove/acp:a"})
+                      "armed": "bot-remove/acp:a"})
         removes = [(action["label"], action["command"]) for block in armed for action in block.get("actions") or []
                    if str(action["command"]).startswith("bot-remove/")]
-        self.assertEqual(removes, [("Again", "bot-remove/acp:a"), ("Remove", "bot-remove/acp:b")])
+        self.assertEqual(removes, [("Sure?", "bot-remove/acp:a"), ("Remove", "bot-remove/acp:b")])
         self.assertIn("page/widget-json", commands)
 
     def test_a_new_bot_loads_no_skills_or_instructions_of_its_own_until_asked(self):
@@ -460,6 +460,16 @@ class MemoryPage(WidgetSave):
         self.addCleanup(patched.stop)
         self.memory = memory
 
+    def test_arming_one_destructive_row_never_runs_another(self):
+        first = self.memory.write_memory("Eerste", "user")
+        second = self.memory.write_memory("Tweede", "user")
+        self.box.menu_command(f"memory-forget/{first}", "memory")
+        self.box.menu_command(f"memory-forget/{second}", "memory")  # arms the second, the first is let go
+        self.assertEqual(len(self.memory.list_memories()), 2)
+        self.box.menu_command("page/memory/new", "memory")  # any other click lets go as well
+        self.box.menu_command(f"memory-forget/{second}", "memory")
+        self.assertEqual(len(self.memory.list_memories()), 2)
+
     def test_each_row_has_edit_and_forget_and_they_work(self):
         first = self.memory.write_memory("Eerste", "user")
         second = self.memory.write_memory("Tweede", "user")
@@ -475,6 +485,8 @@ class MemoryPage(WidgetSave):
         self.assertEqual(self.box.menu_command("action/memory-save", "memory/edit/" + first, fields), "memory")
         texts = {m["id"]: (m["text"], m["topic"]) for m in self.memory.list_memories()}
         self.assertEqual(texts, {first: ("Eerste, aangepast", "t"), second: ("Tweede", "")})
+        self.assertEqual(self.box.menu_command(f"memory-forget/{second}", "memory"), "memory")
+        self.assertEqual(len(self.memory.list_memories()), 2, "the first click only arms it")
         self.assertEqual(self.box.menu_command(f"memory-forget/{second}", "memory"), "memory")
         self.assertEqual([m["id"] for m in self.memory.list_memories()], [first])
 

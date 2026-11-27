@@ -433,8 +433,8 @@ class SmallModules(unittest.TestCase):
         self.assertIn("circle", drawn)
         self.assertTrue(config.check_updates())
         plain = block_text(bots({"bots": [{"id": "a", "name": "Ada", "source": "OpenBot", "on": True,
-                                           "muted": True, "acp": True}], "confirm_remove": "bot-remove/a"}))
-        self.assertIn("Again", plain)
+                                           "muted": True, "acp": True}], "armed": "bot-remove/a"}))
+        self.assertIn("Sure?", plain)
         self.assertIn("Unmute", plain)
 
     def test_processes_instance_and_dev_mode(self):

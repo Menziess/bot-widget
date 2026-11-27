@@ -1779,7 +1779,7 @@ class FaceWindow(QWidget):
         again = page == self._menu_page and self.bubble.isVisible()
         if not again:
             # Remove stays on Again only while this page is still open.
-            self.faces._confirm_remove = ""
+            self.faces._armed = ""
             self.faces._reset_done = ""
         self._menu_page = page
         # A page goes away by itself like any bubble. Escape collapses it.

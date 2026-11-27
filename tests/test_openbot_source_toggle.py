@@ -133,6 +133,9 @@ class OpenBotSourceToggle(unittest.TestCase):
         face._hover_blocked_until = 10 ** 9
         face._poll_timer.stop()
         self.assertEqual(self.faces.menu_command("reset/home", "bots"), "bots")
+        self.assertIn("Sure?", _page_text(bots(self.faces.menu_state())), "the first click only arms it")
+        self.assertTrue(face.pinned)
+        self.assertEqual(self.faces.menu_command("reset/home", "bots"), "bots")
         self.assertEqual(face.motion.playing[0], "Blocked_C", "it shakes its head")
         self.assertTrue(face._poll_timer.isActive(), "the bot is looked at again")
         self.assertEqual((face.pinned, face._think_quiet, face._hover_blocked_until), (False, False, 0.0))

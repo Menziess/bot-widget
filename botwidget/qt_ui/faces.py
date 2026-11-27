@@ -251,6 +251,10 @@ class ArcCatcher(QWidget):
         painter.fillRect(self.rect(), QColor(0, 0, 0, 1))
 
 
+# Each of these runs on the second click of the same row, and nothing else in between.
+DESTRUCTIVE = ("bot-remove", "connection-remove", "memory-forget", "vault-delete", "reset")
+
+
 class Faces(QObject):
     grok_probed = Signal()  # the roster came back, so the Grok Bot face can take its own avatar
     relay_message = Signal(object)  # a relay message, handled on the Qt thread
@@ -567,7 +571,7 @@ class Faces(QObject):
             "connection_form": getattr(self, "_connection_draft", None),
             "models": getattr(self, "_models", None),
             "connection_error": getattr(self, "_connection_error", ""),
-            "confirm_remove": getattr(self, "_confirm_remove", ""),
+            "armed": getattr(self, "_armed", ""),
             "reset_done": getattr(self, "_reset_done", ""),
             "json_text": getattr(self, "_json_text", ""), "json_error": getattr(self, "_json_error", ""),
             "approvals_text": self._approvals_view(), "approvals_error": getattr(self, "_approvals_error", ""),
@@ -805,8 +809,13 @@ class Faces(QObject):
     def menu_command(self, command: str, page: str, fields: dict | None = None) -> str | None:
         """Do what a menu row asks; the page to show next, or None to leave the bubble as it is."""
         kind, _, name = command.partition("/")
-        if kind not in ("bot-remove", "connection-remove"):
-            self._confirm_remove = ""
+        if kind in DESTRUCTIVE:
+            if getattr(self, "_armed", "") != command:
+                self._armed = command
+                return page
+            self._armed = ""
+        else:
+            self._armed = ""
         if kind != "reset":
             self._reset_done = ""
         if command in ("action/save-bot", "action/save-json", "action/save-approvals", "action/save-connection",
@@ -875,10 +884,6 @@ class Faces(QObject):
             self._connection_error = self._commit_connection()
             return page if self._connection_error else None
         if kind in ("bot-remove", "connection-remove"):
-            if getattr(self, "_confirm_remove", "") != command:
-                self._confirm_remove = command
-                return page
-            self._confirm_remove = ""
             if kind == "bot-remove":
                 self._remove_bot(name)
                 return "bots"
@@ -945,9 +950,7 @@ class Faces(QObject):
             self._forget_memory(name)
             return "memory"
         elif kind == "vault-delete":
-            # Ask for confirm before deleting the secret.
-            payload = f"Delete secret {name}"
-            self.ask_confirm("vault", payload, on_yes=lambda n=name: self._delete_vault_secret(n))
+            self._delete_vault_secret(name)
             return page
         elif kind == "vault-new":
             # Open the new-secret form.
