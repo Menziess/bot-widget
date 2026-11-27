@@ -68,6 +68,25 @@ MOVE = """function run(argv) {
   if (a.width) window.size = [a.width, a.height];
 }"""
 
+STATE = """function run(argv) {
+  const a = JSON.parse(argv[0]); allowed();
+  const windows = Application("System Events").processes.byName(a.app).windows;
+  if (a.state === "restore") {
+    for (const window of windows()) window.attributes.byName("AXMinimized").value = false;
+    return;
+  }
+  const window = windows[a.index];
+  if (a.state === "minimize") {
+    window.attributes.byName("AXMinimized").value = true;
+  } else {
+    window.attributes.byName("AXMinimized").value = false;
+    ObjC.import("AppKit");
+    const screen = $.NSScreen.screens.objectAtIndex(0), full = screen.frame, room = screen.visibleFrame;
+    window.position = [room.origin.x, full.size.height - room.origin.y - room.size.height];
+    window.size = [room.size.width, room.size.height];
+  }
+}"""
+
 WINDOWS = """function run(argv) {
   const se = Application("System Events"), out = [];
   for (const process of se.processes.whose({backgroundOnly: false})()) {
@@ -154,6 +173,12 @@ class Macos:
         """The window of another app, to a place and, when asked, a size."""
         self._script(MOVE, {"app": str(app), "x": int(x), "y": int(y), "width": int(width), "height": int(height),
                             "index": int(index)})
+
+    def window_state(self, app, state, index=0):
+        """Minimize a window, bring every minimized window of the app back, or stretch it over the visible screen (the Dock and menu bar stay)."""
+        if state not in ("minimize", "restore", "maximize"):
+            raise _unavailable(f"unknown window state {state}")
+        self._script(STATE, {"app": str(app), "state": state, "index": int(index)})
 
     def windows(self) -> list:
         """Every app with a window: name, whether it is in front, and each window's title, place and size."""

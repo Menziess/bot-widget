@@ -35,12 +35,14 @@ class Backend(unittest.TestCase):
         mac.drag(1, 2, 3, 4)
         mac.move_window("Chrome", 5, 6, 700, 500)
         mac.key("cmd+shift+a")
+        mac.window_state("Chrome", "minimize")
         sent = [json.loads(call[5]) for call in osa.calls]
         self.assertEqual(sent[0], {"x": 10, "y": 20, "button": "right"})
         self.assertEqual(sent[1], {"dx": 0, "dy": -3})
         self.assertEqual(sent[2], {"x": 1, "y": 2, "to_x": 3, "to_y": 4})
         self.assertEqual(sent[3], {"app": "Chrome", "x": 5, "y": 6, "width": 700, "height": 500, "index": 0})
         self.assertEqual(sent[4], {"key": "a", "code": None, "mods": ["command down", "shift down"]})
+        self.assertEqual(sent[5], {"app": "Chrome", "state": "minimize", "index": 0})
 
     def test_windows_come_back_as_data(self):
         listing = [{"app": "Chrome", "frontmost": True, "windows": [{"title": "Tab", "x": 1, "y": 2, "width": 3, "height": 4}]}]

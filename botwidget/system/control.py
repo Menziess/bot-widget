@@ -51,6 +51,9 @@ class Fake:
     def move_window(self, app, x, y, width=0, height=0):
         self.calls.append(("move_window", app, int(x), int(y), int(width), int(height)))
 
+    def window_state(self, app, state):
+        self.calls.append(("window_state", app, state))
+
 
 class Stub:
     """Windows until that backend exists."""
@@ -226,6 +229,13 @@ class Desktop:
                 raise ControlUnavailable("moving the window of another app is not available on this desktop")
             move(str(arguments.get("app") or ""), int(arguments.get("x") or 0), int(arguments.get("y") or 0),
                  int(arguments.get("width") or 0), int(arguments.get("height") or 0))
+            return "ok"
+        if action == "window_state":
+            change = getattr(self.backend, "window_state", None)
+            if change is None:
+                raise ControlUnavailable("minimizing or maximizing the window of another app is not available "
+                                         "on this desktop")
+            change(str(arguments.get("app") or ""), str(arguments.get("state") or ""))
             return "ok"
         if action == "click":
             self.backend.click(int(arguments.get("x") or 0), int(arguments.get("y") or 0),

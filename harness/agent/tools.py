@@ -201,6 +201,12 @@ def _computer_tools() -> list[Tool]:
              {"type": "object", "properties": {"app": {"type": "string"}, **point, "width": {"type": "integer"},
                                                "height": {"type": "integer"}}, "required": ["app", "x", "y"]},
              _computer("move_app_window"), writes=True),
+        Tool("computer_window", "Minimize, restore (un-minimize) or maximize the window of an app (name as accessibility "
+             "lists it). Moving it off screen is not minimizing. Needs Accept.",
+             {"type": "object", "properties": {"app": {"type": "string"},
+                                               "state": {"type": "string", "enum": ["minimize", "restore", "maximize"]}},
+              "required": ["app", "state"]},
+             _computer("window_state"), writes=True),
     ]
 
 

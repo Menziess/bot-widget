@@ -83,7 +83,7 @@ class Approval(unittest.IsolatedAsyncioTestCase):
         """Should mark pointer, keyboard and window moves as writes."""
         names = (
             "computer_click", "computer_scroll", "computer_type", "computer_key",
-            "computer_drag", "computer_move",
+            "computer_drag", "computer_move", "computer_window",
         )
         for name in names:
             tool = self.tools.find(name)
@@ -128,6 +128,14 @@ class Approval(unittest.IsolatedAsyncioTestCase):
         await self._call("computer_move", {"app": "Chrome", "x": 1, "y": 1}, allow=False)
         self.assertEqual(self.backend.calls, [])
 
+    async def test_an_accepted_window_state_reaches_the_backend_and_a_decline_does_not(self):
+        result = await self._call("computer_window", {"app": "Chrome", "state": "minimize"}, allow=True)
+        self.assertIn("ok", result)
+        self.assertEqual(self.backend.calls, [("window_state", "Chrome", "minimize")])
+        self.backend.calls.clear()
+        await self._call("computer_window", {"app": "Chrome", "state": "maximize"}, allow=False)
+        self.assertEqual(self.backend.calls, [])
+
 
 class Platforms(unittest.TestCase):
     def test_windows_is_not_implemented(self):
@@ -147,6 +155,12 @@ class Platforms(unittest.TestCase):
         desk = control.Desktop(control.make_backend("win32"))
         with self.assertRaises(control.ControlUnavailable) as caught:
             control.perform(desk, "move_app_window", {"app": "x", "x": 1, "y": 1}, approved=True)
+        self.assertIn("not available", str(caught.exception))
+
+    def test_a_backend_without_window_states_says_so(self):
+        desk = control.Desktop(control.make_backend("win32"))
+        with self.assertRaises(control.ControlUnavailable) as caught:
+            control.perform(desk, "window_state", {"app": "x", "state": "minimize"}, approved=True)
         self.assertIn("not available", str(caught.exception))
 
     def test_this_session_is_wayland_or_x11(self):
