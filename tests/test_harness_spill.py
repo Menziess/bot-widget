@@ -115,12 +115,15 @@ class ShrinkingOldResults(unittest.TestCase):
         self.assertNotIn("(shortened)", text)
 
     def test_when_tight_old_results_shrink_and_the_newest_stay(self):
-        os.environ["HARNESS_CONTEXT_TOKENS"] = "3400"  # about 1200 characters of room
+        # Use the default window (result_keep=6). Results are so large that
+        # the pool (30 % of remaining budget) can only fit the newest one whole.
+        os.environ["HARNESS_CONTEXT_TOKENS"] = "32000"
         self.addCleanup(os.environ.pop, "HARNESS_CONTEXT_TOKENS", None)
-        self._results(4, 900)
+        # Each result ~40 000 chars. The pool is ~35k, so only 1 fits whole.
+        self._results(6, 40000)
         text = "\n".join(m["content"] for m in context.build(self.store, "b"))
         self.assertIn("(shortened)", text)
-        self.assertIn("[read_file3]\nR3", text)  # the newest is whole
+        self.assertIn("[read_file5]", text)  # the newest is whole
         self.assertIn("[read_file0] (shortened)", text)
 
     def test_declined_and_failed_results_are_not_replayed(self):

@@ -130,6 +130,25 @@ def estimate(text: str) -> int:
     return max(1, len(text) // 4)
 
 
+def _adaptive_keep_turns(model_window: int) -> int:
+    """Recent turns scaled to the model's context window.
+
+    The model's window is used directly; when zero the fallback defaults
+    (32 000 tokens → 12 turns) are returned.
+    """
+    window = _token_window(model_window)
+    return max(2, round(12 * window / 32000))
+
+
+def _adaptive_result_keep(model_window: int) -> int:
+    """Kept tool results scaled to the model's context window.
+
+    When the window is zero the fallback defaults (32 000 → 6 results) apply.
+    """
+    window = _token_window(model_window)
+    return max(1, round(6 * window / 32000))
+
+
 def _token_window(model_window: int = 0) -> int:
     """The token budget: the model's window, else HARNESS_CONTEXT_TOKENS, else CONTEXT_TOKENS."""
     import os
@@ -209,6 +228,8 @@ def build(store, bot: str, model_window: int = 0, model=None, workspace: str | N
     budget = _budget_chars(model_window)
     used = 0
     messages: list[dict] = []
+    keep_turns = _adaptive_keep_turns(model_window)
+    result_keep = _adaptive_result_keep(model_window)
 
     def _push(role: str, text: str) -> None:
         nonlocal used
@@ -236,7 +257,7 @@ def build(store, bot: str, model_window: int = 0, model=None, workspace: str | N
 
     # ── Background extract for older turns (no summary → keep them) ─
     all_messages = store.messages()
-    cutoff = len(all_messages) - KEEP_TURNS * 2
+    cutoff = len(all_messages) - keep_turns * 2
     older = all_messages[:cutoff] if cutoff > 0 else []
 
     if older and not store.summary:
@@ -260,7 +281,7 @@ def build(store, bot: str, model_window: int = 0, model=None, workspace: str | N
         pass  # memory errors must never break the turn
 
     # ── Fill kept conversation (before per-turn tail) ──────────────
-    recent = list(reversed(store.messages(limit=KEEP_TURNS * 2)))
+    recent = list(reversed(store.messages(limit=keep_turns * 2)))
     remaining = budget - used
     kept: list[dict] = []
     for message in recent:
@@ -294,7 +315,7 @@ def build(store, bot: str, model_window: int = 0, model=None, workspace: str | N
 
     # ── Per-turn tail: newest tool results ─────────────────────────
     try:
-        results = store.tool_results(RESULT_KEEP)
+        results = store.tool_results(result_keep)
     except Exception:
         results = []  # a store without the table must not break the turn
     if isinstance(results, list) and results:
