@@ -2656,6 +2656,29 @@ class BubbleHover(unittest.TestCase):
         self.assertIsNotNone(bubble._message_at(40, top + height / 2))
         self.assertIsNone(bubble._message_at(40, 3), "the thought itself is not clickable")
 
+    def test_esc_while_working_calls_cancel_on_acp(self):
+        """Esc key during a working turn calls acp.cancel() (not just interrupt)."""
+        from PySide6.QtCore import Qt
+        self.start_working()
+        self.window.acp = unittest.mock.Mock()
+        self.window._sync_bubble = lambda *args, **kwargs: None
+        event = unittest.mock.Mock()
+        event.key.return_value = Qt.Key_Escape
+        self.window.keyPressEvent(event)
+        self.window.acp.cancel.assert_called_once()
+        # interrupt should NOT be called (only for approvals)
+        self.window.acp.interrupt.assert_not_called()
+
+    def test_stop_button_while_working_calls_cancel_on_acp(self):
+        """Pressing stop during a working turn calls acp.cancel()."""
+        self.start_working()
+        self.window.acp = unittest.mock.Mock()
+        self.window._sync_bubble = lambda *args, **kwargs: None
+        # The face exposes _stop_turn which the stop button callback calls
+        self.window._stop_turn()
+        self.window.acp.cancel.assert_called_once()
+        self.window.acp.interrupt.assert_not_called()
+
     def test_the_field_stays_put_when_a_new_thought_makes_the_cloud_grow(self):
         self.start_working()
         self.finish_growth()

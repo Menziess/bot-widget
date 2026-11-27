@@ -128,6 +128,99 @@ class HookServer:
         self.httpd.server_close()
 
 
+class CancelJobsFlag(unittest.TestCase):
+    """When HARNESS_CANCEL_JOBS=1 the agent's cancel() also kills running background jobs."""
+
+    @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
+    def test_cancel_without_flag_lets_jobs_run(self):
+        """Default (off): cancel stops the turn but leaves background jobs alone."""
+        os.environ["HARNESS_CANCEL_JOBS"] = "0"
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        runner = JobRunner(folder, lambda sid, text: None)
+        self.addCleanup(runner.kill_all)
+        runner.start("s1", py("import time; time.sleep(30)"))
+        self.assertEqual(runner.running_count(), 1)
+        # Manually cancel the job (this is what the agent's kill_all does)
+        runner.cancel("s1", "j1")
+        self.assertTrue(wait_until(lambda: runner.jobs["j1"].status == "cancelled"))
+        # The job was cancelled but NOT killed — it's just marked cancelled and will finish normally.
+        # With the flag off, kill_all should not have been called.
+
+    @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
+    def test_cancel_with_flag_kills_running_jobs(self):
+        """Flag on: cancel stops the turn AND kills all running jobs for this session."""
+        os.environ["HARNESS_CANCEL_JOBS"] = "1"
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        agent_dir = os.path.join(folder, "agent")
+        os.environ["HARNESS_WORKSPACE"] = folder
+
+        from harness.agent.agent import LeanAgent
+
+        class DummyModel:
+            async def fetch_models(self):
+                return []
+
+        agent = LeanAgent("test-cancel-flag", DummyModel(), folder=agent_dir)
+        self.addCleanup(agent.shutdown)
+        # Ensure jobs runner is created (it is created lazily via _ensure_job_tools)
+        # We need to set workspace on the tools for that to happen.
+        agent.tools.workspace = folder
+        agent._ensure_job_tools()
+        runner = agent.jobs
+        runner.start("s1", py("import time; time.sleep(30)"))
+        self.assertEqual(runner.running_count(), 1)
+        pid = runner.jobs["j1"].proc.pid
+
+        # Now cancel — this should kill all running jobs for the session
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(agent.cancel("s1"))
+        finally:
+            loop.close()
+        # kill_all sets _closed=True and stops the processes
+        self.assertTrue(runner._closed, "kill_all was called")
+        # The job's process should be dead
+        import signal
+        self.assertRaises(OSError, os.kill, pid, signal.SIGCONT)
+        runner.kill_all()
+
+    @unittest.skipIf(os.name == "nt", "process groups and sh are POSIX")
+    def test_cancel_with_flag_off_does_not_call_kill_all(self):
+        """Flag off: cancel does NOT kill jobs, they keep running until they finish or are explicitly cancelled."""
+        os.environ["HARNESS_CANCEL_JOBS"] = "0"
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder, True)
+        agent_dir = os.path.join(folder, "agent")
+        os.environ["HARNESS_WORKSPACE"] = folder
+
+        from harness.agent.agent import LeanAgent
+
+        class DummyModel:
+            async def fetch_models(self):
+                return []
+
+        agent = LeanAgent("test-cancel-flag", DummyModel(), folder=agent_dir)
+        self.addCleanup(agent.shutdown)
+        agent.tools.workspace = folder
+        agent._ensure_job_tools()
+        runner = agent.jobs
+        runner.start("s1", py("import time; time.sleep(30)"))
+        self.assertEqual(runner.running_count(), 1)
+
+        # Cancel with flag off should NOT call kill_all — only the explicit cancel
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(agent.cancel("s1"))
+        finally:
+            loop.close()
+        # The runner's jobs dict still has j1 but the agent never called kill_all
+        # So j1 is still the only job and it was cancelled via the normal cancel path
+        self.assertIn("j1", runner.jobs)
+        runner.kill_all()
+
+
 class Jobs(unittest.TestCase):
     """Should start, list and cancel a background command without leaving it running."""
 

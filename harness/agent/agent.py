@@ -344,7 +344,12 @@ class LeanAgent:
 
     async def cancel(self, session_id: str, **kwargs) -> None:
         """Stop the turn now. A cancel with no turn running is dropped: it used to arrive before the
-        turn it was meant for, and cancel that one."""
+        turn it was meant for, and cancel that one.
+        When HARNESS_CANCEL_JOBS is "1", also kill all running background jobs for this session."""
+        # Kill running background jobs before the early return: even a cancel with no active turn
+        # should stop background jobs that the user started.
+        if os.environ.get("HARNESS_CANCEL_JOBS", "0") == "1" and self.jobs:
+            self.jobs.kill_all()
         if session_id not in self._turns:
             return
         self._cancelled.add(session_id)

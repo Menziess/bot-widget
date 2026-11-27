@@ -636,11 +636,19 @@ class FaceWindow(QWidget):
             # A page, or the command list, goes straight back to the chat. The chat itself still closes.
             if self._menu_page is not None or self.bubble.commands_held():
                 self.open_input()
+            elif self._working and self.link:
+                # Stop the turn that is answering.
+                self.link.cancel()
             else:
                 self._forget_page()
                 self.unpin()
             return
         super().keyPressEvent(event)
+
+    def _stop_turn(self):
+        """The stop button callback: stop the turn that is answering."""
+        if self._working and self.link:
+            self.link.cancel()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.RightButton:

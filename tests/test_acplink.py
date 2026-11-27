@@ -297,6 +297,20 @@ class AcpTurns(unittest.TestCase):
         self.assertTrue(wait_for(lambda: not link.active()))
         self.assertEqual(link.note(), "Cancelled.")
 
+    def test_cancel_while_a_turn_runs_ends_it_and_leaves_the_link_open(self):
+        """After cancel the link is usable again: the agent stopped but the connection is alive."""
+        link = self.link()
+        link.send("slow down")
+        self.assertTrue(wait_for(lambda: link.chat()["activity"].startswith("step")))
+        link.cancel()
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertEqual(link.note(), "Cancelled.")
+        # The link should be usable again for a new message
+        ok, error = link.send("hello again")
+        self.assertTrue(ok, error)
+        self.assertTrue(wait_for(lambda: not link.active()))
+        self.assertEqual(link.note(), "")
+
     def test_a_failed_turn_says_so_under_the_conversation(self):
         link = self.link()
         link.send("this will fail")
