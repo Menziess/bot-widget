@@ -505,7 +505,6 @@ class LeanAgent:
                     await say(step.chunks)
                     break
                 turn.called |= step.tool_names
-                turn.calls += len(step.calls)
                 ending = [name for name in step.tool_names if name in SKILL_ENDINGS] if skill_on else []
                 if ending:
                     await say(step.chunks, step.tool_names)  # the skill's closing words come with its closing call

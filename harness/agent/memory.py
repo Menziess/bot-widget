@@ -381,7 +381,11 @@ def memory_write_tool(workspace: str | None = None):
 
     return Tool(
         "memory_write",
-        "Write a memory that persists across sessions and compaction. With an id (from memory_read) that memory's text is replaced instead.",
+        "Write a memory that persists across sessions. Save a reusable skill: how to connect to or use a system, service "
+        "or tool, for a project or in general, or how to use a tool without asking the user for more input. Never save a "
+        "fix for one bug, a wish that holds only for the current work, or how a temporary script works. memory_read the "
+        "subject first; to correct or improve a memory pass its id (its text is replaced) and never add a second one on "
+        "the same subject. memory_forget removes one.",
         {
             "type": "object",
             "properties": {
