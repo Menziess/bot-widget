@@ -143,6 +143,27 @@ class OpenBotSourceToggle(unittest.TestCase):
         self.faces.menu_command("mute/home", "bots")
         self.assertNotIn("Done", _page_text(bots(self.faces.menu_state())), "any other click takes it away")
 
+    def test_sure_and_done_fade_back_to_their_first_words_by_themselves(self):
+        from unittest import mock
+
+        from botwidget.menu_pages import bots
+        from botwidget.qt_ui import faces
+        with mock.patch.object(faces.QTimer, "singleShot") as later:
+            self.faces.menu_command("reset/home", "bots")
+            self.assertEqual(later.call_args.args[0], faces.LAPSE_MS)
+            fire = later.call_args.args[1]
+            self.assertIn("Sure?", _page_text(bots(self.faces.menu_state())))
+            fire()
+            self.assertNotIn("Sure?", _page_text(bots(self.faces.menu_state())))
+            self.faces.menu_command("reset/home", "bots")
+            fire_armed = later.call_args.args[1]
+            self.faces.menu_command("reset/home", "bots")
+            self.assertIn("Done", _page_text(bots(self.faces.menu_state())))
+            fire_armed()  # the older timer finds a newer state and leaves it alone
+            self.assertIn("Done", _page_text(bots(self.faces.menu_state())))
+            later.call_args.args[1]()
+            self.assertNotIn("Done", _page_text(bots(self.faces.menu_state())))
+
     def test_the_provider_button_fills_the_address_and_the_models_come_from_the_service(self):
         from unittest import mock
 

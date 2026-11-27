@@ -1772,13 +1772,19 @@ class FaceWindow(QWidget):
         elif hasattr(faces, "release_bots_arc"):
             faces.release_bots_arc()
 
+    def show_page_again(self):
+        """Draw the open page once more, with what was typed in it kept."""
+        if self._menu_page is not None and self.bubble.isVisible():
+            self.faces._take(self.bubble.control_values(), self._menu_page)
+            self.open_menu(self._menu_page)
+
     def open_menu(self, page: str = "settings"):
         """A page of the menu in the bubble: /settings, /bots or /connections typed or picked."""
         if self.faces is None:
             return
         again = page == self._menu_page and self.bubble.isVisible()
         if not again:
-            # Remove stays on Again only while this page is still open.
+            # Sure? and Done stay only while this page is still open.
             self.faces._armed = ""
             self.faces._reset_done = ""
         self._menu_page = page

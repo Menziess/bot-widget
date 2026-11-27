@@ -253,6 +253,7 @@ class ArcCatcher(QWidget):
 
 # Each of these runs on the second click of the same row, and nothing else in between.
 MEMORY_SCOPES = ("user", "project", "topic")
+LAPSE_MS = 2500  # a "Sure?" or "Done" goes back to its first words after this long
 DESTRUCTIVE = ("bot-remove", "connection-remove", "memory-forget", "vault-delete", "reset")
 
 
@@ -807,12 +808,25 @@ class Faces(QObject):
         save_widget_config(acp_bots=acp_bots.without(widget_config().get("acp_bots"), face_id))
         self._apply_bots(previous)
 
+    def _lapse_later(self):
+        """A "Sure?" or "Done" fades back to its first words, so that it never looks like one more click is needed."""
+        state = (getattr(self, "_armed", ""), getattr(self, "_reset_done", ""))
+        QTimer.singleShot(LAPSE_MS, lambda: self._lapse(state))
+
+    def _lapse(self, state: tuple):
+        if (getattr(self, "_armed", ""), getattr(self, "_reset_done", "")) != state:
+            return  # another click came since: it started its own timer
+        self._armed = self._reset_done = ""
+        for face in [*self.faces.values(), *self._arc_guests.values()]:
+            face.show_page_again()
+
     def menu_command(self, command: str, page: str, fields: dict | None = None) -> str | None:
         """Do what a menu row asks; the page to show next, or None to leave the bubble as it is."""
         kind, _, name = command.partition("/")
         if kind in DESTRUCTIVE:
             if getattr(self, "_armed", "") != command:
                 self._armed = command
+                self._lapse_later()
                 return page
             self._armed = ""
         else:
@@ -913,6 +927,7 @@ class Faces(QObject):
             if name in self.faces:
                 self.faces[name].reset()
             self._reset_done = command
+            self._lapse_later()
             return page
         elif kind == "mute":
             if name in self.faces:
